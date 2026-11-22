@@ -1,6 +1,7 @@
 # Expand-Contract Migration Pattern
 
 Zero-downtime schema migrations using the Expand-Contract strategy for PostgreSQL + Flyway (Java) and Prisma (NestJS).
+For Alembic (Python) the same phases apply; runner settings, `autocommit_block`, `NOT VALID`, single-head gate: `python-dev/reference/alembic-migration-safety.md`.
 
 ---
 
@@ -45,26 +46,26 @@ DROP INDEX CONCURRENTLY idx_users_email_old;
 
 ---
 
-## Batched Backfill with SKIP LOCKED
+## Batched Backfill (keyset)
 
 Never backfill millions of rows in a single `UPDATE` — it holds a long-running lock and causes replication lag.
 
-**Pattern:** run this statement repeatedly in a loop (application code or a migration job) until it returns 0 rows updated.
+**Pattern:** walk the primary key in fixed windows, one short transaction per window (application code or a separate job, never inside one long migration transaction).
 
 ```sql
--- Batched backfill (run repeatedly until 0 rows updated)
+-- Run for consecutive windows: :last = 0, 1000, 2000, ... up to max(id)
 UPDATE users
 SET    new_email = old_email
-WHERE  id IN (
-  SELECT id FROM users
-  WHERE  new_email IS NULL
-  ORDER BY id
-  LIMIT  1000
-  FOR UPDATE SKIP LOCKED
-);
+WHERE  id > :last AND id <= :last + 1000
+  AND  new_email IS NULL AND old_email IS NOT NULL;
+
+-- Finish with a check that must return 0
+SELECT count(*) FROM users WHERE new_email IS NULL AND old_email IS NOT NULL;
 ```
 
-**Why SKIP LOCKED:** rows locked by another transaction are skipped instead of waited on. This eliminates lock contention and allows concurrent reads to proceed at full speed during the backfill window. Each batch completes quickly, keeping lock duration under ~50ms per batch.
+**Why not "re-select `WHERE new_email IS NULL LIMIT 1000` until 0 rows":** rows whose source value is NULL are written back as NULL and match again, so the loop never ends
+(verified on PostgreSQL 16: 45 of 450 rows kept matching on every round). A `FOR UPDATE SKIP LOCKED` batch can also skip rows another transaction holds and end early,
+so always finish with the verification count. Keyset windows are finite and each commit is short; measure the batch duration on your data and tune the window.
 
 ---
 
@@ -123,6 +124,9 @@ ALTER TABLE users DROP COLUMN email;
 | Anti-pattern | Problem | Fix |
 |-------------|---------|-----|
 | Renaming a column in one migration | Running app reads old name → crashes | Expand-Contract: add new column, backfill, switch reads, drop old |
-| `CREATE INDEX` without CONCURRENTLY in production | Table-level lock blocks all reads and writes | Always use `CREATE INDEX CONCURRENTLY` in production |
+| `CREATE INDEX` without CONCURRENTLY on a populated table | Blocks writes for the whole build | Use `CREATE INDEX CONCURRENTLY` (plain is fine on a new or tiny table; say why) |
 | Running CONTRACT phase in the same deploy as EXPAND | Old code still deployed reads the dropped column → 500 errors | Wait at least N deploys (all old instances drained) before contracting |
-| Single-statement backfill on large table | Lock timeout, replication lag, OOM risk | Batch with `SKIP LOCKED` — 1000 rows per iteration |
+| Single-statement backfill on large table | Lock timeout, replication lag, OOM risk | Keyset batches, 1000 rows per window, commit per batch |
+| Plain `ADD CONSTRAINT CHECK` on a large table | Scans every row under ACCESS EXCLUSIVE; fails on legacy rows | `ADD CONSTRAINT ... NOT VALID`, fix data, then `VALIDATE CONSTRAINT` |
+| DDL without `lock_timeout` | The DDL queues behind a long transaction and blocks every later query | `SET lock_timeout = '5s'` (runner) or `SET LOCAL` in the revision; retry the deploy |
+| Failed `CREATE INDEX CONCURRENTLY` | Leaves an INVALID index; a retry fails with "already exists" | `DROP INDEX CONCURRENTLY IF EXISTS` first |

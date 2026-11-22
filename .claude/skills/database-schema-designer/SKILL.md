@@ -77,7 +77,9 @@ Read `reference/normalization-guide.md` for 1NF/2NF/3NF rules and examples.
 
 Read `reference/migration-patterns.md` for zero-downtime patterns and rollback strategies.
 
-Read `reference/expand-contract-migrations.md` for zero-downtime Expand-Contract strategy, CONCURRENTLY index operations, and batched SKIP LOCKED backfills.
+Read `reference/expand-contract-migrations.md` for the zero-downtime Expand-Contract strategy, CONCURRENTLY index operations, NOT VALID constraints and keyset backfills.
+
+Pick the migration tool from the stack, not from habit: Python/SQLAlchemy -> Alembic (read `python-dev/reference/alembic-migration-safety.md`), Java/Spring -> Flyway, NestJS -> Prisma Migrate. The design (ERD, indexes, expand/contract phases) is tool-neutral.
 
 ### NoSQL Design
 
@@ -142,7 +144,7 @@ Before generating schemas or queries, consult these sources:
 | `reference/constraints-and-relationships.md` | PKs, FKs, CHECK, UNIQUE, relationship patterns |
 | `reference/nosql-design-patterns.md` | MongoDB/Firestore embedding vs referencing |
 | `reference/migration-patterns.md` | Zero-downtime migrations, rollback strategies |
-| `reference/expand-contract-migrations.md` | Expand-Contract pattern, CONCURRENTLY index ops, SKIP LOCKED backfills |
+| `reference/expand-contract-migrations.md` | Expand-Contract pattern, CONCURRENTLY index ops, NOT VALID constraints, keyset backfills (Flyway/Prisma; Alembic in `python-dev/reference/alembic-migration-safety.md`) |
 | `assets/templates/migration-template.sql` | SQL migration file template |
 | `reference/postgresql-review-checklist.md` | PostgreSQL review checklist (used by `postgresql-database-reviewer` agent) |
 

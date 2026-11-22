@@ -70,6 +70,10 @@ CREATE UNIQUE INDEX idx_active_email ON users(email)
 WHERE is_active = true;
 ```
 
+Partitioned tables: a unique constraint or index must include the partition key (verified on PostgreSQL 16: `unique constraint on partitioned table must include all partitioning columns`),
+and a foreign key to a partitioned table must reference the full primary key including the partition key (a single-column FK failed with "no unique constraint matching given keys").
+Take the partition-key value from the loaded parent row; for replay/idempotency keys use a small side table instead of a unique index on the partitioned table.
+
 ### CHECK
 
 ```sql

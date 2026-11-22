@@ -88,7 +88,7 @@ CREATE INDEX CONCURRENTLY idx_orders_status ON orders(status);
 ALTER TABLE orders ADD INDEX idx_orders_status (status), ALGORITHM=INPLACE;
 ```
 
-**Warning:** Standard CREATE INDEX locks the table. Always use CONCURRENTLY (PostgreSQL) or ALGORITHM=INPLACE (MySQL) in production.
+**Warning:** Standard CREATE INDEX blocks writes for the whole build. On a populated table use CONCURRENTLY (PostgreSQL) or ALGORITHM=INPLACE (MySQL); a plain build is acceptable on a new or tiny table (say why in the migration). CONCURRENTLY cannot run in a transaction: Flyway `executeInTransaction=false`, Alembic `autocommit_block()` (`python-dev/reference/alembic-migration-safety.md`).
 
 ---
 
@@ -167,6 +167,9 @@ COMMIT;
 | Python | Alembic | SQLAlchemy integration |
 | Django | Django Migrations | Built-in, auto-generated |
 | Rails | ActiveRecord Migrations | Built-in, Ruby DSL |
+
+Run migrations once, as a gated one-shot job before rollout (fail-fast, no retries, a task timeout, same image as local) rather than from every service entrypoint, where N instances race for the same lock.
+Set a `lock_timeout` in the runner so a blocked DDL fails the deploy instead of queueing every other query behind it.
 
 ---
 

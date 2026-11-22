@@ -46,6 +46,24 @@
 - Connection pooling configured (transaction mode for most apps)
 - Idle timeouts set (`idle_in_transaction_session_timeout`, `idle_session_timeout`)
 - UPSERT (`ON CONFLICT`) used instead of check-then-insert patterns
+- No session-level advisory locks through an app pool (`pg_advisory_xact_lock` only); advisory-then-row lock order
+- Every uniqueness invariant has a DB constraint; races resolved by the constraint (rollback, return the winner), not by a pre-check
+- User-facing statements that can meet sweep-held rows use `SET LOCAL lock_timeout`
+- Claim queues (`SKIP LOCKED`) have `ORDER BY`, an attempts cap and a lease; outbox rows have attempts + backoff + an exhausted state
+- SQLAlchemy `text()` raw SQL uses `CAST(:p AS type)`, not `:p::type`; partial-index upserts repeat the predicate
+
+## 4b. Migration Safety (HIGH for live tables)
+
+Tool-neutral checks; Alembic specifics in `python-dev/reference/alembic-migration-safety.md`.
+
+- Runner sets `lock_timeout`; each revision/transaction takes its own lock only for as long as needed (`transaction_per_migration` in Alembic)
+- Indexes on populated tables built `CONCURRENTLY` outside a transaction (Alembic `autocommit_block()`, Flyway `executeInTransaction=false`), `DROP INDEX CONCURRENTLY IF EXISTS` first
+- CHECK / FK on populated tables added `NOT VALID`, then `VALIDATE CONSTRAINT`; unique builds have a duplicate preflight
+- Enum values added outside the transaction that uses them; downgrade of an enum add is a documented no-op
+- Backfills are keyset-paginated, committed per batch, finished with a verification count (never "re-select WHERE new IS NULL")
+- Exactly one Alembic head (`alembic heads`); upgrade -> downgrade -1 -> upgrade passes on an empty database
+- Drops and renames only in a contract phase with human approval; the downgrade states what data it loses
+- CHECK constraints and enum values written by hand (autogenerate does not emit them); false drops of extension/partition objects filtered, not accepted
 
 ## 5. Monitoring & Maintenance
 
@@ -63,6 +81,8 @@
 - `GRANT ALL` to application users
 - RLS policies with bare `auth.uid()` (not wrapped in SELECT)
 - Locks held during external calls
+- Session-level advisory locks used through a connection pool
+- `CREATE INDEX CONCURRENTLY` inside a transaction block, or plain `CREATE INDEX` on a populated table without a stated reason
 - Unparameterized queries
 
 ## Output Format

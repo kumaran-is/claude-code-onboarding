@@ -13,7 +13,7 @@ Reranked top-N chunks
     ↓
 [1] Hard filter: remove low-score chunks (below abstention threshold)
     ↓
-[2] Diversity filter: remove near-duplicates (cosine > 0.92)
+[2] Diversity filter: remove near-duplicates at packing time (cosine > 0.92 — a lower, more aggressive query-time threshold than corpus dedup in `rag-operations-guide.md` §9)
     ↓
 [3] Parent/neighbor expansion: swap children for parents or add adjacent chunks
     ↓
@@ -99,6 +99,9 @@ for chunk in ranked_chunks:
 ```
 - Set `MAX_CONTEXT_TOKENS` based on: model limit − prompt template tokens − expected response tokens
 - Prefer fewer high-quality chunks over many low-quality ones
+
+### 2.6a Extractive Compression (after rerank)
+When the budget is tight, select whole sentences from each reranked chunk (by similarity to the original query) until the budget is met, keeping each sentence's offsets. The cited text stays verbatim, so citation validation and excerpt return still resolve. Never abstractively summarize evidence that will be cited — the model would then cite text no source contains.
 
 ### 2.7 Recency Bias
 For time-sensitive corpora, surface fresher chunks when scores are close.

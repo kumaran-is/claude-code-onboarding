@@ -285,3 +285,31 @@ Keep the core contract domain-agnostic. Push domain-specific fields into a names
 - Different products plug in different enums without breaking the core
 - Extension fields do not appear in internal trace or async eval tiers — they are user-facing only
 - Version your extension enums separately from `schema_version`
+
+---
+
+## 10. Runtime Citation Validation
+
+Offline citation metrics (`rag-evaluator`) do not stop a bad answer in production. Validate every answer before it ships. The general output-contract rule lives in `ai-playbook` (output contract section); this is the RAG-specific runtime check.
+
+1. **Membership (deterministic):** collect the chunk ids actually retrieved in THIS request; any cited id outside that set → return the `abstained`/fallback shape. Log the bad ids only, never chunk text.
+2. **Support (probabilistic):** per claim, check entailment of the claim by its cited chunk (NLI model, LLM judge, or a managed grounding API). Below threshold → abstain or escalate. The judge prompt treats the answer and the chunks as data, not instructions.
+3. **Checker unavailable:** degrade visibly — ship with `verified=false` (surface it as a warning flag), never pass silently.
+
+```python
+async def validate_answer(answer: Answer, chunks_by_id: Mapping[str, str],
+                          support_check: SupportCheck, threshold: float, abstain: Answer) -> Answer:
+    if answer.status == "abstained":
+        return answer
+    if not answer.citations:
+        return abstain                                   # ungrounded
+    retrieved = set(chunks_by_id)
+    if [c.chunk_id for c in answer.citations if c.chunk_id not in retrieved]:
+        return abstain                                   # cited something not retrieved
+    score = await support_check(answer.citations, chunks_by_id)
+    if score is None:
+        return replace(answer, verified=False)           # degrade visibly
+    return abstain if score < threshold else answer
+```
+
+Unit-test the five paths with a scripted checker: ghost id → abstain; supported → ships verified; low support → abstain; checker returns `None` → ships `verified=False`; no citations → abstain. (Verified: 6 pytest cases pass, `ruff` and `mypy --strict` clean, against a scripted fake checker — no live model.)

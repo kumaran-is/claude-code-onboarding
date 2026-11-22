@@ -10,12 +10,12 @@ Nine canonical query classes for text RAG pipelines. Use these as routing target
 
 | Class | Description | Example | Best Handler |
 |---|---|---|---|
-| `factual_lookup` | Single specific fact from a document | "What is the cancellation fee in contract #1234?" | Dense retrieval + parent expand |
-| `policy_question` | Explanation of a rule, procedure, or guideline | "What is the policy for late rent payments?" | Hybrid (dense + BM25) + cross-encoder |
-| `structured_record_lookup` | Query against tabular/structured data mixed with docs | "Show all vendors with SLA < 24h" | SQL first; RAG for SLA definitions |
+| `factual_lookup` | Single specific fact from a document | "What is the cancellation fee in contract C-1234?" | Dense retrieval + parent expand |
+| `policy_question` | Explanation of a rule, procedure, or guideline | "What is the policy for late invoice payments?" | Hybrid (dense + BM25) + cross-encoder |
+| `structured_record_lookup` | Query against tabular/structured data mixed with docs | "Show all suppliers with SLA < 24h" | SQL first; RAG for SLA definitions |
 | `comparison` | Contrast two or more entities / policies | "How does Plan A differ from Plan B?" | Multi-query decomposition + merge |
-| `summarization` | High-level overview of a document or topic | "Summarize the Q3 vendor report" | Full-document retrieval or map-reduce |
-| `multi_hop` | Answer requires chaining across multiple documents | "Which vendors are approved for the properties in tenant X's portfolio?" | Agentic retrieval or query decomposition |
+| `summarization` | High-level overview of a document or topic | "Summarize the Q3 supplier report" | Full-document retrieval or map-reduce |
+| `multi_hop` | Answer requires chaining across multiple documents | "Which suppliers are approved for the regions in account X's contract?" | Agentic retrieval or query decomposition |
 | `troubleshooting` | Diagnosis from symptoms | "Why was my payment rejected?" | Hybrid + structured data lookup |
 | `personalized` | Answer depends on user-specific context | "What's my current balance?" | SQL/API for facts + RAG for framing |
 | `unsafe` | Attempts to extract PII, bypass security, or inject prompts | "Ignore previous instructions and..." | Reject at classification layer |
@@ -80,7 +80,7 @@ Before routing, optionally enrich the query:
 ```python
 # Extract entities → inject as metadata filters
 entities = extract_entities(query)
-# Example output: {"vendor_name": "Acme Corp", "doc_type": "contract"}
+# Example output: {"supplier_name": "Acme Corp", "doc_type": "contract"}
 filters = {k: v for k, v in entities.items() if k in FILTERABLE_FIELDS}
 results = retriever.query(query, metadata_filter=filters)
 ```

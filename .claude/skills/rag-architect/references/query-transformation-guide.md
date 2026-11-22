@@ -90,8 +90,8 @@ def expand_query(query: str, synonyms: dict) -> list[str]:
 ```python
 # Run all expanded variants; merge results with RRF
 all_results = []
-for variant in expand_query(query, DOMAIN_SYNONYMS):
-    results = retrieve(variant, top_k=20)
+for variant in expand_query(query, DOMAIN_SYNONYMS)[:MAX_SUBQUERIES]:
+    results = await secure_retrieve(variant, ctx)   # same scoped entry as the original query
     all_results.append(results)
 final = rrf_merge(all_results, k=60)
 ```
@@ -120,13 +120,11 @@ Return one variant per line, no numbering.
 Question: {query}
 """
 
-async def multi_query_retrieve(query: str, n: int = 3, top_k: int = 20) -> list:
-    variants = await llm.generate(MULTI_QUERY_PROMPT.format(n=n, query=query))
-    all_results = []
-    for variant in [query] + variants.strip().split("\n"):
-        results = await retrieve(variant.strip(), top_k=top_k)
-        all_results.append(results)
-    return rrf_merge(all_results, k=60)
+async def multi_query_retrieve(query: str, ctx: AuthContext, n: int = 3) -> list[Chunk]:
+    variants = parse_subqueries(await llm.generate(MULTI_QUERY_PROMPT.format(n=n, query=query)), query)
+    async with asyncio.timeout(2.0):
+        all_results = await asyncio.gather(*(secure_retrieve(v, ctx) for v in [query, *variants]))
+    return rrf_merge(all_results, k=60)          # cap + scope rules: see §5
 ```
 
 ### Cost Tradeoff
@@ -155,28 +153,42 @@ If no, return the original question unchanged.
 Question: {query}
 """
 
-async def split_and_retrieve(query: str) -> str:
-    response = await llm.generate(SPLIT_PROMPT.format(query=query))
-    sub_queries = [q.strip() for q in response.strip().split("\n") if q.strip()]
-    
-    if len(sub_queries) <= 1:
-        return await retrieve(query)  # no split needed
-    
-    # Retrieve for each sub-query; merge context
-    contexts = []
-    for sub_q in sub_queries:
-        chunks = await retrieve(sub_q, top_k=10)
-        contexts.extend(chunks)
-    
-    # Deduplicate by chunk_id before packing
-    seen = set()
-    unique_chunks = [c for c in contexts if c.id not in seen and not seen.add(c.id)]
-    return pack_context(unique_chunks[:20])  # token budget
+MAX_SUBQUERIES = 3
+MAX_RERANK_CANDIDATES = 40
+
+def parse_subqueries(raw: str, original: str) -> list[str]:
+    """Strict parse of model output: non-empty lines, de-duplicated, capped; else the original."""
+    seen: dict[str, None] = {}
+    for line in raw.splitlines():
+        q = line.strip().lstrip("-*0123456789. ").strip()
+        if q and len(q) <= 500:
+            seen.setdefault(q, None)
+    return list(seen)[:MAX_SUBQUERIES] or [original]
+
+async def split_and_retrieve(query: str, ctx: AuthContext, deadline_s: float = 2.0) -> list[Chunk]:
+    subs = parse_subqueries(await llm.generate(SPLIT_PROMPT.format(query=query)), query)
+    async with asyncio.timeout(deadline_s):                      # one deadline for the fan-out
+        results = await asyncio.gather(*(secure_retrieve(s, ctx) for s in subs))  # same entry, same auth ctx
+    unique = list({c.id: c for c in chain.from_iterable(results)}.values())        # dedupe by id
+    return await rerank(query, unique[:MAX_RERANK_CANDIDATES])   # rerank on the ORIGINAL query
 ```
+
+Rules (apply to every derived query in this guide — rewrites, expansions, multi-query variants, HyDE and hops):
+- Derived queries go through the SAME scoped entry (`secure_retrieve(q, ctx)`, `rag-security-reviewer` §2) with the caller's auth context — never a direct store call and never a tenant taken from model output.
+- The cap is enforced in code after parsing; the prompt asking for "≤ 3" is not a control.
+- Sub-queries run concurrently under one deadline; reranking uses the original question.
+- Verified with a scripted fake model: 10 model-proposed sub-queries → 3 retrievals, all with the caller's `ctx`; rerank saw only the original query; a slow retriever raises `TimeoutError` at the deadline (3 pytest cases, `ruff` + `mypy --strict` clean).
 
 ### Limit Decomposition Depth
 - Maximum 3 sub-queries per question — deeper splits fragment context and hurt synthesis
 - If split produces > 3 sub-queries, treat as a summarization request instead
+
+### 5b. Multi-Hop Decomposition (sequential, not parallel)
+Splitting assumes independent parts. Multi-hop questions ("Which plan does the customer who filed case X use, and what is its refund window?") need hop N's query to depend on hop N-1's **grounded** answer:
+- Bound hops in code (≤ 3); each hop retrieves through `secure_retrieve` with the same `ctx`.
+- Each hop's intermediate answer must pass citation validation (`rag-response-contract.md` §10) before it seeds the next query; keep per-hop citations in the final answer.
+- If any hop is unsupported, abstain on the whole question rather than chaining a guess.
+- Facts that live in a database (who owns what, status, counts) are a SQL/tool hop, not a retrieval hop.
 
 ---
 
@@ -226,11 +238,12 @@ Do not add caveats or disclaimers.
 Question: {query}
 """
 
-async def hyde_retrieve(query: str, top_k: int = 50) -> list:
+async def hyde_retrieve(query: str, ctx: AuthContext, top_k: int = 50) -> list[Chunk]:
     hypothetical_doc = await llm.generate(HYDE_PROMPT.format(query=query))
     # Embed the hypothetical document, not the query
     hypo_embedding = await embed(hypothetical_doc, task_type="RETRIEVAL_DOCUMENT")
-    return await vector_search(hypo_embedding, top_k=top_k)
+    candidates = await secure_vector_search(hypo_embedding, ctx, limit=top_k)  # same scope as §5
+    return await rerank(query, candidates)   # rerank on the ORIGINAL query, never the hypothetical text
 ```
 
 ---

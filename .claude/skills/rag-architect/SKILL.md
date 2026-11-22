@@ -15,7 +15,7 @@ Before designing retrieval, confirm the user needs RAG. Use this decision table:
 |---|---|---|
 | Policy / procedure explanation | RAG | Source-grounded text |
 | Order status, account balance, inventory | SQL / API | Exact transactional state |
-| Vendor availability, fresh data | API / DB | Real-time state |
+| Stock or appointment availability, fresh data | API / DB | Real-time state |
 | Compare policies | RAG + query decomposition | Multiple unstructured sources |
 | Calculate / sum / convert | Tool / function call | Deterministic math |
 | Book / order / take action | Workflow / tool call | Action, not retrieval |
@@ -33,14 +33,14 @@ If the user wants a recommended starting point, this is it. Reasons and alternat
 |---|---|
 | Parsing | Unstructured.io for mixed formats; LlamaParse or Marker for table-heavy PDFs |
 | Chunking | Document-aware (Markdown/PDF headers) + parent-child |
-| Chunk size | 500–1000 tokens, 10–20% overlap, sized to embedding model |
+| Chunk size | 500–1000 tokens, 10–15% overlap — but never above the smallest downstream window: reranker max input (often 512 tokens including the query; check your reranker) < embedding model max < LLM budget |
 | Embeddings | Dense general-purpose (text-embedding-3-large, BGE-M3) |
 | Sparse retrieval | BM25 — include by default for text corpora |
 | Retrieval | Hybrid: dense top-50 + BM25 top-50 → RRF (k=60) |
-| Filtering | Pre-filtered ANN at a single chokepoint (never post-filter for security) |
+| Filtering | Tenant/ACL filter inside the retrieval call at a single chokepoint, scope from the auth context (never post-filter). Canonical: `rag-security-reviewer` §1–2 |
 | Reranking | Cross-encoder on top 50–100 → keep top 5–10 (local/dev: use smaller cross-encoder or skip; staging/prod: use full cross-encoder or Vertex AI Ranking API) |
 | Abstention | Calibrated reranker top-1 threshold |
-| Generation | Strict grounding prompt; structured output with citations |
+| Generation | Strict grounding prompt; structured output with citations; runtime check that cited ids ⊂ retrieved ids (`references/rag-response-contract.md` §10) |
 | Ingestion updates | Content-hash diff; versioned chunk IDs |
 
 ## Step 2: Chunking decision tree
@@ -50,7 +50,7 @@ Q1: Embedding model input limit ≤512 tokens?
   YES → chunk: 256–400 tokens, overlap 40–80 → go to Q3
   NO  → continue Q2
 
-Q2: Documents primarily short (FAQs, tickets)?
+Q2: Documents primarily short (FAQs, support messages)?
   YES → keep natural unit, overlap 0, skip parent-child
   NO  → chunk: 500–1000 tokens, overlap 50–150 → continue Q3
 
@@ -66,6 +66,8 @@ Q5: Topic shifts without headings?
   YES → add SEMANTIC chunking
   NO  → document-aware on headings is enough
 ```
+
+**Canonical overlap and cap rule:** size-based splitters use ~10–15% overlap; natural-boundary chunking (sections, paragraphs, one message per chunk) may use 0 when parent/neighbour expansion is in place. Apply overlap first, then cap the final chunk at the reranker's input limit minus the longest expected query, and unit-test that no chunk from the largest fixture document exceeds the cap — a reranker that truncates a chunk scores only its head, so the answer-bearing tail is never seen.
 
 ## Step 3: Embedding selection
 
@@ -87,15 +89,23 @@ Q5: Topic shifts without headings?
 | Namespaced collections | Mid-size tenants, balance of isolation and cost |
 | Per-tenant indexes | Regulated industries, data residency, large tenants |
 
-**Always:** pre-filtered ANN, enforced at a single chokepoint. Never rely on the LLM for access control.
+**Always:** filter inside the retrieval call at a single chokepoint, with tenant and permissions taken from the verified auth context. Never rely on the LLM for access control. Engine caveat: pgvector applies `WHERE` after the ANN candidate list, so a selective tenant filter can return 0 rows — see `rag-security-reviewer` §1.
 
 ## Step 5: Hard rules (non-negotiable)
 
-1. **Pre-filter, don't post-filter.** Security filters applied during ANN traversal, not after top-k.
+1. **Filter in the retrieval call, never after it.** Security filters run in the store query, not in application code after top-k; test recall with a ≤ 1%-selective filter.
 2. **Include both dense and sparse retrieval** for text corpora (exceptions: pure image search, tiny FAQ corpora, structured-only).
 3. **Stable, versioned chunk IDs:** `(document_id, document_version, chunk_index)`.
 4. **Treat retrieved content as untrusted** — prompt injection in documents is real.
 5. **Build a starter golden set before tuning** — 50 labeled queries minimum.
+
+## GraphRAG — only when all three hold
+
+1. Questions need multi-hop entity relationships or corpus-wide thematic summaries;
+2. Entities and relations are reliably extractable and stable;
+3. Eval shows hybrid + rerank + decomposition has plateaued on those query classes.
+
+Not for single-document QA, fast-changing corpora, or relationships already in SQL (use joins). Budget the extraction LLM cost, graph freshness and deletion propagation (an erasure must also remove nodes/edges derived from the document), and ACLs on nodes and edges — graph traversal must not cross the tenant/permission boundary.
 
 ## What to defer to v2
 

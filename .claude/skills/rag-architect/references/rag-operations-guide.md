@@ -8,29 +8,42 @@ Reference for operating a production RAG system: caching, cost management, obser
 
 Six cache layers, applied independently. Choose based on hit rate vs staleness tolerance.
 
+> **Canonical home for RAG cache-key scoping.** `rag-review` 5.7 and the reviewer agents link here.
+
 | Cache Layer | What Gets Cached | Key | TTL | Tenant-Scoped? | Risk if Wrong |
 |---|---|---|---|---|---|
-| **Chunk embedding** | Embeddings for stored chunks | `content_hash` | Until doc update | No (chunk is pre-filtered) | Low — stale embedding = retrieval miss |
-| **Query embedding** | Embedding of the user query | `hash(query_text + model)` | 1–24h | No | Low |
-| **Exact-match query** | Full pipeline result for identical queries | `hash(query + tenant_id + filters)` | 15–60 min | **YES — must include tenant_id** | **Critical** — cross-tenant data leak if key missing tenant |
-| **Semantic query** | Result for similar (not identical) queries | `nearest_neighbor(query_emb, threshold=0.97)` | 15–30 min | **YES** | **High** — semantic similarity ≠ same answer for different tenants |
-| **Retrieval result** | Top-k chunks for a query | `hash(query + filters + retriever_config)` | 5–15 min | YES | Medium — stale chunks returned |
-| **LLM response** | Final generated answer | `hash(packed_context + prompt_version)` | 5–30 min | YES | Medium — stale answer surfaced |
+| **Chunk embedding** | Embeddings for stored chunks | `content_hash` + model + dims + task type + normalizer version | Until doc update | No — stored rows carry tenant; the vector itself is not scoped | Low — stale embedding = retrieval miss |
+| **Query embedding** | Embedding of the user query | `hash(norm(query), model, dims, task_type)` | 1–24h | Optional — the vector does not depend on the tenant; store the hash, not raw query text | Low |
+| **Retrieval result** | Top-k chunk ids for a query | `hash(tenant, perm_fp, index_version, model, norm(query), filters)` | 5–15 min | **YES** | **Critical** — cross-tenant/cross-role leak |
+| **Exact-match answer** | Full pipeline result for identical queries | `hash(retrieval_key, prompt_version, generation_model)` | 15–60 min | **YES** (via retrieval key) | **Critical** |
+| **Semantic answer** | Result for similar (not identical) queries | nearest neighbour on query embedding **within** the same tenant + `perm_fp` + `index_version` partition | 15–30 min | **YES** | **High** — similar wording ≠ same answer |
 
-### Critical Rule — Cache Key Must Include Tenant
+`perm_fp` = hash of the sorted role and group ids that the retrieval filter used. `index_version` is bumped on every ingest, update or delete in the corpus, so old entries become unreachable (also the cheapest way to honour an erasure request across caches).
+
+### Critical Rule — Retrieval and Answer Keys Carry the Full Scope
 ```python
-# ❌ WRONG — tenant data leaks across tenants
-cache_key = hash(query_text)
+# ❌ WRONG — leaks across tenants, roles and corpus versions
+cache_key = sha256(query_text)
 
-# ✅ CORRECT — tenant-scoped key
-cache_key = hash(f"{tenant_id}:{user_access_level}:{query_text}")
+# ✅ CORRECT
+def retrieval_key(tenant: str, perm_fp: str, index_ver: str, model: str, q: str, filters: str) -> str:
+    if not tenant:
+        raise ValueError("tenant required")     # scope ambiguity fails closed: skip the cache
+    return _h(tenant, perm_fp, index_ver, model, norm(q), filters)
+
+def answer_key(retr_key: str, prompt_ver: str, gen_model: str) -> str:
+    return _h(retr_key, prompt_ver, gen_model)
 ```
-Forgetting tenant in cache key is a **Sev-1 security incident** — another tenant's cached answer returned to a different tenant.
+(`_h` = sha256 over NUL-joined parts; `norm` = NFKC + lowercase + collapsed whitespace. Verified: 5 pytest cases — tenant, permission and index-version changes miss; group order and whitespace do not; empty tenant fails closed.)
+
+Forgetting tenant or permissions in a retrieval/answer key is a **Sev-1 security incident**. Cache *errors* fail open (log with `log_exception`, treat as a miss); scope *ambiguity* fails closed (do not read or write the cache).
 
 ### Cache Invalidation Triggers
-- Document updated → invalidate all chunk embeddings for that document
-- Policy version change → invalidate all retrieval + LLM response caches for that corpus
-- Embedding model change → invalidate all query embedding and chunk embedding caches
+- Document added/updated/deleted → bump the corpus `index_version`
+- ACL or group membership change → new `perm_fp` misses automatically; also purge entries for removed grants if TTL is long
+- Prompt or generation-model version change → answer keys change automatically
+- Embedding model change → invalidate query- and chunk-embedding caches
+- Erasure request → bump `index_version` and purge entries that reference the erased chunk ids
 
 ---
 
@@ -226,6 +239,8 @@ Concrete numbers to start with before golden-set tuning. These are starting poin
 | Post-dedup candidates into reranker | **40–60** | After MMR/dedup; reranking 80 without dedup wastes cost |
 | Final context chunks (after reranking) | **5–10** | Send to generation; lower = cheaper + less distraction |
 
+**Per-request budgets, enforced in code** (not by prompt): max derived sub-queries (3–6), max rerank candidates, max rerank calls, and one hard deadline for the whole retrieval stage. On breach, return the partial result with a degradation flag and log it — never an unbounded fan-out.
+
 ### Chunk Size Defaults by Document Density
 
 | Document Type | Chunk Size | Why |
@@ -233,7 +248,7 @@ Concrete numbers to start with before golden-set tuning. These are starting poin
 | General knowledge / prose | 500–800 tokens | Enough context; stays within embedding model limits |
 | Structured / procedure docs (SOPs, guides) | 300–600 tokens | Denser information per sentence; smaller chunks = more precise retrieval |
 | Tables | Full table or row-groups | See `table-chunking-strategy.md` — never split mid-row |
-| Event-based records (tickets, logs) | One event per chunk | Natural unit; splitting a ticket across chunks loses context |
+| Event-based records (support messages, logs) | One event per chunk | Natural unit; splitting one event across chunks loses context |
 
 ### Query Strategy Defaults
 
@@ -272,7 +287,7 @@ Investigate hot chunks: are they duplicates? generic boilerplate? navigation tex
 
 | Problem | Detection | Fix |
 |---|---|---|
-| **Near-duplicate documents** | Cosine similarity > 0.95 between chunk embeddings across different doc IDs | Keep canonical version; soft-delete or exclude duplicates from index |
+| **Near-duplicate documents** | Canonical dedup rule: exact dup = same `content_hash`; near dup = MinHash Jaccard ≥ 0.9 on shingles OR embedding cosine ≥ 0.95 across different doc IDs — never compare a Jaccard score to a cosine threshold; tune on a labelled sample | Keep canonical version; soft-delete or exclude duplicates from index |
 | **Draft + final versions both indexed** | `doc_version` field present but no `superseded_at` filter applied | Apply `superseded_at IS NULL` filter; see `versioning-and-freshness.md §3` |
 | **Outdated policy docs** | `effective_to` date in the past but `is_active = true` | Run periodic sweep: mark expired docs inactive |
 | **Copied content across folders** | Same `content_hash` under different `source_uri` | Dedup on `content_hash` at ingestion; keep highest-authority source |

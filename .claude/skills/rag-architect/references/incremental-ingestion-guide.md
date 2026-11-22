@@ -153,14 +153,16 @@ When a chunk is removed from a new document version, choose one of two behaviors
 | **Hard delete** | Remove row and vector from vector DB | No historical retrieval needed; old policy text must never be returned; storage cleanup matters |
 | **Soft delete** | Set `is_active = false`, keep row | Audit trail required; rollback possible; document version comparison needed |
 
-**Production recommendation:** Use soft delete for auditability.
+**Production recommendation:** Use soft delete for content *updates* (auditability, rollback). It is never an erasure: an erasure/RTBF request is a tenant-scoped hard delete of every version plus a tombstone (`versioning-and-freshness.md` §8).
+
+**One update strategy per source type:** content-hash chunk diff (this guide — frequently edited knowledge bases) OR version supersession (`versioning-and-freshness.md` §5 — legally versioned documents). Never mix both on one source type. Write the new generation before retiring the old one (no delete-then-insert window), and after a diff ingest run the recall smoke test plus a golden case for the edited document. A failed stale-chunk retire is an error to surface, not acceptable stale data.
 
 ```python
 def soft_delete_chunk(chunk_id: str) -> None:
     update_chunk_metadata(
         chunk_id=chunk_id,
         is_active=False,
-        deleted_at=datetime.utcnow().isoformat(),
+        deleted_at=datetime.now(UTC).isoformat(),   # from datetime import UTC, datetime
     )
 ```
 
@@ -169,7 +171,7 @@ def soft_delete_chunk(chunk_id: str) -> None:
 Always filter to active chunks at retrieval time. Without this, soft-deleted chunks from old versions contaminate answers.
 
 ```python
-# Applied at the pre-filter chokepoint — never skip
+# Applied inside the scoped retrieval chokepoint (rag-security-reviewer §2) — never skip
 base_filter = {
     "tenant_id": tenant_id,
     "is_active": True,
@@ -199,14 +201,15 @@ When any of these change, chunk hashes will no longer match vectors in the index
 | New section added | No | New chunks added, unchanged chunks kept |
 | Section deleted | No | Removed chunks soft-deleted |
 | Metadata-only change | No | Update metadata row; no re-embedding needed |
-| ACL / permission changed | No | Update metadata; no re-embedding needed |
+| ACL / permission changed | No | Update metadata; no re-embedding needed — but invalidate retrieval/answer caches built under the old ACL (`rag-operations-guide.md` §1) |
 
 **Store these version fields on every chunk** so you can detect when a full re-embed is needed:
 
 ```json
 {
-  "embedding_model": "text-embedding-004",
+  "embedding_model": "<provider-model-id>",
   "embedding_dimensions": 768,
+  "embedding_task_type": "RETRIEVAL_DOCUMENT",
   "chunker_version": "v2",
   "parser_version": "v1",
   "normalizer_version": "v1"
@@ -261,7 +264,7 @@ def post_ingestion_smoke_test(doc_id: str, sample_queries: list[str]) -> bool:
   "chunks_updated": 1,
   "chunks_added": 2,
   "chunks_deleted": 1,
-  "embedding_model": "text-embedding-004",
+  "embedding_model": "<provider-model-id>",
   "duration_ms": 1240,
   "smoke_test_passed": true
 }

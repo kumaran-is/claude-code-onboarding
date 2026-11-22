@@ -50,7 +50,7 @@ A RAG system should abstain when any of these conditions hold:
 2. **Retrieved chunks are off-topic** — chunks retrieved but semantically unrelated to the question
 3. **Context does not directly answer the question** — related context exists but the specific fact is absent
 4. **Conflicting information across documents** — two retrieved sources give different answers to the same question
-5. **Citations cannot support the generated answer** — answer would require claims not present in any retrieved chunk
+5. **Citations cannot support the generated answer** — answer would require claims not present in any retrieved chunk, cites a chunk id that was not retrieved in this request, or fails the claim-support check (runtime enforcement: `rag-response-contract.md` §10)
 6. **Retrieved evidence is stale** — chunks exist but are from a superseded version; current answer unknown
 7. **High-stakes domain without source support** — legal, financial, medical, or policy question with no grounding source
 8. **Required document was not retrieved** — the answer depends on a specific document that isn't in the context window

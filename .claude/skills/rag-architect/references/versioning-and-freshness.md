@@ -225,36 +225,45 @@ CREATE INDEX rag_chunks_historical_idx
 
 -- RLS: tenants only see their own chunks
 ALTER TABLE rag_chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag_chunks FORCE ROW LEVEL SECURITY;          -- applies to the table owner too
 CREATE POLICY tenant_isolation ON rag_chunks
-    USING (tenant_id = current_setting('app.current_tenant_id'));
+    USING      (tenant_id = current_setting('app.tenant_id', true))
+    WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+-- Per request, inside the transaction:  SELECT set_config('app.tenant_id', $1, true);
 ```
+
+The application role must not own the table and must not have `BYPASSRLS` (superusers always bypass). Test both failure modes: no tenant set → zero rows (too strict, visible) and a wrong tenant → zero rows, plus the system-job path that legitimately runs without RLS. Cast the setting (`::uuid`) when `tenant_id` is a `uuid` column. Verified on PG16: app role without a tenant sees 0 rows, as `t1` sees only `t1` rows, and the transaction-local setting is empty after commit. Rule detail: `postgres-best-practices/rules/security-rls-basics.md`.
 
 ---
 
 ## 8. GDPR / Right-to-Be-Forgotten with Versioning
 
-Versioning complicates deletion: old versions may contain personal data even after the current version is updated.
+Erasure is **not** supersession: superseded versions still hold the text. An erasure request hard-deletes every version, scoped to the requesting tenant, and propagates to every derived store.
 
-### Deletion Pattern (All Versions)
-```python
-async def delete_document_all_versions(document_id: str, db: AsyncConnection) -> None:
-    async with db.transaction():
-        # Delete vectors from vector store (all versions)
-        await vector_store.delete(filter={"document_id": document_id})
-
-        # Hard delete all chunk rows
-        deleted = await db.fetchval("""
-            DELETE FROM rag_chunks
-            WHERE document_id = $1
-            RETURNING COUNT(*)
-        """, document_id)
-
-        # Audit log the deletion (required for GDPR)
-        await db.execute("""
-            INSERT INTO deletion_audit_log
-              (document_id, deleted_chunk_count, deleted_at, reason)
-            VALUES ($1, $2, NOW(), 'gdpr_request')
-        """, document_id, deleted)
+### Step 1 — one database transaction: tombstone, delete, outbox, audit
+```sql
+-- $1 = tenant_id (from the verified auth context), $2 = document_id
+WITH tomb AS (
+    INSERT INTO erasure_tombstones (tenant_id, document_id) VALUES ($1, $2)
+    ON CONFLICT DO NOTHING                       -- ingestion skips tombstoned ids
+), gone AS (
+    DELETE FROM rag_chunks WHERE tenant_id = $1 AND document_id = $2   -- every version
+    RETURNING chunk_id
+), outbox AS (
+    INSERT INTO erasure_outbox (tenant_id, document_id, chunk_ids)
+    SELECT $1, $2, coalesce(array_agg(chunk_id), '{}') FROM gone
+)
+INSERT INTO deletion_audit_log (tenant_id, document_id, deleted_chunk_count, reason)
+SELECT $1, $2, count(*), 'erasure_request' FROM gone
+RETURNING deleted_chunk_count;
 ```
+`DELETE … RETURNING COUNT(*)` is invalid ("aggregate functions are not allowed in RETURNING") — count rows from a CTE instead. Verified on PG16 with RLS forced and a non-owner role: 3 of 3 `t1` rows deleted across versions, the other tenant's row with the same `document_id` untouched, outbox row created with the 3 chunk ids. The audit row stores ids and counts only — never the erased text.
+
+### Step 2 — a retryable worker drains the outbox
+External stores are not inside the database transaction. A worker (idempotent, retried with backoff, alert on age) for each outbox row:
+1. Deletes the chunk ids from every external index: vector store (Weaviate: `with_tenant(t).data.delete_many(where=Filter.by_property("doc_id").equal(d))`, guarded by `tenants.exists(t)`), BM25/FTS index, object store (original file and extracted text).
+2. Purges caches: bump the corpus `index_version` (retrieval/answer keys miss) and delete entries referencing the chunk ids (`rag-operations-guide.md` §1).
+3. Removes derived artifacts: summaries, extracted entities/graph nodes, eval fixtures and golden cases built from the document.
+4. Verifies zero remaining objects per store by count, then marks the row `done`. A non-zero count is an error to surface, not "acceptable stale data".
 
 **Important:** Fine-tuned models trained on deleted content cannot be "un-trained". Deletion applies to retrieval only — disclose this limitation when accepting GDPR requests if any model fine-tuning has occurred.

@@ -9,12 +9,14 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
 
-**NO AGENT GRAPH WITHOUT AN ITERATION LIMIT AND A HUMAN-IN-THE-LOOP CHECKPOINT — unbounded loops and silent runaway agents are production incidents**
+**NO AGENT RUN WITHOUT AN EXPLICIT STEP LIMIT, A DEADLINE AND A CUMULATIVE BUDGET, AND NO HIGH-CONSEQUENCE ACTION WITHOUT A DURABLE HUMAN APPROVAL — the model proposes, code authorizes (scope, routes, approvals, limits)**
+
+Before building an agent, confirm an agent is the right tool: a deterministic workflow or a single structured model call is cheaper and safer when the steps are known (`ai-playbook` decision step). Agents *request* business changes; a domain service or durable workflow *commits* them (`workflow-orchestration-patterns`).
 
 # Agentic AI Development Skill — Python 3.14 + LangChain + LangGraph + FastAPI
 
@@ -22,12 +24,15 @@ last-reviewed: "2026-03-14"
 
 ```bash
 uv init my-agent-service && cd my-agent-service
-uv add "langchain-core>=1.2.8" "langchain-anthropic>=1.3.0" "langchain-openai>=1.1.0" "langgraph>=1.0.7" \
-  "fastapi>=0.135.2" "uvicorn[standard]" pydantic pydantic-settings \
-  langsmith prometheus-client structlog httpx asyncpg \
-  "langgraph-checkpoint-postgres>=3.0.0"
-uv add --dev pytest pytest-asyncio httpx ruff mypy
+uv add "langchain==1.2.8" "langchain-core==1.8.4" "langgraph==1.0.7" "langgraph-prebuilt==1.0.7" \
+  "langgraph-checkpoint==4.3.2" "langgraph-checkpoint-postgres==3.2.1" "psycopg[binary,pool]==3.3.9" \
+  "fastapi==0.135.2" "pydantic==2.14.4" "pydantic-settings==2.16.3" uvicorn structlog httpx
+uv add <provider-integration>        # e.g. langchain-anthropic; uv.lock records the exact version
+uv add --dev pytest pytest-asyncio ruff mypy
+uv sync --locked                     # CI and Docker use the same command
 ```
+
+Pins are the set executed together for this toolkit; upgrade `langgraph` and `langgraph-prebuilt` together (`agentic-config-project.md`).
 
 ## Process
 
@@ -35,30 +40,31 @@ uv add --dev pytest pytest-asyncio httpx ruff mypy
 2. **Configure** — `core/config.py` with pydantic-settings, `.env`, structured logging
 3. **Define State** — `TypedDict` with `Annotated[list, add_messages]` for each agent
 4. **Build Graph** — `StateGraph` with typed nodes, conditional edges, checkpointing
-5. **Define Tools** — `@tool` with docstrings, Pydantic input schemas, error handling
-6. **Add Memory** — Checkpointing (PostgresSaver), semantic memory (vector store)
-7. **Add Guardrails** — Input validation, prompt injection detection, output validation
-8. **Expose API** — FastAPI routes for invoke/stream with `thread_id` propagation
-9. **Write Tests** — Basic invoke, tool usage, iteration limit, error recovery, RAG quality
+5. **Define Tools** — typed `ToolResult`, scope via `ToolRuntime`, allowlist, idempotency for writes (`tool-execution-safety.md`)
+6. **Add Memory** — `AsyncPostgresSaver` (thread state) + `AsyncPostgresStore` (principal-namespaced long-term memory)
+7. **Add Guardrails** — deterministic boundaries + screening of every untrusted channel (`agentic-guardrails-security.md`)
+8. **Expose API** — principal from auth, server-scoped thread keys, `recursion_limit` + deadline, typed statuses, JSON SSE
+9. **Write Tests** — scripted model through the real route + PostgreSQL; live golden + failure matrix before release
 10. **Deploy** — Docker multi-stage, gunicorn + uvicorn, health checks, Prometheus
 
 ## Key Patterns
 
 | Pattern | Implementation | Reference |
 |---------|---------------|-----------|
-| Agent Graphs | `StateGraph` + typed nodes + conditional edges | `agentic-templates-basic.md` |
-| Tools | `@tool` + docstring + Pydantic input + try/except | `agentic-templates-tools.md` |
-| LLM Binding | Factory function per provider, `.bind_tools()` | `agentic-llm-routing.md` |
-| Routing | `Command(goto=...)` pattern (LangGraph) | `agentic-templates-advanced.md` |
-| Checkpointing | `PostgresSaver` (prod) / `MemorySaver` (test) | `agentic-memory-systems.md` |
-| Streaming | `astream()` + `stream_mode` + FastAPI SSE | `agentic-streaming-hitl.md` |
-| Human-in-the-Loop | `interrupt_before` + approval node | `agentic-streaming-hitl.md` |
+| Agent Graphs | `create_agent` (tool loop) or `StateGraph` (custom control flow) | `agentic-templates-basic.md` |
+| Tools | Typed `ToolResult`, `ToolRuntime` scope, `args_schema`, no exception text | `agentic-templates-tools.md`, `tool-execution-safety.md` |
+| Model calls | `init_chat_model` from settings; one retry layer; deadlines; same-tier failover | `llm-inference-and-model-routing.md`, `agentic-llm-routing.md` |
+| Routing | `Command(goto=...)` with a code-validated target | `agentic-templates-advanced.md` |
+| Checkpointing | `async with AsyncPostgresSaver.from_conn_string(...)` in lifespan; `InMemorySaver` in tests | `agentic-templates-core.md`, `agentic-memory-systems.md` |
+| Limits | `recursion_limit` + `GraphRecursionError` mapping; call-limit middleware `exit_behavior="error"`; `asyncio.timeout` | `agentic-conventions.md` |
+| Streaming | `stream_mode="messages"` filtered to the model node; JSON SSE; one terminal event | `agentic-streaming-hitl.md` |
+| Human-in-the-Loop | `HumanInTheLoopMiddleware` or `interrupt()` + `Command(resume=...)` on a durable checkpointer | `agentic-streaming-hitl.md` |
 | RAG | Embeddings → Vector Store → Retriever → Reranker | `agentic-templates-rag.md` |
-| Guardrails | 12-layer pipeline: input → process → output | `agentic-guardrails-security.md` |
-| Structured Output | `.with_structured_output(PydanticModel)` | `agentic-prompt-engineering.md` |
-| Error Recovery | Retry node + fallback model + graceful degradation | `agentic-templates-resilience.md` |
-| Config | pydantic-settings + fail-fast validators | `agentic-config-project.md` |
-| Caching | 4-tier Q1→Q2→Q3→L3 with backfill; @cached_tool decorator | `agentic-caching-patterns.md` |
+| Guardrails | Deterministic boundary + probabilistic signals; fail closed | `agentic-guardrails-security.md` |
+| Structured Output | Provider schema; `include_raw=True`; one fresh-context retry; typed failure | `llm-inference-and-model-routing.md` §4 |
+| Error Recovery | Transient-only retry/failover middleware; typed statuses | `agentic-templates-resilience.md`, `agentic-error-handling.md` |
+| Config | pydantic-settings, `SecretStr`, model ids required | `agentic-config-project.md` |
+| Caching | Scoped answer keys; safety bypass; no fuzzy promotion | `agentic-caching-patterns.md` |
 
 ## Conventions & Rules
 
@@ -70,7 +76,7 @@ Before generating code, consult these sources for current syntax and APIs:
 
 | Source | URL / Tool | Purpose |
 |--------|-----------|---------|
-| LangGraph | `https://langchain-ai.github.io/langgraph/llms-full.txt` | StateGraph, nodes, edges, checkpointing APIs |
+| LangChain / LangGraph | `langchain-docs` MCP (`search_docs_by_lang_chain`) | `create_agent`, middleware, StateGraph, checkpointers, streaming, interrupts |
 | Pydantic v2 | `https://docs.pydantic.dev/latest/llms-full.txt` | Model validation, settings, Field constraints |
 | FastAPI / LangChain | `Context7` MCP | Latest LangChain tools, FastAPI patterns |
 
@@ -85,13 +91,15 @@ Before generating code, consult these sources for current syntax and APIs:
 | `agentic-templates-advanced.md` | Hierarchical Supervisor, Command, Sub-Graph patterns | Building complex agents |
 | `agentic-templates-resilience.md` | Error Recovery Agent, key design decisions | Agent error handling |
 | `agentic-templates-rag.md` | 6 RAG architectures + document ingestion pipeline | Building RAG systems |
-| `agentic-templates-tools.md` | @tool patterns, MCP integration, retry/timeout | Defining agent tools |
-| `agentic-guardrails-security.md` | 12-layer security framework | Adding safety layers |
-| `agentic-memory-systems.md` | 7-layer memory hierarchy, practical implementations | Adding memory to agents |
+| `tool-execution-safety.md` | Tool contracts, authority tiers, scope injection, allowlists, evidence gate, idempotency, budgets, approvals, durable resume (canonical) | Any agent with tools, esp. writes |
+| `llm-inference-and-model-routing.md` | Model ids/lifecycle, sampling + reasoning, structured output, deadlines/retries/429, failover vs escalation, cache scoping, token budgets, multimodal limits (canonical, framework-neutral) | Any model call |
+| `agentic-templates-tools.md` | Typed scoped tool template, external APIs, retries, MCP consumption | Defining agent tools |
+| `agentic-guardrails-security.md` | Boundary vs signal, fail-closed screening of all channels | Adding safety layers |
+| `agentic-memory-systems.md` | Checkpointer + principal-scoped Store memory, write pipeline, erasure, trimming | Adding memory to agents |
 | `agentic-streaming-hitl.md` | Streaming + Human-in-the-Loop patterns | Real-time responses, approval flows |
-| `agentic-llm-routing.md` | Multi-provider routing, cost calculation, fallback chains | Multi-model setups |
+| `agentic-llm-routing.md` | LangChain wiring: `init_chat_model`, failover, complexity router, prompt caching | Multi-model setups |
 | `agentic-observability.md` | LangSmith, Prometheus, structured logging | Monitoring and debugging |
-| `agentic-testing.md` | Agent testing patterns, mocks, fixtures | Writing agent tests |
+| `agentic-testing.md` | Scripted-model route tests on PostgreSQL, control-flow and contract tests, live release gate | Writing agent tests |
 | `agentic-deployment.md` | Docker, docker-compose, production config | Deploying agents |
 | `agentic-debugging.md` | Debugging playbook, common issues | Troubleshooting agents |
 | `agentic-cost-optimization.md` | Cost management, budget caps, prompt optimization | Reducing LLM costs |
@@ -100,15 +108,15 @@ Before generating code, consult these sources for current syntax and APIs:
 | `agentic-review-checklist.md` | Agentic AI review checklist (used by `agentic-ai-reviewer` agent) | Code reviews |
 | `agentic-prompt-optimization.md` | Constitutional AI, Tree-of-Thoughts, model-specific templates (Claude/Gemini/GPT), prompt versioning registry, canary rollout, LLM-as-judge | Optimizing prompt quality; multi-model deployments; production prompt lifecycle |
 | `llm-judge-advanced.md` | Production LLM-as-Judge: bias taxonomy (position, length, self-enhancement), position swap protocol, rubric generation, PoLL ensemble, hierarchical eval | Evaluating agent outputs with reliability; high-stakes eval decisions |
-| `agentic-caching-patterns.md` | 4-tier cache (Q1 LRU→Q2 Redis→Q3 semantic→L3 Anthropic), backfill, @cached_tool decorator, cache key generation, Prometheus metrics | Adding caching to LangGraph agents |
+| `agentic-caching-patterns.md` | Scoped tiered answer cache, safety bypass, tool-result cache, required tests | Adding caching to agents |
 | `agentic-makefile-patterns.md` | 40+ Makefile commands for setup, testing, RAG, memory, evaluation, Docker, observability — reference patterns for agentic AI services | Setting up developer workflow automation |
 
 ## Common Commands
 
 ```bash
-uvicorn src.main:app --reload                          # Run dev server (hot reload)
-pytest -q                                              # Run tests (quiet output)
-pytest -q --cov=src --cov-report=term-missing          # Tests with coverage
+uvicorn src.main:create_app --factory --reload        # Run dev server (hot reload; app factory)
+uv run pytest -q -m "not live"                         # R1 tests (scripted models, real PostgreSQL)
+uv run pytest -q -m "not live" --cov=src --cov-report=term-missing
 ruff check --fix .                                     # Lint and auto-fix
 ruff format .                                          # Format code
 mypy src/                                              # Type check
@@ -118,14 +126,15 @@ mypy src/                                              # Type check
 
 > For error handling patterns and code examples, read `reference/agentic-error-handling.md`
 
-**LLM provider errors**: Use retry with exponential backoff + fallback model chain. Never let provider errors crash the graph.
+**LLM provider errors**: One retry layer on transient classes only, inside the run deadline; failover to an approved same-tier model on availability errors only; everything else becomes a typed status at the route.
 
-**Tool execution errors**: Wrap all `@tool` functions in try/except. Return structured error messages the LLM can reason about.
+**Tool execution errors**: Catch classified exceptions in the tool and return `ToolResult` with an `error_code`; never exception text. Unclassified errors propagate to the route's boundary handler.
 
-**Graph infinite loops**: Always include `iteration_count` in state and check it in the routing function.
+**Graph infinite loops**: Explicit `recursion_limit` from settings (library default 10000) plus call-limit middleware with `exit_behavior="error"`; map `GraphRecursionError` to `ITERATION_LIMIT`.
 
 ## Post-Code Review
 
 After writing agentic AI code, dispatch these reviewer agents:
-- `agentic-ai-reviewer` — graph correctness, guardrails, iteration limits, cost efficiency
-- `security-reviewer` — tool input validation, prompt injection defense
+- `agentic-ai-reviewer` — scope/authority, limits, HITL, errors, streaming, tests
+- `ai-security-reviewer` — prompt/tool-output injection, exfiltration, tenant isolation
+- `security-reviewer` — general OWASP issues in the API layer

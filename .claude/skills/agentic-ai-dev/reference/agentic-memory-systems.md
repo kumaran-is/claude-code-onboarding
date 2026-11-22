@@ -1,489 +1,261 @@
 # Agentic AI Memory Systems
 
-7-layer memory hierarchy for AI agents. Layers 1-3 are practical and should be implemented in most production agents. Layers 4-7 are advanced research patterns.
+Canonical home for agent memory **implementation** (LangGraph / LangChain v1). Principles (memory is a liability; authority order canonical state > source documents > verified outcomes > derived memory > model inference; derived memory never authorizes) live in `ai-playbook/playbook.md` §2.6. Context-window trimming for a single call is also here; caching is in `agentic-caching-patterns.md`.
+
+Executed on langchain 1.2.8 / langgraph 1.0.7 / langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16 (no live model): checkpointer lifecycle, Store namespaces, cross-user isolation, fail-closed recall, write quarantine, erasure, `trim_messages` behaviour.
 
 ## Memory Layer Overview
 
-| Layer | Name | Persistence | Implementation | Priority |
-|-------|------|-------------|----------------|----------|
-| 1 | Short-term (Checkpointing) | Per-thread | LangGraph `PostgresSaver` | P0 |
-| 2 | Long-term Semantic | Cross-thread | Vector store (pgvector/Chroma/Pinecone) | P1 |
-| 3 | Episodic | Cross-session | Timestamped event log + vector search | P1 |
-| 4 | Temporal Graph | Cross-session | Neo4j with temporal properties | P2 |
-| 5 | Procedural | Cross-session | Learned tool usage patterns | P2 |
-| 6 | Emotional | Per-user | Sentiment tracking over time | P3 |
-| 7 | Reflective | Cross-session | Self-evaluation summaries | P3 |
+| Layer | Name | Scope | Implementation | Default |
+|-------|------|-------|----------------|---------|
+| 1 | Short-term (thread state) | one thread | Checkpointer: `AsyncPostgresSaver` (prod), `InMemorySaver` (tests) | Yes |
+| 2 | Long-term (facts, preferences) | principal, cross-thread | LangGraph Store: `AsyncPostgresStore` namespaced by `(org_id, user_id)` | When a feature needs it |
+| 3 | Episodic (what happened when) | principal | Store items or an event table with timestamps | When a feature needs it |
+| 4-7 | Graph / procedural / affective / reflective | varies | Research patterns (bottom of file) | No |
+
+Every layer is scoped by the **authenticated** principal, has a retention period, and is covered by erasure.
 
 ## Layer 1: Short-term Memory (Checkpointing)
 
-LangGraph checkpointing provides automatic conversation persistence per thread.
-
-**File:** `src/<service>/memory/checkpointing.py`
+`AsyncPostgresSaver.from_conn_string()` (and `PostgresSaver`, `AsyncPostgresStore`) is a **context manager**. The old pattern `saver = AsyncPostgresSaver.from_conn_string(uri); await saver.setup()` fails at startup: the returned object has no `setup` (executed). Enter it in the FastAPI lifespan and keep it open for the process lifetime: `agentic-templates-core.md` §Entry Point shows the canonical code (and the connection-pool variant).
 
 ```python
-from __future__ import annotations
-
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from ..core.config import settings
-from ..core.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-async def create_checkpointer(*, use_memory: bool = False):
-    """Create a checkpointer for LangGraph state persistence.
-
-    Args:
-        use_memory: If True, use in-memory checkpointer (testing only).
-
-    Returns:
-        Configured checkpointer instance.
-    """
-    if use_memory:
-        logger.info("using_memory_checkpointer", warning="FOR TESTING ONLY")
-        return MemorySaver()
-
-    checkpointer = AsyncPostgresSaver.from_conn_string(settings.checkpoint_db_uri)
-    await checkpointer.setup()
-    logger.info("postgres_checkpointer_ready")
-    return checkpointer
+# tests only
+from langgraph.checkpoint.memory import InMemorySaver
+graph = build_support_agent(checkpointer=InMemorySaver())
 ```
 
-### Usage in Graph
+Usage rules:
+- The thread id in `config["configurable"]["thread_id"]` is server-derived and principal-scoped (`scoped_thread_id()` in `agentic-templates-core.md`). A raw client-supplied id lets anyone who knows it read or continue another user's conversation.
+- Durable execution: a resumed run re-executes the interrupted node from its first line (executed: a counter before `interrupt()` reached 2). Nodes that cause side effects must be idempotent (`tool-execution-safety.md`).
+- Checkpoints are personal data: give them a retention period and include them in erasure (delete by thread keys of the principal; `adelete_thread(thread_id)` exists on the saver).
+- Multi-day or cross-service flows belong in a durable workflow engine, not a long-lived checkpoint (`workflow-orchestration-patterns`).
+
+## Layer 2: Long-term Memory on the LangGraph Store
+
+Use the Store API (`BaseStore`: `aput`, `aget`, `asearch`, `adelete`) instead of a hand-rolled vector-store wrapper. Pass it with `create_agent(..., store=store)` or `graph.compile(store=store)`; tools reach it through `runtime.store`.
+
+**File:** `src/<service>/memory/long_term.py`
 
 ```python
-# Build graph with checkpointer
-graph = build_react_agent(provider_factory, checkpointer=checkpointer)
+import html
+import re
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
-# Invoke with thread_id — state persists across calls
-config = {"configurable": {"thread_id": "user-123-conv-456"}}
+from langgraph.store.base import BaseStore
 
-# First turn
-result1 = await graph.ainvoke({"messages": [HumanMessage(content="Hello")]}, config=config)
+MemoryKind = Literal["preference", "fact", "decision"]
+_INSTRUCTION_LIKE = re.compile(
+    r"\b(ignore (all|any|previous)|disregard|system prompt|you are now|act as|always respond)\b"
+    r"|</?\s*memory\b"                                   # tries to close/open the prompt delimiter
+    r"|^\s*(system|assistant|developer)\s*:",              # fake role line
+    re.IGNORECASE | re.MULTILINE,
+)
 
-# Second turn — agent remembers the first turn
-result2 = await graph.ainvoke({"messages": [HumanMessage(content="What did I just say?")]}, config=config)
+
+class ScopeMissingError(PermissionError):
+    """Raised instead of ever running an unscoped memory search."""
+
+
+@dataclass(frozen=True)
+class MemoryScope:
+    org_id: str   # from the verified principal / runtime context only
+    user_id: str
+
+    def namespace(self) -> tuple[str, ...]:
+        if not (self.org_id and self.user_id):
+            raise ScopeMissingError("memory access requires org_id and user_id")
+        return ("memories", self.org_id, self.user_id)
+
+
+@dataclass(frozen=True)
+class MemoryCandidate:
+    kind: MemoryKind
+    key: str                              # stable slot: upsert, do not append duplicates
+    value: str
+    source_event_ids: tuple[str, ...]     # provenance
+    author_role: Literal["user", "tool", "model"]
+
+
+async def remember(store: BaseStore, scope: MemoryScope, c: MemoryCandidate, ttl_days: int = 180) -> str:
+    """Write path = trust boundary. Returns 'stored' or 'quarantined'."""
+    if c.author_role == "model":
+        return "quarantined"   # model inference is never stored as fact without review
+    if _INSTRUCTION_LIKE.search(c.value):
+        return "quarantined"   # persistent-injection attempt (probabilistic signal: also log + count)
+    now = datetime.now(UTC)
+    await store.aput(scope.namespace(), f"{c.kind}:{c.key}", {
+        "kind": c.kind, "value": c.value,   # PII-redacted before this point
+        "source_event_ids": list(c.source_event_ids), "author_role": c.author_role,
+        "status": "CURRENT", "valid_until": (now + timedelta(days=ttl_days)).isoformat(),
+        "written_at": now.isoformat(),
+    })
+    return "stored"
+
+
+async def recall(store: BaseStore, scope: MemoryScope, query: str, k: int = 5) -> list[dict[str, Any]]:
+    """Fails closed without scope; never falls back to an unfiltered search."""
+    items = await store.asearch(scope.namespace(), query=query, limit=k)
+    now = datetime.now(UTC).isoformat()
+    return [i.value for i in items if i.value.get("status") == "CURRENT" and i.value["valid_until"] > now]
+
+
+def memory_block(memories: list[dict[str, Any]]) -> str:
+    """Memories enter the prompt as delimited DATA in a user-role message, never a SystemMessage."""
+    # escape < > & so a stored value can never close the delimiter, even if it slipped past the write filter
+    lines = "\n".join(f"- [{m['kind']}] {html.escape(m['value'], quote=False)}" for m in memories)
+    return f"<memory trust='derived' note='may be stale; canonical records win'>\n{lines}\n</memory>"
+
+
+async def erase_principal(store: BaseStore, scope: MemoryScope) -> int:
+    deleted = 0
+    while items := await store.asearch(scope.namespace(), limit=100):
+        for item in items:
+            await store.adelete(item.namespace, item.key)
+            deleted += 1
+    return deleted
 ```
 
-## Layer 2: Long-term Semantic Memory
+Executed (PostgreSQL store): a user-authored preference was stored and recalled; an instruction-like tool-sourced item, a tool value containing `</memory>` + a `SYSTEM:` line, and a `model`-authored "fact" were quarantined; a value with `</memory>` that bypassed the write filter rendered escaped (`&lt;/memory&gt;`), leaving exactly one closing tag; user B's recall of user A's text returned nothing; an empty `user_id` raised `ScopeMissingError`; erasure deleted the item and a second recall returned nothing.
 
-Vector store for cross-thread knowledge that persists beyond individual conversations.
-
-**File:** `src/<service>/memory/semantic.py`
+- Semantic ranking: open the store with an index, e.g. `AsyncPostgresStore.from_conn_string(uri, index={"dims": 1536, "embed": embeddings, "fields": ["value"]})` (needs the `vector` extension). Without `index`, `query=` does not rank by similarity. The indexed variant was not executed here (no embedding model): verify on your stack.
+- Retention: `from_conn_string(..., ttl={...})` accepts a `TTLConfig` in langgraph-checkpoint-postgres 3.2.1 (parameter verified, behaviour not exercised). Keep `valid_until` filtering in code either way.
+- Using memory in a node:
 
 ```python
-from __future__ import annotations
-
-from langchain_core.documents import Document
-from langchain_core.embeddings import Embeddings
-from langchain_core.vectorstores import VectorStore
-
-from ..core.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-class SemanticMemory:
-    """Long-term semantic memory using vector store.
-
-    Stores and retrieves knowledge that should persist across conversations:
-    - User preferences
-    - Learned facts
-    - Important decisions
-    - Domain-specific knowledge
-    """
-
-    def __init__(self, vector_store: VectorStore, embeddings: Embeddings) -> None:
-        self._store = vector_store
-        self._embeddings = embeddings
-
-    async def remember(self, content: str, metadata: dict | None = None) -> str:
-        """Store a memory in the vector store.
-
-        Args:
-            content: The text to remember.
-            metadata: Additional metadata (user_id, category, timestamp).
-
-        Returns:
-            Document ID.
-        """
-        doc = Document(page_content=content, metadata=metadata or {})
-        ids = await self._store.aadd_documents([doc])
-        logger.info("memory_stored", doc_id=ids[0], content_length=len(content))
-        return ids[0]
-
-    async def recall(self, query: str, k: int = 5, filter_metadata: dict | None = None) -> list[Document]:
-        """Retrieve relevant memories.
-
-        Args:
-            query: Search query.
-            k: Number of results to return.
-            filter_metadata: Metadata filter (e.g., {"user_id": "123"}).
-
-        Returns:
-            List of relevant memory documents.
-        """
-        if filter_metadata:
-            docs = await self._store.asimilarity_search(query, k=k, filter=filter_metadata)
-        else:
-            docs = await self._store.asimilarity_search(query, k=k)
-
-        logger.info("memory_recalled", query=query[:100], result_count=len(docs))
-        return docs
-
-    async def forget(self, doc_id: str) -> None:
-        """Remove a specific memory."""
-        await self._store.adelete([doc_id])
-        logger.info("memory_forgotten", doc_id=doc_id)
+async def respond_node(state: AgentState, runtime: Runtime[RequestCtx]) -> dict[str, Any]:
+    scope = MemoryScope(runtime.context.org_id, runtime.context.user_id)
+    memories = await recall(runtime.store, scope, state["messages"][-1].text, k=3)
+    prompt = [SystemMessage(STATIC_POLICY)]               # versioned, no interpolation
+    if memories:
+        prompt.append(HumanMessage(memory_block(memories)))
+    response = await llm.ainvoke([*prompt, *state["messages"]])
+    return {"messages": [response]}
 ```
 
-### Integration with Agent
+WRONG (removed): `SystemMessage(content=f"Relevant memories:\n{memory_context}")` gives retrieved, possibly poisoned text system authority; `remember(response.content)` stores raw model output as fact; `recall(query)` without a filter searched every user's memories.
 
-```python
-async def agent_node_with_memory(state: AgentState) -> dict:
-    """Agent node that consults long-term memory."""
-    query = state["messages"][-1].content
+### Memory write pipeline
 
-    # Recall relevant memories
-    memories = await semantic_memory.recall(query, k=3, filter_metadata={"user_id": state.get("user_id")})
-    memory_context = "\n".join(f"- {m.page_content}" for m in memories)
-
-    # Include memories in prompt
-    messages = [
-        SystemMessage(content=f"Relevant memories:\n{memory_context}"),
-        *state["messages"],
-    ]
-
-    response = await llm.ainvoke(messages)
-
-    # Optionally store important information from this conversation
-    if should_remember(response.content):
-        await semantic_memory.remember(response.content, metadata={"user_id": state.get("user_id")})
-
-    return {"messages": [response], "iteration_count": state["iteration_count"] + 1}
 ```
+candidate (user turn / tool result / summary)
+  -> extract typed fields (kind, key, value, source_event_ids, author_role, valid_until)
+  -> redact PII (fail closed for data classes the store must not hold)
+  -> reject/quarantine model-authored or instruction-like content; count quarantines
+  -> upsert by (namespace, kind:key)  -- never append duplicates
+```
+
+### Freshness, invalidation and erasure
+
+| Event | Action |
+|---|---|
+| Item past `valid_until` | Excluded from recall; refreshed only from a new source event |
+| Correction / dispute / reopened record | Mark dependent items `SUPERSEDED` or `REVIEW_REQUIRED`; recompute aggregates (subtract, not only append) |
+| Extraction prompt or model upgrade | Mark items written by the old version for rebuild (store the version on each item) |
+| Erasure request | Delete by principal across checkpoints, store namespaces, vector memories, summaries, caches and eval copies; verify with a recall test |
+| Memory unavailable / stale | Fall back to canonical data; never present memory as complete or authoritative |
 
 ## Layer 3: Episodic Memory
 
-Temporal event log for recalling past interactions with time context.
+Store episodes in the same principal namespace with a timestamp, or in a table keyed by `(org_id, user_id, occurred_at)` when you need time-range queries. Apply the time filter in the query, not after a top-k vector search (post-filtering a top-k drops in-range episodes).
 
 ```python
-from __future__ import annotations
-
-from datetime import datetime, timezone
-from dataclasses import dataclass
-
-
-@dataclass
-class Episode:
-    """A single episode in the agent's memory."""
-
-    timestamp: datetime
-    user_id: str
-    action: str
-    outcome: str
-    metadata: dict
-
-
-class EpisodicMemory:
-    """Time-aware memory for recalling past interactions.
-
-    Stores episodes with timestamps, enabling queries like:
-    - "What did we discuss last Tuesday?"
-    - "What actions have I taken on this project?"
-    """
-
-    def __init__(self, vector_store, embeddings):
-        self._store = vector_store
-        self._embeddings = embeddings
-
-    async def record_episode(self, user_id: str, action: str, outcome: str, metadata: dict | None = None) -> str:
-        """Record a new episode."""
-        episode = Episode(
-            timestamp=datetime.now(timezone.utc),
-            user_id=user_id,
-            action=action,
-            outcome=outcome,
-            metadata=metadata or {},
-        )
-        content = f"[{episode.timestamp.isoformat()}] Action: {action} | Outcome: {outcome}"
-        doc = Document(
-            page_content=content,
-            metadata={
-                "user_id": user_id,
-                "timestamp": episode.timestamp.isoformat(),
-                "action": action,
-                **(metadata or {}),
-            },
-        )
-        ids = await self._store.aadd_documents([doc])
-        return ids[0]
-
-    async def recall_episodes(
-        self,
-        query: str,
-        user_id: str,
-        k: int = 5,
-        time_range: tuple[datetime, datetime] | None = None,
-    ) -> list[Document]:
-        """Recall episodes matching a query, optionally filtered by time range."""
-        filter_meta = {"user_id": user_id}
-        docs = await self._store.asimilarity_search(query, k=k, filter=filter_meta)
-
-        if time_range:
-            start, end = time_range
-            docs = [
-                d for d in docs
-                if start.isoformat() <= d.metadata.get("timestamp", "") <= end.isoformat()
-            ]
-
-        return docs
+async def record_episode(store: BaseStore, scope: MemoryScope, action: str, outcome: str) -> None:
+    now = datetime.now(UTC)
+    await store.aput((*scope.namespace(), "episodes"), now.isoformat(),
+                     {"action": action, "outcome": outcome, "occurred_at": now.isoformat()})
 ```
 
-## Memory Trimming and Summarization
+## Context Trimming and Summarization (single call)
 
-When conversation history grows too long, trim and summarize to stay within token budgets.
+`trim_messages(..., token_counter=len)` counts **messages**, not tokens: `max_tokens=3` keeps three messages (executed). Use a token counter and keep tool-call/result pairs together.
 
 ```python
-from langchain_core.messages import BaseMessage, SystemMessage, trim_messages
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 
-
-def trim_conversation(messages: list[BaseMessage], max_tokens: int = 4000) -> list[BaseMessage]:
-    """Trim conversation history to fit within token budget.
-
-    Strategy: Keep system message + last N messages that fit.
-    """
-    return trim_messages(
-        messages,
-        max_tokens=max_tokens,
-        strategy="last",
-        token_counter=len,  # Replace with actual tokenizer
-        include_system=True,
-        allow_partial=False,
-    )
-
-
-async def summarize_conversation(messages: list[BaseMessage], llm) -> str:
-    """Summarize a long conversation into a concise context block."""
-    summary = await llm.ainvoke([
-        SystemMessage(content="Summarize this conversation concisely. Include key decisions, facts, and user preferences."),
-        *messages,
-    ])
-    return summary.content
-
-
-async def trim_or_summarize(
-    messages: list[BaseMessage],
-    llm,
-    max_tokens: int = 4000,
-    summarize_threshold: int = 8000,
-) -> list[BaseMessage]:
-    """If messages exceed threshold, summarize old ones; otherwise trim."""
-    # Rough token estimate
-    total_chars = sum(len(m.content) for m in messages if hasattr(m, 'content'))
-    estimated_tokens = total_chars // 4
-
-    if estimated_tokens <= max_tokens:
-        return messages
-
-    if estimated_tokens > summarize_threshold:
-        # Summarize older messages, keep recent
-        split = len(messages) // 2
-        summary = await summarize_conversation(messages[:split], llm)
-        return [SystemMessage(content=f"Previous conversation summary:\n{summary}"), *messages[split:]]
-
-    return trim_conversation(messages, max_tokens)
+trimmed = trim_messages(
+    messages,
+    max_tokens=budget_tokens,
+    strategy="last",
+    token_counter=count_tokens_approximately,   # or the chat model itself for exact counts
+    include_system=True,
+    start_on="human",
+    end_on=("human", "tool"),
+)
 ```
+
+Executed: with a system message, a long human turn, an AI tool call, its `ToolMessage`, an answer and a new question, the trimmed list starts with system + human, contains no `ToolMessage` without its `AIMessage` tool call, and stays within the budget. Slicing (`messages[-3:]`, `len(messages)//2`) can orphan a tool result, which providers reject.
+
+For long threads, prefer the built-in middleware over hand-rolled summarize-half code:
+
+```python
+from langchain.agents.middleware import SummarizationMiddleware
+
+agent = create_agent(model, tools, middleware=[
+    SummarizationMiddleware(model=summary_model, trigger=("tokens", 6000), keep=("messages", 20)),
+], checkpointer=checkpointer)
+```
+
+Constructor verified in langchain 1.2.8 (`trigger` accepts `("tokens"|"fraction"|"messages", n)`; the older `max_tokens_before_summary` / `messages_to_keep` are deprecated kwargs). A summary is a lossy derived artefact: it never outranks canonical records, and authority facts (scope, approvals, safety flags) stay in structured state injected each turn, not in text a summarizer may drop. `count_tokens_approximately` is an estimate; measure with the target model's counter before calls near the limit, and remember images/audio are not shrunk by text summarization.
 
 ## Advanced Layers (4-7) — Research Patterns
 
-### Layer 4: Temporal Graph Memory
+| Layer | Concept | Gate before building |
+|---|---|---|
+| 4 Temporal graph | Entities + relationships with validity intervals | Relationship traversal is the proven bottleneck; same principal scoping |
+| 5 Procedural | Successful tool sequences per task type | Learned from verified outcomes only, never from model self-assessment |
+| 6 Affective | Sentiment trend per user | Documented consent, retention and purpose decision first; many products should not build it |
+| 7 Reflective | Self-evaluation summaries | Same-model reflection is not verification; evals decide what changes |
+
+## Parallel Multi-Layer Retrieval
+
+Independent layers can be fetched concurrently. Each failure or timeout becomes **explicit degraded state** (logged, flagged in state, visible in the trace), never a silent `None`/`[]`.
 
 ```python
-# Concept: Store entities and relationships with temporal properties in Neo4j
-# Use case: "What was the project status two weeks ago?"
-# Implementation: Neo4j + temporal queries on relationship timestamps
+async def _layer(name: str, coro: Awaitable[Any], timeout_s: float) -> tuple[str, Any, str | None]:
+    try:
+        async with asyncio.timeout(timeout_s):
+            return name, await coro, None
+    except TimeoutError:
+        logger.warning("memory_layer_timeout", layer=name)
+        return name, None, "TIMEOUT"
+    except Exception as exc:  # noqa: BLE001 - one layer must not fail the request
+        log_exception(logger, "memory_layer_failed", exc, layer=name)
+        return name, None, "ERROR"
+
+
+async def memory_retrieval_node(state: AgentState, runtime: Runtime[RequestCtx]) -> dict[str, Any]:
+    scope = MemoryScope(runtime.context.org_id, runtime.context.user_id)
+    scope.namespace()                       # missing scope fails the request here, not as "degraded"
+    query = state["messages"][-1].text
+    results = await asyncio.gather(
+        _layer("long_term", recall(runtime.store, scope, query), settings.memory_timeout_s),
+        _layer("episodes", recall_episodes(runtime.store, scope, query), settings.memory_timeout_s),
+    )
+    degraded = {name: err for name, _, err in results if err}
+    return {"memory": {name: value for name, value, err in results if not err},
+            "memory_degraded": degraded}        # surfaced in traces and, if relevant, in the answer
 ```
 
-### Layer 5: Procedural Memory
-
-```python
-# Concept: Learn and remember successful tool usage patterns
-# Use case: "Last time I searched for X, using filters A and B worked best"
-# Implementation: Store (query, tool_sequence, success_score) tuples, retrieve similar patterns
-```
-
-### Layer 6: Emotional Memory
-
-```python
-# Concept: Track user sentiment and adjust tone
-# Use case: Detect frustration and proactively simplify responses
-# Implementation: Sentiment analysis on user messages, store trend per user
-```
-
-### Layer 7: Reflective Memory
-
-```python
-# Concept: Agent evaluates its own performance and stores lessons
-# Use case: "My response to similar queries was rated poorly; adjust approach"
-# Implementation: Post-interaction self-evaluation, store as procedural improvements
-```
+- `_layer` never raises, so `gather` needs no `return_exceptions`. Because `recall` raises `ScopeMissingError` inside `_layer`, a missing scope would only degrade: build and validate the scope first (`scope.namespace()` before `gather`) so it fails the request instead.
+- Measure before parallelizing; a single layer needs no `gather`.
 
 ## Memory Selection Guide
 
-| Use Case | Recommended Layers | Complexity |
-|----------|-------------------|------------|
-| Simple chatbot | 1 (Checkpointing) | Low |
-| Customer support | 1 + 2 (Semantic) | Medium |
-| Personal assistant | 1 + 2 + 3 (Episodic) | Medium |
-| Enterprise knowledge | 1 + 2 + 4 (Graph) | High |
-| Learning agent | 1 + 2 + 5 (Procedural) | High |
+| Use Case | Layers | Notes |
+|----------|--------|-------|
+| Simple chatbot | 1 | Retention on checkpoints |
+| Support assistant | 1 + 2 | Preferences only; facts come from canonical records |
+| Personal assistant | 1 + 2 + 3 | Consent + erasure flows required |
+| Knowledge work over documents | 1 + RAG | Documents are data read via authorized retrieval, not "memory" |
 
-## Parallel Multi-Layer Retrieval Pattern
+## Tests Every Memory Feature Needs
 
-When an agent retrieves from multiple memory layers (e.g., semantic + episodic), running them sequentially wastes time — each layer is independent. Use `asyncio.gather()` to run all layers concurrently.
-
-**Measured performance (from weather-agent `manager.py`):**
-- Sequential retrieval: 15–30s (each layer waits for previous)
-- Parallel retrieval: 6–10s (independent layers run concurrently)
-- Improvement: 2–3x faster at the same correctness
-
-### Core Pattern
-
-```python
-import asyncio
-
-async def get_memory_context(user_id: str, session_id: str) -> dict:
-    """Retrieve from multiple memory layers in parallel."""
-
-    # Step 1: Short-term context MUST be sequential — required before long-term
-    session_context = await short_term.get_context(user_id, session_id)
-    if not session_context:
-        session_context = await short_term.create_context(user_id, session_id)
-
-    # Step 2: Build parallel tasks — only enabled layers
-    parallel_tasks: list[tuple[str, any]] = []
-
-    if config.ENABLE_SEMANTIC_MEMORY:
-        parallel_tasks.append((
-            "semantic",
-            _retrieve_with_timeout(semantic_memory.recall(user_id), timeout=5.0)
-        ))
-
-    if config.ENABLE_EPISODIC_MEMORY:
-        parallel_tasks.append((
-            "episodes",
-            _retrieve_with_timeout(episodic_memory.recall(user_id), timeout=5.0)
-        ))
-
-    if not parallel_tasks:
-        return {"session": session_context}
-
-    # Step 3: Run all layers concurrently — return_exceptions=True is critical
-    task_names = [name for name, _ in parallel_tasks]
-    task_coros = [coro for _, coro in parallel_tasks]
-
-    results = await asyncio.gather(*task_coros, return_exceptions=True)
-
-    # Step 4: Build response with graceful degradation
-    response = {"session": session_context}
-    for task_name, result in zip(task_names, results):
-        if isinstance(result, Exception):
-            # One layer failed — continue with partial context
-            logger.warning(f"Layer '{task_name}' failed: {result}. Using safe default.")
-            response[task_name] = [] if task_name == "episodes" else None
-        else:
-            response[task_name] = result
-
-    return response
-```
-
-### Per-Layer Timeout Protection
-
-Each layer wraps its coroutine in `asyncio.wait_for()`. This prevents a slow vector store or graph DB from blocking the entire retrieval.
-
-```python
-async def _retrieve_with_timeout(coro, timeout: float = 5.0):
-    """Wrap any memory retrieval coroutine with timeout protection.
-
-    Returns safe default on timeout — never raises. The caller (asyncio.gather)
-    receives None/[] instead of a TimeoutError bubbling up.
-    """
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout)
-    except TimeoutError:
-        logger.warning(f"Memory retrieval timed out after {timeout}s")
-        return None   # Caller checks isinstance(result, Exception) — None is safe
-    except Exception as e:
-        logger.error(f"Memory retrieval failed: {e}")
-        raise          # Re-raise so asyncio.gather catches it as an exception
-```
-
-**Why `return_exceptions=True` is required:**
-Without it, the first layer to fail cancels all other layers and raises immediately. With it, all layers run to completion (or timeout), and failures are returned as exception objects in the results list — the caller handles them individually.
-
-### Handling Partial Failures
-
-```python
-# After asyncio.gather returns:
-succeeded = sum(1 for r in results if not isinstance(r, Exception))
-failed    = sum(1 for r in results if isinstance(r, Exception))
-
-logger.info(
-    "parallel_retrieval_complete",
-    succeeded=succeeded,
-    failed=failed,
-    total=len(results),
-)
-
-# Agent proceeds with whatever layers succeeded.
-# Missing layers = empty context for that layer, not a hard failure.
-```
-
-### Adapting for LangGraph State
-
-In a LangGraph node, inject parallel retrieval results into state before invoking the LLM:
-
-```python
-async def memory_retrieval_node(state: AgentState) -> dict:
-    """LangGraph node: parallel memory retrieval."""
-    user_id = state["user_id"]
-    session_id = state["session_id"]
-
-    memory = await get_memory_context(user_id, session_id)
-
-    return {
-        "session_context": memory.get("session"),
-        "semantic_context": memory.get("semantic"),    # None if disabled/failed
-        "episode_context":  memory.get("episodes", []),
-    }
-```
-
-State keys are set to `None`/`[]` rather than missing entirely — downstream nodes can safely check truthiness without `KeyError`.
-
-### When to Use Parallel vs Sequential
-
-| Situation | Approach | Reason |
-|-----------|----------|--------|
-| Layers are independent (different stores) | Parallel | No data dependency between layers |
-| Layer B needs Layer A's output | Sequential | Dependency — B cannot start until A completes |
-| Debugging — isolate layer behavior | Sequential (feature flag) | Easier to trace which layer causes issues |
-| Single memory layer | No gather needed | `asyncio.gather` with one item adds overhead with no benefit |
-
-**Feature flag pattern (from weather-agent):** Keep a `MEMORY_PARALLEL_RETRIEVAL` config flag. Set to `False` in development to get clean sequential logs; `True` in production for performance. Fallback path must exist.
-
-### Safe Defaults on Timeout
-
-Never raise on timeout in a memory retrieval helper. Missing memory context degrades quality gracefully; a hard exception fails the entire user request.
-
-```python
-# Correct safe defaults by layer type:
-"semantic"   -> None        # Agent proceeds without semantic context
-"episodes"   -> []          # Agent proceeds with empty episode list
-"procedural" -> {}          # Agent proceeds with no learned patterns
-"emotional"  -> None        # Agent uses neutral tone as default
-```
-
-The agent's prompt template must handle `None`/empty gracefully — check before interpolating memory context into the system prompt.
+1. Cross-principal isolation: user B's recall of user A's distinctive text returns 0 items (also counts, snippets, cached results).
+2. Missing scope raises; no unscoped search path exists.
+3. Poisoned write (instruction-like text, model-authored fact) is quarantined.
+4. Erasure removes every surface for the principal.
+5. Trimming never orphans a `ToolMessage`.
+6. Degraded memory is flagged, not silently empty.

@@ -1,7 +1,7 @@
 # Firestore Real-Time Status Bus — Flutter Consumer Pattern
 
 A pattern for consuming backend-owned Firestore collections in real-time from Flutter.
-Applies when: the backend writes canonical state (tickets, jobs, notifications) to a
+Applies when: the backend writes canonical state (orders, tasks, notifications) to a
 Firestore subcollection and Flutter needs to display live updates without polling.
 
 **Core boundary:** Flutter READS. The backend WRITES. Never swap.

@@ -8,13 +8,14 @@ For general code security (OWASP Top 10, injection, auth, secrets) use the `secu
 
 - Use `flutter_secure_storage` for sensitive data — never `SharedPreferences` for secrets
 - No hardcoded API keys, secrets, or credentials in Dart code
-- Obfuscate release builds (`--obfuscate --split-debug-info`)
+- A shipped app is an untrusted client: send only the user's identity token; service/HMAC/private-key secrets stay on a server behind a user-authenticated proxy (rules and gate check: [flutter-security-client-trust.md](flutter-security-client-trust.md))
+- Obfuscate release builds (`--obfuscate --split-debug-info`) — obfuscation slows reverse engineering, it does not protect secrets
 
 ### Network Security
 
 - Certificate pinning for API connections
 - No HTTP traffic in production (enforce HTTPS)
-- API keys served via backend proxy, not embedded in app
+- Privileged API calls go through a backend proxy that verifies the user token, not an embedded key
 
 ### Build Security
 
@@ -36,7 +37,7 @@ Use `local_auth` to gate sensitive screens (payment confirmation, viewing secret
 
 ```yaml
 dependencies:
-  local_auth: ^2.3.0
+  local_auth: 3.0.2   # verified on pub.dev; v3 removed AuthenticationOptions/stickyAuth
 ```
 
 ### Pattern — gate a sensitive action
@@ -55,19 +56,20 @@ class BiometricService {
     return canCheck && isDeviceSupported;
   }
 
-  /// Prompts the user. Returns true on success, false on failure/cancel.
-  /// Never throws — all exceptions are caught and logged.
+  /// Prompts the user. Returns true on success, false if the user failed/cancelled.
+  /// Unexpected platform errors are logged and surface as `false` so the caller
+  /// shows a visible "could not verify" state — never treat `false` as success.
   Future<bool> authenticate({required String reason}) async {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          biometricOnly: false,   // allow PIN fallback if biometrics fail
-          stickyAuth: true,       // keep prompt open if user switches apps
-        ),
+        biometricOnly: false,              // allow device PIN/passcode fallback
+        persistAcrossBackgrounding: true,  // retry if the system cancels on backgrounding
       );
-    } catch (e, stack) {
-      FirebaseCrashlytics.instance.log('[BiometricService] auth failed: $e');
+    } on LocalAuthException catch (e, stack) {
+      // e.code is a LocalAuthExceptionCode (noBiometricHardware, temporaryLockout,
+      // biometricLockout, userCanceled, ...) — branch on it for user-facing copy.
+      FirebaseCrashlytics.instance.log('[BiometricService] auth failed: ${e.code}');
       await FirebaseCrashlytics.instance.recordError(e, stack,
           reason: 'BiometricService.authenticate', printDetails: false);
       return false;
@@ -117,7 +119,7 @@ Future<void> confirmPayment() async {
 
 - **Always check `isAvailable()` first** — degrade gracefully on devices without biometrics
 - **Never block the entire app** behind biometrics — only gate specific sensitive actions
-- **`biometricOnly: false`** — allow PIN/pattern fallback so users with damaged fingerprint sensors are not locked out
+- **`biometricOnly: false`** (the default in `local_auth` 3.x) — allow PIN/pattern fallback so users with damaged fingerprint sensors are not locked out
 - **Do not store biometric templates yourself** — `local_auth` delegates to the OS secure enclave; your app never sees raw biometric data
 
 ---
@@ -169,16 +171,33 @@ class AuthInterceptor extends QueuedInterceptor {
         ..headers['Authorization'] = 'Bearer $newToken';
       final response = await dio.fetch(retryOptions);
       handler.resolve(response);
-    } on DioException {
-      // Refresh failed — force sign out
-      await secureStorage.deleteAll();
+    } on DioException catch (refreshError) {
+      // Only a definitive server rejection of the refresh token ends the session.
+      // Connection errors, timeouts and 5xx are TRANSIENT: keep credentials and
+      // surface the failure (the user is offline, not signed out).
+      if (_isCredentialRejection(refreshError)) {
+        await secureStorage.deleteAll(); // in production route through ONE sign-out coordinator
+      }
       handler.reject(err);
     }
   }
 
+  /// Refresh endpoint answered 400/401/403 = refresh token invalid or revoked.
+  /// Classify by response status/error code, never by message text.
+  bool _isCredentialRejection(DioException e) {
+    final status = e.response?.statusCode;
+    return status == 400 || status == 401 || status == 403;
+  }
+
   Future<String> _refresh() async {
     final refreshToken = await secureStorage.read(key: _refreshTokenKey);
-    if (refreshToken == null) throw DioException(requestOptions: RequestOptions());
+    if (refreshToken == null) {
+      // No credentials at all: a request made before sign-in is not a dead session.
+      throw DioException(
+        requestOptions: RequestOptions(),
+        response: Response(requestOptions: RequestOptions(), statusCode: 401),
+      );
+    }
 
     final response = await Dio().post(
       '${Env.apiBaseUrl}/auth/refresh',
@@ -221,7 +240,11 @@ abstract final class StorageKeys {
 
 - **`QueuedInterceptor`** — queues concurrent 401 requests; prevents multiple simultaneous refresh calls
 - **Store tokens in `flutter_secure_storage` only** — never in `SharedPreferences` or in-memory globals
-- **On refresh failure: `deleteAll()` + redirect to login** — do not leave stale tokens in storage
+- **Wipe only on credential rejection, never on a transient failure** — `deleteAll()` + redirect to login only when the refresh endpoint definitively rejects the refresh token (or the user signs out). A connection error or timeout during refresh keeps credentials and reports offline; wiping there deletes queued work for a user who merely lost signal
+- **Classify by error type/status, never message text** — a substring match on "network" can skip a needed sign-out
+- **One sign-out coordinator** — all wipes (tokens, local DB, keys, caches) go through one function; only a real sign-out reaches it
+- **A 401 on a request made before any credentials existed is not a dead session** — pass it through; do not wipe
+- **Cache last verified claims/roles per user** for transient-error reuse; clear them on sign-out and on a null auth-state emission. No TTL on the cache (a TTL would sign the user out while offline)
 - **Refresh endpoint uses a fresh `Dio()` instance** — avoids circular interception of the refresh call itself
 - **Never log token values** — log `'token refreshed'` not the token content
 
@@ -242,11 +265,15 @@ Future<void> main() async {
 
   // Activate App Check before any other Firebase service
   await FirebaseAppCheck.instance.activate(
-    // iOS: DeviceCheck (production) — requires Apple DeviceCheck entitlement
-    // Android: Play Integrity (production) — requires app signed and on Play Store
-    // Use debug providers ONLY in debug builds
-    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.deviceCheck,
+    // Android: Play Integrity in production; iOS: App Attest (with DeviceCheck fallback) or DeviceCheck.
+    // Debug providers ONLY in debug builds. The `providerAndroid` / `providerApple` provider
+    // objects replace the older `androidProvider` / `appleProvider` enum parameters.
+    providerAndroid: kDebugMode
+        ? AndroidDebugProvider()
+        : AndroidPlayIntegrityProvider(),
+    providerApple: kDebugMode
+        ? AppleDebugProvider()
+        : AppleAppAttestWithDeviceCheckFallbackProvider(),
   );
 
   runApp(const ProviderScope(child: App()));
@@ -256,7 +283,7 @@ Future<void> main() async {
 ### `pubspec.yaml`
 ```yaml
 dependencies:
-  firebase_app_check: ^0.3.2
+  firebase_app_check: 0.5.2   # verified on pub.dev; re-check before pinning
 ```
 
 ### Rules
@@ -269,7 +296,7 @@ dependencies:
 ### Pre-Release Checklist Addition
 
 Add to the checklist in this file:
-- [ ] Firebase App Check activated with platform-specific production providers (DeviceCheck / Play Integrity)
+- [ ] Firebase App Check activated with platform-specific production providers (App Attest/DeviceCheck / Play Integrity)
 - [ ] Debug provider guard (`kDebugMode`) confirmed — debug provider NOT active in release builds
 
 ## Privacy Compliance
@@ -297,10 +324,11 @@ Add to the checklist in this file:
 - [ ] GDPR consent flow implemented
 - [ ] Data export/deletion endpoints functional
 - [ ] Privacy policy URL accessible from app
-- [ ] Dependencies scanned for known vulnerabilities
+- [ ] Dependencies checked for known vulnerabilities (pub surfaces advisories on `dart pub get`; add the CI scanner your org uses)
+- [ ] No service secrets in the client; secret-scan gate passes ([flutter-security-client-trust.md](flutter-security-client-trust.md))
 - [ ] Biometric auth gates all sensitive actions (payment, secrets view)
 - [ ] Token refresh interceptor handles 401 transparently with QueuedInterceptor
-- [ ] Refresh failure clears storage and redirects to login
+- [ ] Only a definitive refresh-token rejection clears storage and redirects to login; connection errors/timeouts do not
 
 ## Crashlytics Structured Error Reporting
 

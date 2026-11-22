@@ -146,6 +146,17 @@ import 'package:flutter/material.dart';
 
 ---
 
+## Section 6 — Error taxonomy: never map one failure class onto another
+
+- **Network failure ≠ domain error.** Connection errors and timeouts must stay distinguishable from validation/business failures all the way to the UI. A broad `on AppException` that always emits "invalid code" turns "you are offline" into a confident lie about the user's input. Branch on the error code/type (`e.code == ErrorCode.network ? offline : …`).
+- **The `default` arm of an error-key switch must be the vaguest true statement** ("Something went wrong"), never the most specific domain verdict.
+- **Timeout ≠ offline.** A timeout is its own terminal result (retryable, with copy such as "took too long"); only a connection error means offline.
+- **A catch that only logs is still a silent failure for the user.** Non-fatal is a reason not to rethrow, never a reason not to tell. If the catch comment admits a user-visible consequence ("the badge never clears"), that is a bug. Capture `ScaffoldMessenger`/localizations **before** the `await`, then show the failure.
+- **Log the error object through the logger's `error:` channel; never interpolate it into the message** (`FormatException.toString()` can embed a snippet of user input).
+- A "never throws, falls back" contract catches `Object` — clients may rethrow `TypeError`/`FormatException` as-is. Request-level timeouts and client-vs-server contract rules: [flutter-api-contract-parity.md](flutter-api-contract-parity.md).
+
+---
+
 ## Stack version
 
 Applies to: Flutter 3.41.x+ / Dart 3.10.9+ (this workspace's stack).

@@ -243,3 +243,15 @@ No additional packages needed — circuit breaker is pure Dart.
 - **Do not catch `CircuitOpenException` silently** — surface it to the user as a "service temporarily unavailable" message
 - **One `ResilientNetworkService` instance** — keep it a `keepAlive` Riverpod provider, not recreated per request
 - **Adjust `failureThreshold`** for your SLA: 5 failures before opening is appropriate for consumer apps; tighten to 3 for payment flows
+
+---
+
+## Connectivity Is Not Reachability
+
+A connectivity plugin reports that an interface is up, not that your backend answers (captive portals, flaky links, a server restart all look "online").
+
+- Treat connectivity as a **hint to attempt** a request or drain; the **request outcome** is the truth.
+- Assume "online" until the plugin's first emission arrives; expose one connectivity provider app-wide.
+- Classify failures: no server answer (timeout, socket drop, DNS) is a **transport** failure — retry without spending retry budget; a 5xx/429 is a server-answered failure; a 4xx is permanent. A timeout is `timeout`, not "offline".
+- Do not retry non-idempotent writes automatically unless the request carries an idempotency key (see [flutter-offline-reliability.md](flutter-offline-reliability.md) §3).
+- Never map a network failure onto a domain error (offline → "invalid input").

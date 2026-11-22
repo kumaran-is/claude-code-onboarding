@@ -78,33 +78,49 @@ Before adding any pub.dev package:
 # 4. Add the package:
 flutter pub add <package_name>
 
-# 5. Audit for known vulnerabilities:
-flutter pub audit
-# Exit code 0 = no known vulnerabilities. Any HIGH/CRITICAL = block the add.
+# 5. Check for known vulnerabilities:
+flutter pub get
+# pub prints "affected by advisory" lines for any dependency with a published
+# security advisory (see dart.dev/tools/pub/security-advisories). Review each link;
+# upgrade, or record a justified entry in `ignored_advisories` in the ROOT pubspec only.
 ```
 
-**`flutter pub audit`** is the equivalent of `npm audit` — it checks all transitive dependencies
-against the OSV vulnerability database. Run it after every `pub add` or `pub upgrade`.
+Run `pub get`/`pub upgrade` output review after every add or upgrade. Pub's advisory feed is the
+verified mechanism; a dedicated `audit` subcommand was not confirmed when this file was written, so
+check `dart pub --help` on your SDK before scripting around one. Add your org's CI dependency
+scanner on top for transitive coverage.
 
 ---
 
 ## Section 6 — Version pinning
 
-Pin to an exact version in `pubspec.yaml` for stability. Never use `any` or loose ranges in
-production:
+Pin to an exact version in `pubspec.yaml`. Never use `any` or open-ended ranges in production.
+Look up the current stable version on pub.dev when adding the package (do not copy numbers from docs):
 
 ```yaml
 dependencies:
-  # Correct — pinned to exact version
-  go_router: 14.6.3
-
-  # Acceptable — minor version range (API stable within minor)
-  riverpod: ^3.2.1
+  # Correct — exact pin (go_router 18.1.4 was current stable when this was written; re-check)
+  go_router: 18.1.4
 
   # Forbidden in production
   some_package: any
   other_package: ">=1.0.0"  # unbounded upper bound
 ```
 
-When upgrading, run `flutter pub outdated` to see what has updates, then evaluate each upgrade
-with the pre-add checklist (Section 3) before accepting.
+Commit `pubspec.lock` for apps (and the workspace root lockfile in a monorepo). When upgrading, run
+`flutter pub outdated`, then evaluate each upgrade with the pre-add checklist (Section 3).
+
+---
+
+## Section 7 — Governance in multi-package repos
+
+| Rule | Detail |
+|------|--------|
+| Shared-only packages | HTTP client, local DB, key-value store, font loader, image-cache packages are declared only in the shared package that wraps them — not re-declared in each app pubspec |
+| Declared = imported | Every dependency in a shared pubspec must be imported by that package; remove unused ones |
+| One package per job | Two packages doing the same thing (two HTTP clients, two DB layers) — pick one and migrate |
+| Overrides | `dependency_overrides` only in the workspace root pubspec, one per package, each with a comment (reason + removal condition). See [flutter-build-and-workspace.md](flutter-build-and-workspace.md) |
+| Ambiguous exports | A new top-level symbol in a shared barrel can break an app outside your diff (`ambiguous_import`): grep the tree first and run `flutter analyze` on every app |
+| Discontinued / unmaintained | pub.dev shows "discontinued" and any replacement; do not add one, and plan migration for existing uses |
+| Plugin pairing | Federated plugins (`foo` + `foo_platform_interface`) must resolve to compatible versions; a patch bump of a platform interface can break the method-channel contract at runtime, so pin it at the root until the app plugin catches up |
+| Placeholder tests | `expect(true, isTrue)` or tests named placeholder/dummy are not coverage; delete or write a real assertion |

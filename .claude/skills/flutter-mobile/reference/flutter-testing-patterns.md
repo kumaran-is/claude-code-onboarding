@@ -9,10 +9,13 @@ Covers all layers: unit, widget, golden, and integration.
 |-------|------|-------------|-----------------|
 | **Unit** | `flutter_test` + `mocktail` | Use cases, repositories, providers, pure logic | 80%+ of domain and data layers |
 | **Widget** | `flutter_test` + `ProviderScope` | Screens, stateful widgets, loading/error/data states | Every screen, every major state |
-| **Golden** | `flutter_test` golden API | Visual regression, design system tokens, theme variants | Key screens; run with `--update-goldens` to establish baseline |
-| **Integration / E2E** | `maestro` MCP or `integration_test` | Full user journeys end-to-end on a real device/emulator | Critical flows: login, core CRUD |
+| **Golden** | `flutter_test` golden API | Visual regression, design system tokens, theme variants | Shared components and key screens; baseline via `--update-goldens`, see §5 |
+| **Integration** | `integration_test` (in-process, on a device) | Real router/shell with provider overrides; services working together | App boots, primary navigation, cold-start routing |
+| **E2E** | Maestro (black-box on the built app) | Full user journeys on a real device/emulator | Critical flows: login, core CRUD |
 
-Run fast layers first. Unit tests must never make network calls or read the file system.
+Run fast layers first. Unit tests must never make network calls or touch real services. Tier responsibilities and
+Maestro conventions: [flutter-e2e-maestro.md](flutter-e2e-maestro.md). Tests that pass vacuously, determinism and flake
+handling: [flutter-testing-traps.md](flutter-testing-traps.md).
 
 ---
 
@@ -233,14 +236,11 @@ void main() {
         await notifier.signIn(email: 'x@x.com', password: 'wrong');
 
         expect(states.first, const AuthState.loading());
-        expect(states.last, isA<_Error>());
-        // Pattern match for error message
-        states.last.when(
-          initial: () => fail('unexpected'),
-          loading: () => fail('unexpected'),
-          authenticated: (_) => fail('unexpected'),
-          unauthenticated: () => fail('unexpected'),
-          error: (msg) => expect(msg, contains('Bad credentials')),
+        // AuthState is a sealed/freezed union: read the error arm through its public API.
+        // (Never reference generated private subclasses such as `_Error` from a test.)
+        expect(
+          states.last.maybeWhen(error: (msg) => msg, orElse: () => null),
+          contains('Bad credentials'),
         );
       });
     });
@@ -383,8 +383,9 @@ Avoid `pumpAndSettle()` on screens with infinite animations (skeleton shimmer, s
 
 ## 5. Golden Tests — Visual Regression
 
-Golden tests capture the rendered widget as a PNG and compare it on future runs.
-Any pixel difference fails the test, catching unintended visual regressions.
+Golden tests capture a widget as a PNG and compare it on later runs. Use them for shared components,
+design tokens and theme variants, not for every screen (widget tests cover behaviour; goldens are costly to review).
+Determinism rules (fonts, cross-platform tolerance, update policy) are in [flutter-testing-traps.md](flutter-testing-traps.md) §6.
 
 File: `test/golden/features/auth/login_screen_golden_test.dart`
 
@@ -396,14 +397,12 @@ import 'package:your_app/features/auth/presentation/providers/auth_provider.dart
 import 'package:your_app/features/auth/presentation/screens/login_screen.dart';
 
 import '../../helpers/fakes/fake_auth_notifier.dart';
-import '../../helpers/pump_app.dart';
 
 void main() {
-  // Fix the surface size so goldens are deterministic regardless of machine
-  const testSize = Size(390, 844); // iPhone 14 logical pixels
+  const testSize = Size(390, 844); // fixed surface: the render must not depend on the machine
 
-  group('LoginScreen golden', () {
-    testWidgets('light theme — unauthenticated state', (tester) async {
+  for (final (name, theme) in [('light', ThemeData.light()), ('dark', ThemeData.dark())]) {
+    testWidgets('login screen, unauthenticated, $name theme', (tester) async {
       tester.view.physicalSize = testSize;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -415,110 +414,35 @@ void main() {
               () => FakeAuthNotifier(const AuthState.unauthenticated()),
             ),
           ],
-          child: MaterialApp(
-            theme: ThemeData.light(),
-            home: const LoginScreen(),
-          ),
+          child: MaterialApp(theme: theme, home: const LoginScreen()),
         ),
       );
-
       await tester.pumpAndSettle();
 
       await expectLater(
         find.byType(LoginScreen),
-        matchesGoldenFile('goldens/login_screen_light.png'),
+        matchesGoldenFile('goldens/login_screen_$name.png'),
       );
     });
-
-    testWidgets('dark theme — unauthenticated state', (tester) async {
-      tester.view.physicalSize = testSize;
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(const AuthState.unauthenticated()),
-            ),
-          ],
-          child: MaterialApp(
-            theme: ThemeData.dark(),
-            home: const LoginScreen(),
-          ),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      await expectLater(
-        find.byType(LoginScreen),
-        matchesGoldenFile('goldens/login_screen_dark.png'),
-      );
-    });
-
-    testWidgets('light theme — error state', (tester) async {
-      tester.view.physicalSize = testSize;
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(
-                const AuthState.error('Invalid credentials'),
-              ),
-            ),
-          ],
-          child: MaterialApp(
-            theme: ThemeData.light(),
-            home: const LoginScreen(),
-          ),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      await expectLater(
-        find.byType(LoginScreen),
-        matchesGoldenFile('goldens/login_screen_light_error.png'),
-      );
-    });
-  });
+  }
 }
 ```
+
+Each iteration is its own `testWidgets` with its own pump, so the element-reuse trap
+([traps](flutter-testing-traps.md) §2) does not apply here.
 
 **Golden workflow:**
 
 ```bash
-# First run — generate baseline PNG files
-flutter test test/golden/ --update-goldens
-
-# Subsequent runs — compare against baseline (fails on pixel diff)
-flutter test test/golden/
-
-# After intentional design change — regenerate baseline
-flutter test test/golden/ --update-goldens
-git add test/golden/goldens/
-git commit -m "chore: update golden baselines after [reason]"
+flutter test test/golden/ --update-goldens   # first run, or after an INTENTIONAL visual change only
+flutter test test/golden/                    # compare against the committed baseline
+git add test/golden/goldens/ && git commit -m "test: update golden baselines after [reason]"
 ```
 
-**`pubspec.yaml` — no extra dependency required.** Flutter's built-in `flutter_test`
-package includes `matchesGoldenFile`. Add `golden_toolkit` only if you need
-multi-device pumping or font loading helpers:
-
-```yaml
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  # Optional — only if multi-device or custom font loading is needed:
-  # golden_toolkit: ^0.15.0
-```
-
-**Golden file placement:** The path in `matchesGoldenFile('goldens/...')` is relative to the
-test file. The example above saves to `test/golden/features/auth/goldens/`.
-Commit golden PNG files to version control — they are the source of truth.
+`matchesGoldenFile` ships with `flutter_test`; no extra dependency is needed. Paths are relative to the
+test file. Commit the PNGs: they are the source of truth. `golden_toolkit` is **discontinued** on pub.dev
+(last release 0.15.0, 2023-02): do not add it. For cross-platform tolerance or multi-scenario goldens use
+`alchemist` (traps §6).
 
 ---
 
@@ -612,6 +536,9 @@ String fixture(String name) {
 }
 ```
 
+Reading a checked-in fixture is the one allowed file access (it is local, read-only and deterministic). The path is
+relative to the working directory, so run `flutter test` from the package root, not from a monorepo root.
+
 Place fixture JSON files alongside the loader:
 `test/helpers/fixtures/user.json`, `test/helpers/fixtures/workout_list.json`, etc.
 
@@ -670,9 +597,11 @@ extension PumpApp on WidgetTester {
     Widget child, {
     List<Override> overrides = const [],
     ThemeData? theme,
+    Key? key, // pass a distinct key when pumping twice in one test (traps §2)
   }) async {
     await pumpWidget(
       ProviderScope(
+        key: key,
         overrides: overrides,
         child: MaterialApp(
           theme: theme ?? ThemeData.light(),
@@ -710,7 +639,7 @@ await tester.pumpAndSettle();
 - All factory methods go in `test/helpers/factories/` — never inline in test files.
 
 **No real I/O:**
-- Unit and widget tests MUST NOT make real network calls, read the file system, or touch Firebase.
+- Unit and widget tests MUST NOT make real network calls, write to disk, or touch Firebase or other real services (reading checked-in fixtures is fine).
 - Override every provider that touches a real service with a fake.
 
 **Run commands:**

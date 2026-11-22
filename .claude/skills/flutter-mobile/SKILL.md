@@ -44,21 +44,21 @@ dart run build_runner build --delete-conflicting-outputs
 ## Melos Workspace Commands
 
 In a Melos monorepo, use these commands at the workspace root:
-- `melos bootstrap` — installs all Flutter workspace dependencies (run at root, NOT `flutter pub get`)
+- `melos bootstrap` — installs all Flutter workspace dependencies (run at the root; a member-level `flutter pub get` resolves the same workspace, so root is the convention, not a hard requirement)
 - `melos run test` — runs tests across all packages
 - `melos run build_runner` — runs code generation across all packages
 
+Melos 7+ uses Dart pub workspaces (root `workspace:` list, `resolution: workspace` in every member, no `melos.yaml`). Setup, local-backend run targets and Gradle/isolate traps: [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md).
+
 ## Shared Packages (monorepo pattern)
 
-In a Melos workspace, individual apps reference shared packages by path rather than publishing them. Example:
+In a workspace, apps consume shared packages instead of publishing them. With Melos 7+ / pub workspaces, a member depends on another member by name with a normal version constraint; the workspace resolves it to the local copy, which must satisfy that constraint:
 ```yaml
+resolution: workspace
 dependencies:
-  <shared_ui_package>:
-    path: ../../packages/<shared_ui_package>
-  <shared_core_package>:
-    path: ../../packages/<shared_core_package>
+  <shared_ui_package>: ^0.1.0   # must match the member's own `version:`; pin external packages exactly
 ```
-Do NOT create a `lib/design_system/` directory in individual apps — shared UI components belong in the workspace's shared UI package.
+Pre-workspace setups use `path: ../../packages/<name>` instead. Do NOT create a `lib/design_system/` directory in individual apps — shared UI components belong in the workspace's shared UI package.
 
 ## Dio HTTP Client (monorepo pattern)
 
@@ -108,6 +108,21 @@ Read [reference/accessibility-audit-checklist.md](reference/accessibility-audit-
 Read [reference/flutter-security-hardening.md](reference/flutter-security-hardening.md) — Security hardening & privacy compliance (used by `flutter-security-expert` agent)
 Read [reference/smart-dumb-widgets.md](reference/smart-dumb-widgets.md) — Smart (ConsumerWidget) vs Dumb (StatelessWidget) pattern, ref.watch/read placement rules, decision tree, Riverpod enforcement gates
 Read [reference/flutter-use-case-layer.md](reference/flutter-use-case-layer.md) — When to add a use case, when not to, file location, example with two repositories, unit testing with fakes
+
+### Task-triggered references (load only the row that matches your change)
+
+| Changing… | Read |
+|-----------|------|
+| Router redirects, route gates, pre-`runApp` bootstrap, cold-start auth, sheets/dialogs that close by navigating, Android Back, deep links | [reference/flutter-navigation-and-auth-boot.md](reference/flutter-navigation-and-auth-boot.md) |
+| API client, DTO/response model, base URL/env config, timeouts, failure mapping, client↔server contract parity | [reference/flutter-api-contract-parity.md](reference/flutter-api-contract-parity.md) |
+| Offline write path: durable queue, retries, idempotency, background drain, attachment uploads, review checklist | [reference/flutter-offline-reliability.md](reference/flutter-offline-reliability.md) (queue model: [flutter-offline-sync.md](reference/flutter-offline-sync.md)) |
+| Offline read path: queued-write display, temp ids, refresh/delete rules, schema migrations, account-bound cache, sign-out, backup exclusion | [reference/flutter-offline-cache-and-reads.md](reference/flutter-offline-cache-and-reads.md) |
+| A test is green but untrusted, flaky suites, golden determinism, red gates, choosing validations per change type | [reference/flutter-testing-traps.md](reference/flutter-testing-traps.md) |
+| Maestro flows, `integration_test` vs Maestro, device/simulator prep, deep-link and push testing | [reference/flutter-e2e-maestro.md](reference/flutter-e2e-maestro.md) |
+| UI copy, ARB keys, plurals, second language, locale/date/currency formats | [reference/flutter-localization.md](reference/flutter-localization.md) |
+| Workspace setup (Melos 7+), local-backend run targets, Gradle memory, signed upload URLs, `Isolate.run` | [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md) |
+| What may live in the app binary, debug/test gates, local DB encryption, fail-closed security settings | [reference/flutter-security-client-trust.md](reference/flutter-security-client-trust.md) |
+| iOS/Android native config, UIScene, cleartext/local-network, platform traps | [reference/flutter-platform-gotchas.md](reference/flutter-platform-gotchas.md) |
 
 ## Documentation Sources
 
@@ -169,7 +184,9 @@ For cross-platform E2E testing, use the `maestro` MCP server. It runs test flows
 | iOS build + quick visual check | `xcodebuild` MCP (`build_run_sim`, `screenshot`) | Spot-checking a screen during development |
 | Repeatable E2E flows | `maestro` MCP | Login, checkout, CRUD journeys — saved and rerunnable |
 | Cross-platform E2E | `maestro` MCP | Same YAML flow runs on iOS simulator AND Android emulator |
-| CI/CD regression suite | `maestro test test/e2e/` (Bash) | Pre-merge gate in GitHub Actions |
+| CI/CD regression suite | `maestro test <app>/.maestro/` (Bash) | Pre-merge gate in GitHub Actions |
+
+Conventions, `integration_test` vs Maestro, and iOS/Android divergences: [reference/flutter-e2e-maestro.md](reference/flutter-e2e-maestro.md). **Tool rule:** Flutter Android/iOS UI/E2E is Maestro CLI/MCP only; browser automation is never used for it, and a missing Maestro/device is BLOCKED/NOT RUN ([`testing-tool-selection.md`](../../rules/testing-tool-selection.md)).
 
 ### E2E Workflow
 
@@ -178,12 +195,12 @@ For cross-platform E2E testing, use the `maestro` MCP server. It runs test flows
 2. Describe the test flow in natural language
 3. Claude generates YAML via Maestro MCP and runs it
 4. Claude reports pass/fail per step
-5. Save generated YAML to test/e2e/<flow-name>.yaml for reuse
+5. Save generated YAML to <app>/.maestro/<flow-name>.yaml for reuse
 ```
 
 ### Flow File Conventions
 
-- Save flows to `test/e2e/` at the project root
+- Save flows to `.maestro/` inside each app (`<app>/.maestro/`)
 - Name files by user journey: `login-flow.yaml`, `create-workout-flow.yaml`
 - Use `appId` matching your app's bundle ID
 - One flow per file — keep flows focused on a single journey

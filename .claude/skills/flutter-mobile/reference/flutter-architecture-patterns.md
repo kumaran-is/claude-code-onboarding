@@ -164,7 +164,7 @@ class WorkoutList extends _$WorkoutList {
 
   Future<void> deleteWorkout(String id) async {
     // Optimistic UI: remove immediately, restore on failure
-    final previous = state.valueOrNull ?? [];
+    final previous = state.value ?? [];
     state = AsyncValue.data(previous.where((w) => w.id != id).toList());
 
     final result = await ref.read(workoutRepositoryProvider).delete(id);
@@ -266,7 +266,7 @@ GoRouter appRouter(Ref ref) {
   return GoRouter(
     refreshListenable: notifier,
     redirect: (context, state) {
-      final authState = ref.read(authProvider).valueOrNull;
+      final authState = ref.read(authProvider).value; // Riverpod 3: `value` (was valueOrNull)
       final isAuthenticated = authState is AuthAuthenticated;
       // ... redirect logic
     },
@@ -274,6 +274,8 @@ GoRouter appRouter(Ref ref) {
 }
 class _RouterNotifier extends ChangeNotifier {}
 ```
+
+Read in `redirect` with `ref.read`, refresh with `ref.listen` → `refreshListenable`; never `ref.watch` in the router provider (it rebuilds and disposes the live router). `return null` in a redirect means "build the requested route", so never return it while a gate is still undecided — see [flutter-navigation-and-auth-boot.md](flutter-navigation-and-auth-boot.md).
 
 ### Type-Safe Route Parameters (go_router 15+)
 
@@ -705,7 +707,7 @@ ElevatedButton(
 
 // Drive a derived provider from sync state
 @riverpod
-Future<List<Product>> filteredProducts(FilteredProductsRef ref) async {
+Future<List<Product>> filteredProducts(Ref ref) async {
   final filter = ref.watch(filterNotifierProvider);
   return ref.watch(productRepositoryProvider).search(filter);
 }
@@ -867,7 +869,7 @@ lib/features/common/
 part 'current_user_provider.g.dart';
 
 @Riverpod(keepAlive: true)
-Stream<User?> currentUser(CurrentUserRef ref) {
+Stream<User?> currentUser(Ref ref) {
   return ref
       .watch(authRepositoryProvider)
       .watchCurrentUser();
@@ -997,6 +999,7 @@ xcrun simctl openurl booted "yourapp://open/products/abc-123"
 - **Validate every path parameter** from deep links — treat them as untrusted user input
 - **Never expose sensitive routes** (admin, payment confirmation) via deep links
 - **Test both schemes** in CI: verified HTTPS link + custom scheme fallback
+- Cold-start vs warm links, auth ordering and iOS link forwarding: [flutter-navigation-and-auth-boot.md](flutter-navigation-and-auth-boot.md)
 
 ---
 

@@ -262,6 +262,36 @@ The `new` keyword is also unnecessary in Dart 2+ — never use it.
 
 ---
 
+## 8. Splitting a Large State Class (`part` + `mixin on`)
+
+Dart privacy is **library**-scoped: moving a `_privateMember` to another file makes it invisible to the original. That decides the shape of every split.
+
+| Goal | Tool |
+|------|------|
+| Move whole widgets/helpers whose callers move too | Ordinary file + `import`; publish only what is genuinely shared |
+| Split ONE class across files, keeping `_private` access | `part` / `part of` + `mixin … on State<T>` (or `ConsumerState<T>`) |
+
+`part` is not banned — it is just unused outside codegen. Mixin rules:
+
+- A mixin body resolves only against its own members and its `on` types. When two mixins split one class, the later one names the earlier: `mixin _View on State<Screen>, _Wizard`.
+- Members the class still owns are declared `abstract` on the mixin; the class members then need `@override`.
+- `static const` members are invisible to a mixin — lift them to top level (still library-private).
+- This is a file split only. Moving `setState` state into a notifier means converting in-place mutation to immutable state — a behaviour change; do it in a separate step.
+
+Move checklist: a newly public widget needs `super.key`; carry every comment line above a moved declaration (`// ignore:` markers apply to the next line); prune imports only after all moves finish; renaming a `StatefulWidget` must reach `State<T>` and `createState`.
+
+---
+
+## 9. Reading Analyzer Output Honestly
+
+- `dart analyze` / `flutter analyze` exit non-zero on `info` issues too (`--fatal-infos` makes this explicit). `grep -c "error •"` returning 0 means "no errors", not "clean" — read the final verdict or count `error`, `warning` and `info` together.
+- `| head -N` caps the view, not the count. Claim a count only from a count (`grep -c`).
+- A wrapper's exit code is not the command's: a pipe's `$?` is the last element's and a trailing `echo` reports its own. Verify from the artifact (the log, the written file).
+- Useful write-time lints for leak/dynamic-call classes (documented on dart.dev): `cancel_subscriptions`, `close_sinks`, `avoid_dynamic_calls`, `only_throw_errors`. Enable them in `analysis_options.yaml` under `linter: rules:` and fix, don't suppress.
+- Scripted multi-file edits: assert each anchor exists before replacing (a drifted anchor must fail loudly) and never rely on a brace-depth counter over Dart — named-parameter `({` breaks it.
+
+---
+
 ## Quick Reference
 
 | Pitfall | Bad Signal | Fix |
@@ -273,3 +303,5 @@ The `new` keyword is also unnecessary in Dart 2+ — never use it.
 | Unsafe cast | `obj as SomeType` without check | `if (obj is SomeType)` smart cast |
 | String concat | `"a" + b + "c"` | `"a${b}c"` interpolation |
 | Collection ctor | `List<T>()` / `Map<K,V>()` | `<T>[]` / `<K,V>{}` |
+| Giant State class | One 1500-line `State` | `part` + `mixin on` split, behaviour unchanged |
+| False "clean" analyze | `head -5` or `grep -c error` | Count all severities; exit code is the verdict |

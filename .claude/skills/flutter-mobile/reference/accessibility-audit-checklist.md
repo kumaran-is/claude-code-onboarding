@@ -21,6 +21,8 @@
 - [ ] Minimum 48x48 dp tap targets
 - [ ] Adequate spacing between interactive elements
 - [ ] `IconButton` or padded `GestureDetector` used
+- [ ] Both floors asserted: Android 48dp and iOS 44pt (a 44dp control passes iOS, fails Android)
+- [ ] If the child owns the semantics node (e.g. `TextField`), the child itself is >= 48 — an outer wrapper does not enlarge the node; verify with `meetsGuideline(androidTapTargetGuideline)`
 
 ## 4. Dynamic Text Scaling
 
@@ -28,6 +30,10 @@
 - [ ] No fixed heights that clip scaled text
 - [ ] Text readable at 200% scale
 - [ ] `ConstrainedBox` instead of fixed `SizedBox` for text
+- [ ] Label beside a badge/chip sits in a `Wrap`, not `Row(Flexible(label), chip)`, so it never breaks mid-word
+- [ ] Status/action labels wrap (`maxLines` >= 2) rather than ellipsize; chip padding grows vertically, not horizontally
+- [ ] Sibling tiles whose labels can wrap are equal height (`IntrinsicHeight` + `CrossAxisAlignment.stretch`)
+- [ ] Final reflow check on a real font (widget tests render in a different test font — see [flutter-testing-traps.md](flutter-testing-traps.md))
 
 ## 5. Focus Management
 
@@ -41,7 +47,13 @@
 - [ ] `SemanticsService.announce()` for important updates
 - [ ] Form fields have `labelText` in `InputDecoration`
 - [ ] Error messages announced to screen readers
-- [ ] `MergeSemantics` groups related elements
+- [ ] `MergeSemantics` groups related *non-interactive* elements. Never inside a tappable (`InkWell`, card with `onTap`, `ListTile`): the tappable already merges its descendants, and a nested merge leaves the button without a label
+- [ ] Self-merging tiles (`ListTile`, `RadioListTile`, `CheckboxListTile`, `SwitchListTile`) own their accessible name: never wrap one in a labelled `Semantics`; put extra meaning in the title via `Text(label, semanticsLabel: ...)`
+- [ ] Upper-cased display text (`toUpperCase()`) passes the original-case string as `semanticsLabel` (screen readers may spell short all-caps runs letter by letter)
+- [ ] Section/group headings use `Semantics(header: true, ...)` (including date headers in grouped lists)
+- [ ] No double announcement: `SnackBar` is already a live region, so do not also call `SemanticsService.announce` with the same text (verify against the current SDK)
+- [ ] Custom list rows put one composed `semanticLabel` on the tappable; decorative glyphs use `ExcludeSemantics`
+- [ ] Dump the semantics tree before reaching for `container: true` — it can put the value before its title in reading order
 
 ## Output Format
 
@@ -72,3 +84,4 @@
 - [ ] Test with VoiceOver (iOS)
 - [ ] Test at 200% font scale
 - [ ] Test with high contrast mode
+- [ ] Automated floor in each screen test: the four `meetsGuideline` matchers, contrast in light AND dark — see [flutter-a11y-automated.md](../../accessibility-audit/reference/flutter-a11y-automated.md) §2b

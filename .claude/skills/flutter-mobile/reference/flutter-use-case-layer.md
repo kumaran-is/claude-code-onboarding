@@ -18,12 +18,12 @@ problem it was meant to solve.
 
 ```
 // ❌ Unnecessary use case — just wraps one repo call with no logic
-class GetPropertyUseCase {
-  Future<Property> execute(String id) => _repo.getProperty(id);
+class GetOrderUseCase {
+  Future<Order> execute(String id) => _repo.getOrder(id);
 }
 
 // ✅ Just call the repository from the ViewModel directly
-final property = await ref.read(propertyRepositoryProvider).getProperty(id);
+final order = await ref.read(orderRepositoryProvider).getOrder(id);
 ```
 
 ## File Location
@@ -34,61 +34,70 @@ lib/features/<feature>/domain/use_cases/<name>_use_case.dart
 
 ## Example — Orchestrating Two Repositories
 
-`SubmitMaintenanceTicketUseCase` creates the ticket AND triggers vendor pre-matching in one
-atomic domain operation. Neither ViewModel nor repository alone owns this logic.
+`PlaceOrderUseCase` creates the order AND reserves stock in one domain operation. Neither the
+ViewModel nor a single repository owns this logic. The optional second step must not turn a
+successful order into a failure, but it must not vanish silently either — log it.
 
 ```dart
-// lib/features/tickets/domain/use_cases/submit_maintenance_ticket_use_case.dart
+// lib/features/orders/domain/use_cases/place_order_use_case.dart
 
-class SubmitMaintenanceTicketUseCase {
-  final TicketRepository _ticketRepo;
-  final VendorMatchingRepository _vendorRepo;
+class PlaceOrderUseCase {
+  const PlaceOrderUseCase({
+    required OrderRepository orderRepo,
+    required InventoryRepository inventoryRepo,
+    required AppLogger logger,
+  })  : _orderRepo = orderRepo,
+        _inventoryRepo = inventoryRepo,
+        _logger = logger;
 
-  const SubmitMaintenanceTicketUseCase({
-    required TicketRepository ticketRepo,
-    required VendorMatchingRepository vendorRepo,
-  })  : _ticketRepo = ticketRepo,
-        _vendorRepo = vendorRepo;
+  final OrderRepository _orderRepo;
+  final InventoryRepository _inventoryRepo;
+  final AppLogger _logger;
 
-  Future<Result<Ticket>> execute(CreateTicketParams params) async {
-    // Step 1 — create the ticket
-    final ticketResult = await _ticketRepo.create(params);
-    if (ticketResult case Failure(:final error)) return Failure(error);
+  Future<Result<Order>> execute(PlaceOrderParams params) async {
+    // Step 1 — the operation that defines success
+    final result = await _orderRepo.create(params);
+    if (result case Failure(:final error)) return Failure(error);
+    final order = (result as Success<Order>).value;
 
-    final ticket = (ticketResult as Success<Ticket>).value;
-
-    // Step 2 — trigger pre-matching (non-blocking; failures don't fail the ticket)
-    await _vendorRepo.triggerPreMatch(ticket.id, ticket.category);
-
-    return Success(ticket);
+    // Step 2 — best-effort follow-up: failure is logged and surfaced to the caller
+    // through a retry path, never swallowed
+    try {
+      await _inventoryRepo.reserve(order.id, order.lines);
+    } on Object catch (e, st) {
+      _logger.error('reserve stock failed for order ${order.id}', error: e, stackTrace: st);
+    }
+    return Success(order);
   }
 }
 ```
+
+If the follow-up is mandatory for correctness, do not use best-effort: return a `Failure` (or
+make the operation transactional on the backend) instead of logging and moving on.
 
 Register in DI via a Riverpod provider:
 
 ```dart
 @riverpod
-SubmitMaintenanceTicketUseCase submitMaintenanceTicket(Ref ref) =>
-    SubmitMaintenanceTicketUseCase(
-      ticketRepo: ref.watch(ticketRepositoryProvider),
-      vendorRepo: ref.watch(vendorMatchingRepositoryProvider),
+PlaceOrderUseCase placeOrder(Ref ref) => PlaceOrderUseCase(
+      orderRepo: ref.watch(orderRepositoryProvider),
+      inventoryRepo: ref.watch(inventoryRepositoryProvider),
+      logger: ref.watch(appLoggerProvider),
     );
 ```
 
 ViewModel calls the use case, not the repositories directly:
 
 ```dart
-Future<void> submit(CreateTicketParams params) async {
+Future<void> submit(PlaceOrderParams params) async {
   state = const AsyncValue.loading();
-  state = await AsyncValue.guard(
-    () => ref.read(submitMaintenanceTicketProvider).execute(params).then(
-          (r) => switch (r) {
-            Success(:final value) => value,
-            Failure(:final error) => throw error,
-          },
-        ),
-  );
+  state = await AsyncValue.guard(() async {
+    final result = await ref.read(placeOrderProvider).execute(params);
+    return switch (result) {
+      Success(:final value) => value,
+      Failure(:final error) => throw error,
+    };
+  });
 }
 ```
 
@@ -97,25 +106,42 @@ Future<void> submit(CreateTicketParams params) async {
 Use cases get **unit tests with fake repositories** — no mocks needed, no widget tree required.
 
 ```dart
-// test/features/tickets/domain/use_cases/submit_maintenance_ticket_use_case_test.dart
+// test/features/orders/domain/use_cases/place_order_use_case_test.dart
 
 void main() {
-  test('creates ticket and triggers pre-match', () async {
-    final ticketRepo = FakeTicketRepository();
-    final vendorRepo = FakeVendorMatchingRepository();
-    final useCase = SubmitMaintenanceTicketUseCase(
-      ticketRepo: ticketRepo,
-      vendorRepo: vendorRepo,
+  test('creates the order and reserves stock', () async {
+    final orderRepo = FakeOrderRepository();
+    final inventoryRepo = FakeInventoryRepository();
+    final useCase = PlaceOrderUseCase(
+      orderRepo: orderRepo,
+      inventoryRepo: inventoryRepo,
+      logger: FakeLogger(),
     );
 
-    final result = await useCase.execute(CreateTicketParams(
-      propertyId: 'p1',
-      category: TicketCategory.plumbing,
-      description: 'Leaking pipe',
+    final result = await useCase.execute(const PlaceOrderParams(
+      customerId: 'c1',
+      lines: [OrderLine(sku: 'sku-1', quantity: 2)],
     ));
 
-    expect(result, isA<Success<Ticket>>());
-    expect(vendorRepo.preMatchTriggered, isTrue);
+    expect(result, isA<Success<Order>>());
+    expect(inventoryRepo.reserved, isTrue);
+  });
+
+  test('a failed reservation is logged and does not fail the order', () async {
+    final logger = FakeLogger();
+    final useCase = PlaceOrderUseCase(
+      orderRepo: FakeOrderRepository(),
+      inventoryRepo: FakeInventoryRepository(throwOnReserve: true),
+      logger: logger,
+    );
+
+    final result = await useCase.execute(const PlaceOrderParams(
+      customerId: 'c1',
+      lines: [OrderLine(sku: 'sku-1', quantity: 2)],
+    ));
+
+    expect(result, isA<Success<Order>>());
+    expect(logger.errors, hasLength(1));
   });
 }
 ```

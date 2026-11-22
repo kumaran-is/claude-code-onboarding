@@ -2,6 +2,8 @@
 
 Visual polish patterns for modern Flutter (2025/2026) — glassmorphism, premium cards, theming, and gradient accents.
 
+> Radii, alphas and sizes below are literal for readability. In a project with design tokens, replace them with token constants (see [ui-design-tokens.md](../../ui-standards-tokens/reference/ui-design-tokens.md)). `Color.withOpacity` is deprecated (precision loss); use `withValues(alpha: ...)`. Restraint beats effects: use glass/gradients sparingly (at most one gradient surface per screen) and never as the only carrier of information.
+
 ## Glassmorphism with BackdropFilter
 
 ```dart
@@ -26,10 +28,10 @@ class GlassCard extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: Container(
           decoration: BoxDecoration(
-            color: colorScheme.surface.withOpacity(opacity),
+            color: colorScheme.surface.withValues(alpha: opacity),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: colorScheme.outline.withOpacity(0.2),
+              color: colorScheme.outline.withValues(alpha: 0.2),
             ),
           ),
           child: child,
@@ -62,14 +64,14 @@ class PremiumCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withOpacity(0.08),
+            color: colorScheme.shadow.withValues(alpha: 0.08),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
         ],
         border: isPremium
             ? Border.all(
-                color: colorScheme.primary.withOpacity(0.3),
+                color: colorScheme.primary.withValues(alpha: 0.3),
                 width: 1.5,
               )
             : null,

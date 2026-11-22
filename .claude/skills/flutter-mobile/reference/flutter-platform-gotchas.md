@@ -31,8 +31,9 @@ flutter run --device-id emulator-5554 \
 
 - Never `flutter run -t apps/<app>/lib/main.dart` from the monorepo root — Flutter
   resolves the project root to the Melos workspace `pubspec.yaml`.
-- Never run `flutter pub get` inside an individual app directory — breaks Melos workspace
-  symlinks. Always `melos bootstrap` from the repo root.
+- Never run `flutter pub get` inside an individual app directory — the workspace shares one
+  lockfile and package config at the root. Always `melos bootstrap` from the repo root
+  (workspace setup, overrides, run targets: [flutter-build-and-workspace.md](flutter-build-and-workspace.md)).
 - Always use an **absolute** path for `--dart-define-from-file` — relative paths resolve
   against CWD, which is ambiguous in monorepos.
 - If your project uses dart-define or a `.env`-backed `dart_define.json`, regenerate it
@@ -90,6 +91,10 @@ void main() => runApp(
 - Never `DevicePreview(enabled: kDebugMode, ...)` — breaks Android automation
 - Never `DevicePreview(enabled: !kReleaseMode, ...)` — same failure mode
 - Always require explicit `--dart-define=DEVICE_PREVIEW=true` opt-in (default OFF)
+- When the preview wrapper feeds the same `MaterialApp` property as a user preference (locale,
+  theme), precedence must be `test override > user preference > preview > system`; a
+  `DevicePreview.locale(context) ?? userPref` chain swallows the preference whenever the chrome is on
+- Keep one shared gate helper, not per-app copies
 - Always exclude Android (`!Platform.isAndroid`) — even when explicitly requested
 - Web is exempt (`kIsWeb` returns true) — safe for responsive design exploration
 - iOS is eligible but still requires the `DEVICE_PREVIEW=true` opt-in
@@ -149,11 +154,21 @@ code — making the real cause invisible without digging into logcat.
 </manifest>
 ```
 
+### Variants and Additions
+
+- Android's `network_security_config` has no CIDR or wildcard support. To reach a developer's LAN IP from a
+  debug build, a single debug-only `<base-config cleartextTrafficPermitted="true"/>` is the correct tool;
+  committing one machine's IP into `<domain>` entries is the anti-pattern (and never commit machine-specific
+  values in tracked files).
+- iOS equivalent for local-network development: `NSAllowsLocalNetworking`, never `NSAllowsArbitraryLoads`.
+- Pre-commit greps: no private-IP literal in the debug xml; no `networkSecurityConfig` in `src/main`;
+  no `cleartextTrafficPermitted="true"` in `src/release`.
+
 ### Hard Rules
 
 - Never put `networkSecurityConfig` in `src/main/AndroidManifest.xml` — this leaks
   cleartext tolerance into release builds.
-- Never allowlist any domain other than `10.0.2.2`, `localhost`, `127.0.0.1`.
+- In the debug overlay allowlist only `10.0.2.2`, `localhost`, `127.0.0.1` per-domain; for a physical device on a LAN use the debug-only `base-config` above instead of a machine IP. Never allowlist a production host.
 - `xmlns:tools` MUST be on the root `<manifest>` element, not on `<application>` —
   putting it on `<application>` causes manifest-merger to silently drop the override.
 - `tools:replace="android:networkSecurityConfig"` is required — without it, the
@@ -174,17 +189,47 @@ If logcat shows `W/LocalRequestInterceptor ... Cleartext HTTP traffic ... not pe
 
 ---
 
-## 4. iOS UIScene Lifecycle — Mandatory Patterns
+## 4. iOS UIScene Lifecycle
 
-**Iron Law:** Use the explicit FlutterEngine pattern.
-`class SceneDelegate: FlutterSceneDelegate { }` produces a black screen.
+Verified against Flutter's UIScene migration guide (docs.flutter.dev, `release/breaking-changes/uiscenedelegate`): beginning with Xcode 27 (iOS 27 SDK) Apple mandates the UIScene lifecycle for UIKit apps, and Flutter apps built with Xcode 27 that do not adopt it **fail to launch**. Flutter 3.41+ migrates an unmodified `AppDelegate` automatically; a customised `AppDelegate`, or an older Flutter, needs the manual steps. Re-read the guide for your Flutter version before editing — the native files change between releases.
 
-### Required SceneDelegate
+**Iron Law:** Prefer Flutter's own UIScene migration. Do not hand-roll an engine unless you have reproduced a specific failure that the official path cannot solve.
+
+### Default path (recommended)
 
 ```swift
+// SceneDelegate.swift — subclass Flutter's delegate
 import Flutter
 import UIKit
 
+class SceneDelegate: FlutterSceneDelegate {}
+```
+
+```swift
+// AppDelegate.swift — register plugins when the implicit engine exists
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+  ) -> Bool {
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+  }
+}
+```
+
+- `Info.plist` needs a `UIApplicationSceneManifest` whose `UISceneDelegateClassName` is the scene delegate class (the guide's sample uses `FlutterSceneDelegate`; use `$(PRODUCT_MODULE_NAME).SceneDelegate` for your own subclass).
+- If you cannot subclass `FlutterSceneDelegate`, conform your `SceneDelegate` to `FlutterSceneLifeCycleProvider`, hold a `FlutterPluginSceneLifeCycleDelegate`, and forward **every** scene callback to it (`willConnectTo`, `sceneDidDisconnect`, `sceneWillEnterForeground`, `sceneDidBecomeActive`, `sceneWillResignActive`, `sceneDidEnterBackground`, `openURLContexts`, `continue userActivity`, shortcut items). A missed forward silently breaks plugins that listen to that callback (deep links, push, OAuth).
+- Add `CFBundleURLTypes` entries for any OAuth/Firebase Auth reversed-client-id URL scheme.
+
+### Fallback only: explicit engine owned by a custom scene delegate
+
+An earlier investigation of a black screen led to a rule that forbade subclassing `FlutterSceneDelegate`. The investigation had several stacked causes (a plugin platform-interface version mismatch fixed with a root pin was one), so that "never" is not supported by the current docs. If — and only if — you reproduce a failure on the default path, document it in the PR and use this pattern:
+
+```swift
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
   private var engine: FlutterEngine?
@@ -193,7 +238,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
              options connectionOptions: UIScene.ConnectionOptions) {
     guard let windowScene = scene as? UIWindowScene else { return }
     let flutterEngine = FlutterEngine(name: "main")
-    flutterEngine.run()
+    flutterEngine.run()                                   // BEFORE plugin registration
     GeneratedPluginRegistrant.register(with: flutterEngine)
     engine = flutterEngine
     let controller = FlutterViewController(engine: flutterEngine, nibName: nil, bundle: nil)
@@ -201,64 +246,21 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     window?.rootViewController = controller
     window?.makeKeyAndVisible()
   }
-
-  // Firebase Auth OAuth callback — must use Auth.auth().canHandle(), NOT AppDelegate forwarding
-  // Firebase Auth is registered with the FlutterEngine's plugin registry, not AppDelegate.
-  // Forwarding via UIApplication.shared.delegate?.application?(:open:options:) silently drops URLs.
-  func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-    for context in URLContexts {
-      if Auth.auth().canHandle(context.url) { return }
-    }
-  }
 }
 ```
 
-### Required AppDelegate
+When you own the engine, **nothing else delivers URLs, links or lifecycle to Flutter**, so you must forward them yourself:
 
-```swift
-@objc class AppDelegate: FlutterAppDelegate {
-  override func application(_ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-    // MUST call super — initializes FlutterPluginAppLifeCycleDelegate
-    _ = super.application(application, didFinishLaunchingWithOptions: launchOptions)
-    return true
-  }
-}
-```
+| Concern | Rule |
+|---------|------|
+| `AppDelegate` | Still call `super.application(...)` (initialises the plugin lifecycle delegate) |
+| OAuth callbacks (Firebase Auth) | In `scene(_:openURLContexts:)` call `Auth.auth().canHandle(url)` first; `continue` to the next context when handled. Forwarding through `UIApplication.shared.delegate` drops URLs |
+| Cold-launch deep link | Arrives in `scene(_:willConnectTo:options:)` via `connectionOptions.urlContexts`, **not** `openURLContexts`. Pass it as the engine's `initialRoute` |
+| Route validation | Map only your own scheme/host to a route; reject paths with encoded separators (`%2F %5C %3F %23 %2E`), `%25`, or dot segments |
+| Warm link while no router is listening (before `runApp`, or behind a splash until auth resolves) | `pushRouteInformation` answers `false` and a fire-and-forget push is lost. Read the result and retry on a timer; newest link wins |
+| `Info.plist` | Remove `UIMainStoryboardFile` and `UISceneStoryboardFile` to avoid a second engine |
 
-### Hard Rules
-
-- Never `class SceneDelegate: FlutterSceneDelegate { }` — produces a black screen
-- `FlutterEngine.run()` MUST be called BEFORE `GeneratedPluginRegistrant.register(with:)`
-- Always call `super.application(...)` in AppDelegate — omitting means plugin lifecycle
-  hooks never fire
-- For Firebase Auth OAuth: call `Auth.auth().canHandle(context.url)` directly in
-  `scene(_:openURLContexts:)` — do NOT forward via AppDelegate (the plugin is registered
-  with the FlutterEngine's plugin registry, not AppDelegate's lifecycle delegate)
-
-### Info.plist Requirements
-
-- Remove `UIMainStoryboardFile` key — prevents dual-engine conflict with UIScene
-- Remove `UISceneStoryboardFile` key — same reason
-- Keep `UIApplicationSceneManifest` pointing to the `SceneDelegate` class
-- If using Firebase Auth, add `CFBundleURLTypes` with the Firebase Auth URL scheme
-
-### Melos `dependency_overrides` — Root Only
-
-`dependency_overrides` for shared packages (e.g. `firebase_core_platform_interface`)
-MUST live **only** in the root `pubspec.yaml`. Melos rejects duplicate overrides across
-workspace packages — adding the same override to an individual app's `pubspec.yaml`
-causes `melos bootstrap` to fail with a conflict error.
-
-```yaml
-# ✅ ROOT pubspec.yaml only
-dependency_overrides:
-  firebase_core_platform_interface: 5.4.1
-
-# ❌ NEVER in apps/<app>/pubspec.yaml
-```
-
----
+Cold-link and warm-link flows both need a device test; a build with the splash disabled hides the dropped-link case.
 
 ## Pre-Commit Checklist (Platform/Emulator)
 
@@ -275,15 +277,15 @@ DevicePreview
 
 Android Cleartext Config (Firebase emulator)
   □ android/app/src/debug/AndroidManifest.xml has networkSecurityConfig + tools:replace
-  □ android/app/src/debug/res/xml/network_security_config.xml allowlists ONLY 10.0.2.2, localhost, 127.0.0.1
+  □ debug network_security_config.xml allowlists only loopback hosts (or a debug-only base-config); no machine IP committed
   □ grep -r "networkSecurityConfig" android/app/src/main/ → must return 0
   □ grep -r "cleartextTrafficPermitted.*true" android/app/src/release/ → must return 0
   □ xmlns:tools on root <manifest>, not <application>
 
 iOS UIScene
-  □ SceneDelegate extends UIResponder (NOT FlutterSceneDelegate)
-  □ FlutterEngine.run() called BEFORE GeneratedPluginRegistrant.register(with:)
-  □ AppDelegate.application(_:didFinishLaunchingWithOptions:) calls super
-  □ Info.plist has NO UIMainStoryboardFile or UISceneStoryboardFile keys
-  □ dependency_overrides NOT present in any individual app pubspec.yaml
+  □ Followed the current Flutter UIScene migration guide (FlutterSceneDelegate or FlutterSceneLifeCycleProvider)
+  □ Plugins registered in didInitializeImplicitFlutterEngine; AppDelegate calls super
+  □ Custom-engine fallback used only with a documented reproduced failure; then URLs/links forwarded manually
+  □ Info.plist has UIApplicationSceneManifest; no UIMainStoryboardFile/UISceneStoryboardFile if you own the engine
+  □ dependency_overrides only in the workspace root pubspec (see flutter-build-and-workspace.md)
 ```

@@ -134,7 +134,7 @@ class PaginatedWorkouts extends _$PaginatedWorkouts {
 
   Future<void> loadMore() async {
     if (!_hasMore) return;
-    final current = state.valueOrNull ?? [];
+    final current = state.value ?? [];
     final nextPage = await _fetchPage();
     state = AsyncValue.data([...current, ...nextPage]);
   }
@@ -170,7 +170,7 @@ class WorkoutCard extends StatelessWidget {
 
 // Use select() to watch specific fields only
 final userName = ref.watch(
-  userProvider.select((user) => user.valueOrNull?.displayName ?? ''),
+  userProvider.select((user) => user.value?.displayName ?? ''),
 );
 
 // Wrap expensive widgets with RepaintBoundary
@@ -211,7 +211,7 @@ void _onSaveSuccess() {
 ### Skeleton / Shimmer Loading States
 
 ```dart
-// Never show empty screens — always show skeleton loaders
+// Skeleton only for a COLD read with no usable content (see interaction-contracts §6b).
 class WorkoutListSkeleton extends StatelessWidget {
   const WorkoutListSkeleton({super.key});
 
@@ -239,7 +239,7 @@ class WorkoutListSkeleton extends StatelessWidget {
 // Usage in AsyncValue.when()
 usersAsync.when(
   loading: () => const WorkoutListSkeleton(),
-  error: (err, stack) => ErrorRetryWidget(error: err, onRetry: ref.invalidate(workoutListProvider)),
+  error: (err, stack) => ErrorRetryWidget(error: err, onRetry: () => ref.invalidate(workoutListProvider)),
   data: (workouts) => WorkoutListView(workouts: workouts),
 )
 ```

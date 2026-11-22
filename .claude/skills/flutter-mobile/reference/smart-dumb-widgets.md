@@ -69,33 +69,33 @@ OR reused across 2+ screens?
 ### Smart Widget — Screen Level
 
 ```dart
-// apps/tenant/lib/screens/tickets/tickets_screen.dart
+// apps/mobile/lib/screens/tasks/tasks_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_ui/shared_ui.dart';
 import 'package:shared_core/shared_core.dart';
-import '../providers/tickets_provider.dart';
+import '../providers/tasks_provider.dart';
 
-class TicketsScreen extends ConsumerWidget {  // ✅ Smart: ConsumerWidget
-  const TicketsScreen({super.key});
+class TasksScreen extends ConsumerWidget {  // ✅ Smart: ConsumerWidget
+  const TasksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // ✅ Smart: ref.watch in build — reactive, rebuilds on change
-    final ticketsAsync = ref.watch(ticketsProvider);
+    final tasksAsync = ref.watch(tasksProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tickets')),
-      body: ticketsAsync.when(
+      appBar: AppBar(title: const Text('Tasks')),
+      body: tasksAsync.when(
         loading: () => const LoadingSpinner(),
         error: (e, _) => ErrorCard(message: e.toString()),
-        data: (tickets) => ListView.builder(
-          itemCount: tickets.length,
-          itemBuilder: (_, i) => TicketCard(  // ✅ passes data DOWN to dumb widget
-            ticket: tickets[i],
+        data: (tasks) => ListView.builder(
+          itemCount: tasks.length,
+          itemBuilder: (_, i) => TaskCard(  // ✅ passes data DOWN to dumb widget
+            task: tasks[i],
             onTap: () => ref  // ✅ ref.read in callback — not in build
-                .read(ticketsProvider.notifier)
-                .select(tickets[i].id),
+                .read(tasksProvider.notifier)
+                .select(tasks[i].id),
           ),
         ),
       ),
@@ -107,19 +107,19 @@ class TicketsScreen extends ConsumerWidget {  // ✅ Smart: ConsumerWidget
 ### Dumb Widget — Shared UI Package
 
 ```dart
-// packages/shared_ui/lib/src/widgets/ticket_card.dart
+// packages/shared_ui/lib/src/widgets/task_card.dart
 import 'package:flutter/material.dart';
 import 'package:shared_core/shared_core.dart';   // domain model only
 
 // ✅ Dumb: StatelessWidget — zero Riverpod dependency
-class TicketCard extends StatelessWidget {
-  const TicketCard({          // ✅ const constructor required
+class TaskCard extends StatelessWidget {
+  const TaskCard({          // ✅ const constructor required
     super.key,
-    required this.ticket,     // ✅ receives data via constructor
+    required this.task,     // ✅ receives data via constructor
     required this.onTap,      // ✅ emits events via callback
   });
 
-  final Ticket ticket;
+  final Task task;
   final VoidCallback onTap;
 
   @override
@@ -127,8 +127,8 @@ class TicketCard extends StatelessWidget {
     // NO ref, NO watch(), NO Provider.of(), NO import flutter_riverpod
     return Card(
       child: ListTile(
-        title: Text(ticket.title),
-        subtitle: Text(ticket.status.label),
+        title: Text(task.title),
+        subtitle: Text(task.status.label),
         onTap: onTap,
       ),
     );
@@ -139,18 +139,18 @@ class TicketCard extends StatelessWidget {
 ### Smart Widget with ConsumerStatefulWidget — When Local Lifecycle Is Needed
 
 ```dart
-// apps/landlord/lib/screens/properties/property_detail_screen.dart
-class PropertyDetailScreen extends ConsumerStatefulWidget {
-  const PropertyDetailScreen({super.key, required this.propertyId});
-  final String propertyId;
+// lib/features/orders/screens/order_detail_screen.dart
+class OrderDetailScreen extends ConsumerStatefulWidget {
+  const OrderDetailScreen({super.key, required this.orderId});
+  final String orderId;
 
   @override
-  ConsumerState<PropertyDetailScreen> createState() =>
-      _PropertyDetailScreenState();
+  ConsumerState<OrderDetailScreen> createState() =>
+      _OrderDetailScreenState();
 }
 
-class _PropertyDetailScreenState
-    extends ConsumerState<PropertyDetailScreen> {
+class _OrderDetailScreenState
+    extends ConsumerState<OrderDetailScreen> {
   // Local state that belongs to this screen's lifecycle
   final _scrollController = ScrollController();
 
@@ -163,16 +163,16 @@ class _PropertyDetailScreenState
   @override
   Widget build(BuildContext context) {
     // ✅ ref available via ConsumerState.ref — no parameter needed
-    final propertyAsync = ref.watch(propertyDetailProvider(widget.propertyId));
+    final orderAsync = ref.watch(orderDetailProvider(widget.orderId));
 
     return Scaffold(
-      body: propertyAsync.when(
-        loading: () => const PropertyDetailSkeleton(),
+      body: orderAsync.when(
+        loading: () => const OrderDetailSkeleton(),
         error: (e, _) => ErrorCard(message: e.toString()),
-        data: (property) => PropertyInfoCard(  // ✅ dumb child
-          property: property,
+        data: (order) => OrderInfoCard(  // ✅ dumb child
+          order: order,
           onEditTap: () => ref
-              .read(propertyDetailProvider(widget.propertyId).notifier)
+              .read(orderDetailProvider(widget.orderId).notifier)
               .startEdit(),
         ),
       ),
@@ -289,6 +289,23 @@ The `riverpod-reviewer` agent checks these as **blocking findings**:
 | `flutter_riverpod` imported in a dumb widget file | Blocking |
 | Missing `const` constructor on `StatelessWidget` | Warning |
 | `ref.watch()` called inside a callback or event handler | Blocking |
+
+---
+
+## 7b. When a Dumb Component Has a Parameter Callers Must Remember
+
+**Symptom:** you are writing a doc comment such as "callers must pass X from provider Y", or the component renders plausible-but-wrong UI when X is omitted (for example a "last updated" label that shows nothing, or "now", when its timestamp is missing).
+
+An optional parameter the caller must remember is a parameter nobody passes. Fix it in the same change:
+
+1. Add a smart `<Name>Host` (a `ConsumerWidget`) in the screens layer. It reads the provider and passes X to the dumb component.
+2. Gate the bare component out of feature code (a CI grep) with a reason-bearing hatch, e.g. `// ignore-host: <reason>`.
+3. If X must always be supplied, make the parameter `required`. Never keep it optional with a default that looks valid.
+4. Never thread X by hand at N call sites.
+
+The same rule covers a component whose value is a channel a theme cannot express (intent, icon, semantics): ship the component with its enforcing gate in one change.
+
+**Single owner for global chrome.** A persistent status band (offline, sync failure) has one owner, the shell scaffold. Feature screens supply copy, never their own banner. Fix the priority order once (a failure outranks offline). Stacked banners each add their own `SafeArea`, so the status-bar inset applies twice and paints an empty strip between them.
 
 ---
 

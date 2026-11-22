@@ -6,71 +6,50 @@ Advanced prompting techniques, structured output patterns, system prompt templat
 
 ### Chain-of-Thought (CoT)
 
+For **non-reasoning** models, asking for step-by-step work can help on multi-step problems. For reasoning models (built-in thinking), don't: it is redundant and adds billed output tokens; set the reasoning level instead and ask for a concise final answer (`llm-inference-and-model-routing.md` §3). Never show chain-of-thought to end users or parse decisions out of it: decisions come from structured fields.
+
 ```python
-COT_SYSTEM_PROMPT = """You are an expert analyst. Think through problems step-by-step.
-
-For each question:
-1. Identify the key information
-2. Break down the problem into sub-problems
-3. Solve each sub-problem
-4. Combine into a final answer
-
-Always show your reasoning before giving the final answer.
-"""
+COT_SYSTEM_PROMPT = """You are an expert analyst. Work through the problem step by step,
+then give the final answer in the `answer` field."""      # pair with a structured output schema
 ```
 
 ### Self-Consistency
 
-Run the same prompt multiple times and take the majority answer.
+Sample N answers and vote, only where answers are **comparable values** (a label, a number, an enum field of a structured output). Exact-string voting over free text almost never agrees and silently returns the first sample. Cost is N× per call: charge it to the request budget and cap concurrency.
 
 ```python
-import asyncio
-from collections import Counter
-
-
-async def self_consistency_invoke(llm, messages: list, n: int = 3) -> str:
-    """Invoke LLM N times and return the most common answer.
-
-    Useful for factual questions where the LLM may give different answers.
-    """
-    tasks = [llm.ainvoke(messages) for _ in range(n)]
-    responses = await asyncio.gather(*tasks)
-    answers = [r.content.strip() for r in responses]
-
-    # Return most common answer
-    counter = Counter(answers)
-    most_common = counter.most_common(1)[0][0]
-    logger.info("self_consistency", n=n, unique_answers=len(counter), chosen=most_common[:100])
-    return most_common
+async def self_consistency_label[L: str](runnable: Any, messages: list[BaseMessage], n: int = 3) -> L:
+    """runnable = model.with_structured_output(Schema); vote on one enum field."""
+    results = await asyncio.gather(*(runnable.ainvoke(messages) for _ in range(n)))
+    votes = Counter(r.label for r in results)
+    label, count = votes.most_common(1)[0]
+    logger.info("self_consistency", n=n, distinct=len(votes), agreement=count / n)   # no content in logs
+    return label
 ```
 
-### Structured Output Prompts
+Low agreement is a useful signal: route to a human or a stronger tier instead of returning the plurality.
 
-Use Pydantic models with `.with_structured_output()` for reliable parsing.
+### Structured Output (with a failure path)
 
 ```python
-from pydantic import BaseModel, Field
-from typing import Literal
+class StructuredOutputFailed(Exception):
+    code = "SCHEMA_VALIDATION_FAILED"
 
 
-class AnalysisResult(BaseModel):
-    """Structured analysis output."""
-
-    sentiment: Literal["positive", "negative", "neutral"]
-    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score 0-1")
-    key_topics: list[str] = Field(description="Main topics identified")
-    summary: str = Field(max_length=500, description="Brief summary")
-    action_items: list[str] = Field(default_factory=list, description="Suggested actions")
-
-
-# LLM automatically returns validated Pydantic object
-structured_llm = llm.with_structured_output(AnalysisResult)
-result: AnalysisResult = await structured_llm.ainvoke([
-    {"role": "system", "content": "Analyze the following text."},
-    {"role": "user", "content": text_to_analyze},
-])
-# result.sentiment, result.confidence, etc. are type-safe
+async def invoke_structured[T: BaseModel](model: Any, schema: type[T], messages: list[BaseMessage], *, feature: str) -> T:
+    """Retries once on a parse failure, from the ORIGINAL messages (fresh context)."""
+    runnable = model.with_structured_output(schema, include_raw=True)
+    for attempt in (1, 2):
+        out: dict[str, Any] = await runnable.ainvoke(messages)
+        parsed = out.get("parsed")
+        if isinstance(parsed, schema):
+            return parsed
+        logger.warning("structured_output_invalid", feature=feature, attempt=attempt,
+                       error_type=type(out.get("parsing_error")).__name__)
+    raise StructuredOutputFailed
 ```
+
+Executed with a scripted model: an out-of-enum value on the first try and a valid one on the second returned the parsed object; an out-of-enum value followed by a free-text reply raised `StructuredOutputFailed`. Note the second case: a reply with **no tool call** gives `parsed=None` and `parsing_error=None`, so check `parsed`, not just the error. Retry only when every tool on the path is read-only or idempotent; never retry a refusal or a max-token finish. A model-reported `confidence` field is not calibrated: don't gate decisions on it. Rules: `llm-inference-and-model-routing.md` §4.
 
 ## System Prompt Templates
 
@@ -109,7 +88,7 @@ RAG_SYSTEM_PROMPT = """You are a knowledge assistant. Answer questions based ONL
 1. ONLY use information from the context above.
 2. If the context doesn't contain enough information, say "I don't have enough information to answer that."
 3. Never make up facts or use your training data to fill gaps.
-4. Quote relevant passages from the context to support your answer.
+4. Cite relevant passages from the context to support your answer.
 5. If the question is ambiguous, ask for clarification.
 
 ## Format
@@ -376,7 +355,7 @@ from google.adk.agents import LlmAgent
 
 rtf_agent = LlmAgent(
     name="code_reviewer",
-    model="gemini-3.1-flash",
+    model=settings.chat_model,   # model ids come from config
     instruction="""Role: You are a senior Python backend developer specializing in FastAPI and async patterns.
 Task: Review the provided code for correctness, performance, and security issues.
 Format: Issues (line, severity, description, fix), Summary (N critical, M warnings), Recommendation (merge/revise/reject)."""

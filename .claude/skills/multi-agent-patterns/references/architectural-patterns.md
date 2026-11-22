@@ -56,21 +56,24 @@ graph.add_node("researcher", specialist_node)
 graph.add_node("analyzer", specialist_node)
 graph.add_conditional_edges(
     "supervisor",
-    lambda state: state["next_worker"],
+    lambda state: state["next_worker"],      # set by code after validating the model's proposal
     {"researcher": "researcher", "analyzer": "analyzer", "END": END}
 )
 ```
 
+Executable supervisor with a closed route enum, code-owned transition rules and a hop cap: `agentic-ai-dev/reference/agentic-templates-advanced.md` Pattern 4.
+
 **Checkpointing (prevents supervisor context saturation):**
 ```python
-from langgraph.checkpoint.memory import MemorySaver
-
-checkpointer = MemorySaver()
-app = graph.compile(checkpointer=checkpointer)
+# Production: durable checkpointer entered in the app lifespan (InMemorySaver only in tests)
+async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_db_uri) as checkpointer:
+    app = graph.compile(checkpointer=checkpointer)
 
 # Supervisor writes distilled summaries, not full worker outputs
 # Workers return structured output schemas, not raw text
 ```
+
+Lifespan wiring: `agentic-ai-dev/reference/agentic-templates-core.md`.
 
 ---
 
@@ -81,15 +84,11 @@ app = graph.compile(checkpointer=checkpointer)
 Any agent can transfer control to any other via explicit handoff
 ```
 
-```python
-def transfer_to_agent_b():
-    return agent_b  # Handoff via function return
+Handoffs are tool calls the model proposes; code executes them. In LangGraph a handoff tool returns `Command(goto="agent_b", graph=Command.PARENT, update={...})`; in Google ADK, `transfer_to_agent` to a declared sub-agent. Either way:
 
-agent_a = Agent(
-    name="Agent A",
-    functions=[transfer_to_agent_b]
-)
-```
+- the target must be in the caller's allowed-handoff set (validated in code, not just listed in the prompt);
+- the update carries a typed task payload, never scope or credentials;
+- the hop counter and remaining budget travel with the run.
 
 **When to use:**
 - Tasks requiring flexible exploration where rigid upfront planning is counterproductive
@@ -111,10 +110,10 @@ agent_a = Agent(
 **Convergence constraints (mandatory):**
 ```python
 class SwarmConfig:
-    max_iterations: int = 10        # Hard loop limit
-    max_agent_hops: int = 5         # Prevent infinite handoff chains
-    time_to_live_seconds: int = 300 # Wall-clock termination
-    convergence_check_interval: int = 3  # Check every N iterations
+    max_graph_steps: int = 20            # LangGraph recursion_limit (library default 10000: always set it)
+    max_agent_hops: int = 5              # Handoff cap with a typed HOP_LIMIT status
+    time_to_live_seconds: int = 300      # asyncio.timeout around the run
+    convergence_check_interval: int = 3  # Check every N hops
 ```
 
 **Sycophancy prevention:**
@@ -195,3 +194,21 @@ def alignment_check(
 | Enterprise ADK agent (goal setting → plan → execute) | Hierarchical |
 | Full security audit (config + code + pentest) | Supervisor with 3 specialized reviewer agents |
 | Autonomous PR iteration loop | Swarm (retry until convergence) |
+
+---
+
+## Cross-service agents (optional: A2A and similar protocols)
+
+When agents run as separate services (different teams, runtimes or providers), an agent-to-agent protocol such as A2A replaces in-process handoffs. Verify message shapes against the current protocol spec before implementing; the controls below are protocol-independent:
+
+| Concern | Rule |
+|---|---|
+| Identity | Caller authenticates as a **service** (mTLS / workload identity / signed token); the callee re-authorizes every request. No forwarding of end-user credentials. |
+| Scope | Tenant/user scope is a verified claim the callee checks against its own data rules, never a free-text field in the task |
+| Capability discovery | Published capability descriptions are data: the caller's allowlist of remote agents and skills is configured, not discovered at runtime |
+| Payloads | Schema-validated task inputs/outputs; remote output is untrusted data for the caller |
+| Limits | Caller passes its remaining deadline and budget; callee enforces its own caps too |
+| Side effects | Remote agents propose; the owning service's workflow commits with idempotency keys |
+| Observability | Propagate trace context across the call (`deployment-ci-cd/reference/ai-observability.md` §3) |
+
+Prefer a plain typed API over an agent protocol when the remote side is deterministic.

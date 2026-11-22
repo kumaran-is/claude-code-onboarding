@@ -1,343 +1,104 @@
-# Agentic AI Observability
+# Agentic AI Observability (LangChain v1)
 
-LangSmith tracing, Prometheus metrics, structured logging, and alerting for production AI agents.
+LangChain/LangGraph wiring for traces, metrics and logs. The canonical, framework-neutral rules — span model (OpenTelemetry GenAI conventions), metric names and bounded labels, cost accounting, content capture defaults, prompt provenance, SLOs and alerts — live in `deployment-ci-cd/reference/ai-observability.md`. Logging rules and `log_exception`: `deployment-ci-cd/reference/python-observability.md`.
 
-## LangSmith Setup
+REMOVED from the previous version: `os.environ[...]` mutation at startup with legacy `LANGCHAIN_TRACING_V2`/`LANGCHAIN_API_KEY`/`LANGCHAIN_PROJECT` names; a "groundedness" evaluator that scored by substring match; a node decorator logging `error=str(e)` and reading `thread_id` from state; a `rag_relevance_score` histogram fed by unverified scores; and a `histogram_quantile` alert without `rate()`/`sum by (le)`.
 
-**File:** `src/<service>/observability/tracing.py`
+## LangSmith tracing (optional)
 
-```python
-from __future__ import annotations
+Configure through the environment of the deployment, not by mutating `os.environ` in code (mutations race with imports that already read config, and leak the key into child processes):
 
-import os
-from functools import wraps
+| Variable | Purpose |
+|---|---|
+| `LANGSMITH_TRACING` | `true` to enable |
+| `LANGSMITH_API_KEY` | From the secret manager |
+| `LANGSMITH_PROJECT` | Per environment (`<service>-staging`, `<service>-prod`) |
+| `LANGSMITH_ENDPOINT` | Only for self-hosted / regional endpoints |
 
-from langsmith import Client, traceable
+Source: LangChain docs (LangChain docs MCP, this session). The `LANGCHAIN_*` names are legacy; don't introduce them in new code.
 
-from ..core.config import settings
-from ..core.logging import get_logger
+- Content capture: traces contain prompts, tool arguments and outputs by default. Decide per environment what may leave your boundary (`ai-observability.md` §5); production default is metadata only unless redaction is in place and the data-processing terms allow it.
+- Attach run metadata, not PII: `config={"metadata": {"feature": ..., "prompt_version": ..., "model_id": ...}, "tags": [...]}`. Org/user ids, if needed for support, go in as hashed values per `ai-observability.md`.
+- Tracing must never break a request: an unreachable tracing backend is logged once and ignored.
 
-logger = get_logger(__name__)
+Evaluators (LangSmith, DeepEval, Ragas, ...) belong to the eval harness: `eval-guide`. Groundedness is judged by a calibrated judge or a claim-level check, not by substring matching.
 
+## Model-call metrics middleware (executed)
 
-def setup_langsmith() -> Client | None:
-    """Initialize LangSmith client for tracing.
-
-    Requires LANGSMITH_API_KEY and LANGSMITH_PROJECT in environment.
-    Returns None if not configured (non-blocking).
-    """
-    if not settings.langsmith_api_key:
-        logger.info("langsmith_disabled", reason="No API key configured")
-        return None
-
-    os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
-    os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
-
-    client = Client()
-    logger.info("langsmith_enabled", project=settings.langsmith_project)
-    return client
-
-
-def trace_agent(name: str, metadata: dict | None = None):
-    """Decorator to trace agent functions in LangSmith.
-
-    Usage:
-        @trace_agent("react_agent")
-        async def invoke_agent(state):
-            ...
-    """
-    def decorator(func):
-        @wraps(func)
-        @traceable(name=name, metadata=metadata or {})
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-        return wrapper
-    return decorator
-```
-
-### Custom LangSmith Evaluators
+One middleware covers every model call the agent makes, including calls after tool results:
 
 ```python
-from langsmith.evaluation import EvaluationResult, run_evaluator
+LLM_TOKENS = Counter("app_llm_tokens_total", "Tokens by type", ["model", "feature", "token_type"])
+LLM_DURATION = Histogram("app_llm_call_duration_seconds", "Model call duration", ["model", "feature", "outcome"],
+                         buckets=(0.25, 0.5, 1, 2, 5, 10, 20, 40))
 
 
-@run_evaluator
-def groundedness_evaluator(run, example) -> EvaluationResult:
-    """Evaluate if the agent's response is grounded in retrieved documents."""
-    # Get the agent output and retrieved docs from the run
-    output = run.outputs.get("output", "")
-    docs = run.outputs.get("documents", [])
+class ModelMetricsMiddleware(AgentMiddleware[Any, Any]):
+    """Labels come from config (model id, feature), never from request data."""
 
-    if not docs:
-        return EvaluationResult(key="groundedness", score=0.0, comment="No documents retrieved")
+    def __init__(self, *, model_label: str, feature: str) -> None:
+        super().__init__()
+        self.model_label, self.feature = model_label, feature
 
-    # Use LLM to check groundedness
-    # (In practice, use a dedicated evaluation model)
-    score = 1.0 if any(doc_text in output for doc_text in docs) else 0.5
-
-    return EvaluationResult(key="groundedness", score=score)
-
-
-@run_evaluator
-def tool_usage_evaluator(run, example) -> EvaluationResult:
-    """Evaluate if the agent used appropriate tools."""
-    # Check intermediate steps for tool usage
-    steps = run.outputs.get("intermediate_steps", [])
-    expected_tools = example.outputs.get("expected_tools", [])
-
-    used_tools = [step.get("tool") for step in steps if "tool" in step]
-    correct = len(set(used_tools) & set(expected_tools))
-    total = max(len(expected_tools), 1)
-
-    return EvaluationResult(
-        key="tool_usage",
-        score=correct / total,
-        comment=f"Used {used_tools}, expected {expected_tools}",
-    )
+    async def awrap_model_call(self, request: ModelRequest,
+                               handler: Callable[[ModelRequest], Awaitable[ModelResponse]]) -> ModelResponse:
+        start = time.monotonic()
+        try:
+            response = await handler(request)
+        except Exception as exc:
+            LLM_DURATION.labels(self.model_label, self.feature, type(exc).__name__).observe(time.monotonic() - start)
+            log_exception(logger, "model_call_failed", exc, feature=self.feature)
+            raise
+        LLM_DURATION.labels(self.model_label, self.feature, "ok").observe(time.monotonic() - start)
+        for msg in response.result:
+            if isinstance(msg, AIMessage) and msg.usage_metadata:
+                u = msg.usage_metadata
+                LLM_TOKENS.labels(self.model_label, self.feature, "input").inc(u["input_tokens"])
+                LLM_TOKENS.labels(self.model_label, self.feature, "output").inc(u["output_tokens"])
+                LLM_TOKENS.labels(self.model_label, self.feature, "reasoning").inc(
+                    u.get("output_token_details", {}).get("reasoning", 0))
+                LLM_TOKENS.labels(self.model_label, self.feature, "cache_read").inc(
+                    u.get("input_token_details", {}).get("cache_read", 0))
+        return response
 ```
 
-## Prometheus Metrics
+Executed with `create_agent` and a scripted message carrying `usage_metadata` (100 in / 40 out / 30 reasoning / 60 cache-read): all four series and the duration count matched; `ruff` and `mypy --strict` clean. Exception class names are a bounded label set; never use `str(exc)` as a label. Add it before retry/fallback middleware to count each attempt, after them to count each logical call; name the choice in the metric help text.
 
-**File:** `src/<service>/observability/metrics.py`
+Other counters to emit (names and labels per `ai-observability.md` §4): tool calls by tool + outcome code, retries, failovers (from → to model label), cap hits (`ITERATION_LIMIT`, `TIMEOUT`, `BUDGET_EXHAUSTED`), guardrail blocks by code, cache hits by tier, HITL approvals pending/expired. **Time to first token** for streaming routes: measure in the SSE generator from request start to the first `content` event.
 
-```python
-from __future__ import annotations
+## Logs
 
-from fastapi import FastAPI, Request, Response
-from prometheus_client import (
-    Counter,
-    Gauge,
-    Histogram,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
+- Per run: one structured line at start and end with trace id, feature, model id, prompt version, thread key **hash**, outcome code, duration, call/tool counts. No message text.
+- Errors: `log_exception(logger, event, exc, **ids)` only.
+- Node-level logging comes from tracing spans; don't wrap every node in a logging decorator.
 
-from ..core.logging import get_logger
-
-logger = get_logger(__name__)
-
-# --- Agent Metrics ---
-
-AGENT_INVOCATIONS = Counter(
-    "agent_invocations_total",
-    "Total agent invocations",
-    ["agent_name", "status"],  # status: success, error, timeout
-)
-
-AGENT_LATENCY = Histogram(
-    "agent_latency_seconds",
-    "Agent invocation latency",
-    ["agent_name"],
-    buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0],
-)
-
-AGENT_ITERATIONS = Histogram(
-    "agent_iterations_total",
-    "Number of iterations per agent invocation",
-    ["agent_name"],
-    buckets=[1, 2, 3, 5, 10, 15, 20, 25],
-)
-
-# --- LLM Metrics ---
-
-LLM_CALLS = Counter(
-    "llm_calls_total",
-    "Total LLM API calls",
-    ["provider", "model", "status"],
-)
-
-LLM_TOKENS = Counter(
-    "llm_tokens_total",
-    "Total tokens consumed",
-    ["provider", "model", "direction"],  # direction: input, output
-)
-
-LLM_LATENCY = Histogram(
-    "llm_latency_seconds",
-    "LLM API call latency",
-    ["provider", "model"],
-    buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0],
-)
-
-LLM_COST = Counter(
-    "llm_cost_usd_total",
-    "Estimated LLM cost in USD",
-    ["provider", "model"],
-)
-
-# --- Tool Metrics ---
-
-TOOL_CALLS = Counter(
-    "tool_calls_total",
-    "Total tool invocations",
-    ["tool_name", "status"],
-)
-
-TOOL_LATENCY = Histogram(
-    "tool_latency_seconds",
-    "Tool execution latency",
-    ["tool_name"],
-    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
-)
-
-# --- RAG Metrics ---
-
-RAG_RETRIEVAL_COUNT = Histogram(
-    "rag_documents_retrieved",
-    "Number of documents retrieved per query",
-    ["retriever"],
-    buckets=[0, 1, 3, 5, 10, 20],
-)
-
-RAG_RELEVANCE_SCORE = Histogram(
-    "rag_relevance_score",
-    "Relevance score of retrieved documents",
-    ["retriever"],
-    buckets=[0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
-)
-
-# --- System Metrics ---
-
-ACTIVE_THREADS = Gauge(
-    "active_threads",
-    "Number of active conversation threads",
-)
-
-GUARDRAIL_BLOCKS = Counter(
-    "guardrail_blocks_total",
-    "Guardrail violations blocked",
-    ["layer"],
-)
-
-
-def setup_prometheus(app: FastAPI) -> None:
-    """Add Prometheus metrics endpoint to FastAPI app."""
-
-    @app.get("/metrics")
-    async def metrics():
-        return Response(
-            content=generate_latest(),
-            media_type=CONTENT_TYPE_LATEST,
-        )
-
-    logger.info("prometheus_metrics_enabled")
-```
-
-## Critical Metrics Dashboard
-
-Key metrics to monitor in production:
-
-| Category | Metric | Alert Threshold |
-|----------|--------|-----------------|
-| **Latency** | `agent_latency_seconds` p95 | > 30s |
-| **Latency** | `llm_latency_seconds` p95 | > 10s |
-| **Quality** | `rag_relevance_score` avg | < 0.5 |
-| **Cost** | `llm_cost_usd_total` daily | > budget |
-| **Reliability** | `agent_invocations_total{status=error}` rate | > 5% |
-| **Reliability** | `tool_calls_total{status=error}` rate | > 10% |
-| **Safety** | `guardrail_blocks_total` rate | > 1% |
-| **Throughput** | `agent_invocations_total` rate | varies |
-
-## Structured Logging with Correlation IDs
-
-```python
-import time
-from functools import wraps
-
-import structlog
-
-
-def log_agent_execution(agent_name: str):
-    """Decorator that logs agent execution with timing and context."""
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(state, *args, **kwargs):
-            log = structlog.get_logger(agent_name)
-            thread_id = state.get("thread_id", "unknown")
-            iteration = state.get("iteration_count", 0)
-
-            log.info(
-                "node_start",
-                agent_name=agent_name,
-                thread_id=thread_id,
-                iteration=iteration,
-                message_count=len(state.get("messages", [])),
-            )
-
-            start = time.monotonic()
-            try:
-                result = await func(state, *args, **kwargs)
-                duration = time.monotonic() - start
-
-                log.info(
-                    "node_complete",
-                    agent_name=agent_name,
-                    thread_id=thread_id,
-                    iteration=iteration,
-                    duration_ms=round(duration * 1000),
-                )
-
-                AGENT_LATENCY.labels(agent_name=agent_name).observe(duration)
-                AGENT_INVOCATIONS.labels(agent_name=agent_name, status="success").inc()
-                return result
-
-            except Exception as e:
-                duration = time.monotonic() - start
-                log.error(
-                    "node_failed",
-                    agent_name=agent_name,
-                    thread_id=thread_id,
-                    error=str(e),
-                    duration_ms=round(duration * 1000),
-                )
-                AGENT_INVOCATIONS.labels(agent_name=agent_name, status="error").inc()
-                raise
-
-        return wrapper
-    return decorator
-
-
-# Usage
-@log_agent_execution("react_agent")
-async def agent_node(state: AgentState) -> dict:
-    ...
-```
-
-## Alerting Rules
+## Alerts (examples; thresholds from your SLOs)
 
 ```yaml
-# Prometheus alerting rules (prometheus/alerts.yml)
 groups:
-  - name: agent_alerts
+  - name: agent
     rules:
-      - alert: HighAgentLatency
-        expr: histogram_quantile(0.95, agent_latency_seconds_bucket) > 30
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Agent p95 latency > 30s"
-
-      - alert: HighErrorRate
-        expr: rate(agent_invocations_total{status="error"}[5m]) / rate(agent_invocations_total[5m]) > 0.05
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Agent error rate > 5%"
-
-      - alert: LLMCostBudget
-        expr: increase(llm_cost_usd_total[24h]) > 100
-        labels:
-          severity: warning
-        annotations:
-          summary: "Daily LLM cost exceeded $100"
-
-      - alert: GuardrailViolations
-        expr: rate(guardrail_blocks_total[1h]) > 0.01
-        labels:
-          severity: warning
-        annotations:
-          summary: "Guardrail blocking > 1% of requests"
+      - alert: AgentModelLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le, feature) (rate(app_llm_call_duration_seconds_bucket[5m]))) > 20
+        for: 10m
+        labels: {severity: warning}
+      - alert: AgentModelErrorRatio
+        expr: |
+          sum by (feature) (rate(app_llm_call_duration_seconds_count{outcome!="ok"}[5m]))
+          / sum by (feature) (rate(app_llm_call_duration_seconds_count[5m])) > 0.05
+        for: 10m
+        labels: {severity: critical}
 ```
+
+Cost and budget alerts, drift, and quality SLOs: `ai-observability.md` §9. Provider-console spend caps are the hard stop.
+
+## Key Rules
+
+| Rule | Standard |
+|---|---|
+| Tracing config | `LANGSMITH_*` env from the deployment; no `os.environ` mutation |
+| Content capture | Off or redacted in production per `ai-observability.md` §5 |
+| Metric labels | Bounded: model (from config), feature, outcome/exception class, tool; never org/user/thread ids |
+| Tokens | Input, output, reasoning and cache-read series from `usage_metadata` |
+| Errors | `log_exception`; exception class as a label at most |
+| Alerts | `histogram_quantile` over `sum by (le) (rate(...))` |

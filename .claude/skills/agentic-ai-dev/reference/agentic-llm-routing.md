@@ -1,324 +1,138 @@
-# Agentic AI LLM Routing & Multi-Provider Management
+# Agentic AI LLM Routing & Multi-Provider Management (LangChain v1)
 
-Multi-provider routing, cost calculation, fallback chains, and prompt caching.
+LangChain-specific implementation of the rules in `llm-inference-and-model-routing.md` (canonical: model lifecycle, sampling/reasoning, deadlines, retries, failover vs escalation, cache scoping, budgets). Read that first; this file shows how to wire it with LangChain 1.2.x / LangGraph 1.0.x.
 
-## Model Selection Matrix
+## Model catalogue: config, not code
 
-### Chat Models
+This file used to carry model/price tables. They went stale and contradicted each other (two rows for the same model id at different prices, retired ids in the tier map, "as of 2025" prices beside newer ones), so they were removed. Instead:
 
-| Provider | Model | Best For | Cost (1M in/out) | Context | Speed |
-|----------|-------|----------|-------------------|---------|-------|
-| **Anthropic** | claude-opus-4-6 | Complex reasoning, agents, code | $5/$25 | 200k (1M beta) | Slow |
-| Anthropic | claude-sonnet-4-5-20250929 | Balanced quality/cost | $3/$15 | 200k (1M beta) | Medium |
-| Anthropic | claude-haiku-4-5-20251001 | Fast, cheap tasks | $1/$5 | 200k | Fast |
-| **OpenAI** | gpt-5.2 | Flagship coding, agentic | $1.75/$14 | 400k | Medium |
-| OpenAI | gpt-4.1 | Long-context, tool calling | $2/$8 | 1M | Medium |
-| OpenAI | gpt-4.1-mini | Fast, cheap, tool calling | $0.40/$1.60 | 1M | Fast |
-| OpenAI | gpt-4o-mini | Legacy fast/cheap tasks | $0.15/$0.60 | 128k | Fast |
-| **Google** | gemini-3.1-pro | Best multimodal, agentic | $2/$12 | 1M | Medium |
-| Google | gemini-3.1-flash | Frontier speed, reasoning | $0.50/$3 | 1M | Fast |
-| Google | gemini-3.1-flash | Hybrid reasoning, thinking | $0.30/$2.50 | 1M | Fast |
+| Tier | Capability contract | Config key |
+|---|---|---|
+| `fast` | Classification, extraction, short answers; tool calling + structured output | `MODEL_FAST` |
+| `standard` | Default chat + tools; images/documents floor | `MODEL_STANDARD` |
+| `deep` | Long multi-step reasoning where evals show a gain | `MODEL_DEEP` |
+| `embedding` | Retrieval embeddings (dimension pinned with the schema) | `EMBEDDING_MODEL` |
 
-### Embeddings
+Each environment's config names the exact model id per tier (and an approved same-tier failover id). Prices and context limits: link the provider pages with a "checked on" date (Anthropic, OpenAI, Google AI / Vertex AI pricing pages). Rerankers and embedding choice: `rag-architect` and `vector-database`.
 
-| Provider | Model | Dimensions | Cost (1M tokens) | Best For |
-|----------|-------|------------|-------------------|----------|
-| OpenAI | text-embedding-3-large | 3072 | $0.13 | High quality |
-| OpenAI | text-embedding-3-small | 1536 | $0.02 | Cost-effective |
-| Google | gemini-embedding-001 | 3072 | $0.15 | SOTA multilingual |
-| Google | text-embedding-004 | 768 | ~$0.025/1K chars | Legacy (deprecated Jan 2026) |
+## Model construction
 
-### Rerankers
-
-| Provider | Model | Cost | Best For |
-|----------|-------|------|----------|
-| Cohere | rerank-v3.5 | $2/1K searches | General reranking, 100+ langs |
-| Jina | jina-reranker-v3 | Per-token | Listwise SOTA, 131K context |
-| Jina | jina-reranker-v2-base-multilingual | Per-token | Multilingual, agentic RAG |
-
-## LLM Provider Factory
-
-**File:** `src/<service>/llm/providers.py`
+**File:** `src/<service>/llm/client.py`
 
 ```python
-from __future__ import annotations
-
-from typing import Literal
-
-from langchain_anthropic import ChatAnthropic
+from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 
 from ..core.config import settings
-from ..core.exceptions import LLMProviderError
-from ..core.logging import get_logger
-
-logger = get_logger(__name__)
-
-ProviderName = Literal["anthropic", "openai"]
-ModelTier = Literal["fast", "balanced", "powerful"]
-
-# Model mappings per tier
-MODEL_TIERS: dict[ModelTier, dict[ProviderName, str]] = {
-    "fast": {
-        "anthropic": "claude-haiku-3-5-20241022",
-        "openai": "gpt-4o-mini",
-    },
-    "balanced": {
-        "anthropic": "claude-sonnet-4-20250514",
-        "openai": "gpt-4o",
-    },
-    "powerful": {
-        "anthropic": "claude-opus-4-20250514",
-        "openai": "gpt-4o",
-    },
-}
 
 
-class LLMProviderFactory:
-    """Factory for creating and managing LLM provider instances.
-
-    Features:
-    - Centralized configuration (temperature, max_tokens, etc.)
-    - Provider fallback chains
-    - Model tier selection (fast/balanced/powerful)
-    """
-
-    def __init__(self) -> None:
-        self._providers: dict[str, BaseChatModel] = {}
-
-    def get_default(self) -> BaseChatModel:
-        """Get the default LLM provider configured in settings."""
-        return self.get_model(settings.default_model, temperature=settings.default_temperature)
-
-    def get(self, provider: ProviderName, tier: ModelTier = "balanced") -> BaseChatModel:
-        """Get an LLM by provider and tier."""
-        model_name = MODEL_TIERS[tier][provider]
-        return self.get_model(model_name, temperature=settings.default_temperature)
-
-    def get_model(
-        self,
-        model: str,
-        temperature: float = 0.0,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> BaseChatModel:
-        """Get or create a specific model instance."""
-        cache_key = f"{model}-{temperature}-{max_tokens}"
-
-        if cache_key not in self._providers:
-            self._providers[cache_key] = self._create_provider(model, temperature, max_tokens, **kwargs)
-            logger.info("llm_provider_created", model=model, temperature=temperature)
-
-        return self._providers[cache_key]
-
-    def _create_provider(
-        self,
-        model: str,
-        temperature: float,
-        max_tokens: int,
-        **kwargs,
-    ) -> BaseChatModel:
-        """Create a new LLM provider instance."""
-        if "claude" in model:
-            return ChatAnthropic(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                anthropic_api_key=settings.anthropic_api_key,
-                **kwargs,
-            )
-        elif "gpt" in model:
-            if not settings.openai_api_key:
-                raise LLMProviderError("OpenAI API key not configured")
-            return ChatOpenAI(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                openai_api_key=settings.openai_api_key,
-                **kwargs,
-            )
-        else:
-            raise LLMProviderError(f"Unknown model: {model}")
-
-    def get_fallback_chain(self, tiers: list[tuple[ProviderName, ModelTier]] | None = None) -> BaseChatModel:
-        """Create a model with fallback chain.
-
-        Default chain: anthropic/balanced → openai/balanced → anthropic/fast
-        """
-        if tiers is None:
-            tiers = [("anthropic", "balanced"), ("openai", "balanced"), ("anthropic", "fast")]
-
-        primary = self.get(tiers[0][0], tiers[0][1])
-        fallbacks = [self.get(p, t) for p, t in tiers[1:]]
-
-        return primary.with_fallbacks(fallbacks)
+def chat_model(tier: Literal["fast", "standard", "deep"]) -> BaseChatModel:
+    """The only place that constructs chat models. Ids and params come from settings."""
+    model_id = {"fast": settings.model_fast, "standard": settings.model_standard, "deep": settings.model_deep}[tier]
+    return init_chat_model(model_id, **settings.model_params[tier])   # e.g. "anthropic:<id>", "openai:<id>"
 ```
 
-## Multi-Provider Router
+- `init_chat_model("provider:model")` (or `create_agent(model="provider:model")`) replaces hand-rolled factories that pick a class by substring (`"claude" in model`). The provider integration package (e.g. `langchain-anthropic`) must be installed and pinned.
+- `settings.model_params[tier]` holds provider-specific sampling/reasoning params (§Sampling in the canonical file). Do not set a global `temperature=0`.
+- Turn off SDK-level retries in the integration (e.g. `max_retries=0` where offered) when middleware or `with_retry` is your retry layer: exactly one layer retries.
 
-Route requests to different models based on task complexity.
+## Error mapping
+
+Map each integration's exceptions once to the taxonomy (`UnavailableError`, `RateLimitedError`, `QuotaExhaustedError`, `InvalidRequestError`), keyed on exception class and HTTP status, never on `str(exc)`. The tuple of transient classes feeds `retry_on=` / `exceptions_to_handle=`:
 
 ```python
-from pydantic import BaseModel, Field
-from typing import Literal
-
-
-class TaskComplexity(BaseModel):
-    """Classify task complexity for model routing."""
-    complexity: Literal["simple", "moderate", "complex"] = Field(
-        description="simple=factual/short, moderate=reasoning/analysis, complex=multi-step/creative"
-    )
-
-
-class MultiProviderRouter:
-    """Route requests to appropriate models based on complexity."""
-
-    def __init__(self, provider_factory: LLMProviderFactory):
-        self._factory = provider_factory
-        # Use cheap model for classification
-        self._classifier = provider_factory.get("anthropic", "fast")
-
-    async def route(self, messages: list) -> BaseChatModel:
-        """Classify and route to the best model for the task."""
-        classifier = self._classifier.with_structured_output(TaskComplexity)
-        result = await classifier.ainvoke([
-            {"role": "system", "content": "Classify the complexity of this request."},
-            messages[-1],
-        ])
-
-        tier_map: dict[str, ModelTier] = {
-            "simple": "fast",
-            "moderate": "balanced",
-            "complex": "powerful",
-        }
-
-        tier = tier_map[result.complexity]
-        model = self._factory.get("anthropic", tier)
-        logger.info("model_routed", complexity=result.complexity, tier=tier)
-        return model
+TRANSIENT: tuple[type[Exception], ...] = (
+    # fill from the pinned SDKs: timeout, connection, 5xx, overloaded, short-retry rate limit classes
+)
 ```
 
-## Cost Estimation Calculator
+Verify class names against the installed SDK version; they differ between providers and majors.
+
+## Failover
+
+Use `TransientFallbackMiddleware` + `ModelRetryMiddleware(retry_on=TRANSIENT, on_failure="error")` from `agentic-templates-resilience.md`. Do not use a bare `primary.with_fallbacks([...])`: `exceptions_to_handle` defaults to `(Exception,)` (verified in langchain-core 1.8.4), so a 400, an auth error or a context overflow would switch provider. When composing manually, bind tools/structured output to **each** candidate before composing and pass `exceptions_to_handle=TRANSIENT`:
 
 ```python
-# Cost per 1M tokens (input, output) as of 2025
-COST_TABLE: dict[str, tuple[float, float]] = {
-    "claude-opus-4-20250514": (15.0, 75.0),
-    "claude-sonnet-4-20250514": (3.0, 15.0),
-    "claude-haiku-3-5-20241022": (0.80, 4.0),
-    "gpt-4o": (2.50, 10.0),
-    "gpt-4o-mini": (0.15, 0.60),
-}
-
-
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Estimate cost for a single LLM call.
-
-    Returns:
-        Estimated cost in USD.
-    """
-    if model not in COST_TABLE:
-        logger.warning("unknown_model_cost", model=model)
-        return 0.0
-
-    input_rate, output_rate = COST_TABLE[model]
-    cost = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
-    return round(cost, 6)
-
-
-def estimate_session_cost(model: str, turns: int, avg_input: int = 1000, avg_output: int = 500) -> float:
-    """Estimate cost for a multi-turn session."""
-    total_input = sum(avg_input * (i + 1) for i in range(turns))  # Accumulating context
-    total_output = avg_output * turns
-    return estimate_cost(model, total_input, total_output)
+model = chat_model("standard").bind_tools(tools).with_fallbacks(
+    [failover_model.bind_tools(tools)],     # approved same-tier equivalent
+    exceptions_to_handle=TRANSIENT,
+)
 ```
 
-## Prompt Caching (Anthropic)
+REMOVED: the default chain `anthropic/balanced → openai/balanced → anthropic/fast` mixed failover with a silent downgrade to an unevaluated faster tier.
 
-Reduce costs by caching long system prompts.
+## Complexity router
+
+Deterministic policy first, the classifier only when ambiguous, with a deadline, a validated label and a conservative fallback. Executed with a stub classifier: policy short-circuit, model route, timeout → `ROUTER_TIMEOUT`, invalid label → `ROUTER_INVALID`, a transient provider error (`ConnectionError`) → `ROUTER_UNAVAILABLE`; a non-transient error (e.g. auth) still raises so misconfiguration is loud.
 
 ```python
-from langchain_core.messages import SystemMessage
+class RouteLabel(BaseModel):
+    tier: Literal["fast", "standard", "deep"]
 
 
-def create_cached_system_prompt(content: str) -> SystemMessage:
-    """Create a system message with Anthropic prompt caching.
-
-    Prompt caching reduces cost by 90% for repeated system prompts.
-    The cache_control header tells Anthropic to cache this content.
-    """
-    return SystemMessage(
-        content=[
-            {
-                "type": "text",
-                "text": content,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
-    )
+@dataclass(frozen=True)
+class RouteFeatures:
+    """Minimal, sanitized features: never the raw user message."""
+    capability: str
+    has_images: bool
+    size_bucket: Literal["s", "m", "l"]
 
 
-# Usage in agent node
-SYSTEM_PROMPT = """You are an expert assistant with access to the following tools...
-[Long detailed system prompt with tool descriptions, rules, examples]
-"""
-
-cached_prompt = create_cached_system_prompt(SYSTEM_PROMPT)
-
-# First call: full cost, caches the system prompt
-# Subsequent calls: 90% cheaper for the cached portion
-messages = [cached_prompt, *state["messages"]]
-response = await llm.ainvoke(messages)
+async def route(text: str, f: RouteFeatures, classifier: Any, timeout_s: float) -> Route:
+    if _URGENT.search(text):
+        return Route("standard", "POLICY_SAFETY")            # deterministic, before any model call
+    if f.has_images:
+        return Route("standard", "POLICY_MULTIMODAL_FLOOR")
+    if f.size_bucket == "s" and f.capability == "faq":
+        return Route("fast", "POLICY_OBVIOUS")
+    try:
+        async with asyncio.timeout(timeout_s):
+            raw = await classifier.ainvoke(f"capability={f.capability} size={f.size_bucket} images={f.has_images}")
+        label = RouteLabel.model_validate(raw)
+    except TimeoutError:
+        return Route("standard", "ROUTER_TIMEOUT")
+    except ValidationError:
+        return Route("standard", "ROUTER_INVALID")
+    except TRANSIENT:                                          # provider unavailable: conservative route
+        return Route("standard", "ROUTER_UNAVAILABLE")
+    return Route(label.tier, "ROUTER_MODEL")
 ```
 
-## Provider Fallback with Circuit Breaker
+`classifier` is `chat_model("fast").with_structured_output(RouteLabel)` (returns a validated model; `model_validate` also accepts it). Log `reason_code` on every decision.
+
+## Intent routing without generation
+
+For routing a message to a handler (not to a model tier), an embedding router avoids a generation call: per-label prototype phrases, cosine similarity with a **threshold and a margin over the runner-up**, and an explicit "no match" that goes to the caller's deterministic fallback. Warm prototype embeddings at startup through a bounded-concurrency pool (a cold start must not cause a 429 burst). This replaces English keyword first-match classifiers and works across languages. Tune threshold/margin on a labelled set; the embedding model id is part of the prototype cache key.
+
+## Prompt caching (provider specifics)
+
+Ordering rule (all providers): static system text → tool schemas → examples → dynamic content (time, user data, retrieved chunks, memories). Anthropic marks cache breakpoints explicitly:
 
 ```python
-import time
-from dataclasses import dataclass, field
-
-
-@dataclass
-class CircuitBreaker:
-    """Simple circuit breaker for LLM providers."""
-
-    failure_threshold: int = 3
-    recovery_timeout: float = 60.0  # seconds
-    _failures: int = 0
-    _last_failure: float = 0.0
-    _state: str = "closed"  # closed, open, half-open
-
-    def can_execute(self) -> bool:
-        if self._state == "closed":
-            return True
-        if self._state == "open":
-            if time.time() - self._last_failure > self.recovery_timeout:
-                self._state = "half-open"
-                return True
-            return False
-        return True  # half-open: allow one attempt
-
-    def record_success(self) -> None:
-        self._failures = 0
-        self._state = "closed"
-
-    def record_failure(self) -> None:
-        self._failures += 1
-        self._last_failure = time.time()
-        if self._failures >= self.failure_threshold:
-            self._state = "open"
-            logger.warning("circuit_breaker_open", failures=self._failures)
+SystemMessage(content=[{"type": "text", "text": STATIC_POLICY, "cache_control": {"type": "ephemeral"}}])
 ```
+
+- Anything interpolated into `STATIC_POLICY` (a timestamp, a user name) breaks the cache on every call.
+- Cache writes can cost more than uncached input and there are minimum cacheable lengths: check the provider page and **measure cache-read tokens** before claiming a saving. Gemini reports `cached_content_token_count`.
+- Response/semantic caches are a different thing with different risks: `agentic-caching-patterns.md`.
+
+## Cost estimation
+
+Compute cost from **measured** usage (input, cached input, output including reasoning tokens) and a price map loaded from config keyed by exact model id. Unknown id → log `cost_unknown_model`, report cost as unknown, never substitute another model's price. Session projections must account for context growth per turn (input tokens grow with history unless trimmed). Metrics and dashboards: `deployment-ci-cd/reference/ai-observability.md`.
+
+## Circuit breaking
+
+Use the shared breaker from `python-dev/reference/reliability-idempotency-retries-outbox.md` §3 (half-open allows one probe; release in `finally` so a cancelled probe does not wedge it). An open breaker counts as `UnavailableError` for failover purposes.
 
 ## Key Rules
 
 | Rule | Standard |
 |------|----------|
-| Model selection | Use cheapest model that meets quality requirements |
-| Temperature | `0` for factual tasks, `0.7` only for creative |
-| Fallbacks | Always configure at least one fallback provider |
-| Cost tracking | Log token usage for every LLM call |
-| Caching | Use prompt caching for long system prompts |
-| Instantiation | Factory function only — never `ChatAnthropic()` inline in nodes |
-| Circuit breaker | Use for all external LLM calls |
+| Model ids | Settings only; per-environment probe before a bump |
+| Construction | `init_chat_model` in one module; never `ChatX()` inline in nodes |
+| Sampling | Per provider guidance per model; no global temperature rule |
+| Retry | One layer, transient classes only, inside the run deadline |
+| Failover | Same tier, availability errors only, `exceptions_to_handle` always set |
+| Router | Deterministic policy first; classifier with deadline + validated label + fallback |
+| Caching | Stable prefix ordering; measure cache reads |
+| Cost | From measured usage incl. reasoning + cached tokens; prices from config |

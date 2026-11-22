@@ -1,141 +1,95 @@
 # Agentic AI Code Review Checklist
 
-## Issue Severity
+Used by the `agentic-ai-reviewer` agent. Framework-neutral items first; LangChain/LangGraph specifics marked **[LG]**. Google ADK services use the same core items with `adk-reviewer` for ADK specifics.
 
-| Level | Criteria | Action |
-|-------|----------|--------|
-| P0 — Critical | Security vulnerability, data loss risk, infinite loop, production crash | BLOCK merge |
-| P1 — High | Missing error handling, no tests, cost risk, observability gap | REQUEST CHANGES |
-| P2 — Medium | Naming violation, missing docs, suboptimal pattern | REQUEST CHANGES |
-| P3 — Low | Style preference, minor optimization | COMMENT only |
+## Severity
+
+| Level | Criteria | Verdict effect |
+|-------|----------|----------------|
+| CRITICAL | Cross-tenant/user data exposure, model-controlled scope or authorization, unbounded loop/spend, side effect without approval or idempotency, secrets/PII leak | BLOCK |
+| HIGH | Missing deadline/step cap mapping, exception text to clients/streams/model, broken HITL resume, non-transient failover, missing tests for a new graph/tool | BLOCK |
+| MEDIUM | Suboptimal pattern, missing metric/trace attribute, weak but present validation | NEEDS_REVIEW |
+| LOW | Style, naming, docs | Comment only |
 
 ## Review Areas
 
-### P0 — Critical
+### 1. Authority and scope (CRITICAL)
+- Routing targets, scope ids, approvals and state transitions are computed by code; a model-proposed route is validated against a closed enum before `Command(goto=...)`
+- Tenant/org/user scope is injected into tools from verified context (**[LG]** `ToolRuntime[Ctx]` / `InjectedToolArg`); scope params are absent from the model-visible schema; missing scope = deny
+- `user_id`/`org_id`/`thread_id`/`session_id` are never trusted from body or query; thread keys are principal-scoped or ownership-checked
+- Tool allowlist is non-empty and every name resolves (test present); server-side authorization still runs on every backend call
+- Memory recall/write is principal-namespaced and fails closed (`agentic-memory-systems.md`)
+- Answer caches keyed by org + ACL scope + model + prompt version; no cross-user sharing of generated answers
 
-**1. Graph Correctness**
-- State uses `TypedDict` (not `dict[str, Any]`)
-- Message lists use `Annotated[list[BaseMessage], add_messages]`
-- `iteration_count` exists in state AND is checked in routing function
-- `recursion_limit` is set in graph config
-- No circular edges without exit condition
-- Checkpointer is configured (not `None` in production code)
-- `thread_id` is propagated from request to graph config
+### 2. Execution control (CRITICAL/HIGH)
+- **[LG]** Explicit `recursion_limit` from settings (default is 10000 in langgraph 1.0.x); `GraphRecursionError` caught and mapped to a typed status
+- **[LG]** `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` use `exit_behavior="error"` (the default `"end"` returns a library string as the answer)
+- Every run is inside `asyncio.timeout(settings.…)`; `TimeoutError` mapped to a typed status
+- Budgets are cumulative across router, sub-agents, retries and fallback models
+- A cap never returns the last message (possibly an unanswered tool call) as success
 
-**2. Safety / Guardrails**
-- User input is sanitized before passing to LLM
-- Prompt injection detection is present for user-facing agents
-- PII is redacted before logging
-- Output is validated before returning to user
-- Hallucination check exists for RAG agents
-- Token budget is enforced per request
-- User input is NEVER placed in system prompt strings
+### 3. Tools and side effects (CRITICAL/HIGH)
+- Tools return a typed JSON-serializable result with an explicit error field (`ok`/`error_code`/`data`), not exception strings; read results are projected through an allowlist of fields
+- Deterministic evidence gate after the run: all grounding tools failed/empty → `INSUFFICIENT_EVIDENCE` regardless of model text
+- Side-effecting tools take an idempotency key bound to a payload hash; high-consequence writes go through a propose → approve → execute flow
+- HITL uses `interrupt()`/`HumanInTheLoopMiddleware` + `Command(resume=<typed decision>)` with a durable checkpointer and an approval record; no substring matching, no in-process events, no new-message "resume"
+- Code before `interrupt()` has no side effects (the node re-runs on resume)
+- No stub tools returning synthetic data; each tool documents its degradation mode
 
-**3. Tool Validation**
-- Every `@tool` has a descriptive docstring (LLMs need this)
-- Every tool has try/except that returns error strings
-- Tools return `str` (not dict, list, or other types)
-- No destructive operations without HITL approval gate
-- No stack traces leaked to users via tool error messages
-- Tool inputs are validated (Pydantic `args_schema` for complex inputs)
+### 4. Errors, retries, failover (HIGH)
+- No `str(e)`/`exc_info=True`/user text in logs; Phase 2 `log_exception` used
+- No exception text in HTTP `detail`, SSE `data:` or `AIMessage` content
+- One retry layer, transient error classes only; **[LG]** `ModelRetryMiddleware(on_failure="error", retry_on=<transient>)`
+- Failover only on availability errors to an approved same-tier model; never on refusal/400/schema; `with_fallbacks(exceptions_to_handle=…)` set
+- Agent-run retries only when all tools are read-only/idempotent, on a fresh thread, never after the first streamed byte
 
-**4. Error Handling**
-- Error counter in state + fallback node when budget exhausted
-- Provider fallback chain configured (primary → secondary → fast)
-- Structured error responses in API (no raw exception messages)
-- No empty `except: pass` blocks
-- No silent empty returns on error (e.g., `return []`)
+### 5. Streaming (HIGH)
+- Every SSE `data:` is JSON; typed events; exactly one terminal event
+- Only user-facing node text is streamed; no tool args/outputs, router or grader tokens
+- Scoping/safety decisions made before returning `StreamingResponse`; `CancelledError` not swallowed
 
-**5. Secret Management**
-- No hardcoded API keys in source code
-- API keys not logged (even at debug level)
-- No PII in LangSmith trace metadata
-- `.env` file in `.gitignore`
-- Secrets loaded via pydantic-settings with validation
+### 6. Input/output safety (HIGH)
+- Untrusted text (user, retrieved, tool output, memory, OCR) goes in user/tool content, never interpolated into system instructions
+- Injection classifiers/regex are signals (log, raise risk), not the security boundary
+- Output validated against a schema before use; validation failure has a defined path (bounded retry → typed fallback)
 
-### P1 — High
+### 7. Inference configuration (MEDIUM/HIGH)
+- Model ids from settings only; no literal in code or test assertions
+- Sampling/reasoning params follow provider guidance for that model; output-token limit covers reasoning tokens; empty answer on a length finish is treated as a defect
+- Pins: `langgraph` and `langgraph-prebuilt` (and checkpoint packages) pinned together with `==`; lockfile committed
 
-**6. Cost Management**
-- Model selection matches task complexity (not using opus for classification)
-- Prompt caching is used for long system prompts (Anthropic `cache_control`)
-- Context is managed (trimming/summarization for long conversations)
-- Token usage is tracked via Prometheus metrics
-- Budget caps are configured (per-request, per-session, daily)
+### 8. Testing (HIGH for new graphs/tools)
+- Scripted fake model tests for routing, tool sequence/args, caps, error mapping, idempotency, HITL approve/reject
+- Cross-principal isolation test (threads, memory, caches)
+- Live golden + failure-matrix replay before release (`agentic-testing.md`)
 
-**7. Testing**
-- Basic invoke test exists (agent responds to simple message)
-- Tool usage test exists (agent uses tool when appropriate)
-- Iteration limit test exists (agent stops at max iterations)
-- Error recovery test exists (agent handles LLM/tool errors)
-- RAG tests exist if RAG is implemented (retrieval quality, groundedness)
-- All tests use `MemorySaver` — none connect to real databases
-- Test coverage >= 80% for agent graphs, >= 90% for guardrails
-
-**8. Observability**
-- LangSmith tracing is configured
-- Structured logging with correlation IDs (structlog + contextvars)
-- Prometheus metrics for latency, token usage, errors, cost
-- Health check endpoint pings all dependencies
-
-### P2 — Medium
-
-**9. Architecture**
-- Clean separation: routes → graphs → tools → services
-- LLM instantiation via factory function (not inline)
-- Configuration via pydantic-settings (not `os.getenv()`)
-- All I/O operations are `async def`
-- Import order: stdlib → third-party → langchain → local
-
-**10. Documentation**
-- Agent purpose documented (what it does, when to use it)
-- Tool docstrings explain when and how to use each tool
-- Complex routing logic has comments explaining the decision
-- State fields have docstring/comment explaining their purpose
+### 9. Observability and cost (MEDIUM)
+- Traces carry agent, model, tool and prompt version; no PII in trace metadata
+- Token/cost metrics with bounded labels (provider, model, feature) — never user/org ids as metric labels
+- Retry, failover, cap-hit and fallback counters
 
 ## Output Format
 
-For each issue found:
+For each finding:
 
 ```
-### [P{level}] {area}: {short description}
-
-**File:** `{file_path}:{line_number}`
-**Issue:** {what's wrong}
-**Fix:** {specific code change or approach}
+### [SEVERITY] {area}: {short description}
+**Evidence:** `{file_path}:{line}` — `{quoted code}`
+**Impact:** {what breaks, for whom}
+**Fix:** {specific change}
 ```
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
 
 ## Summary Template
 
 ```
 ## Review Summary
-
-**Verdict:** {APPROVE | REQUEST CHANGES | BLOCK}
-
-### Statistics
-- Files reviewed: {count}
-- P0 issues: {count}
-- P1 issues: {count}
-- P2 issues: {count}
-- P3 issues: {count}
-
-### Critical Issues
-{list P0 issues}
-
-### Required Changes
-{list P1 issues}
-
-### Suggestions
-{list P2/P3 issues}
+Files reviewed: {count}
+Checks executed: {commands + exit codes, or NOT RUN}
+VERDICT: {APPROVE|NEEDS_REVIEW|BLOCK} — CRITICAL: N | HIGH: N | MEDIUM: N | LOW: N
 ```
 
 ## Reference
 
-Consult the `agentic-ai-dev` skill reference files for expected patterns:
-- `agentic-templates-basic.md` — ReAct, Multi-Agent patterns
-- `agentic-templates-advanced.md` — Supervisor, Command, Sub-Graph patterns
-- `agentic-templates-resilience.md` — Error Recovery, design decisions
-- `agentic-templates-tools.md` — Tool patterns
-- `agentic-guardrails-security.md` — Security patterns
-- `agentic-testing.md` — Test patterns
-- `agentic-observability.md` — Observability patterns
-- `agentic-standards-examples.md` — Anti-pattern reference
+Expected patterns: `agentic-templates-core.md`, `agentic-streaming-hitl.md`, `agentic-templates-resilience.md`, `agentic-error-handling.md`, `tool-execution-safety.md`, `llm-inference-and-model-routing.md`, `agentic-memory-systems.md`, `agentic-caching-patterns.md`, `agentic-guardrails-security.md`, `agentic-testing.md`, `agentic-ai-coding-standard/reference/agentic-standards-examples.md`.

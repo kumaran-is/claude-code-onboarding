@@ -9,7 +9,7 @@ metadata:
   role: architect
   scope: design
   output-format: architecture
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
@@ -41,8 +41,9 @@ Load this skill when:
 ## Pattern Selection Quick Guide
 
 ```
-Is the task too large for one context window?
-    NO → Single agent. Multi-agent adds overhead, not capability.
+Do parts of the task need different tools, permissions, models or data scopes,
+or does one context window overflow?
+    NO → Single agent (or a deterministic workflow). Multi-agent adds overhead, not capability.
     YES ↓
 
 Do subtasks decompose cleanly into parallel work?
@@ -104,9 +105,26 @@ Multi-agent architectures address this by partitioning work across multiple cont
 ### Consensus: The Sycophancy Problem
 
 Simple majority voting among agents degrades to consensus on false premises — agents bias toward agreement. Mitigations:
-- **Weighted voting**: Agents with higher confidence carry more weight
+- **Verifier over voting**: where a deterministic check exists (tests, schema, evidence gate), it decides; votes don't
+- **Weighted voting**: weights from measured per-agent accuracy on evals, never from the agents' self-reported confidence (uncalibrated)
 - **Debate protocols**: Agents critique each other's outputs (adversarial > collaborative for accuracy)
 - **Trigger-based intervention**: Monitor for stall and sycophancy markers
+
+---
+
+## Delegation, Scope and Authority (all patterns)
+
+| Rule | Why |
+|---|---|
+| Each agent gets its own explicit tool allowlist; a sub-agent never inherits the parent's full tool set | Least privilege; a compromised or confused sub-agent can only do its job |
+| Identity and tenant scope travel in run `context`/config set by code, never in messages between agents | Messages are model text; a forged "org_id" in a handoff must have no effect |
+| Handoff payloads are typed (schema-validated) and treated as untrusted data by the receiver | One agent's injection must not become another agent's instruction |
+| A delegated agent receives the **remaining** budget (calls, tokens, deadline), not a fresh one | Budgets are cumulative per user request |
+| Routes/handoffs are validated by code against a closed set plus transition rules; hop cap with a typed status | The model proposes, code authorizes (`agentic-ai-dev/reference/agentic-templates-advanced.md`) |
+| No agent approves another agent's high-consequence action; approvals are human (or policy code) and durable | Agents request, workflows commit (`workflow-orchestration-patterns`) |
+| Cross-service agents (A2A or similar protocols) authenticate as services, re-authorize per call, and pass no user credentials | See `references/architectural-patterns.md` §Cross-service agents |
+
+Tool-level controls: `agentic-ai-dev/reference/tool-execution-safety.md`.
 
 ---
 
@@ -145,6 +163,7 @@ With this pattern, swarm architectures can slightly outperform supervisor archit
 - Define explicit handoff protocols with state passing
 - Implement convergence constraints for swarm patterns (time-to-live, iteration limits)
 - Validate agent outputs before passing to downstream agents
+- Give every agent its own allowlist and pass scope via context, not messages
 
 ### MUST NOT DO
 - Use multi-agent for tasks a single agent can handle — overhead is ~15× tokens

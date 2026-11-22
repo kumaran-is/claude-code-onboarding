@@ -28,9 +28,11 @@ async for update in graph.astream(
             print(f"  tool_calls={getattr(last_msg, 'tool_calls', None)}")
 ```
 
+Note: LangGraph 1.0.x defaults `recursion_limit` to 10000 (not 25): without an explicit server-side limit a looping agent burns thousands of model calls before `GraphRecursionError` is raised. The error raises; it does not END gracefully.
+
 **Fixes:**
-1. Add iteration counter check in routing function
-2. Add max error counter — after N tool errors, force END
+1. Set `recursion_limit` from settings on every run and map `GraphRecursionError` to a typed `ITERATION_LIMIT` status (`agentic-templates-core.md`); with `create_agent`, add `ModelCallLimitMiddleware(run_limit=N, exit_behavior="error")`
+2. Add max error counter — after N tool errors, route to a typed fallback node
 3. Verify routing function returns END for non-tool-call responses
 4. Check that tool results satisfy the agent's query
 
@@ -42,7 +44,7 @@ async for update in graph.astream(
 - No RAG grounding — relying on training data
 - Retrieved documents are irrelevant
 - System prompt doesn't enforce grounding
-- Temperature too high
+- No deterministic evidence gate: grounding tools failed but the model answered anyway (`tool-execution-safety.md`)
 
 **Diagnosis:**
 ```python
@@ -119,11 +121,12 @@ print(f"Length: {len(result)}")
 ```
 
 **Fixes:**
-1. Add retry with exponential backoff to tools
+0. `next(gen)` on an exhausted generator inside `async def` becomes `RuntimeError` (PEP 479) and escapes the tool's error handling: use `next(gen, None)` plus an explicit degraded result
+1. Add retry with exponential backoff to read-only or idempotency-keyed tools only
 2. Add timeout to all I/O operations
 3. Improve tool docstrings — LLM uses these to generate arguments
 4. Add input validation with Pydantic `args_schema`
-5. Return helpful error strings instead of empty results
+5. Return a typed result (`ok`/`error_code`/`data`) instead of empty results or exception strings
 
 ### 5. Memory / State Loss
 
@@ -131,7 +134,9 @@ print(f"Length: {len(result)}")
 
 **Root Causes:**
 - Not using checkpointer
-- Using `MemorySaver` in production (not persistent)
+- Using `InMemorySaver`/`MemorySaver` in production (not persistent)
+- `from_conn_string()` assigned instead of entered with `async with` (startup AttributeError)
+- Thread id not derived the same way on every request (e.g. client id used raw on one route, principal-scoped on another)
 - Wrong `thread_id` — each thread has separate state
 - Message list not using `add_messages` annotation
 
@@ -140,18 +145,16 @@ print(f"Length: {len(result)}")
 # Inspect checkpointed state
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-checkpointer = AsyncPostgresSaver.from_conn_string(db_uri)
-state = await checkpointer.aget({"configurable": {"thread_id": "thread-123"}})
-if state:
-    print(f"Messages in state: {len(state.values.get('messages', []))}")
-    for msg in state.values["messages"]:
-        print(f"  [{type(msg).__name__}] {msg.content[:100]}")
-else:
-    print("No state found for this thread_id")
+# from_conn_string() is an async context manager — enter it
+async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
+    graph = build_support_agent(checkpointer=checkpointer)
+    snapshot = await graph.aget_state({"configurable": {"thread_id": thread_key}})  # principal-scoped key
+    messages = snapshot.values.get("messages", [])
+    print(f"messages={len(messages)} next={snapshot.next}")   # local debugging only: never log content in prod
 ```
 
 **Fixes:**
-1. Use `PostgresSaver` in production
+1. Use `AsyncPostgresSaver` entered in the app lifespan (`agentic-templates-core.md`)
 2. Verify `thread_id` is consistent across requests
 3. Ensure state uses `Annotated[list[BaseMessage], add_messages]`
 4. Check that the checkpointer `setup()` was called at startup
@@ -185,23 +188,22 @@ class DebugCallbackHandler(AsyncCallbackHandler):
         logger.debug("llm_start", model=model, prompt_count=len(prompts))
 
     async def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
-        for gen in response.generations:
-            for g in gen:
-                content = g.text[:200] if g.text else "[tool_calls]"
-                logger.debug("llm_response", content=content)
+        # Counts only: generated text can contain user data. Inspect content in a trace viewer
+        # (local or redacted), not in application logs.
+        logger.debug("llm_response", generations=sum(len(gen) for gen in response.generations))
 
     async def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
-        logger.error("llm_error", error=str(error))
+        log_exception(logger, "llm_error", error)
 
     async def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
         tool_name = serialized.get("name", "unknown")
-        logger.debug("tool_start", tool=tool_name, input=input_str[:200])
+        logger.debug("tool_start", tool=tool_name, input_chars=len(input_str))
 
     async def on_tool_end(self, output: str, **kwargs: Any) -> None:
-        logger.debug("tool_end", output=output[:200])
+        logger.debug("tool_end", output_chars=len(str(output)))
 
     async def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
-        logger.error("tool_error", error=str(error))
+        log_exception(logger, "tool_error", error)
 
     async def on_chat_model_start(self, serialized: dict, messages: list[list[BaseMessage]], **kwargs: Any) -> None:
         model = serialized.get("kwargs", {}).get("model", "unknown")

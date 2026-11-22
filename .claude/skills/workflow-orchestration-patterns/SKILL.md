@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
@@ -76,6 +76,17 @@ Does the code touch an external system? (API, DB, file, email, network)
 - HTTP calls, DB queries, file I/O — move to Activity
 - Threading, locks, `Thread.sleep()` — use `Workflow.sleep()`
 - Non-deterministic libraries
+
+## AI Agents and Workflows: Agents Request, Workflows Commit
+
+When an LLM agent is part of a business process, the agent decides *what to ask for*; the workflow owns *what happens*:
+
+- The agent emits a typed proposal (action, args, evidence, required authority). It never holds a multi-step transaction open.
+- The workflow validates the proposal in code, waits for human approval as a **Signal** when the action is high-consequence, then runs each side effect as an idempotent Activity with a compensation (saga).
+- LLM calls themselves run as Activities (they are non-deterministic and touch the network), with their own timeouts and retry policy limited to transient errors.
+- A crashed agent run or an exhausted agent budget leaves no half-applied change: nothing was committed outside the workflow.
+
+Agent-side patterns: `agentic-ai-dev/reference/tool-execution-safety.md` (§2 authority tiers, §6 idempotency, §9 compensation) and `agentic-ai-dev/reference/agentic-streaming-hitl.md` (durable approvals).
 
 ## Conventions & Rules
 

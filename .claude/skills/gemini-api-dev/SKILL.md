@@ -3,13 +3,13 @@ name: gemini-api-dev
 description: "Direct Gemini API development with google-genai (Python) and @google/genai (TypeScript). Use when building multimodal applications, function calling, structured output, context caching, embeddings, or code execution with Gemini models — without the ADK framework overhead."
 allowed-tools: Bash, Read, Write, Edit, WebFetch
 metadata:
-  triggers: Gemini API, google-genai, @google/genai, multimodal, Gemini embeddings, context caching, code execution sandbox, Gemini function calling, Gemini structured output, direct Gemini, gemini-3.1
+  triggers: Gemini API, google-genai, @google/genai, multimodal, Gemini embeddings, context caching, code execution sandbox, Gemini function calling, Gemini structured output, direct Gemini, HttpRetryOptions, thinking_level
   related-skills: google-adk, agentic-ai-dev, python-dev, nestjs-api
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
@@ -31,13 +31,13 @@ last-reviewed: "2026-03-15"
 | Session management / memory | ❌ | ✅ |
 | Multi-agent orchestration | ❌ | ✅ |
 
-## Current Models (as of 2026-03-15)
+## Models
 
-- `gemini-3.1-flash` — 1M tokens, fast, balanced, multimodal. **Default for most tasks.**
-- `gemini-3.1-pro` — 1M tokens, complex reasoning, coding, research
-- `gemini-3.1-pro-image` — Image generation and editing
+Do not hardcode model ids in code or in this skill — the lineup changes faster than docs. Read the id from config (`settings.agent_model` / `GEMINI_MODEL`, required, no default) and check `https://ai.google.dev/gemini-api/docs/models` for current ids, limits and deprecation dates. A model bump is a release:
 
-> **Legacy models are deprecated:** `gemini-2.5-*`, `gemini-2.0-*`, `gemini-1.5-*` — do not use.
+1. Probe the new id **on the endpoint you deploy to** (developer API and Vertex differ): one call with your real config (thinking level, schema, tools) must succeed.
+2. Run the eval suite on both ids; compare cost, latency and failure rates, not only quality.
+3. Roll out gradually with a rollback (`deployment-ci-cd/reference/llmops-release-and-rollout.md`).
 
 ## SDKs
 
@@ -51,26 +51,42 @@ last-reviewed: "2026-03-15"
 ### Python
 ```python
 from google import genai
+from google.genai import types
 
-client = genai.Client()  # uses GOOGLE_API_KEY env var
+client = genai.Client()  # developer API: GOOGLE_API_KEY; Vertex: GOOGLE_GENAI_USE_VERTEXAI + project/location via ADC
 response = client.models.generate_content(
-    model="gemini-3.1-flash",
-    contents="Explain quantum computing"
+    model=settings.gemini_model,
+    contents="Explain quantum computing",
 )
-print(response.text)
+text = answer_text(response)  # see "Empty answers" below; response.text can be None
 ```
 
 ### TypeScript (NestJS)
 ```typescript
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({});  // uses GOOGLE_API_KEY env var
+const ai = new GoogleGenAI({});  // reads the same env vars
 const response = await ai.models.generateContent({
-  model: "gemini-3.1-flash",
-  contents: "Explain quantum computing"
+  model: config.geminiModel,
+  contents: "Explain quantum computing",
 });
-console.log(response.text);
 ```
+
+Create one client per process and reuse it. Framework-neutral inference rules (timeouts per call class, retry ownership, fallbacks, routing): `agentic-ai-dev/reference/llm-inference-and-model-routing.md`.
+
+## Auth per environment
+
+| Environment | Endpoint | Credential |
+|---|---|---|
+| local | developer API or Vertex | developer key in a git-ignored `.env`, or ADC (`gcloud auth application-default login`) |
+| test / CI | none — fake the client or the model | none |
+| staging / production | Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`, project, location) | service-account ADC / workload identity — no API key; fail startup if one is set |
+
+## Sampling and thinking (Gemini 3.x)
+
+- Keep `temperature`, `top_p`, `top_k` at their defaults. Google's Gemini 3 guide: the default temperature 1.0 is recommended and lowering it may cause looping or degraded performance on reasoning tasks; newer generations ignore these fields and return deprecation warnings. Get consistency from `response_schema`, validators and evals instead. Older-model advice ("temperature 0.1 for extraction") does not carry over.
+- Control reasoning depth with `types.ThinkingConfig(thinking_level=...)` (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH` in google-genai 1.75) rather than `thinking_budget`; check which levels your model accepts.
+- **`max_output_tokens` includes thinking tokens.** If the model thinks up to the cap you get `finish_reason=MAX_TOKENS` with empty or truncated text, and the thinking is still billed. Lower `thinking_level` or raise the cap; never shrink the cap to "save cost" on a reasoning model. Track `usage_metadata.thoughts_token_count`.
 
 ## Key Capabilities
 
@@ -109,8 +125,8 @@ uv add google-genai
 # TypeScript setup
 npm install @google/genai
 
-# Set API key (get from Google AI Studio: aistudio.google.com)
-export GOOGLE_API_KEY=your_key_here
+# Local only: put the developer key in a git-ignored .env (or a secret manager) and load it
+# into the process, e.g. `uv run --env-file .env ...`; never paste keys into shell history or code
 
 # Verify SDK version
 python -c "import google.genai; print(google.genai.__version__)"
@@ -119,32 +135,83 @@ node -e "const {GoogleGenAI}=require('@google/genai'); console.log('ok')"
 
 ## Error Handling
 
-> Fetch `https://ai.google.dev/gemini-api/docs/error-codes.md.txt` for current error code reference.
+> Current codes: `https://ai.google.dev/gemini-api/docs/troubleshooting`.
 
-**Rate limits (429):** Implement exponential backoff — do not retry immediately.
-**Invalid API key (401):** Check `GOOGLE_API_KEY` env var — never hardcode keys.
-**Model not found:** Verify model ID against `models.md.txt` — model names change between releases.
-**Payload too large:** Check 2MB limit for inline data; use File API for larger inputs.
+Retries belong to the SDK, configured once (verified with google-genai 1.75 against a local fake HTTP server — no live call): with `retry_options` unset the SDK makes **one** attempt; with `HttpRetryOptions` a 503 was attempted 3 times and a 400 once. Do not wrap the call in another retry library (`google.api_core.retry` is for the older Google Cloud client libraries, not `google-genai`) and do not stack app-level retries on top — attempts multiply.
 
 ```python
-# Python — retry with backoff on rate limit
-import time
-from google.api_core import retry
 from google import genai
+from google.genai import errors, types
 
-client = genai.Client()
+RETRYABLE = {408, 500, 502, 503, 504}   # 429 deliberately absent: see below
 
-@retry.Retry(predicate=retry.if_transient_error)
-def generate_with_retry(prompt: str) -> str:
-    response = client.models.generate_content(
-        model="gemini-3.1-flash",
-        contents=prompt,
-    )
-    return response.text
+client = genai.Client(
+    http_options=types.HttpOptions(
+        timeout=30_000,  # milliseconds, per attempt
+        retry_options=types.HttpRetryOptions(attempts=3, initial_delay=1.0, max_delay=8.0,
+                                             http_status_codes=sorted(RETRYABLE)),
+    ),
+)
+
+
+class EmptyAnswer(Exception):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+
+def answer_text(response: types.GenerateContentResponse) -> str:
+    if response.prompt_feedback and response.prompt_feedback.block_reason:
+        raise EmptyAnswer(f"PROMPT_BLOCKED:{response.prompt_feedback.block_reason}")
+    if not response.candidates:
+        raise EmptyAnswer("NO_CANDIDATES")
+    finish = response.candidates[0].finish_reason
+    text = response.text or ""
+    if finish == types.FinishReason.MAX_TOKENS:
+        raise EmptyAnswer("MAX_TOKENS")  # thinking can consume the whole budget
+    if finish not in (types.FinishReason.STOP, None) or not text:
+        raise EmptyAnswer(f"FINISH_{finish}")
+    return text
+
+
+try:
+    text = answer_text(client.models.generate_content(model=settings.gemini_model, contents=prompt))
+except errors.APIError as exc:          # after the SDK's own retries
+    log_exception(logger, "gemini_call_failed", exc, status_code=exc.code)
+    raise ModelUnavailable(code=exc.code) from exc   # route maps to a typed status
+except EmptyAnswer as exc:
+    log_exception(logger, "gemini_empty_answer", exc, reason=exc.reason)
+    raise
 ```
+
+- Classify by `errors.APIError.code` (`ClientError` = 4xx, `ServerError` = 5xx). Never retry 400/401/403/404; fix the request, key or model id.
+- **429 is not in `RETRYABLE`.** `HttpRetryOptions` decides by HTTP status code only, so it cannot tell a per-minute rate limit from an exhausted daily/project quota: with 429 listed, a quota-exhausted 429 was retried like any other (fake server, 3 attempts), contradicting "quota exhausted: never retry" (`agentic-ai-dev/reference/llm-inference-and-model-routing.md` §5). Handle 429 in app code as the single retry layer for it: `RateLimitedError` (bounded retry, honour the delay) only when the error says the wait is short (a RetryInfo delay / `Retry-After`; inspect `exc.details` and confirm the shape on a captured real 429 before relying on it), otherwise `QuotaExhaustedError` (no retry, report BLOCKED). If you keep 429 in the SDK set instead, write down that a quota 429 costs `attempts - 1` extra calls before it surfaces.
+- Log with `log_exception` (type, code, ids — never `str(exc)`, prompts or output): `deployment-ci-cd/reference/python-observability.md` §2.
+- Empty or blocked answers are typed outcomes, not `""`. Retry SAFETY/RECITATION/MAX_TOKENS only after changing something.
+
+## Multimodal input safety
+
+```python
+MAGIC = {b"\x89PNG\r\n\x1a\n": "image/png", b"\xff\xd8\xff": "image/jpeg", b"%PDF-": "application/pdf"}
+MAX_BYTES = 10 * 1024 * 1024
+
+
+def sniff_mime(data: bytes) -> str:
+    if len(data) > MAX_BYTES:
+        raise ValueError("FILE_TOO_LARGE")
+    for magic, mime in MAGIC.items():
+        if data.startswith(magic):
+            return mime
+    raise ValueError("UNSUPPORTED_TYPE")   # never trust the extension or client Content-Type
+
+
+part = types.Part.from_bytes(data=upload, mime_type=sniff_mime(upload))
+```
+
+Inline requests have a total size limit (check the current figure in the docs); use the File API for larger media. Fetch media only from allow-listed storage, never a user- or model-supplied URL. Text inside images and PDFs is untrusted input.
 
 ## Post-Code Review
 
 After writing Gemini API integration code, dispatch:
-- `security-reviewer` — API key handling, no keys in code, input sanitization before sending to model
+- `security-reviewer` — key handling, keyless deployed auth, upload validation
+- `ai-security-reviewer` — untrusted content in prompts, tool calls, output handling
 - `code-reviewer` — general quality, error handling completeness

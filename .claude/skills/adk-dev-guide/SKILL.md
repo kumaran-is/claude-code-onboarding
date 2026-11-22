@@ -9,12 +9,16 @@ metadata:
   role: specialist
   scope: workflow
   output-format: guide
-last-reviewed: "2026-04-16"
+last-reviewed: "2026-11-22"
 ---
 
 # ADK Development Guide
 
 Development lifecycle guardrails for AI agents using Google ADK and Gemini models.
+
+## Iron Law
+
+**No phase is done without executed evidence.** Phase 2 ends with tests that pass using a scripted fake model and no credentials; Phase 3 ends with an eval run whose failures fail the command; Phase 4 starts only from a locked, exactly pinned ADK version. Report anything you did not execute as NOT RUN.
 
 ## 4-Phase Development Lifecycle
 
@@ -38,7 +42,8 @@ Every ADK agent feature follows this workflow. Skipping phases increases risk of
 - Use `ToolContext` for session state — never global variables
 - Import tools with precision (see ADK Import Precision Rules section below)
 - Add `# Fallback:` comment to every tool function
-- Use `InMemoryRunner` for development and tests
+- Tests use `InMemoryRunner` **plus a scripted fake model** — `InMemoryRunner` only swaps services and still calls the real model (`google-adk/reference/adk-testing.md` §2)
+- Bound every run: `RunConfig(max_llm_calls=N)`, `asyncio.timeout`, `LoopAgent(max_iterations=N)` (its default is unbounded)
 - Development commands:
   - `adk web` — launch ADK playground for interactive testing
   - `uv run pytest tests/ -v` — run unit tests
@@ -59,6 +64,7 @@ Every ADK agent feature follows this workflow. Skipping phases increases risk of
 - Refine agent instructions, tool signatures, or tool implementations
 - Re-run until success rate stabilizes
 - Common pitfalls: app name must match directory name, state type mismatches, tool return types
+- `adk eval` prints pass/fail counts but does not fail the process on failed cases in 1.29 (source read) — gate CI through pytest + `AgentEvaluator.evaluate` (`adk-deploy-guide` skill, "Eval gate before traffic")
 
 **Stop if:**
 - Success rate plateaus below target threshold (defined in eval_config.json)
@@ -117,36 +123,28 @@ One-sentence mission statement.
 
 ## ADK Import Precision Rules
 
-ADK tools must be imported from their **specific submodule**, not from the package level.
-
-### Correct Import Patterns
+Use the import paths the **installed** package exports; never guess and never copy paths from older docs. Executed against `google-adk==1.29.0`:
 
 ```python
-# ✅ CORRECT — import from specific submodule
-from google.adk.tools.google_search import google_search
-from google.adk.tools.load_web_page import load_web_page
-from google.adk.tools.built_in_code_execution import built_in_code_execution
+# ✅ Works in 1.29
+from google.adk.tools import google_search, load_web_page, exit_loop, AgentTool, FunctionTool, ToolContext
+from google.adk.code_executors import BuiltInCodeExecutor      # Agent(code_executor=BuiltInCodeExecutor())
+from google.adk.runners import InMemoryRunner, Runner
+from google.adk.agents import Agent, LlmAgent, SequentialAgent, ParallelAgent, LoopAgent, RunConfig
 
-# ❌ WRONG — DO NOT import from package level
-from google.adk.tools import google_search       # ✗ Will fail at runtime
-from google.adk.tools import load_web_page       # ✗ Will fail at runtime
+# ❌ Fails in 1.29 (ModuleNotFoundError / ImportError)
+from google.adk.tools.google_search import google_search        # module is google_search_tool
+from google.adk.tools.built_in_code_execution import built_in_code_execution
+from google.adk import InMemoryRunner                            # google.adk exports Agent, Runner only
 ```
 
-### Commonly Used Built-In Tools (Correct Import Paths)
-
-| Tool | Correct Import |
-|------|----------------|
-| Google Search | `from google.adk.tools.google_search import google_search` |
-| Load Web Page | `from google.adk.tools.load_web_page import load_web_page` |
-| Built-In Code Execution | `from google.adk.tools.built_in_code_execution import built_in_code_execution` |
-
-**Rule:** When in doubt about import syntax, check the google-adk skill or the official ADK documentation — do not guess.
+**Rule:** before adding an import, run `uv run python -c "from <module> import <name>"` against the locked version. Pin ADK exactly so the check stays true.
 
 ---
 
 ## GOOGLE_CLOUD_LOCATION Debugging
 
-Model 404 errors are almost always a location issue, not a model name issue.
+On Vertex, a model 404 is usually a location or project issue — check those first, then whether that model id is offered on Vertex in that region (an id that works on the developer API may not).
 
 ### Debug Sequence
 
@@ -160,13 +158,13 @@ Model 404 errors are almost always a location issue, not a model name issue.
 ### Example Error & Recovery
 
 ```
-Error: 404 Model 'projects/my-project/locations/europe-west1/models/gemini-3.1-flash' not found
+Error: 404 Model 'projects/my-project/locations/<region>/models/<model-id>' not found
 
-↓ Fix:
-GOOGLE_CLOUD_LOCATION=us-central1 python app.py
+↓ Fix: set GOOGLE_CLOUD_LOCATION (deploy config, not code) to a region the models page lists for
+<model-id>, or a global endpoint if your model supports it; re-run the one-call probe
 ```
 
-**Remember:** Location is the #1 cause of 404 errors in ADK development. Check it first.
+**Remember:** check location and project first, then model availability on that endpoint.
 
 ---
 
@@ -200,13 +198,14 @@ If the same error occurs 3+ times in a row: **STOP immediately**. Do not retry t
 - Tool returns error → model retries same tool → same error (repeat forever)
 - State validation fails → agent resets state → validation fails again
 - Rate limit hit → agent retries immediately → rate limit hit again
+- `LoopAgent` without `max_iterations` (default `None`) or a run without `max_llm_calls` (default 500)
 
 ### How to Break the Loop
 
-1. **Add `on_tool_error_callback`** to interrupt the retry cycle
-2. **Adjust agent instruction** to handle the specific error gracefully
+1. **Cap the run** — `RunConfig(max_llm_calls=N)` raises `LlmCallsLimitExceededError` instead of looping
+2. **Return typed tool errors** (`{"ok": False, "error_code": ...}`); convert exceptions with `on_tool_error_callback`; say in the instruction which codes are final (do not retry)
 3. **Add state guards** to detect invalid state before calling tools
-4. **Implement exponential backoff** for rate-limited tools
+4. **Configure model retries once** in the client (`HttpRetryOptions`, `gemini-api-dev` skill) — not in the agent loop
 
 ### Escalation Protocol
 
@@ -235,9 +234,9 @@ Example table:
 | Constraint | Value | Notes |
 |-----------|-------|-------|
 | ADK version | `google-adk==X.Y.Z` exactly | Pin to specific version |
-| Model | `gemini-3.1-flash` | Default — override per agent if needed |
-| Runner (dev) | `InMemoryRunner` for tests | Never use real API in unit tests |
-| Runner (prod) | `Runner` for production | Wire VertexAiSessionService |
+| Model | `settings.agent_model` (env `AGENT_MODEL`) | No literal id in code; bump = probe + evals + gradual rollout |
+| Runner (dev) | `InMemoryRunner` + scripted fake model in tests | Never use real API in unit tests |
+| Runner (prod) | `Runner`, built once per process | `DatabaseSessionService` (Postgres/Cloud SQL) or `VertexAiSessionService(project=, location=, agent_engine_id=)` (Agent Engine) |
 | Every tool must have | `# Fallback:` comment | Defines degradation mode |
 | Eval gates | Accuracy thresholds block merge | Define per-agent thresholds |
 
@@ -295,7 +294,7 @@ def get_runner_agent() -> BaseAgent:
     return RunnerAgent()
 ```
 
-Use the autopilot variant in all `InMemoryRunner` unit tests. Zero API cost, deterministic assertions.
+Use the autopilot variant when you need whole-system runs without a model (load tests, demos). For unit tests of a real `LlmAgent`, prefer the scripted fake model (`google-adk/reference/adk-testing.md` §2): it exercises your actual instructions, tools and callbacks, which a replaced `_run_async_impl` skips.
 
 ### NDJSON Replay for Integration Tests and Demos
 
@@ -307,7 +306,7 @@ with open("recordings/sim-run.ndjson", "a") as f:
     f.write(json.dumps({"ts": elapsed, "event": event.model_dump()}) + "\n")
 ```
 
-Commit the recording — it becomes a regression baseline. CI replays it; no agents need to be running.
+Commit the recording — it becomes a regression baseline. CI replays it; no agents need to be running. Raw events contain user text, tool arguments and model output: record only from synthetic or consented sessions, redact before committing, and never record production traffic into the repo.
 
 **When to use either pattern:** CI integration tests, load testing (run 1000s of autopilot agents cheaply), keynote demos, UI development iterations.
 

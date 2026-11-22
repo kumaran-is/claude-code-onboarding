@@ -29,7 +29,7 @@ Before writing any code or running any command, ask ALL of the following. Presen
   - `vertex_ai_search` — for document search, search engine
 - If agent should be **available to other agents** → **A2A protocol?** Use `--agent adk_a2a` (see Option C below)
 - If **full deployment** chosen → **CI/CD runner?** Choose `github_actions` (WIF-based, no PAT) or `google_cloud_build` (native GCP)
-- If **Cloud Run** chosen → **Session storage?** `cloud_sql` for production (VertexAiSessionService); `in_memory` for dev/prototype
+- If **Cloud Run** chosen → **Session storage?** `cloud_sql` for production → `DatabaseSessionService(db_url="postgresql+asyncpg://...")` (needs `sqlalchemy[asyncio]` + `asyncpg`); `in_memory` for dev/prototype only. `VertexAiSessionService(project=, location=, agent_engine_id=)` is for Agent Engine deployments
 - If **background job** chosen (schedule/event trigger, no HTTP) → Use Option D (BackgroundJob pattern) — no FastAPI, no streaming
 
 ---
@@ -60,28 +60,29 @@ Before writing any code or running any command, ask ALL of the following. Presen
 
    ### Option B: Manual setup
 
-   Initialize project — `uv init $ARGUMENTS --python 3.14`
+   Initialize project — `uv init $ARGUMENTS --python <the interpreter you deploy>` (verify `google-adk` installs on it; the skill references were executed on 3.12)
 
    Add dependencies:
    ```bash
-   uv add google-adk "google-genai>=1.0.0" "fastapi>=0.135.2" "uvicorn[standard]" pydantic pydantic-settings structlog
-   uv add --dev pytest pytest-asyncio httpx ruff mypy
+   uv add "google-adk==1.29.0" fastapi "uvicorn[standard]" pydantic-settings structlog "sqlalchemy[asyncio]" asyncpg
+   uv add --dev pytest pytest-asyncio httpx aiosqlite ruff mypy
+   # pin every dependency exactly (==) to what uv lock resolved; commit uv.lock
    ```
 
    Create directory structure per `adk-project-config.md`:
-   - `src/config.py` — pydantic-settings with GOOGLE_API_KEY
-   - `src/agents/` — Agent definitions using gemini-3.1-flash
+   - `src/config.py` — Settings with required `agent_model` and the per-environment auth matrix (`adk-project-config.md` §3)
+   - `src/agents/` — Agent definitions with `model=settings.agent_model` (no literal id)
    - `src/tools/` — Tool functions with full docstrings
-   - `src/api/routes.py` — /chat and /stream endpoints
-   - `src/main.py` — FastAPI app with lifespan + Runner init
+   - `src/api/routes.py` — POST /chat and POST /stream (`adk-fastapi-integration.md`: principal-owned sessions, timeout, `max_llm_calls`, typed statuses)
+   - `src/main.py` — FastAPI app with lifespan: session service + Runner once, `await runner.close()` on shutdown
 
-   Create a sample agent demonstrating: Agent with 1 tool, InMemorySessionService, POST /chat endpoint, GET /stream SSE endpoint
+   Create a sample agent demonstrating: Agent with 1 tool (typed result), POST /chat, POST /stream SSE
 
-   Create tests in `tests/test_agent.py` using InMemoryRunner (no real API calls)
+   Create `tests/fakellm.py` (scripted model, `adk-testing.md` §2) and `tests/test_agent.py` + `tests/test_api.py` using it — `InMemoryRunner` alone still calls the real model
 
-   Create `.env` from template in `adk-project-config.md`
+   Create `.env.example` from the template in `adk-project-config.md` §2 (placeholders only; `.env` is git-ignored)
 
-   Create `Dockerfile` per `adk-project-config.md`
+   Create `Dockerfile` per `adk-project-config.md` §5 (`uv sync --locked`, pinned uv image, non-root, no key in the image)
 
    ### Option C: A2A Project Template (`adk_a2a`)
 
@@ -125,10 +126,13 @@ Before writing any code or running any command, ask ALL of the following. Presen
      test_job.py    # Use InMemoryRunner directly
    ```
 
-   **Tests:** Use `InMemoryRunner` directly. Mock any external status writes — do not call real external services in unit tests.
+   **Tests:** `InMemoryRunner` with the scripted fake model. Fake any external status writes — do not call real external services in unit tests.
 
-4. Verify:
-   - `uv run ruff check src/` (Option B) or `make lint` (Option A)
+   **Delivery:** jobs and messages repeat — key side effects on the job/message id, bound each run (timeout + `max_llm_calls`), and report failure (failed job / non-ack), never swallow.
+
+4. Verify (show each command's exit code):
+   - `uv sync --locked` (Option B) — lock matches `pyproject.toml`
+   - `uv run ruff check src/ tests/` (Option B) or `make lint` (Option A)
    - `uv run mypy src/` (Option B only)
-   - `uv run pytest -q` (tests must not call real Gemini API)
+   - `env -u GOOGLE_API_KEY uv run pytest -q` — must pass with no credentials (proves the fake model is used)
 5. Report scaffolded files with paths as evidence

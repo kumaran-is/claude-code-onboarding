@@ -9,14 +9,14 @@ metadata:
   role: specialist
   scope: deployment
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 # ADK Deployment Guide
 
 > **Scaffolded project?** Use `make` commands — they wrap Terraform, Docker, and deployment.
 >
-> **No scaffold?** See [Quick Deploy](#quick-deploy-adk-cli) below. For production infrastructure, see the `/scaffold-adk` command or load the `architecture-design` skill for infrastructure planning.
+> **No scaffold?** See [Quick Deploy](#quick-deploy-adk-cli) below. For production infrastructure, see the `/scaffold-google-adk` command or load the `architecture-design` skill for infrastructure planning.
 
 ## Iron Law
 
@@ -44,7 +44,7 @@ For agent code patterns and testing strategies, see `google-adk` skill. For eval
 |----------|-------------|-----------|
 | **Deployment** | Source-based, no Docker | Dockerfile + container image |
 | **Scaling** | Managed auto-scaling | Fully configurable (min/max instances) |
-| **Session state** | Native `VertexAiSessionService` | In-memory (dev), Cloud SQL, or Agent Engine backend |
+| **Session state** | Native `VertexAiSessionService(project=, location=, agent_engine_id=)` | In-memory (dev only), Cloud SQL via `DatabaseSessionService` (`postgresql+asyncpg://`), or Agent Engine backend |
 | **Event-driven** | Not supported | Pub/Sub, Eventarc, BigQuery Remote Function via `/invoke` |
 | **Cost model** | vCPU-hours + memory-hours (not billed when idle) | Per-instance-second + min instance costs |
 | **Setup complexity** | Lower — managed, purpose-built for agents | Medium — Dockerfile, Terraform, networking |
@@ -74,21 +74,53 @@ Both support `--with_ui` to deploy the ADK dev UI. Cloud Run accepts extra `gclo
 
 1. **Gather requirements** — target (Agent Engine vs Cloud Run), project ID, region, secrets needed
 2. **Choose target** — use the decision matrix above; ask if unclear
-3. **Scaffold or write Terraform** — run `/scaffold-adk` or manually write `deployment/terraform/`
-4. **Configure secrets** — use Secret Manager, not env vars, for API keys and credentials
-5. **Deploy** — `make deploy` (scaffolded) or `adk deploy <target>` (CLI)
-6. **Verify** — health check endpoint, test with curl or testing notebook, run load tests
+3. **Scaffold or write Terraform** — run `/scaffold-google-adk` or manually write `deployment/terraform/`
+4. **Configure auth and secrets** — model access is keyless (below); remaining credentials in Secret Manager, read at runtime
+5. **Gate** — the eval suite passes on the exact image and model id before any traffic (below)
+6. **Deploy** — `make deploy` (scaffolded) or `adk deploy <target>` (CLI); gradual traffic with a rollback (`deployment-ci-cd/reference/llmops-release-and-rollout.md`)
+7. **Verify** — health check endpoint, a smoke request, then load tests
+
+---
+
+## Keyless model access and config
+
+- Deployed agents call Gemini through Vertex AI with the runtime service account (ADC): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`. No developer API key exists in staging or production — not in the image, env vars or Secret Manager — and app settings fail startup if one is present (`google-adk/reference/adk-project-config.md` §3).
+- Grant the runtime service account only the Vertex AI role it needs (e.g. `roles/aiplatform.user`) in Terraform.
+- The model id is configuration (`AGENT_MODEL`), set per environment in Terraform/deploy config. A model id proven on the developer API is not proven on Vertex: probe it on the target endpoint before promoting (`gemini-api-dev` skill, "Models").
+
+## Eval gate before traffic
+
+Deploy the candidate revision with no traffic, run the agent eval suite against it, and promote only on pass. Example GitHub Actions job (adapt names; run `actionlint` before committing):
+
+```yaml
+  eval-gate:
+    needs: deploy-staging-no-traffic
+    runs-on: ubuntu-latest
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+      - uses: google-github-actions/auth@<pinned-sha>
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.EVAL_RUNNER_SA }}
+      - uses: astral-sh/setup-uv@<pinned-sha>
+      - run: uv sync --locked
+      # pytest wrapper around AgentEvaluator.evaluate(...): fails the job on a failed case
+      - run: uv run pytest -q tests/evals/test_agent_eval.py
+  promote:
+    needs: eval-gate          # no promotion without a passing gate
+```
+
+Do not gate on `adk eval` alone: in google-adk 1.29 the CLI prints "Tests failed: N" but its exit path has no failure exit (source read: `cli/cli_tools_click.py`, `cli_eval`), so CI would stay green. Use `AgentEvaluator.evaluate(agent_module, eval_dataset_file_path_or_dir, num_runs=...)` inside pytest, which raises on failure. The gate fails closed: a missing evalset, zero cases run or an errored judge is a failure, not a pass. Criteria and thresholds: `adk-eval-guide` skill; CI tiers: `eval-guide/reference/ci-tiers.md`.
 
 ---
 
 ## Secret Manager
 
 ```bash
-# Create
-echo -n "YOUR_API_KEY" | gcloud secrets create MY_SECRET_NAME --data-file=-
-
-# Update
-echo -n "NEW_KEY" | gcloud secrets versions add MY_SECRET_NAME --data-file=-
+# Create / update from a file or stdin prompt — never put the value in shell history
+gcloud secrets create MY_SECRET_NAME --data-file=/path/to/secret-file
+gcloud secrets versions add MY_SECRET_NAME --data-file=/path/to/secret-file
 
 # Agent Engine: pass at deploy time
 make deploy SECRETS="API_KEY=my-api-key,DB_PASS=db-password:2"
@@ -170,8 +202,8 @@ Both runners use **Workload Identity Federation (WIF)** — GitHub/Cloud Build O
 
 The pipeline has three stages:
 
-1. **CI (PR checks)** — Triggered on pull request. Runs unit and integration tests.
-2. **Staging CD** — Triggered on merge to `main`. Builds container, deploys to staging, runs load tests.
+1. **CI (PR checks)** — Triggered on pull request. Runs lint, type check, unit tests with the fake model (`uv sync --locked`), and the fast eval tier.
+2. **Staging CD** — Triggered on merge to `main`. Builds the container, deploys to staging with no traffic, runs the eval gate (above), then shifts traffic and runs load tests.
    > **Path filter:** Staging CD uses `paths: ['app/**']` — it only triggers when files under `app/` change. If nothing happens after the first push after `setup-cicd`, this is why.
 3. **Production CD** — Triggered after successful staging deploy. May require **manual approval** before deploying to production.
    > **Approving:** Go to GitHub Actions → the production workflow run → click "Review deployments" → approve the pending `production` environment. This is GitHub's environment protection rules.

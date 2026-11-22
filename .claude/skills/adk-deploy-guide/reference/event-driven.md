@@ -11,7 +11,9 @@ For event-driven workloads, add custom endpoints to `fast_api_app.py`. The ADK `
 ```python
 # fast_api_app.py
 import asyncio, base64, json, uuid
+import structlog
 from fastapi import FastAPI, Request, HTTPException
+from google.adk.agents import RunConfig
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -28,21 +30,30 @@ _trigger_runner = Runner(
 
 app: FastAPI = get_fast_api_app(agents_dir=..., session_service_uri=...,)
 
+logger = structlog.get_logger(__name__)
+TRIGGER_TIMEOUT_S = 60.0   # below the subscription ack deadline / BQ timeout
+TRIGGER_MAX_LLM_CALLS = 20
+
+
 async def _run_agent(message_text: str, user_id: str = "trigger") -> list:
-    """Run agent with an ephemeral session, return all events."""
+    """Run agent with an ephemeral session, bounded by a deadline and an LLM-call cap."""
     session = await _trigger_session_service.create_session(
         app_name=APP_NAME, user_id=user_id, session_id=str(uuid.uuid4())
     )
     events = []
-    async for event in _trigger_runner.run_async(
-        user_id=user_id, session_id=session.id,
-        new_message=types.Content(role="user", parts=[types.Part(text=message_text)]),
-    ):
-        events.append(event)
+    async with asyncio.timeout(TRIGGER_TIMEOUT_S):
+        async for event in _trigger_runner.run_async(
+            user_id=user_id, session_id=session.id,
+            new_message=types.Content(role="user", parts=[types.Part(text=message_text)]),
+            run_config=RunConfig(max_llm_calls=TRIGGER_MAX_LLM_CALLS),
+        ):
+            events.append(event)
     return events
 ```
 
-> **Production hardening:** Add an `asyncio.Semaphore` to cap concurrent invocations. Retry with exponential backoff on 429 / RESOURCE_EXHAUSTED.
+> **Production hardening:** Add an `asyncio.Semaphore` to cap concurrent invocations. Model retries are configured once in the client (`HttpRetryOptions`, `gemini-api-dev` skill) — do not stack another retry loop on top of the broker's redelivery.
+>
+> **Event payloads are untrusted input** (anyone who can publish to the topic or write to the bucket controls them): the agent behind a trigger gets only the tools that event type needs, and side effects are keyed on the event id (`messageId` / `ce-id`) so a redelivery is a no-op. Errors are logged with `log_exception` (type + ids, never `str(e)` — `deployment-ci-cd/reference/python-observability.md` §2) and never returned in the response body.
 
 ---
 
@@ -58,10 +69,13 @@ async def trigger_pubsub(request: Request):
     raw = msg.get("data", "")
     text = base64.b64decode(raw).decode("utf-8") if raw else json.dumps(msg.get("attributes", {}))
 
+    message_id = msg.get("messageId", "")
     try:
         await _run_agent(text, user_id=body.get("subscription", "pubsub"))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        log_exception(logger, "pubsub_trigger_failed", exc, message_id=message_id)
+        # non-2xx on purpose: Pub/Sub redelivers; configure a dead-letter topic for poison messages
+        raise HTTPException(status_code=500, detail={"error_code": "AGENT_RUN_FAILED"}) from None
     return {"status": "ok"}
 ```
 
@@ -112,8 +126,9 @@ async def trigger_eventarc(request: Request):
     source = body.get("source") or request.headers.get("ce-source", "eventarc")
     try:
         await _run_agent(text, user_id=source)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        log_exception(logger, "eventarc_trigger_failed", exc, event_id=request.headers.get("ce-id", ""))
+        raise HTTPException(status_code=500, detail={"error_code": "AGENT_RUN_FAILED"}) from None
     return {"status": "ok"}
 ```
 
@@ -165,8 +180,9 @@ async def trigger_bq(request: Request):
         try:
             events = await _run_agent(text, user_id=user_id)
             return json.dumps([e.model_dump(mode="json") for e in events])
-        except Exception as e:
-            return f"Error: {e}"
+        except Exception as exc:
+            log_exception(logger, "bq_row_failed", exc)
+            return json.dumps({"ok": False, "error_code": "AGENT_RUN_FAILED"})  # typed, row order kept
 
     replies = await asyncio.gather(*[_process_row(row) for row in calls])
     return {"replies": list(replies)}

@@ -7,28 +7,18 @@
 | Type | Configuration | Use Case |
 |------|--------------|----------|
 | **In-memory** | Default (`session_service_uri = None`) | Local dev only; state lost on instance restart |
-| **Cloud SQL** | `--session-type cloud_sql` at scaffold time | Production persistent sessions (Postgres 15, IAM auth) |
+| **Cloud SQL** | `--session-type cloud_sql` at scaffold time; in code `DatabaseSessionService(db_url="postgresql+asyncpg://...")` (needs `sqlalchemy[asyncio]` + `asyncpg`) | Production persistent sessions |
 | **Agent Engine** | `session_service_uri = agentengine://{resource_name}` | Agent Engine as session backend for Cloud Run deployments |
 
 Cloud SQL session infrastructure (instance, database, Cloud SQL Unix socket volume mount) is configured in `deployment/terraform/service.tf`.
 
 ## Dockerfile
 
-Scaffolded projects use a single-stage build with `uv` for dependency management. Typical structure:
+Use the canonical multi-stage `uv` Dockerfile in `deployment-ci-cd/reference/python-ci-supply-chain.md` §8. Check a scaffolded `Dockerfile` against it:
 
-```dockerfile
-FROM python:3.14-slim
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
-
-COPY app/ ./app/
-CMD ["uv", "run", "uvicorn", "app.fast_api_app:app", "--host", "0.0.0.0", "--port", "8080"]
-```
-
-Check the project root `Dockerfile` for the exact configuration — scaffold may differ.
+- uv image pinned by version **and** digest (`ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest>`), never `:latest`
+- `uv sync --locked --no-dev` (`--frozen` installs a stale lock without checking it)
+- base image pinned, non-root user, no `ENV` with keys or credentials (model access is keyless ADC)
 
 ## Scaling Defaults
 

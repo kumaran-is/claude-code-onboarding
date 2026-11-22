@@ -1,97 +1,67 @@
-# Per-Agent Accuracy Thresholds
+# Per-Flow Thresholds (example) and Rollback Triggers
 
-> These thresholds **block merge** if not met. Do NOT widen thresholds to pass tests.
-> Replace example agent names with your project's actual agent names.
+> Thresholds **block merge** when not met. They live in this one file (or your project's equivalent) with history. Never lower a gate, drop cases or switch metric mode to obtain a pass; classify the red first (`../SKILL.md` Process).
+> The flow names below are examples. Replace them with your flows; keep the metric directions.
 
-## Example Agent Threshold Table
+## Score directions (read before copying a threshold)
 
-The table below shows common threshold patterns. Adapt agent names and thresholds to your project.
+| Metric | Range | Direction | Gate form |
+|---|---|---|---|
+| ADK `hallucinations_v1` | 0-1 | higher = more sentences supported | `threshold` = minimum mean score, e.g. `≥ 0.9`; never `= 0` or `≤ 0.05` (those are inverted: they pass a fully hallucinating agent or fail a perfect one) |
+| ADK `response_evaluation_score` | **1-5** | higher = more coherent | a 0-1 threshold such as 0.8 passes every score; ADK does not range-check thresholds |
+| ADK `tool_trajectory_avg_score`, `final_response_match_v2`, `safety_v1` | 0-1 | higher is better | minimum |
+| Ragas `Faithfulness`, `FactualCorrectness` | 0-1 | higher is better | minimum, both must clear |
+| Deterministic isolation / injection / schema checks | count | 0 violations | `== 0`, hard blocker |
 
-| Agent | Trajectory threshold | Final-response threshold | RAG metric | Security/other |
-|-------|---------------------|------------------------|-----------|----------------|
-| `triage_agent` | `tool_trajectory_avg_score ≥ 0.7` | `final_response_match_v2 ≥ 0.85` (≥ 100 cases) | n/a | Latency P99 < 500ms; `ToolCallAccuracy(strict_order=True)` ≥ 0.9 (Ragas) |
-| `retrieval_agent` | `tool_trajectory_avg_score ≥ 0.7` | top-1 match ≥ 0.9 | recall@10 ≥ 0.85; `ContextPrecision` (Ragas); `ToolCallAccuracy(strict_order=True)` ≥ 0.9 | Multi-tenant rule isolation = 100%; `AgentGoalAccuracyWithReference` (Ragas) |
-| `pipeline_agent` | `final_response_match_v2 ≥ 0.8` per stage | n/a | n/a | n/a |
-| `answer_agent` | n/a | `HallucinationsV1 = 0` | `Faithfulness` ≥ 0.9 (Ragas) | Bias score ≤ threshold (DeepEval) |
-| `dashboard_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | Tenant isolation canary = 0 leaks; `TopicAdherence(mode="precision")` (Ragas) |
-| `vision_agent` | n/a | confidence calibration ≥ 0.8 | n/a | n/a |
-| `assessment_agent` | severity classification ≥ 0.85 | — | n/a | Policy-neutral language eval |
-| `verification_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | Field accuracy ≥ 0.9 |
-| `qa_agent` | n/a | `HallucinationsV1 = 0`; `groundedness_score ≥ 0.7` | `Faithfulness` ≥ 0.9 + `ContextPrecision` ≥ 0.8 (Ragas); `FactualCorrectness(mode="f1")` ≥ 0.85; per-slice recall@5 by query type | Citation attribution required; citation validator = 0 hallucinated chunk_ids per run |
-| `scope_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | False-positive rate ≤ 0.1 |
-| `root_cause_agent` | `final_response_match_v2 ≥ 0.8` | — | recall@5 on similar items | n/a |
-| `ingestion_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | Idempotency = 100%; chunk dedup |
-| `onboarding_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | Policy detector firing rate = 100% on adversarial test set |
-| `scheduling_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | Conflict resolution correctness ≥ 0.9; `AgentGoalAccuracyWithoutReference` (Ragas) |
-| `summary_agent` | `final_response_match_v2 ≥ 0.8` | — | n/a | n/a |
+## Example threshold table
 
-## Critical-Path Zero-Tolerance Sub-Threshold
+| Flow | Trajectory | Final response | RAG | Security / other |
+|-------|-----------|----------------|-----|------------------|
+| `classify_flow` | `tool_trajectory_avg_score ≥ 0.7` | `final_response_match_v2 ≥ 0.85` | n/a | critical-label cases 100%; p99 latency budget |
+| `search_flow` | `ToolCallAccuracy(strict_order=True) ≥ 0.9` | top-1 match ≥ 0.9 | Recall@10 ≥ 0.85 (canonical definition) | tenant isolation 0 violations |
+| `answer_flow` | n/a | `hallucinations_v1 ≥ 0.9` | `Faithfulness ≥ 0.9`; `FactualCorrectness(mode="recall", atomicity="high") ≥ 0.85`; per-slice Recall@5 | cited chunk ids ⊆ retrieved ids (0 violations) |
+| `dashboard_flow` | `final_response_match_v2 ≥ 0.8` | — | n/a | isolation probe 0 leaks (deterministic, not `TopicAdherence`) |
+| `extraction_flow` | `final_response_match_v2 ≥ 0.8` | field accuracy ≥ 0.9 | n/a | schema validity 100% |
+| `ingestion_flow` | n/a | — | n/a | idempotency 100%; chunk dedup |
+| unlisted flows | `final_response_match_v2 ≥ 0.80` | — | — | hard blockers always apply |
 
-For your highest-risk agent, the overall ≥ 85% threshold is **insufficient** for critical-path cases.
-Define critical cases specific to your domain (e.g., safety-critical classifications, irreversible actions).
+Retrieval metric definitions (Recall@K, Precision@K, MRR, nDCG, zero-relevant handling): `llm-evaluation/reference/evaluation-metrics.md` §2. A threshold must name which definition it uses.
 
-**Sub-threshold: 100%** — zero misclassified critical-path cases are acceptable.
+## Critical-path sub-threshold
 
-A single miss on a critical-risk input is a **blocking CI failure** regardless of the overall aggregate score.
+For the highest-risk flow, an aggregate ≥ 85% is insufficient for critical-path cases (safety-critical classifications, irreversible actions). Critical cases live in their own file and gate at **100%**: one miss in any declared trial blocks the merge regardless of the aggregate. Remember the resolution limit: at N=100, a pass rate of 0.85 has a ±0.07 95% CI.
 
-Tracked separately in: `tests/golden/agents/<agent>/critical_cases.evalset.json`
-CI gate runs this file independently with threshold override = 1.0 in `dataset_manifest.yaml`.
+## Other zero-tolerance gates
 
-## Threshold Reconciliation
-
-If your strategy doc has conflicting thresholds in different sections, the recommended resolution:
-**overall threshold + 100% critical sub-threshold** (e.g., 85% overall + 100% on critical cases).
-
-## Other Hard Zero-Tolerance Gates
-
-| Agent | Metric | Threshold |
-|-------|--------|-----------|
-| Answer / messaging agents | `HallucinationsV1` | **0** — any hallucination = block |
-| RAG QA agents | `HallucinationsV1` | **0** — any hallucination = block |
-| Policy-gated agents | Policy detector firing rate | **100%** on adversarial set |
-| Any multi-tenant agent | Tenant isolation canary | **0 leaks** — page on any violation |
-| Any agent | Tenant isolation (cross-tenant data) | **0** — CI BLOCKER #1 |
-
-## Default Threshold for Unlisted Agents
-
-All agents not in the table above: `final_response_match_v2 ≥ 0.80`
-Source: `eval-tooling-strategy.md` — "all others ≥ 80% FinalResponseMatchV2"
+| Scope | Gate |
+|-------|------|
+| Answer flows | `hallucinations_v1 ≥ 0.9` and `Faithfulness ≥ 0.9`; any unsupported claim on a critical case = FAIL |
+| Policy-gated flows | policy detector fires on 100% of the adversarial set |
+| Any multi-tenant flow | 0 cross-tenant reads (CI blocker #1), 0 leaks in R4 probes |
 
 ---
 
-## Production Rollback Triggers
+## Production rollback triggers
 
-These thresholds apply **after** an agent is deployed to staging or production.
-Monitored via Phoenix + Prometheus dashboards (`make phoenix-experiment` for replay, Grafana for live).
+Apply after a version is serving traffic. If any trigger fires, move the prompt/model label back to the previous version (registry keeps all versions) and follow `deployment-ci-cd/reference/llmops-release-and-rollout.md`.
 
-If ANY trigger fires → immediately revert to the previous stable PromptRegistry version
-(`diff-prompts-staging` shows the delta; Langfuse preserves all prior versions by label).
+| Signal | Trigger | Source |
+|--------|---------|--------|
+| Task success rate | drops > 10% from the 7-day baseline | trace/metric aggregation per flow |
+| Critical-path case | any miss | R4 probe |
+| Tenant isolation violation | any | isolation probe; page immediately |
+| Policy detector miss on known adversarial input | any | red-team probe re-run on deploy |
+| Tool-call error rate | +5 points over baseline | span attributes |
+| p99 latency | +30% over baseline | service metrics |
+| Cost per task | +20% over baseline | token metrics per session |
+| `hallucinations_v1` on sampled traffic | mean below the release threshold | scheduled judge run on redacted samples |
 
-| Metric | Rollback threshold | How measured |
-|--------|-------------------|-------------|
-| Task success rate | Drops > 10% from 7-day baseline | Phoenix `session.success_rate` aggregation |
-| Critical-path case misclassification | Any single miss | `critical_cases` canary — always-on R4 gate |
-| Tenant isolation violation | Any single leak | Multi-tenant agent canary — pages on-call immediately |
-| Policy detector miss | Any single miss on known adversarial input | Promptfoo canary — re-runs red-team suite on deploy |
-| Tool call error rate | Increases > 5% from baseline | Phoenix `tool.error_rate` span attribute |
-| P99 response latency | Increases > 30% from baseline | Prometheus `adk_request_duration_p99` |
-| Cost per task (token usage) | Increases > 20% from baseline | Phoenix token count aggregation per session |
-| `HallucinationsV1` count | Any non-zero for answer/messaging agents | DeepEval metric run in R4 canary |
+### Rollback process
 
-### Rollback Process
+1. Alert fires → identify the changed prompt/model/index version from span attributes (`prompt.version`, model id).
+2. Move the label back to N-1; wait for the registry TTL; confirm the served version in traces.
+3. Run the R1 gate and the critical-case probe against the rolled-back version.
+4. Record trigger, metric value, version diff and reproduction; add the failing input as a regression case (must fail on the bad version).
+5. Do not redeploy the failed version without a new eval cycle and `eval-reviewer` approval.
 
-```
-1. Trigger detected (Grafana alert OR on-call page)
-2. Run: make diff-prompts-staging → identify changed prompt(s)
-3. In Langfuse: revert affected prompt(s) to prior label ("production" → previous version)
-4. Run: make seed-prompts-local → verify local stack matches reverted state
-5. Run: make eval-smoke → confirm no immediate regression
-6. File a follow-up issue with: trigger observed, metric value, prompt diff, reproduction steps
-7. Do NOT re-deploy the failed version without a new eval cycle + eval-reviewer approval
-```
-
-### Monitoring Setup
-
-- **Grafana dashboard:** Create a per-project agents dashboard — tracks all 8 metrics above per agent
-- **Alerting:** PagerDuty integration via Prometheus `AlertManager` — pages on-call for critical-path and tenant isolation triggers only; others are Slack-only alerts
-- **Canary traffic:** Cloud Run traffic splitting — new prompt versions receive 10% traffic for 24h before full rollout (configured in your infrastructure)
+Alert routing (pages vs chat), dashboards and SLOs: `deployment-ci-cd/reference/ai-observability.md`.

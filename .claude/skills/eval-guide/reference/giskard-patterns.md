@@ -1,148 +1,70 @@
-# Giskard OSS v3 Patterns
+# Giskard OSS v3 Patterns (`giskard.checks`)
 
-> **Verify via Context7 (`giskard`) before using.** These patterns reflect API state as of 2026-04-28.
-> **v3 only** — v2 API (RAGET, giskard.scan) is legacy and NOT used.
+> API checked against the giskard-oss `giskard-checks` README via Context7 (`/giskard-ai/giskard-oss`) on 2026-11-22; Giskard was **not** installed or executed here. Re-query Context7 before writing code.
+> **v3 only**: v2 APIs (`giskard.scan`, `giskard.rag` RAGET, `generate_testset`, `KnowledgeBase`) are legacy and not used.
 
 ## Install
 
 ```toml
-# services/ai-shared/pyproject.toml
-giskard = ">=3.0.0"   # pin to v3+ — NOT v2; verify exact version via Context7
-# No LangChain dependency — verify: `pip show giskard | grep Requires` must not contain langchain
+# pyproject.toml (eval dependency group)
+giskard-checks = "==<pinned>"   # pin the exact version you verified via Context7
 ```
 
-## Day-1 Smoke Test — Run Before Writing Any Giskard Code
-
-```bash
-# Verify Giskard v3 + LiteLLM Gemini integration works on your setup
-python -c "
-from giskard.agents import Generator, set_default_generator
-set_default_generator(Generator(model='google/gemini-3.1-flash'))
-print('Giskard v3 + Gemini: OK')
-"
-# If this fails: check GOOGLE_API_KEY env var and that giskard>=3.0.0 is installed
-```
-
-## Gemini Judge Setup
+## Judge configuration
 
 ```python
-from giskard.agents import Generator, set_default_generator
+import os
+from giskard.checks import set_default_generator
 
-# Giskard v3's Generator routes through LiteLLM internally.
-# LiteLLM's Google provider prefix: "google/gemini-3.1-flash"
-# This is different from ADK model string ("gemini-3.1-flash") — include the "google/" prefix
-set_default_generator(Generator(model="google/gemini-3.1-flash"))
-
-# Call this ONCE per test session (e.g., in conftest.py session fixture)
-# Best practice: use the same LLM provider as your main stack
+# Accepts a BaseGenerator instance or a "provider/model" identifier string (LiteLLM-style).
+# The library default is an OpenAI model: set it once per session (conftest), from config.
+set_default_generator(os.environ["EVAL_JUDGE_LITELLM_ID"])
 ```
 
-## Scenario Fluent API — Core Pattern
+## Scenario: one interaction, several checks
 
 ```python
-from giskard.checks import (
-    Scenario, Suite, Trace,
-    Groundedness, AnswerRelevance, Toxicity, Conformity, LLMJudge,
-    SemanticSimilarity, StringMatching, RegexMatching,
-    AllOf, AnyOf, Not
+from giskard.checks import Groundedness, Scenario
+
+scenario = (
+    Scenario("grounded_answer")
+    .interact(inputs=question, outputs=call_agent)          # outputs: static value or callable(inputs)
+    .check(Groundedness(name="answer is grounded",
+                        target_key="trace.last.outputs",     # NOT answer_key
+                        context=retrieved_chunks))
 )
-
-# Basic scenario: lease Q&A grounding check
-result = await (
-    Scenario("qa_agent_grounding")
-    .interact(
-        "What does my document say about X?",
-        lambda inputs: your_qa_agent.run(inputs)
-    )
-    .check(Groundedness(
-        name="answer_grounded_in_lease",
-        answer_key="trace.last.outputs",
-        context=retrieved_lease_chunks      # list of strings from RAG
-    ))
-    .check(AnswerRelevance(
-        name="answer_addresses_question",
-        question_key="trace.last.inputs",
-        answer_key="trace.last.outputs"
-    ))
-    .run()
-)
-# result.passed → bool
-# result.final_trace → full conversation history
+result = await scenario.run()          # scripts without an event loop: scenario.run_sync()
+assert result.passed
 ```
 
-## Policy Compliance Scenario
+## Suite: many scenarios, one target
 
 ```python
-# Test that your agent triggers the required policy detector for restricted criteria
-policy_result = await (
-    Scenario("policy_restricted_criteria_detection")
-    .interact(
-        "Apply criteria that may violate your policy",
-        lambda inputs: your_agent.run(inputs)
-    )
-    .check(Conformity(
-        name="policy_flag_set",
-        rule="The agent must set the required review flag and not create any rule \
-              containing restricted criteria."
-    ))
-    .check(Not(StringMatching(
-        name="no_restricted_criteria_stored",
-        pattern="<your restricted terms here>"
-    )))
-    .run()
-)
-# policy_result.passed must be True — this is a CI BLOCKER
+from giskard.checks import Equals, Scenario, Suite
+
+suite = Suite(name="support_answer_security", target=call_agent)
+suite.append(prompt_injection_scenario)      # append, not add
+suite.append(cross_tenant_scenario)
+results = await suite.run()
+if results.pass_rate is None:                # nothing was evaluated (empty or fully skipped)
+    raise RuntimeError("Giskard suite evaluated zero scenarios: NOT RUN, not PASS")
 ```
 
-## Suite — Multiple Scenarios
+Persist per-scenario results yourself (JSON rows with case id, judge id, check name, passed). Check the pinned version's docs before relying on any built-in report exporter.
 
-```python
-from giskard.checks import Suite
+## Deterministic checks: test them against the compliant answer too
 
-suite = Suite("triage_agent_security")
-suite.add(prompt_injection_scenario)
-suite.add(fha_scenario)
-suite.add(cross_tenant_scenario)
-
-suite_results = await suite.run()
-suite_results.to_junit_xml("reports/giskard/your_agent.xml")
-```
-
-## Deterministic Checks (No LLM Required)
-
-```python
-# For structural validation that doesn't need LLM-as-judge
-from giskard.checks import StringMatching, RegexMatching, SemanticSimilarity
-
-# Verify tenant ID not leaked in response
-.check(Not(RegexMatching(
-    name="no_tenant_id_leak",
-    pattern=r"tenant_id:\s*\w+"    # CI BLOCKER — cross-tenant data leak
-)))
-
-# Verify urgency classification format
-.check(StringMatching(
-    name="urgency_valid_value",
-    pattern="Emergency|High|Medium|Low"
-))
-```
-
-## ⚠️ RAGET and giskard.scan — v2 Legacy, NOT v3
-
-```python
-# ❌ FORBIDDEN — these are v2 APIs, do NOT use
-# from giskard.rag import generate_testset, KnowledgeBase  # v2 only
-# giskard.scan(model, dataset)  # v2 only
-
-# ✅ CORRECT — v3 Scenario/Suite API (shown above)
-```
+- A string/regex check must be run against the expected refusal or compliant output as a negative control; a topic ban (`Not(RegexMatching("<policy topic>"))`) also matches the correct refusal that names the topic. Shape prohibitions around the violating claim ("you are entitled to ...", "done"), not topic words.
+- Do not treat a regex over reply text (for example "no `tenant_id:` in the answer") as an isolation test. Isolation is asserted on tool arguments, retrieval results and persisted rows (`golden-dataset.md` "Isolation, memory and side effects").
+- Exact-value assertions (an enum label, a status) are cheaper and stricter as plain Python on the structured output than as an LLM check.
 
 ## Known Gotchas
 
 | Gotcha | Fix |
 |--------|-----|
-| LiteLLM Google prefix is `google/` not empty | Use `Generator(model="google/gemini-3.1-flash")` — the slash-prefixed form |
-| v2 RAGET (`generate_testset`) imported accidentally | Only import from `giskard.checks` and `giskard.agents` — never `giskard.rag` |
-| `giskard.scan()` called — that's v2 | Use `Scenario.run()` or `Suite.run()` in v3 |
-| Async test setup with pytest | Use `asyncio_mode = "auto"` in pyproject.toml; see `reference/pytest-harness.md` |
-| `context` param in Groundedness must be list of strings | Split retrieved documents into individual strings before passing |
+| `answer_key=` on checks | `target_key="trace.last.outputs"` |
+| `suite.add(...)` | `suite.append(...)` |
+| `Generator(model=...)` from `giskard.agents` | `set_default_generator("<provider/model>")` from `giskard.checks` |
+| `pass_rate is None` treated as success | It means nothing ran: NOT RUN |
+| v2 imports (`giskard.rag`, `giskard.scan`) | Use `giskard.checks` only |
+| Async tests | `asyncio_mode = "auto"`; see `pytest-harness.md` |

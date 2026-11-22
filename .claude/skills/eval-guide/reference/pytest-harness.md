@@ -1,168 +1,171 @@
-# Pytest Harness Configuration
+# Pytest Harness for AI Code and Evals
 
-> Verify `pytest-asyncio` version compatibility via Context7 before using.
+> Generic pytest/pytest-asyncio and real-database fixtures: `python-testing-patterns/reference/postgres-integration-testing.md` and `.claude/rules/python-backend.md`. This file covers what is specific to AI code.
 
-## Required pyproject.toml Configuration
+## Test layers: split by what needs a live model
 
-```toml
-# pyproject.toml (root — all services inherit via uv workspace)
-[tool.pytest.ini_options]
-asyncio_mode = "auto"          # REQUIRED: all async agents need this
-                               # eliminates @pytest.mark.asyncio decoration per test
-                               # requires pytest-asyncio >= 0.21
-testpaths = ["tests", "services"]
-addopts = "--tb=short -q"
+| Layer | Model | What it proves | Tier |
+|---|---|---|---|
+| Unit | none / fake | prompt rendering, tool schemas and arg validation, output parsing incl. malformed JSON, routing given a label, retry/timeout, error mapping | R1 |
+| Workflow | scripted fake model | executed tool sequence + args, state transitions, authorization on tool calls, idempotency, persisted state | R1 |
+| Contract | none | tool/MCP surface hash, structured-output JSON Schema, prompt variables present, tool names in prompt == registered tools | R1 |
+| Golden (live) | real model + judge | grounding, refusal quality, tool *choice*, semantic quality (declared k/N trials) | R2 / R3 |
+| E2E / canary | deployed | wiring, telemetry, latency, authorization end to end; no destructive effects | R3 / R4 |
 
-[tool.pytest.ini_options.markers]
-r1 = "Tier R1 fast-gate — runs on every PR (critical blocking cases only)"
-r2 = "Tier R2 nightly — full eval suite"
-smoke = "Fast subset — no external API calls, < 30s"
-integration = "Integration — requires running Docker stack"
-eval = "LLM eval — may call Gemini API or ADK runner"
-```
+R1 never calls a live model. A live suite that skips for missing credentials reports **NOT RUN**, never PASS. A mocked test is never evidence of live-provider behaviour.
 
-## Required Plugins
+## Scripted model: deterministic agent workflow test (LangChain v1)
 
-```toml
-# services/ai-shared/pyproject.toml (or root)
-[project.optional-dependencies]
-eval = [
-    "pytest-asyncio>=0.24",    # asyncio_mode = "auto" requires >= 0.21; pin to latest stable
-    "pytest-mock>=3.14",       # tool failure injection (Dimension 13 fallback tests)
-    "pytest-cov>=5.0",         # coverage gating (>= 85% line / >= 90% function)
-    "pytest-xdist>=3.5",       # parallel execution (-n auto)
-]
-```
-
-## conftest.py — Session-Scoped Fixtures
+Executed (pytest 1 passed, `mypy --strict` clean) on both the toolkit pin langchain 1.2.8 / langgraph 1.0.7 and langchain 1.5.2 / langgraph 1.2.24.
 
 ```python
-# services/ai/conftest.py — shared by all agent eval suites
+from collections.abc import Callable, Sequence
+from typing import Any
+
+from langchain.agents import create_agent
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool, tool
+
+
+class ScriptedModel(GenericFakeChatModel):
+    """GenericFakeChatModel.bind_tools raises NotImplementedError; agents need it bound."""
+
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        return self
+
+
+def test_agent_calls_lookup_with_scoped_args() -> None:
+    calls: list[dict[str, str]] = []
+
+    @tool
+    def lookup_order(order_id: str) -> dict[str, Any]:
+        """Look up an order's shipping status."""
+        calls.append({"order_id": order_id})
+        # ToolResult shape {ok, error_code, data}: agentic-ai-dev/reference/tool-execution-safety.md §1
+        return {"ok": True, "error_code": None, "data": {"status": "shipped"}}
+
+    model = ScriptedModel(messages=iter([
+        AIMessage("", tool_calls=[{"name": "lookup_order", "args": {"order_id": "o-1"}, "id": "c1"}]),
+        AIMessage("Order o-1 has shipped."),
+    ]))
+    # explicit annotation: on langchain 1.2.8 mypy --strict cannot infer the graph type parameters
+    agent: Runnable[Any, dict[str, Any]] = create_agent(model, tools=[lookup_order])
+    out = agent.invoke({"messages": [{"role": "user", "content": "Where is order o-1?"}]})
+
+    assert calls == [{"order_id": "o-1"}]                       # executed tool + args
+    assert out["messages"][-1].content == "Order o-1 has shipped."
+```
+
+Extend the same test with a scripted *wrong* call (another account's id) and assert the tool layer rejects it and nothing is persisted. Agent-side patterns: `agentic-ai-dev/reference/agentic-testing.md`.
+
+## ADK agents in tests
+
+Checked against the adk-python Runner docs via Context7 (not executed here; verify on your pinned google-adk).
+
+```python
+# tests/eval/conftest.py
 import pytest
 from google.adk.runners import InMemoryRunner
-from unittest.mock import AsyncMock
+from google.genai import types
 
-@pytest.fixture(scope="session")
-def adk_runner():
-    """Session-scoped InMemoryRunner — one instance for the whole eval session.
-    Reuse across tests to avoid repeated initialization overhead.
-    """
-    return InMemoryRunner()
+from my_agent_package.agent import root_agent   # your agent
+
 
 @pytest.fixture
-def mock_mcp_tool():
-    """Inject a failing MCP tool to test graceful degradation.
-    Every ADK tool must have a defined fallback path.
-    """
-    return AsyncMock(side_effect=Exception("MCP tool unavailable — testing fallback"))
+def runner() -> InMemoryRunner:
+    return InMemoryRunner(agent=root_agent)        # agent= or app=App(...) is required
 
-@pytest.fixture(scope="session")
-def golden_cases(request):
-    """Parametrize helper — yields cases from a golden .evalset.json file.
-    Use with @pytest.mark.parametrize("case", golden_cases("path/to/evalset.json"))
-    """
-    import json, pathlib
-    path = pathlib.Path(request.param)
-    return json.loads(path.read_text())["evals"]
+
+async def run_case(runner: InMemoryRunner, text: str, user_id: str = "eval-user") -> list:
+    # run_async on a session that does not exist raises SessionNotFoundError: create it first
+    session = await runner.session_service.create_session(app_name=runner.app_name, user_id=user_id)
+    msg = types.Content(role="user", parts=[types.Part.from_text(text=text)])
+    return [ev async for ev in runner.run_async(user_id=user_id, session_id=session.id, new_message=msg)]
 ```
 
-## Parametrize-Over-Golden Pattern
+One session per case (no cross-case memory). Live-model ADK runs and `adk eval` are R2+; R1 uses a scripted or fake model.
+
+## Parametrize over golden cases
 
 ```python
-# services/ai/your_agent/tests/test_your_agent_evals.py
-import pytest
+# tests/eval/test_answer_evals.py
 import json
 import pathlib
 
-GOLDEN = json.loads(
-    pathlib.Path("tests/golden/agents/your_agent/golden.evalset.json").read_text()
-)["evals"]
+import pytest
 
-CRITICAL = json.loads(
-    pathlib.Path("tests/golden/agents/your_agent/critical_cases.evalset.json").read_text()
-)["evals"]
+CASES = json.loads(pathlib.Path("tests/golden/answer/cases.json").read_text())["cases"]
 
-@pytest.mark.parametrize("case", GOLDEN, ids=[c["name"] for c in GOLDEN])
-@pytest.mark.r2                           # full suite — nightly only
-async def test_triage_urgency(case, adk_runner):
-    result = await adk_runner.run(case["query"]["content"])
-    assert result.output["urgency"] == case.get("expected_urgency")
-    assert result.output.get("confidence", 1.0) >= case.get("min_confidence", 0.0)
-
-@pytest.mark.parametrize("case", CRITICAL, ids=[c["name"] for c in CRITICAL])
-@pytest.mark.r1                           # BLOCKS PR — critical-path 100% threshold
-async def test_triage_critical_cases(case, adk_runner):
-    """Zero tolerance for missed critical-path cases.
-    100% threshold — a single miss is a blocking CI failure.
-    """
-    result = await adk_runner.run(case["query"]["content"])
-    assert result.output["priority"] == "Critical", (
-        f"Critical case misclassified as {result.output['priority']} — CI BLOCKER"
-    )
+@pytest.mark.r2
+@pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
+async def test_answer_case(case, runner):
+    events = await run_case(runner, case["input"])
+    ...   # deterministic assertions first, then judge (see ../SKILL.md verdict precedence)
 ```
 
-## Tool Failure Injection (Fallback Testing)
+Load cases at module level (a fixture cannot be called like a function inside `parametrize`). Critical cases live in their own file and gate at 100%.
+
+## Failure injection (fallback tests)
 
 ```python
-# Every ADK tool must have a defined fallback path. Test it with pytest-mock:
-
-@pytest.mark.r1    # critical — blocks PR if fallback breaks
-async def test_tool_fallback(mock_mcp_tool, adk_runner, mocker):
-    """When a tool fails, agent must fall back gracefully."""
-    mocker.patch(
-        "your_project.tools.your_tool.call",
-        side_effect=Exception("tool unavailable")
-    )
-    result = await adk_runner.run("Your domain-specific input here")
-    # Fallback: agent produces a valid degraded output rather than raising
-    assert result.output["needs_review"] is True
-    assert result.output["status"] == "Pending"
-    # Must NOT raise — fallback must produce a valid output
+@pytest.mark.r1
+async def test_tool_outage_returns_safe_state(agent_under_test, order_repo, mocker):
+    mocker.patch("my_agent_package.tools.lookup.call", side_effect=TimeoutError("injected"))
+    result = await agent_under_test.handle("Cancel order o-1")
+    assert result.status == "needs_review"              # the domain's declared safe state
+    assert result.confirmed is False                    # no false success message
+    assert await order_repo.get("o-1") == ORIGINAL      # no side effect happened
 ```
 
-## Confidence Threshold Enforcement in @r1 Tests
+Every AI stage owes evaluated cases for timeout, empty output, invalid schema, provider failure and low confidence. A missing model result never authorizes continuation. Inject failures deterministically; a case named for a failure that asserts an exact error against a healthy live dependency will flap (see `ci-tiers.md`).
 
-When writing `@r1` golden manifest tests that check `confidence_min`, scope the rule to urgency classification cases only — NOT all agent golden cases:
+## Credentials in eval tests
+
+Offline eval tests resolve credentials exactly as the application does (same settings object). When credentials are absent they **skip with a reason** and the tier report counts them NOT RUN; they never read real secrets in R1. Otherwise a test passes alone and 403s only in the full sweep.
+
+## Per-case thresholds belong to the case type
 
 ```python
-# ✅ CORRECT — filter on urgency before enforcing confidence threshold
-def test_clear_cut_cases_have_tight_confidence_thresholds():
-    for case in golden_cases:
-        expected = case["expected_output"]
-        if "urgency" not in expected:
-            continue  # root_cause, pattern detection, non-urgency cases exempt
-        assert expected.get("confidence_min", 0) >= 0.80
+# WRONG: one confidence floor for every case type
+assert case["expected_output"].get("confidence_min", 0) >= 0.80
 
-# ❌ WRONG — applies rule to all cases including root_cause (legitimately use 0.5)
-def test_clear_cut_cases_have_tight_confidence_thresholds():
-    for case in golden_cases:
-        assert case["expected_output"].get("confidence_min", 0) >= 0.80
+# RIGHT: scope the rule to the case type the contract covers
+if "label" in case["expected_output"]:      # clear-cut classification cases only
+    assert case["expected_output"].get("confidence_min", 0) >= 0.80
 ```
 
-`root_cause` and pattern detection cases legitimately use `confidence_min=0.5` — pattern detection is probabilistic. Only urgency classification needs `>= 0.80`. Applying the urgency threshold to all case types causes false failures on legitimate golden data.
+Probabilistic case types (pattern detection, root-cause hypotheses) legitimately use lower floors; asserting a floor the product contract never promised is a TEST error.
 
-## CI Execution Commands
+## pyproject.toml
+
+```toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "r1: deterministic PR gate, no live model",
+  "r2: nightly live golden replay",
+  "r3: pre-release full held-out + safety set",
+  "r4: deployed canary probes",
+  "eval: calls a live model or judge",
+]
+```
+
+`asyncio_mode = "auto"` removes the per-test `@pytest.mark.asyncio`. Without an async plugin, pytest 9.2 **fails** an `async def` test ("async def functions are not natively supported"), verified here; it does not silently pass. Do not install `pytest-rerunfailures` reruns on LLM assertions.
+
+## CI commands
 
 ```bash
-# Tier R1 — PR fast-gate (< 5 min total)
-uv run pytest -m "r1" --tb=short --junit-xml=reports/pytest-r1.xml -n auto
-
-# Tier R2 — Nightly (full suite)
-uv run pytest -m "r2 or r1" --tb=long --junit-xml=reports/pytest-r2.xml -n 4
-
-# Single agent only
-uv run --package triage-agent pytest -m "r1" tests/
-
-# Coverage report
-uv run pytest --cov=services/ai --cov-report=term-missing --cov-fail-under=85
+uv run pytest -m r1 --tb=short --junit-xml=reports/pytest-r1.xml        # PR gate
+uv run pytest -m "r2" --tb=long --junit-xml=reports/pytest-r2.xml       # nightly (serial for live suites)
+uv run pytest -m r1 --cov=<agent_package> --cov-report=term-missing
 ```
-
-## asyncio_mode = "auto" — Why This Is Required
-
-All ADK agents are async. Without `asyncio_mode = "auto"`:
-- Async test functions silently vacuously pass (no error, no actual execution)
-- Collection errors on some pytest-asyncio versions
-- Missing `@pytest.mark.asyncio` on every test causes cryptic failures
-
-`asyncio_mode = "auto"` is the single pyproject.toml setting that prevents all of these.
-Requires `pytest-asyncio >= 0.21` (pin to latest stable — verify via Context7).

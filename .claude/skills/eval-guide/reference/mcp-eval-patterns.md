@@ -1,13 +1,13 @@
 # MCP Eval Patterns
 
-> The MCP server is the ADK agents' gateway to external infrastructure.
+> When agents reach external systems through an MCP server, that server is the enforcement point.
 > Cross-tenant input IDs and unauthorized tool calls are hard CI blockers.
 
-## Day-1 Security Requirement — Tenant Isolation in auth.ts
+## Day-1 Security Requirement — Tenant Isolation in the MCP Auth Layer
 
-**Before any MCP eval is meaningful**, your `auth.ts` must enforce
+**Before any MCP eval is meaningful**, the MCP server's auth layer must enforce
 caller `tenant_id` ↔ tool input scoping. A common Day-1 gap:
-`auth.ts` validates bearer/API-key only — but does not scope by tenant/owner/resource ID.
+the auth layer validates the bearer/API key only, but does not scope by tenant/owner/resource ID.
 
 Verify tenant isolation is enforced in your MCP auth layer before running MCP evals in staging.
 
@@ -52,7 +52,7 @@ HASHES_FILE = pathlib.Path("mcp/.tool-surface-hashes.json")
 def test_mcp_tool_surface_unchanged():
     """Tool schemas must not change without explicit regeneration of hash file.
     If this test fails: a tool schema changed without review.
-    Fix: run `make update-mcp-hashes` and commit the updated hash file.
+    Fix: regenerate the hash file with your project's script, review the schema diff, and commit it.
     """
     current_hashes = load_current_mcp_tool_hashes()   # inspect live MCP server
     recorded_hashes = json.loads(HASHES_FILE.read_text())
@@ -61,7 +61,7 @@ def test_mcp_tool_surface_unchanged():
         current = current_hashes.get(tool_name)
         assert current is not None, f"Tool {tool_name} no longer exists in MCP server"
         assert current["input_schema_hash"] == recorded["input_schema_hash"], (
-            f"Input schema for {tool_name} changed. Run `make update-mcp-hashes` to acknowledge."
+            f"Input schema for {tool_name} changed. Regenerate and review the tool-surface hash file to acknowledge."
         )
 ```
 
@@ -150,21 +150,19 @@ tests:
         value: "tenant_id:"                 # no cross-tenant IDs leaked (BLOCKER #4)
 ```
 
-## make mcp-inspect — Interactive Debugging
+## MCP Inspector — Interactive Debugging
 
 ```bash
-# Launch MCP Inspector against local MCP server
-make mcp-inspect
-# Opens: http://localhost:5173 (or configured port)
-# Use for: manual tool schema inspection, auth testing, response exploration
-# Do NOT use npx @modelcontextprotocol/inspector directly — use the Makefile target
+# Launch MCP Inspector against a local MCP server (verify current CLI flags via Context7)
+npx @modelcontextprotocol/inspector <command-that-starts-your-server>
+# Use for: manual tool schema inspection, auth testing, response exploration. Not a CI check.
 ```
 
 ## Known Gotchas
 
 | Gotcha | Fix |
 |--------|-----|
-| `auth.ts` tenant isolation not yet enforced | Do not run MCP evals in staging until tenant scoping is implemented and merged |
-| MCP Inspector requires running MCP server | Start with `make up` first |
-| Tool surface lock hash mismatch after schema update | Run `make update-mcp-hashes` to regenerate; commit the updated file |
+| MCP auth-layer tenant isolation not yet enforced | Do not run MCP evals in staging until tenant scoping is implemented and merged |
+| MCP Inspector needs a startable MCP server | Start dependencies (database, secrets) first |
+| Tool surface lock hash mismatch after schema update | Regenerate the hash file, review the schema diff, commit it |
 | Promptfoo MCP provider format may differ from REST provider | Verify via Context7 (`promptfoo`) — MCP provider config differs from HTTP provider |

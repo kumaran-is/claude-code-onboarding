@@ -1,136 +1,120 @@
-# Golden Dataset Structure
+# Golden Dataset Discipline
 
-> The golden dataset is the source of truth. **NEVER modify cases to make tests pass.**
+> The golden dataset is release evidence. **Never modify a case to make a test pass**: fix the agent, or classify the red as a TEST/EVALUATOR error and fix the assertion through review.
+> Case-count floors by risk tier: `ai-eval-designer` agent (canonical). ADK evalset JSON schema: `adk-eval-guide`.
 
-## 8-Folder Structure
+## Example layout
 
 ```
 tests/golden/
-├── agents/                    # Per-agent golden eval cases
-│   ├── retrieval_agent/
-│   │   ├── golden.evalset.json    # ADK eval cases (adk eval format)
-│   │   ├── critical_cases.evalset.json  # critical-path cases (100% threshold)
-│   │   ├── dataset_manifest.yaml
-│   │   └── deepeval_cases.json    # DeepEval test cases
-│   ├── answer_agent/
-│   │   ├── golden.evalset.json
-│   │   └── dataset_manifest.yaml
-│   └── <agent_name>/              # One folder per implemented agent
-│       ├── golden.evalset.json
-│       └── dataset_manifest.yaml
-├── rag/                       # RAG faithfulness + precision cases
-│   ├── qa_agent_cases.json
-│   ├── retrieval_agent_rag.json
-│   └── dataset_manifest.yaml
-├── security/                  # CI BLOCKERS #1-#9 test cases
-│   ├── tenant_isolation.json      # CI BLOCKER #1
-│   ├── prompt_injection.json      # CI BLOCKER #2
-│   ├── policy_bypass.json         # CI BLOCKER #3
-│   ├── mcp_cross_tenant.json      # CI BLOCKER #4
-│   ├── mcp_unauthorized.json      # CI BLOCKER #5
-│   ├── rag_cross_tenant.json      # CI BLOCKER #6
-│   └── dataset_manifest.yaml
-├── policy/                    # Policy compliance cases (adapt to your domain)
-│   ├── restricted_criteria_detection.json
-│   ├── review_flag_cases.json
-│   └── dataset_manifest.yaml
-├── mcp/                       # MCP contract + schema + auth cases
-│   ├── tool_surface_lock.json
-│   ├── schema_strictness.json
-│   ├── auth_cases.json
-│   └── dataset_manifest.yaml
-├── multi-turn/                # ADK User Simulation scenarios
-│   ├── onboarding_flows.json
-│   ├── scheduling_flows.json
-│   └── dataset_manifest.yaml
-├── regression/                # Cases that caught past bugs
-│   └── dataset_manifest.yaml
-└── integration/               # End-to-end multi-service cases
-    └── dataset_manifest.yaml
+├── dataset_manifest.yaml        # ONE manifest: version, per-file sha256, case counts, approvers
+├── <flow>/cases.json            # per flow (answer, classify, search, ...): dev | heldout split per case
+├── <flow>/critical_cases.json   # critical-path cases, gated at 100%
+├── security/                    # hard CI blockers (ci-tiers.md), restricted set
+├── isolation/                   # tenant, session and memory isolation
+├── multi-turn/
+└── regression/                  # incident-derived cases
 ```
 
-## dataset_manifest.yaml Schema
+## Three sets, never mixed
+
+| Set | Use | Changes |
+|---|---|---|
+| dev / tuning | inspect freely while iterating | any time |
+| held-out regression | release evidence only | add cases; fix failures only with general changes |
+| restricted safety | security/safety release gate | only via security review |
+
+Never present tuning-set results as release evidence. Overfitting tell: the tuning pass rate climbs while held-out stalls or drops.
+
+## No ground-truth leakage, no case-shaped fixes
+
+- Feedback while iterating names the failed criterion ("expected 504, got 500"), never the expected output. A pass obtained after the expected answer entered the agent's context is a debugging run: re-run clean (fresh session) before recording any number. Simulated users never see it.
+- Case inputs, answers and ids never appear in prompts, few-shot examples, retrieval corpora or tool fixtures; no keyword branch whose only purpose is a case. Before merging a fix:
+
+```bash
+grep -rnF "<distinctive phrase from the failing case>" <agent-src> prompts/ <corpus-dir>   # must be empty
+```
+
+## Manifest and run metadata
 
 ```yaml
-# tests/golden/agents/retrieval_agent/dataset_manifest.yaml
-version: "1.0"
-created: "2026-04-28"
-agent: "retrieval_agent"
-description: "Golden eval cases for retrieval_agent"
-
-stats:
-  total_cases: 8           # must meet Day-1 minimum
-  critical_cases: 2        # critical-path cases tracked separately
-
-thresholds:
-  overall: 0.85            # final_response_match_v2 >= 0.85
-  critical: 1.0            # 100% — NEVER miss a critical case
-
+# tests/golden/dataset_manifest.yaml
+version: "2026.11.1"
 files:
-  - path: golden.evalset.json
-    format: adk_eval
-    cases: 8
-  - path: critical_cases.evalset.json
-    format: adk_eval
-    cases: 2
-    threshold_override: 1.0
-
+  - path: answer/cases.json
+    sha256: "<sha256 of the file>"
+    cases: 120
+  - path: security/cases.json
+    sha256: "<sha256>"
+    cases: 18
 review_policy:
   requires_pr_review: true
-  approved_by: []           # must have named approver before merging
-  last_reviewed: "2026-04-28"
-
-tags:
-  - retrieval
-  - your-domain-tags
+  approvers: ["<team or role>"]
 ```
 
-## Per-Agent Case Minimums
+CI recomputes hashes and counts and fails on mismatch. Every result row records: `eval_run_id, git_sha, dataset_version (manifest version + sha256), prompt name + version + content hash, model id, judge model + rubric version, corpus/index version, embedding model, reranker version, seed, trial_count, tier`. Compare runs only when dataset version, judge and tier match.
 
-| Agent | Day-1 minimum | Full target | Notes |
-|-------|-------------|------------|-------|
-| Primary high-risk agent | ≥ 8 | ≥ 100 | ≥ 2 must be critical-path cases |
-| Secondary agents | ≥ 8 | ≥ 20 | At least 1 multi-tenant isolation case |
-| All other agents | 0 at Day-1 | ≥ 20 before agent PR merges | Must exist before agent goes to staging |
-| Security suite | ≥ 1 each type | ≥ 5 each type | Covers CI blockers #1-#9 |
-| RAG agents | 0 at Day-1 | ≥ 10 faithfulness cases | Any RAG QA or messaging agent |
-| MCP contract | ≥ 1 per tool | ≥ 3 per tool | Must cover auth, schema, and tenant isolation |
+## Closed case schema (unknown keys fail)
 
-## ADK Eval Case Format (golden.evalset.json)
+An expectation key the runner does not read is silently ignored, so a case that checks nothing passes. Validate cases with a closed schema (executed: a misspelled `forbiden_tools` raises `ValidationError`):
 
-```json
-{
-  "evals": [
-    {
-      "name": "critical_case_example",
-      "description": "Critical-path case — must classify correctly",
-      "query": {
-        "content": "Your domain-specific critical input here"
-      },
-      "expected_tool_use": [
-        {
-          "tool_name": "your_primary_tool",
-          "tool_input": {}
-        },
-        {
-          "tool_name": "your_followup_tool",
-          "tool_input": {}
-        }
-      ],
-      "expected_final_response": {
-        "content": "Expected classification or response",
-        "match_type": "IN_ORDER"
-      },
-      "tags": ["r1", "critical"]
-    }
-  ]
-}
+```python
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field
+
+class Expectations(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tool_calls: list[dict[str, object]] | None = None   # asserted on the tool-call log
+    forbidden_tools: list[str] = []
+    persisted_rows_unchanged: list[str] = []
+    required_facts: list[str] = []                      # authored, each traced to source_ids
+    must_not_claim: list[str] = []                      # violating claims, not topic words
+    abstain: bool = False
+
+class GoldenCase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    split: Literal["dev", "heldout", "safety"]
+    category: Literal["happy_path", "edge", "adversarial", "negative", "isolation", "regression"]
+    input: str
+    source_ids: list[str] = []
+    expect: Expectations
+    added_by: str = Field(pattern=r"^(human|synthetic|incident-[\w-]+)$")
+    xfail_blocker: str | None = None                    # must cite an OPEN issue when set
 ```
 
-## Hard Rules
+**Positive control per assertion:** feed a synthetic result that violates the new assertion; the case must go red. An assertion that never fails proves nothing.
 
-- **NEVER modify golden cases to make tests pass** — fix the agent, not the dataset
-- **PR review required** for every change to `tests/golden/` — `dataset_manifest.yaml` must have a named approver
-- **Version-controlled** — golden datasets are Git artifacts, never ephemeral
-- **`critical_cases.evalset.json`** is separate from `golden.evalset.json` — tracked independently, 100% threshold
-- **Regression flywheel** — when a production incident finds an agent error, the failing case goes into `tests/golden/regression/` before the fix is merged
+## Assertion design
+
+- **Assert pre-answer effects at their boundary.** A correct refusal text can hide that private data was already retrieved or a write already happened. Assert on the tool-call log, retrieval span and routing record.
+- **Side effects are asserted on persisted state** after the session: zero unauthorized rows or actions, decision/audit record present even on denial. A correct final answer reached through an unauthorized write is FAIL.
+- **A model or judge label may stop an action, never authorize it.** Authorization, tenant scoping, tool allowlists and budgets are deterministic code.
+- **Shape prohibitions around the violating claim** ("you are entitled to ...", "done, refund issued"), not topic words: a topic ban also matches the compliant refusal. Test every guard against the expected refusal text.
+- **Assert only floors the product contract promises** (no relevancy floor on an abstention turn; no section-attribution claim on a sentence-level metric). A red against a fabricated floor is a TEST/EVALUATOR fix, never agent tuning.
+- **Negative acceptance is owed coverage:** out-of-domain, abusive input, ambiguity / not found, dependency failure with no false success, mixed supported + unsupported input decomposed. A verdict lists owed vs excluded dimensions with a reason.
+
+## Isolation, memory and side effects
+
+| Case | Assert |
+|---|---|
+| Tenant isolation | Caller in org A never receives org B ids in tool args, tool results, retrieved chunks or persisted rows |
+| Session / thread isolation | Session B never sees session A's messages, checkpoints or memory entries (assert on store reads and tool args, not answer text) |
+| User memory isolation | User B's memory search returns zero of user A's entries, including under a prompt that asks for "other users' notes" |
+| Memory correctness | A corrected fact supersedes the stale one: current state beats stale memory |
+| Deletion | Deleting a user/document removes it from memory stores, caches, indexes and eval artifacts |
+| Indirect injection | An instruction planted in a retrieved document or tool output does not produce a tool call or exfiltrating argument |
+
+Memory design: `agentic-ai-dev/reference/agentic-memory-systems.md`.
+
+## Landing a fix without buying a regression
+
+Measure the whole case population in both directions (fixed vs newly broken), count over- vs under-triggering separately, keep a positive control (revert the fix → the intended case goes red), and re-run happy paths after a negative-case fix. A required safety class that the deterministic taxonomy has no category for is a PRODUCT gap: never add a pattern that matches only the one failing utterance.
+
+## Hard rules
+
+- PR review for every change under `tests/golden/`; the manifest names approvers.
+- Golden data is versioned in Git, never ephemeral.
+- Critical cases are tracked separately and gated at 100%.
+- **Regression flywheel:** a production incident becomes a regression case **before** the fix merges, PII-scrubbed, with provenance `added_by: incident-<id>`, and it must fail before the fix.
+- Production-sampled cases are redacted before they leave the service; sampling rate comes from config (default off).

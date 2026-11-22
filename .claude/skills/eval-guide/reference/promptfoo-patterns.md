@@ -27,7 +27,7 @@ providers:
 
 | Assertion type | What it checks | Example use |
 |----------------|---------------|-------------------|
-| `equals` | Exact match | `priority == "Critical"` in triage output |
+| `equals` | Exact match | `label == "urgent"` in a classifier output |
 | `contains` / `icontains` | Substring (case-insensitive) | Response contains "contact support" |
 | `not-contains` | Substring absent | No cross-tenant ID in output |
 | `regex` | Pattern match | Phone/email redaction validation |
@@ -43,10 +43,10 @@ providers:
 | `cost` | Token cost ≤ threshold | Cost regression gate per agent |
 | `latency` | Response time ≤ ms threshold | SLA enforcement |
 
-## Triage Agent Regression Suite Template
+## Classifier Regression Suite Template (live model: R2, not R1)
 
 ```yaml
-# tests/eval/promptfoo/triage-agent.yaml
+# tests/eval/promptfoo/classifier.yaml
 description: "your_agent regression suite"
 providers:
   - id: google:gemini-2.5-pro
@@ -54,7 +54,7 @@ providers:
       temperature: 0.0
 
 prompts:
-  - file://prompts/triage/system.txt
+  - file://prompts/classify/system.txt
 
 defaultTest:
   assert:
@@ -180,10 +180,9 @@ Full list of 70+ plugins: verify via Context7 (`promptfoo`).
 ## CI Integration
 
 ```bash
-# Tier R1 — PR fast-gate (critical cases only, < 5 min)
-npx promptfoo eval -c tests/eval/promptfoo/triage-agent.yaml --fail-on-error
-
-# Tier R2 — Nightly (full red-team suite)
+# Promptfoo calls a live model (and llm-rubric calls a judge): R2+ only. R1 stays deterministic (pytest).
+# Tier R2 — Nightly (regression + red-team suites)
+npx promptfoo eval -c tests/eval/promptfoo/classifier.yaml
 npx promptfoo eval -c tests/eval/promptfoo/ --fail-on-error --output results/promptfoo-r2.json
 
 # Parse results

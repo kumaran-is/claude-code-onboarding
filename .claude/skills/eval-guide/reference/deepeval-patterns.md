@@ -1,107 +1,96 @@
 # DeepEval Patterns
 
-> **Verify via Context7 (`deepeval`) before using.** These patterns reflect API state as of 2026-04-28.
+> Checked against **deepeval 4.3.4** (classes and signatures introspected; test-case construction executed offline). **deepeval 2.9.3 is a different API**: no `MCPServer`, `MCPUseMetric`, `ArenaGEval`, `SingleTurnParams`, `ArgumentCorrectnessMetric`, `PIILeakageMetric`. Query Context7 (`deepeval`) for your pinned version before writing code.
 
 ## Install
 
 ```toml
-# services/ai-shared/pyproject.toml
-deepeval = ">=2.0.0"   # pin to latest stable after Context7 verification
+# pyproject.toml (eval dependency group)
+deepeval = "==4.3.4"   # pin exactly; the metric API moves between majors
 ```
 
-## GeminiModel Judge
+Set `DEEPEVAL_TELEMETRY_OPT_OUT=1` in CI.
+
+## Judge model: always explicit
+
+Every DeepEval metric that uses an LLM falls back to OpenAI when `model=` is omitted. In 4.3.4 even `ToolCorrectnessMetric()` without a model raises `DeepEvalError: OpenAI API key is not configured` at construction. Build the judge once from config:
 
 ```python
-from deepeval.models import GeminiModel
+import os
+from deepeval.models import GeminiModel          # or the class for your judge provider (Context7)
 
-# Best practice: use the same LLM provider as your main stack for the judge
-judge = GeminiModel("gemini-2.5-flash")
-# Using a consistent provider reduces vendor sprawl and ensures evaluation alignment
+def make_judge():
+    return GeminiModel(model=os.environ["EVAL_JUDGE_MODEL"])   # no literal model ids in eval code
 ```
 
-## MCPUseMetric — Primary MCP Eval Metric
+## Test cases: tools and MCP take objects, not strings
 
 ```python
-from deepeval.models import GeminiModel
-from deepeval.metrics import MCPUseMetric
-from deepeval.test_case import LLMTestCase
+from deepeval.test_case import LLMTestCase, MCPServer, ToolCall
 
-# Evaluate that your agent correctly called the expected MCP tool
-test_case = LLMTestCase(
-    input="Water heater leaking in unit 4B",
-    actual_output=agent_response,
-    mcp_servers=["your-project-mcp"],              # MCP server(s) available to agent
-    mcp_tools_called=["your_tool_name"]            # tools the agent actually called
+# WRONG: mcp_servers=["docs"]  -> TypeError: 'mcp_server' must be None or a list of 'MCPServer'
+case = LLMTestCase(
+    input="Where is order o-1?",
+    actual_output=agent_output,
+    retrieval_context=retrieved_chunks,                   # required by Faithfulness/Contextual*
+    tools_called=[ToolCall(name="lookup_order", input_parameters={"order_id": "o-1"})],
+    expected_tools=[ToolCall(name="lookup_order", input_parameters={"order_id": "o-1"})],
+    mcp_servers=[MCPServer(server_name="orders", transport="stdio", available_tools=tools)],
 )
-metric = MCPUseMetric(model=GeminiModel("gemini-2.5-flash"))
-# Verify metric constructor signature via Context7 before using
 ```
 
-## 15 Confirmed Metric Classes
+`mcp_tools_called=[MCPToolCall(name=..., args=..., result=...)]` additionally requires the `mcp` package and `result` must be an `mcp.types.CallToolResult`; record the real MCP result object, do not fabricate one.
 
-| Category | Metric class | Typical target agent(s) |
-|----------|-------------|-------------------------------|
-| RAG | `AnswerRelevancyMetric(threshold=0.8)` | QA agents, messaging agents, root cause agents |
-| RAG | `ContextualPrecisionMetric(threshold=0.8)` | Retrieval agents, QA agents |
-| RAG | `ContextualRelevancyMetric(threshold=0.6)` | Retrieval agents, QA agents |
-| RAG | `ContextualRecallMetric(...)` | QA agents (citation attribution) |
-| RAG | `FaithfulnessMetric(threshold=0.9)` | Messaging agents (zero hallucinations gate) |
-| Multi-turn | `TurnRelevancyMetric()` | Scheduling agents, onboarding agents |
-| Multi-turn | `TurnFaithfulnessMetric()` | Messaging agents multi-turn flows |
-| Multi-turn | `KnowledgeRetentionMetric()` | Onboarding agents |
-| Agent | `TaskCompletionMetric()` | All conversational agents |
-| Agent | `StepEfficiencyMetric()` | Retrieval agents, triage agents (redundant tool-call detection) |
-| **MCP** | **`MCPUseMetric(model=GeminiModel(...))`** | **Every MCP-backed agent trajectory** |
-| A/B compare | `ArenaGEval(name, criteria, evaluation_params)` | Prompt version A/B before Langfuse promotion |
-| LLM-as-judge | `GEval(name, criteria, evaluation_steps)` | Custom rubrics (professionalism, role compliance) |
-| Safety | `BiasMetric(model=GeminiModel(...))` | Messaging agents, assessment agents |
-| Safety | `ToxicityMetric(model=GeminiModel(...))` | Messaging agents, onboarding agents |
+## Metric map (present in 4.3.4)
 
-> **Verify all class names via Context7 before writing code.** Class names change between DeepEval major versions.
+| Need | Metric | Notes |
+|---|---|---|
+| Tool selection + args | `ToolCorrectnessMetric(should_consider_ordering=..., should_exact_match=..., model=judge)` | Assert key args deterministically first |
+| Argument quality | `ArgumentCorrectnessMetric` | LLM-judged |
+| Agent outcome / plan | `TaskCompletionMetric`, `GoalAccuracyMetric`, `PlanAdherenceMetric`, `PlanQualityMetric`, `StepEfficiencyMetric`, `ToolUseMetric` | Report path separately from outcome |
+| Loops / permissions | `AgentLoopDetectionMetric`, `ToolPermissionMetric` | Permission is enforced in code; the metric only observes |
+| MCP | `MCPUseMetric(model=judge)` | Needs `mcp_servers` objects |
+| RAG | `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualPrecisionMetric`, `ContextualRecallMetric`, `ContextualRelevancyMetric` | `retrieval_context` populated from the real run |
+| Multi-turn | `TurnRelevancyMetric`, `KnowledgeRetentionMetric`, `ConversationCompletenessMetric`, `RoleAdherenceMetric`, `ConversationalGEval` | Conversational test cases |
+| Safety / format | `PIILeakageMetric`, `BiasMetric`, `ToxicityMetric`, `JsonCorrectnessMetric` | Schema validity is better asserted with Pydantic directly |
+| Custom rubric | `GEval(name, criteria or evaluation_steps, evaluation_params=[SingleTurnParams.INPUT, SingleTurnParams.ACTUAL_OUTPUT], model=judge)` | `LLMTestCaseParams` is an alias in 4.3.4 |
 
-## Pytest Integration
+## Pytest integration
 
 ```python
 import pytest
 from deepeval import assert_test
-from deepeval.models import GeminiModel
-from deepeval.metrics import FaithfulnessMetric, MCPUseMetric
-from deepeval.test_case import LLMTestCase
+from deepeval.metrics import FaithfulnessMetric
 
-@pytest.mark.r1   # critical — runs on every PR
+@pytest.mark.r2          # live judge: nightly tier, never R1
 @pytest.mark.eval
-def test_answer_agent_no_hallucinations(answer_agent_response):
-    test_case = LLMTestCase(
-        input="What does my document say about X?",
-        actual_output=answer_agent_response.text,
-        retrieval_context=answer_agent_response.retrieved_chunks
-    )
-    assert_test(test_case, [FaithfulnessMetric(
-        threshold=0.9,
-        model=GeminiModel("gemini-2.5-flash")
-    )])
+def test_answer_is_grounded(answer_run, judge):
+    case = LLMTestCase(input=answer_run.question, actual_output=answer_run.text,
+                       retrieval_context=answer_run.chunks)
+    assert_test(case, [FaithfulnessMetric(threshold=0.9, model=judge)])
 ```
 
-## ArenaGEval — Prompt A/B Testing
+Judge-gated assertions follow the trial and accounting rules in `../SKILL.md` (median-of-3 where variance was observed; a judge error is UNSCORED, never PASS; no `@pytest.mark.flaky` reruns).
+
+## ArenaGEval: pairwise prompt/model comparison
 
 ```python
 from deepeval.metrics import ArenaGEval
-from deepeval.test_case import LLMTestCase
+from deepeval.test_case import ArenaTestCase, Contestant, SingleTurnParams
 
-# Compare prompt version A vs B before promoting in Langfuse
-arena = ArenaGEval(
-    name="triage-prompt-ab",
-    criteria="Which response more accurately classifies urgency and explains the rationale?",
-    evaluation_params=["input", "actual_output"]
-)
-# Verify ArenaGEval constructor via Context7 before using
+arena = ArenaGEval(name="answer-quality", criteria="Which response answers the question more accurately and concisely?",
+                   evaluation_params=[SingleTurnParams.INPUT, SingleTurnParams.ACTUAL_OUTPUT], model=judge)
+case = ArenaTestCase(contestants=[Contestant(name="v3", test_case=case_v3), Contestant(name="v4", test_case=case_v4)])
 ```
+
+A pairwise judge is one signal. A prompt or model promotion decision uses the paired statistics in `llm-evaluation/reference/ab-testing.md` over the held-out golden set, plus deterministic gates (`langfuse-prompts.md` "Prompt regression").
 
 ## Known Gotchas
 
 | Gotcha | Fix |
 |--------|-----|
-| `MCPUseMetric` requires actual MCP tool call in `mcp_tools_called` | Mock MCP server in unit tests; use real MCP in integration tests marked `@r2` |
-| `FaithfulnessMetric` needs `retrieval_context` populated | Always pass the actual retrieved chunks from the agent run, not None |
-| `GeminiModel` needs `GOOGLE_API_KEY` or Vertex auth | Use ADC in CI (Workload Identity); never hardcode keys |
-| DeepEval async tests require `asyncio_mode = "auto"` in pytest config | See `reference/pytest-harness.md` |
+| Metric without `model=` | Silent OpenAI default or construction error; always pass the judge |
+| Strings in `mcp_servers` / `tools_called` | `MCPServer(...)` / `ToolCall(...)` objects |
+| `FaithfulnessMetric` with empty `retrieval_context` | Pass the chunks the agent actually retrieved |
+| Examples copied from a different major version | Re-verify imports against the pinned version |
+| Async tests | `asyncio_mode = "auto"`; see `pytest-harness.md` |

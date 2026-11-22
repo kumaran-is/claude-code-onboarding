@@ -1,101 +1,111 @@
 ---
 name: eval-guide
-description: "Use when writing eval code, configuring eval infrastructure, creating golden datasets, setting up PromptRegistry, authoring CI eval gates, or working with any eval tool: DeepEval, Ragas, Giskard OSS v3, Promptfoo, Langfuse, Arize Phoenix, adk eval, ADK User Simulation, Vertex GenAI Eval. Covers per-agent accuracy thresholds, CI tier structure (R1-R4), MCP eval suites, golden dataset structure, and PromptRegistry architecture. Also covers pytest harness configuration (asyncio_mode, InMemoryRunner, parametrize-over-golden)."
+description: "Use when writing eval code, configuring eval infrastructure, creating golden datasets, setting up a prompt registry, authoring CI eval gates, or working with any eval tool: DeepEval, Ragas, Giskard OSS v3, Promptfoo, Langfuse, Arize Phoenix, adk eval, ADK User Simulation, Vertex GenAI Eval. Covers the eval process (pre-flight, verdict precedence, evidence accounting, judge trials), AI test layers with fake models, golden dataset discipline, CI tiers (R1-R4), prompt regression and promotion gates, and pytest harness configuration."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: deepeval, ragas, giskard, promptfoo, langfuse, phoenix, PromptRegistry, golden dataset, evalset, eval-smoke, eval-adk, redteam, MCPUseMetric, Faithfulness, ToolCallAccuracy, HallucinationsV1, tests/golden, dataset_manifest, seed-prompts, R1 gate, R2 nightly, R3 pre-release, R4 canary, ci tier, eval threshold, ArenaGEval, GeminiModel judge, set_default_generator, promptfooconfig.yaml, Scenario, Suite, make eval-all-local, make redteam-promptfoo, make giskard-scan, make mcp-eval-all, make seed-prompts-local, eval-reviewer, per-agent threshold, golden case, asyncio_mode, InMemoryRunner, pytest-asyncio, dataset_manifest.yaml, diff_langfuse_prompts, emergency pack, prompt registry, prompt lifecycle
-  related-skills: google-adk, adk-eval-guide, python-dev, adk-observability-guide
+  triggers: deepeval, ragas, giskard, promptfoo, langfuse, phoenix, PromptRegistry, prompt registry, golden dataset, evalset, redteam, MCPUseMetric, Faithfulness, ToolCallAccuracy, hallucinations_v1, tests/golden, dataset_manifest, R1 gate, R2 nightly, R3 pre-release, R4 canary, ci tier, eval threshold, ArenaGEval, set_default_generator, promptfooconfig.yaml, Scenario, Suite, eval-reviewer, golden case, asyncio_mode, InMemoryRunner, fake model, scripted model, judge trials, median-of-3, evidence accounting, prompt regression, promotion gate, memory isolation test, prompt lifecycle
+  related-skills: llm-evaluation, rag-evaluator, adk-eval-guide, google-adk, agentic-ai-dev, python-dev, adk-observability-guide
   domain: agentic-ai
   role: specialist
   scope: evaluation
   output-format: code
-last-reviewed: "2026-04-28"
+last-reviewed: "2026-11-22"
 ---
 
 # Eval Guide
 
 ## Iron Law
 
-**NEVER generate eval tool code from memory. ALWAYS query Context7 MCP for the official API before writing any eval code.** Every metric class name, constructor signature, and YAML provider ID must be verified against current official docs — these APIs change between minor versions.
+**Deterministic checks decide; an LLM judge only scores semantic quality and never upgrades a case. A case that did not run, or whose judge errored, is never PASS.**
 
-**Prefer LangChain-free eval paths.** Ragas, Giskard, and Promptfoo all have LangChain-free paths — prefer them to reduce dependency surface and avoid version conflicts.
+- **Never write eval-tool code from memory.** Query Context7 (`ragas`, `deepeval`, `giskard`, `promptfoo`, `langfuse`) before every metric class, constructor or YAML key. These libraries break between minor versions: DeepEval 2.9.3 has no `MCPUseMetric`, `ArenaGEval` or `MCPServer`; 4.3.4 has all three. Pin the version in the lockfile and say which version an example was checked against.
+- **Every judge-backed metric receives an explicit model** built by one project factory that reads `EVAL_JUDGE_MODEL` (and provider) from config. DeepEval, `ArenaGEval` and Ragas `evaluate()` default to OpenAI; Giskard defaults to an OpenAI model. An omitted model is a silent provider switch or a mid-run auth crash. Record the resolved judge id and rubric version on every scored row.
+- **Judge family.** Prefer a judge from a different model family than the generator (self-preference bias, see `rag-evaluator` judge section). If policy forces the same provider, calibrate against human labels and record that.
+- **Banned-import rules apply to direct imports in eval code, never to transitive dependencies.** Ragas 0.4.4 hard-requires `langchain`, `langchain-community` and `langchain-openai` and imports them at `import ragas`; a lockfile-level "no LangChain" ban blocks every Ragas user.
+- **Dispatch `eval-reviewer` after writing eval code**, and never claim an eval passed without the command and its output.
 
-**Consistent LLM judge.** Best practice: use the same LLM provider as your main stack for LLM-as-judge to reduce vendor sprawl. For Gemini-based stacks: `GeminiModel("gemini-2.5-flash")` for DeepEval, `Generator(model="google/gemini-3.1-flash")` for Giskard, `google:gemini-2.5-pro` for Promptfoo.
+## Process (every evidence run)
 
-**Dispatch `eval-reviewer` agent after writing any eval code** — same mandate as dispatching `adk-reviewer` after ADK agent code.
+1. **Pre-flight** before any score: current build/image, migrations applied, deterministic seed data, non-empty index, tool health, judge reachable, and one trace smoke (an eval case id appears in the trace backend). A score from a stale image or empty index measures the environment.
+2. **Smoke** 1-2 cases, then the **full run on a frozen commit**.
+3. **Account** for every planned case (table below). Write rows to disk, not stdout.
+4. **Classify each red before changing anything:** PRODUCT (agent/tool/prompt wrong), TEST (assertion/fixture wrong), EVALUATOR (judge/metric artifact), OBSERVABILITY (evidence missing), ENVIRONMENT (quota, outage, stale data). Only PRODUCT reds justify agent changes.
+5. **Verdict** names the flow, tier and dataset version it covers, nothing wider.
 
-## Documentation Sources — Query Context7 BEFORE Writing Any Tool Code
+### Verdict precedence
 
-| Tool | Context7 query | Fallback |
-|------|---------------|---------|
-| DeepEval | `deepeval` | https://docs.confident-ai.com/docs |
-| Ragas | `ragas` | https://docs.ragas.io/en/latest |
-| Giskard OSS v3 | `giskard` | https://docs.giskard.ai/en/latest |
-| Promptfoo | `promptfoo` | https://www.promptfoo.dev/docs |
-| Langfuse | `langfuse` | https://langfuse.com/docs |
-| Arize Phoenix | `arize-phoenix` | https://docs.arize.com/phoenix |
-| ADK Eval | `google-adk` (adk-docs MCP) | https://google.github.io/adk-docs/evaluate |
-| Vertex GenAI Eval | `google-cloud-aiplatform` | https://cloud.google.com/vertex-ai/generative-ai/docs/evaluate |
-| pytest-asyncio | `pytest-asyncio` | https://pytest-asyncio.readthedocs.io |
+| Deterministic checks | Judge | Case result |
+|---|---|---|
+| FAIL | any | FAIL (PRODUCT, or TEST if the assertion is wrong) |
+| PASS | PASS | PASS |
+| PASS | FAIL | FAIL on the judge-owned dimension; measure judge variance first |
+| PASS | error / timeout | UNSCORED (EVALUATOR; DEPENDENCY if provider outage); stays in the denominator |
+| could not run | any | SKIPPED / NOT RUN, never PASS |
+
+**Evidence accounting:** each planned case lands in exactly one bucket (PASS, FAIL, UNSCORED, DEPENDENCY_FAILURE, SKIPPED); assert `sum(buckets) == planned`; zero scored cases raises; a run with any UNSCORED/DEPENDENCY/SKIPPED case is "NOT RUN (incomplete)", not PASS. A Giskard `Suite` result with `pass_rate is None` means nothing ran.
+
+### Judge variance and trials
+
+- A single judge call is not a measurement. For a judge-gated metric that has shown variance, score **median-of-N (odd, default 3)** per case, gate on the mean of per-case medians, persist every trial score. Proof the trials run: a stubbed judge returning `[0, 1, 1]` passes at N=3 and fails at N=1.
+- A lost trial is not a lost case; all trials lost to the provider is DEPENDENCY_FAILURE, never 0.0.
+- Declare trial counts up front and report `k/N` per case. Any critical-safety miss in any trial is a miss.
+- **No rerun-until-green:** never put `@pytest.mark.flaky(reruns=...)` (pytest-rerunfailures) on LLM-output assertions. A consistently blind judge needs a deterministic floor, not more trials.
+- Runnable implementation (verdict, accounting, median-of-N, fail-closed baseline): `reference/ci-tiers.md` "Gate implementation".
+
+### Thresholds and dataset discipline
+
+- Thresholds live in one file with history. Never lower a gate, drop a case from numerator or denominator, soften a reference or switch metric mode to obtain a pass.
+- **No ground-truth leakage:** feedback while iterating names the failed criterion ("expected 504, got 500"), never the expected output; golden inputs/answers never enter prompts, few-shots or corpora. Details and the pre-merge grep: `reference/golden-dataset.md`.
+- Gate resolution is bounded by sample size: at N=100 a 0.85 pass rate has a ±0.07 95% CI, so a 100-case gate cannot resolve deltas under ~7 points. Compare variants with paired tests (`llm-evaluation/reference/ab-testing.md`).
+- Case-count floors by risk tier: `ai-eval-designer` agent (canonical table). Per-flow thresholds: `reference/per-agent-thresholds.md`.
+
+## Eval coverage map (where each eval type lives)
+
+| Eval type | Canonical reference |
+|---|---|
+| Unit / workflow / contract / golden / E2E layers for AI code, fake and scripted models | `reference/pytest-harness.md` "Test layers" + "Scripted model" |
+| Trajectory and tool-call correctness | `llm-evaluation/reference/trajectory-evaluation.md`; `reference/ragas-patterns.md`, `reference/deepeval-patterns.md`; ADK: `adk-eval-guide/reference/criteria-guide.md` |
+| Multi-turn | "Multi-turn" below; ADK: `adk-eval-guide/reference/user-simulation.md` |
+| Memory and session isolation | `reference/golden-dataset.md` "Isolation, memory and side effects" |
+| Safety, prompt injection, red team | `reference/ci-tiers.md` "Hard CI blockers"; `reference/promptfoo-patterns.md`; `reference/giskard-patterns.md`; `ai-eval-designer` agent |
+| Load, latency, cost | `reference/ci-tiers.md` "Load, latency and cost" |
+| Retrieval and RAG metrics (formulas) | `llm-evaluation/reference/evaluation-metrics.md` §2 (canonical code + worked examples); concepts: `rag-evaluator` |
+| Prompt regression and registry | `reference/langfuse-prompts.md` |
+| Model / prompt comparison statistics | `llm-evaluation/reference/ab-testing.md` |
+| CI promotion gates and release | `reference/ci-tiers.md`; rollout, canary, rollback: `deployment-ci-cd/reference/llmops-release-and-rollout.md` |
+
+### Multi-turn
+
+Use the cheapest shape that observes the behaviour: single-turn traces for classification, retrieval and authorization; simulated multi-turn only for clarification, coreference, changing facts, error recovery and jailbreak persistence. A simulator has a stated goal and a turn cap, never sees the expected answer, and its transcript plus tool trajectory are persisted so simulator variance can be told apart from product failure.
 
 ## Reference Files
 
 | File | When to use |
 |------|-------------|
-| `reference/deepeval-patterns.md` | MCPUseMetric, GeminiModel, 15 confirmed metric classes, ArenaGEval A/B testing |
-| `reference/ragas-patterns.md` | ToolCallAccuracy, Faithfulness, ContextPrecision — LangChain-free path only |
-| `reference/promptfoo-patterns.md` | YAML config, `google:gemini-2.5-pro` provider, 70+ red-team plugins, MCP security suite |
-| `reference/giskard-patterns.md` | v3 Scenario/Suite API, LiteLLM Gemini setup, FHA check, RAGET v2-only warning |
-| `reference/langfuse-prompts.md` | PromptRegistry abstraction, prompt lifecycle, `.compile()`, emergency pack, drift detection |
-| `reference/golden-dataset.md` | 8-folder structure, `dataset_manifest.yaml` schema, per-agent case minimums |
-| `reference/ci-tiers.md` | R1-R4 tier config, pytest marks (@r1/@r2), path-routing rules, 9 CI blockers reference |
-| `reference/per-agent-thresholds.md` | Per-agent accuracy thresholds for all 14 agents, habitability 100% sub-threshold |
-| `reference/mcp-eval-patterns.md` | MCP contract suite, tenant isolation test pattern, audit-log verification |
-| `reference/pytest-harness.md` | `asyncio_mode = "auto"`, conftest.py template, InMemoryRunner, parametrize-over-golden |
-| `reference/failure-mode-taxonomy.md` | 6 failure modes with symptom → eval tool routing table; fix patterns per mode |
+| `reference/pytest-harness.md` | Test layers, scripted fake model, ADK runner in tests, failure injection, pytest config |
+| `reference/golden-dataset.md` | Dataset discipline, manifest + run metadata, closed case schema, assertion design, isolation/memory cases |
+| `reference/ci-tiers.md` | R1-R4 tiers, marks, hard CI blockers, gate implementation, load/latency/cost |
+| `reference/per-agent-thresholds.md` | Example per-flow thresholds, ADK score directions, rollback triggers |
+| `reference/ragas-patterns.md` | Ragas 0.4 `ragas.metrics.collections`, FactualCorrectness contract, tool-call metrics |
+| `reference/deepeval-patterns.md` | DeepEval test cases, MCP objects, agent/tool metrics, version notes |
+| `reference/giskard-patterns.md` | Giskard v3 `giskard.checks` Scenario/Suite |
+| `reference/promptfoo-patterns.md` | Promptfoo YAML and red-team configs |
+| `reference/langfuse-prompts.md` | Prompt registry contract, lifecycle, prompt regression, promotion |
+| `reference/mcp-eval-patterns.md` | MCP contract, isolation and audit-log suites |
+| `reference/failure-mode-taxonomy.md` | Symptom → failure mode → eval tool routing |
 
-## Process — Before Writing Any Eval Code
+## Example layout (not commands that exist in your repo)
 
-1. Identify which tool(s) are needed
-2. Query Context7 for that tool's current API — the reference files are starting points, NOT the final authority on API signatures
-3. Read the relevant reference file for patterns and gotchas
-4. Check `reference/per-agent-thresholds.md` for the target agent's required thresholds
-5. Check `reference/golden-dataset.md` for dataset structure and minimum case counts
-6. Mark every test with `@pytest.mark.r1` (PR gate) or `@pytest.mark.r2` (nightly) — never unmarked
-7. After implementation: dispatch `eval-reviewer` agent
+`tests/golden/` for cases and manifest, `tests/eval/` for runners, one make/CI target per tier (`eval-r1`, `eval-r2`, ...). Create the targets you need; do not cite a target until it exists and you have run it.
 
-## Make Targets Quick Reference
+## Telemetry
 
-| Target | What it runs | When to use |
-|--------|-------------|-------------|
-| `make eval-smoke` | Lint + types + 1-2 eval cases for changed agent + prompt schema check | Every PR (< 30s) |
-| `make eval-adk` | `adk eval` against all `tests/golden/agents/*/golden.evalset.json` | Full ADK eval |
-| `make eval-deepeval` | `uv run pytest -m eval -k deepeval` | DeepEval metric runs |
-| `make eval-ragas` | `uv run pytest -m eval -k ragas` | RAG metric runs |
-| `make redteam-promptfoo` | `npx promptfoo eval -c tests/eval/promptfoo/` | Red-team + regression |
-| `make giskard-scan AGENT=<name>` | Targeted Giskard scan → `reports/giskard/<agent>.html` | Security scan |
-| `make mcp-eval-all` | Contract + auth + behavior + security suites for MCP server | MCP eval |
-| `make eval-all-local` | All of the above in sequence | Full local validation |
-| `make seed-prompts-local` | Seeds prompts into local Langfuse with `label="development"` | Prompt registry setup |
-| `make diff-prompts-staging` | Detects Git ↔ Langfuse prompt drift | Pre-release check |
-| `make phoenix-experiment AGENT=<name>` | Phoenix `run_experiment()` against golden dataset | Trace replay eval |
-| `make mcp-inspect` | Launches `@modelcontextprotocol/inspector` against local MCP | Interactive MCP debug |
-| `make eval-multiturn AGENT=<name>` | ADK User Simulation multi-turn flows | Multi-turn eval |
-| `make update-mcp-hashes` | Regenerates `mcp/.tool-surface-hashes.json` | After MCP tool changes |
-
-## Golden Dataset Minimum Requirements (Day-1)
-
-| Agent/Suite | Minimum cases | Location |
-|-------------|-------------|---------|
-| Primary agent (highest-risk) | ≥ 8 Day-1 → ≥ 100 full target | `tests/golden/agents/<agent>/` |
-| Secondary agents | ≥ 8 Day-1 → ≥ 20 full target | `tests/golden/agents/<agent>/` |
-| Security suite | ≥ 1 each: prompt_injection, tenant_isolation, policy_bypass | `tests/golden/security/` |
-| All other agents | ≥ 20 before agent PR merges | `tests/golden/agents/<agent>/` |
-| RAG agents | ≥ 10 faithfulness cases | `tests/golden/rag/` |
-| MCP contract | ≥ 1 per tool | `tests/golden/mcp/` |
+Disable eval-tool telemetry in CI and wherever eval data is sensitive: `DEEPEVAL_TELEMETRY_OPT_OUT=1`, `RAGAS_DO_NOT_TRACK=true`.
 
 ## Related Skills
 
-- `adk-eval-guide` — ADK-native eval only (8 ADK criteria, evalset schema, user simulation)
-- `google-adk` — ADK agent construction patterns
-- `adk-observability-guide` — Phoenix OTel integration, span inspection
+- `llm-evaluation` — metric formulas (canonical), A/B statistics, trajectory scoring
+- `rag-evaluator` — RAG metric concepts, judge calibration, eval at scale
+- `adk-eval-guide` — ADK-native eval criteria, evalset schema, user simulation
+- `deployment-ci-cd/reference/llmops-release-and-rollout.md` — eval-gated promotion, canary, rollback
+- `deployment-ci-cd/reference/ai-observability.md` — tracing eval runs and prompt versions

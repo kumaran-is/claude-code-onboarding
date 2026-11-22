@@ -2,6 +2,8 @@
 
 Covers: streaming message rendering, auto-scroll heuristics, stop generation, accessibility.
 
+> Illustrative (not compiled). `incomplete` is a field you add to the message model. Server contract (stop cancels the upstream model call; exactly one terminal `done`/`error` frame; the server stores the answer as `incomplete`): `streaming-protocols` §6a.
+
 ---
 
 ## Angular 21.x
@@ -204,7 +206,13 @@ export class ChatComponent implements OnDestroy {
         msgs.map(m => m.id === assistantMsg.id ? { ...m, isStreaming: false } : m)
       );
     } catch (err: unknown) {
-      if ((err as Error).name !== 'AbortError') {
+      if ((err as Error).name === 'AbortError') {
+        // Stopped by the user: keep the text, mark it incomplete. Never parse, persist
+        // or act on partial structured output (tool args, JSON, citations).
+        this.messages.update(msgs =>
+          msgs.map(m => m.id === assistantMsg.id ? { ...m, isStreaming: false, incomplete: true } : m)
+        );
+      } else {
         // Non-abort errors: update error state + log via Angular ErrorHandler
         this.messages.update(msgs =>
           msgs.map(m => m.id === assistantMsg.id
@@ -298,7 +306,11 @@ class ChatNotifier extends _$ChatNotifier {
 
   void stop() {
     ref.read(chatRepositoryProvider).cancelStream();
-    state = state.copyWith(isStreaming: false);
+    // Keep the partial text, flagged incomplete; never act on partial structured output.
+    state = state.copyWith(
+      messages: state.messages.map((m) => m.isStreaming ? m.copyWith(isStreaming: false, incomplete: true) : m).toList(),
+      isStreaming: false,
+    );
   }
 
   void _scrollToBottom() {

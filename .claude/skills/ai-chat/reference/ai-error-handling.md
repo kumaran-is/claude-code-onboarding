@@ -114,7 +114,7 @@ import { AppLogger } from '../../../core/logging/app-logger.service';
         <button class="btn btn-xs btn-ghost text-warning gap-1"
                 (click)="onFlagInaccurate()"
                 aria-label="Flag this response as potentially inaccurate">
-          <span aria-hidden="true">&#9873;</span> Flag as inaccurate
+          <span aria-hidden="true">&#x2691;</span> Flag as inaccurate
         </button>
       </div>
     }

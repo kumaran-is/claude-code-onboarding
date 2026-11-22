@@ -9,12 +9,16 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Load this skill before building any chat interface; never hardcode streaming or message formats without verifying against the skill's patterns.
-
 # AI Chat Interface Skill
+
+## Iron Law
+
+**Load this skill before building any chat interface; never hardcode streaming or message formats without verifying against the skill's patterns.**
+
+> Server side of the stream (disconnect cancels the model call, exactly one terminal `done`/`error` frame, heartbeats, reconnect rules): `streaming-protocols` §6a. Multimodal and voice input are OPTIONAL extensions (`reference/multimodal-input.md`, `voice-ai-development`).
 
 > **Tech Stack**: Angular 21.x (signals, daisyUI, TailwindCSS) | Flutter 3.41.x (Riverpod, Dart 3.10.9)
 
@@ -57,7 +61,7 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 ## Key Patterns (brief — details in reference files)
 
 ### Streaming (Angular)
-- Use `AbortController` to cancel in-flight SSE streams
+- Use `AbortController` to cancel in-flight SSE streams; a stopped or errored answer is shown and stored as `incomplete` — never parse, persist or act on partial structured output
 - Auto-scroll: scroll only when user is within 100px of bottom
 - `computed()` signal to derive rendered markdown — prevents re-parsing on every chunk
 - `aria-live="polite"` wraps the message list

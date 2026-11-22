@@ -220,12 +220,12 @@ export class ChatInputComponent {
     const isUnderLimit = file.size <= MAX_FILE_SIZE_MB * 1024 * 1024;
 
     if (!isAccepted) {
-      this.logger.warn('[ChatInputComponent] unsupported file type', { type: file.type, name: file.name });
+      this.logger.warn('[ChatInputComponent] unsupported file type', { type: file.type, sizeBytes: file.size });
       // Caller shows error toast via event — not swallowed here
       return false;
     }
     if (!isUnderLimit) {
-      this.logger.warn('[ChatInputComponent] file exceeds size limit', { name: file.name, sizeMb: (file.size / 1024 / 1024).toFixed(1) });
+      this.logger.warn('[ChatInputComponent] file exceeds size limit', { type: file.type, sizeMb: (file.size / 1024 / 1024).toFixed(1) });
       return false;
     }
     return true;
@@ -306,7 +306,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
       });
     } catch (err) {
       // Log and surface — never swallow
-      debugPrint('[ChatInputWidget] image pick failed: $err');
+      debugPrint('[ChatInputWidget] image pick failed: ${err.runtimeType}'); // no paths/names in logs
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not attach image. Please try again.')),
@@ -512,10 +512,10 @@ extension ChatAttachmentX on ChatAttachment {
 ## Design Rules
 
 - **Enter = send, Shift+Enter = newline** (Angular keyboard shortcut — Flutter uses `TextInputAction.newline`)
-- **File validation**: check MIME type AND file size; log rejected files; never silently skip
+- **File validation**: client checks MIME type AND size for UX only; log rejections with type/size, never file names or paths; never silently skip
+- **Server re-validates (OPTIONAL multimodal path)**: size cap before buffering, magic bytes not the declared MIME, strip EXIF/location, treat text inside images/PDFs as untrusted input (prompt injection); consent + retention TTL for stored uploads
 - **Preview chips**: show image thumbnail for images; doc icon for PDFs/text; always show filename + remove button
 - **Auto-expand**: textarea/TextField grows up to a max height (`max-h-48` / ~200dp), then scrolls
 - **Stop button**: replaces send button while streaming — color `error`/`btn-error`; always visible to allow cancellation
 - **Send button disabled** (not hidden) when text is empty and no attachments — lets user see it exists
-- **Haptic feedback** (Flutter only): `HapticFeedback.lightImpact()` on send tap
-- **Max file size**: 20MB — reject and log; user sees a snackbar / toast
+- **Haptic feedback** (Flutter only): `HapticFeedback.lightImpact()` on send tap; **max file size** 20MB — reject and log; user sees a snackbar / toast

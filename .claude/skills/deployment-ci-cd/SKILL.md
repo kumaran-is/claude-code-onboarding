@@ -62,6 +62,8 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 |------|-----------|
 | `reference/python-ci-supply-chain.md` | Python CI gate design, SHA/digest pins, `--locked` installs, dependency audit commands, path filters, uv Dockerfile, deploy hygiene |
 | `reference/python-observability.md` | JSON logs, PII-safe exception logging, OpenTelemetry wiring and span test, request ids, metrics, probes, readiness checklist |
+| `reference/ai-observability.md` | LLM/agent/RAG tracing (OTel GenAI semconv), token/cost/TTFT metrics, content-capture redaction, Langfuse (optional), AI SLOs, drift, incident replay |
+| `reference/llmops-release-and-rollout.md` | Prompt/model versioning, eval-gated promotion, canary + rollback for prompt/config changes, provider migration, feedback loop |
 | `reference/health-endpoints.md` | Liveness/readiness endpoints per stack; Cloud Run probe flags |
 | `reference/env-config-validation.md` | Fail-fast configuration |
 

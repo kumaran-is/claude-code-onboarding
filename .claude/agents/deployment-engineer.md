@@ -104,17 +104,18 @@ QA signs off → merge develop to main
 ### Agentic AI Services (LangChain/LangGraph)
 - Same Docker + Cloud Run pipeline as FastAPI, but different Cloud Run configuration:
   - `--memory=2Gi` or `--memory=4Gi` — LLM inference and vector operations need more RAM
-  - `--timeout=300` — LangGraph agent chains can run longer than the default 60s
-  - `--concurrency=1` — stateful graph execution often cannot parallelize safely
+  - `--timeout` — Cloud Run's request timeout defaults to 300 s (max 3600 s); set it explicitly and keep every agent run / SSE stream budget below it, ending with a terminal `error` frame before the platform cuts the connection (`streaming-protocols` §6a)
+  - Keep concurrency > 1 for async I/O-bound agents; conversation state belongs in a checkpointer / session store, never in instance memory (instances are replaced at any time)
   - `--cpu=2` — parallel tool execution in LangGraph benefits from multiple CPUs
 - `uv sync --locked` for reproducible dependency installs in Docker builds (fails on a stale lock; `--frozen` installs it silently)
-- Model API keys (OpenAI, Anthropic) injected via Cloud Run `--set-secrets` from Secret Manager — never in image or env vars in YAML
-- Staged rollout especially important: always canary 10% first — LLM behavior changes are hard to detect in smoke tests
+- Managed model endpoints (Vertex AI) authenticate keyless via the service account / workload identity — no API key exists in deployed environments; third-party model keys come from Secret Manager via `--set-secrets` — never in the image or in YAML env blocks
+- Model ids live in environment config only; a model bump is a release (probe on the target endpoint, eval gate, canary)
+- A revision canary only sees code changes: prompt-label, flag and provider-model changes create no revision. Canary those inside the service on AI signals (fallback, schema-reject, refusal, safety hits, cost, p95) and roll back by moving the label / flag (takes effect after the registry cache TTL) — `skills/deployment-ci-cd/reference/llmops-release-and-rollout.md`
 
 ### Progressive Delivery (without Kubernetes)
 - **Cloud Run traffic splitting**: Deploy new revision → shift 10% traffic → monitor → 100%
 - **Feature flags**: LaunchDarkly or Firebase Remote Config for soft releases
-- **Automated rollback**: Health check failure → `gcloud run services update-traffic --to-revisions=PREVIOUS=100`
+- **Automated rollback**: Health check failure → `gcloud run services update-traffic --to-revisions=PREVIOUS=100` (AI services: also roll back on AI-signal breaches, not only health checks)
 - **Staging validation**: Integration tests against staging URL before prod promotion
 - **Approval gates**: GitHub `environment: production` blocks until human approves in UI
 

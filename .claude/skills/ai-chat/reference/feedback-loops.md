@@ -339,4 +339,6 @@ Future<void> regenerate(String assistantMessageId) async {
 - **Haptic** (Flutter only): `HapticFeedback.lightImpact()` on thumb press and regenerate tap
 - **Active color**: thumbs up = `primary`/`text-success`, thumbs down = `error`/`text-error`
 - **Inactive color**: `onSurface` at 60% opacity — low-prominence until interacted
-- Log thumb votes with messageId for analytics — never log message content
+- Feedback event fields: message id, trace id, prompt name + version, model id, vote, optional reason code — never message content, so feedback joins to the exact trace and release
+- Thumbs-down / hallucination flags feed a sampled human triage; a verified failure becomes a golden-set case through a reviewed PR (never auto-added) — `deployment-ci-cd/reference/llmops-release-and-rollout.md` §8
+- Feedback on an `incomplete` (stopped) answer is recorded but never used as a completed example

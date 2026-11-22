@@ -1,18 +1,20 @@
 ---
 name: streaming-protocols
-description: "Use when designing or debugging streaming in AI systems — SSE, NDJSON, HTTP Streaming, WebSocket, MCP transport, or A2UI transport. Covers the three-layer mental model, bidirectionality, real-world wire formats (OpenAI, Anthropic, MCP), production pitfalls (proxy buffering, compression, mobile reconnection), and the decision guide for which protocol to use when."
+description: "Use when designing or debugging streaming in AI systems — SSE, NDJSON, HTTP Streaming, WebSocket, MCP transport, or A2UI transport. Covers the three-layer mental model, bidirectionality, real-world wire formats (OpenAI, Anthropic, MCP), production pitfalls (proxy buffering, compression, reconnection), the server-side stream lifecycle (disconnect cancels the model call, one terminal frame, no action on partial output, WebSocket auth before accept), and the decision guide for which protocol to use when."
 allowed-tools: Read, Grep, Glob, Bash, WebFetch
 metadata:
-  triggers: SSE, server-sent events, NDJSON, HTTP streaming, WebSocket, streaming protocol, MCP transport, streamable HTTP, bidirectional streaming, traceparent, streaming AI, token streaming
-  related-skills: a2ui-angular, mcp-builder, agentic-ai-dev
+  triggers: SSE, server-sent events, client disconnect, stream cancellation, terminal frame, NDJSON, HTTP streaming, WebSocket, streaming protocol, MCP transport, streamable HTTP, bidirectional streaming, traceparent, streaming AI, token streaming
+  related-skills: a2ui-angular, mcp-builder, agentic-ai-dev, ai-chat, voice-ai-development
   domain: infrastructure
   role: reference
   scope: architecture
   output-format: guidance
-last-reviewed: "2026-05-25"
+last-reviewed: "2026-11-22"
 ---
 
 # Streaming Protocols for AI Systems
+
+> **OPTIONAL extension.** Streaming is not required for an AI feature: a one-shot JSON response is simpler and is the default. Load this skill only when you stream model output, push live updates, or proxy a realtime (voice) session. Lifecycle stage router: `ai-playbook/SKILL.md`.
 
 ## Iron Law
 
@@ -103,7 +105,7 @@ Asking "SSE vs HTTP Streaming" is like asking "JSON vs HTTP body" — JSON is *o
 |--|-------------------|-----------------|-----------|
 | Direction per stream | Half-duplex | Half-duplex within a stream | **Full-duplex** |
 | Bidirectional in practice? | Only by opening 2+ requests | Yes, via separate streams | Yes, natively |
-| Auto-reconnect? | Yes (SSE `Last-Event-ID`) | Per protocol | No — implement yourself |
+| Auto-reconnect? | Native `EventSource` GET only (`Last-Event-ID`); fetch-based streams: no | Per protocol | No — implement yourself |
 | Works through corporate proxies? | Almost always | Almost always | Often blocked or buggy |
 | Good for AI token streaming? | **Yes** (standard choice) | Yes | Overkill |
 | Good for voice / collab editing? | No | Marginal | **Yes** |
@@ -116,12 +118,12 @@ HTTP Streaming = one-direction-at-a-time per request (walkie-talkie)
 WebSocket      = both-directions-simultaneously on one connection (phone call)
 ```
 
-**Why ChatGPT's "stop generating" button closes the connection:** once the POST is sent, the client is in receive-only mode. There's no upstream channel to send a "stop" message on. The only option is to drop the connection.
+**Why ChatGPT's "stop generating" button closes the connection:** once the POST is sent, the client is in receive-only mode. There's no upstream channel to send a "stop" message on. The only option is to drop the connection — so the SERVER must notice the disconnect and cancel the model call, or it keeps generating (and billing) tokens nobody reads. See §6a.
 
 **Pick HTTP Streaming (SSE) when:**
 - Data flow is dominantly server → client
 - You need to traverse corporate proxies and CDNs reliably
-- You want browser auto-reconnect and resumability for free
+- You want browser auto-reconnect (native `EventSource`, GET only); resumability still needs event ids plus a server-side buffer
 - You're streaming LLM tokens, agent progress, A2UI updates
 
 **Pick WebSocket when:**
@@ -221,18 +223,18 @@ data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"done"}
 
 ```
 event: a2ui
-data: {"version":"v0.9","createSurface":{"surfaceId":"ticket_1","catalogId":"..."}}
+data: {"version":"v0.9","createSurface":{"surfaceId":"case_1","catalogId":"..."}}
 
 event: a2ui
-data: {"version":"v0.9","updateDataModel":{"surfaceId":"ticket_1","path":"/status","value":"Open"}}
+data: {"version":"v0.9","updateDataModel":{"surfaceId":"case_1","path":"/status","value":"Open"}}
 ```
 
 ### A2UI over NDJSON (replay / eval / debugging)
 
 ```jsonl
-{"version":"v0.9","createSurface":{"surfaceId":"ticket_1","catalogId":"..."}}
-{"version":"v0.9","updateDataModel":{"surfaceId":"ticket_1","path":"/status","value":"Open"}}
-{"version":"v0.9","updateComponents":{"surfaceId":"ticket_1","components":[...]}}
+{"version":"v0.9","createSurface":{"surfaceId":"case_1","catalogId":"..."}}
+{"version":"v0.9","updateDataModel":{"surfaceId":"case_1","path":"/status","value":"Open"}}
+{"version":"v0.9","updateComponents":{"surfaceId":"case_1","components":[...]}}
 ```
 
 ---
@@ -254,7 +256,7 @@ Also set `X-Accel-Buffering: no` as a response header from your app server.
 ### ❌ gzip / Brotli Breaks SSE
 Compression middleware accumulates bytes before compressing — turns smooth token flow into chunky bursts.
 
-**Fix:** Disable compression for `text/event-stream` responses. The bandwidth saving is not worth the latency cost.
+**Fix:** Disable compression for `text/event-stream` responses. The bandwidth saving is not worth the latency cost. (Starlette 1.10's `GZipMiddleware` already excludes `text/event-stream` by default; CDNs, other compressors and older pinned versions may not — check yours.)
 
 ```ts
 // Express example
@@ -269,12 +271,12 @@ app.use(compression({
 ### ❌ SSE Connection Timeouts on Long Agent Runs
 Long agent runs exceed default proxy timeouts (often 60s). Connection drops mid-stream.
 
-**Fix:** Send periodic keepalive comments:
+**Fix:** Send periodic keepalive comments every ≤ 15 s, below the tightest proxy idle timeout (`sse-starlette` pings every 15 s by default):
 ```
 : keepalive
 
 ```
-(A colon-prefixed line is an SSE comment — ignored by clients, but prevents timeout.)
+(A colon-prefixed line is an SSE comment — ignored by clients, but prevents timeout.) Keepalives do not lift the platform's hard request timeout (Cloud Run: 300 s default, 3600 s max): give the stream its own budget below it and end with a terminal frame.
 
 ### ❌ Mobile Reconnection Without `Last-Event-ID`
 iOS kills HTTP connections when the app backgrounds. Without `Last-Event-ID`, the stream restarts from scratch on reconnect.
@@ -284,18 +286,26 @@ iOS kills HTTP connections when the app backgrounds. Without `Last-Event-ID`, th
 2. Buffer events server-side for ≥60 seconds after sending
 3. On reconnect, client sends `Last-Event-ID` header; server replays from that point
 
-```ts
-// Client: use exponential backoff — default EventSource reconnect is too aggressive
-const es = new EventSource('/stream');
-let retryDelay = 1000;
-es.onerror = () => {
-  setTimeout(() => reconnect(), retryDelay);
-  retryDelay = Math.min(retryDelay * 2, 30000);
-};
-```
+Native `EventSource` already reconnects by itself (WHATWG HTML spec): after a network error AND after the server ends the body normally, it waits the reconnection time (server sets it with a `retry:` field) and re-sends `Last-Event-ID`. It does not reconnect after `close()`, a non-200 status or a wrong `Content-Type`; a server stops it with `204`.
 
-4. Surface "reconnecting..." state to the user — silent staleness is worse than a visible indicator
-5. For long agent runs (>10 min backgrounded): provide a polling fallback that returns current state
+```ts
+// ❌ WRONG — the browser is already reconnecting; this opens a SECOND stream
+es.onerror = () => setTimeout(() => reconnect(), retryDelay);
+
+// ✅ RIGHT — let the browser retry; close on the terminal frame so a finished
+// stream is not re-requested (which would re-run generation and bill twice)
+const es = new EventSource(`/stream/${generationId}`);
+es.addEventListener('done', () => es.close());
+es.addEventListener('error', () => {
+  if (es.readyState === EventSource.CLOSED) showFailed();   // fatal: no retry
+  else showReconnecting();                                   // transient: browser retries
+});
+```
+(Server tunes the delay with `retry: 5000`.)
+
+4. `EventSource` cannot POST or set headers. A `fetch()` + `ReadableStream` chat stream gets no automatic reconnect and no `Last-Event-ID`: resuming needs a server-side event buffer keyed by generation id; otherwise a reconnect re-runs generation. Prefer "fetch the final answer by id" after a drop.
+5. Surface "reconnecting..." state to the user — silent staleness is worse than a visible indicator
+6. For long agent runs (>10 min backgrounded): provide a polling fallback that returns current state
 
 ### ❌ Missing `traceparent` Propagation
 A single user action may generate 30+ network calls. Without a correlation ID, cross-service debugging is impossible.
@@ -325,6 +335,27 @@ Streamable HTTP (MCP) is a *transport pattern*. SSE is *one of the response form
 
 ### ❌ WebSocket "Because It's Realtime"
 If data flow is server→client only (which most LLM streaming is), WebSocket adds operational complexity without benefit. SSE is simpler, proxy-friendly, and auto-reconnecting. Reach for WebSocket only when you genuinely need bidirectional realtime.
+
+---
+
+## 6a. Server-Side Stream Lifecycle (the agent / model SSE contract)
+
+This is the canonical stream contract for agent and model endpoints in this toolkit; framework templates (LangGraph, ADK) link here. Executed code, test evidence and the WebSocket admission pattern: `reference/server-stream-lifecycle.md`.
+
+| ❌ Wrong | ✅ Right |
+|---------|---------|
+| Stop button closes the socket; server keeps generating | Client disconnect cancels the upstream model call in `finally` on every exit path |
+| Upstream call in a detached task / queue pump | Upstream owned by the stream (executed: a detached pump kept producing tokens after disconnect) |
+| `except BaseException` / swallowed `CancelledError` | Catch `Exception` at the stream boundary; cancellation propagates |
+| `data: {text}` raw, `data: {e}` on error | JSON-encode every `data:`; typed events `content` / `done` / `error` |
+| `[ERROR]` then `[DONE]`, or no terminal frame | Exactly ONE terminal frame: `done` OR `error` with a fixed code; never `str(exc)` |
+| Auth / safety / kill-switch inside the generator | Decide and log in the route before returning the response (the generator may never run) |
+| Persist or execute tool calls from partial deltas | Act only on the final, schema-validated message; a stopped answer is stored `incomplete`, never acted on |
+| `await db.save(...)` in `finally` during cancellation | Shield it (`anyio.CancelScope(shield=True)`); executed: unshielded write was lost |
+| No budget; platform timeout cuts the stream | Stream budget below the platform request timeout, then a terminal frame |
+| WebSocket `accept()` then authenticate | Subprotocol + auth before `accept()`; one stream per actor; frame/byte/time/idle caps; bounded queue → `BACKPRESSURE` |
+
+A BFF / proxy hop maps ANY upstream connect, read or non-200 failure to one terminal `error` frame, derives identity server-side and propagates the request id.
 
 ---
 
@@ -363,11 +394,13 @@ Plain JSON → one-shot response, no streaming needed
 
 ## Cheat Sheet
 
-**Three rules that catch 90% of bugs:**
+**Rules that catch most bugs:**
 
 1. Don't compress SSE responses — it buffers your stream into chunky bursts.
 2. Echo `Mcp-Session-Id` on every MCP request after init, or session state silently breaks.
 3. Propagate `traceparent` across every layer, or you'll never debug a multi-hop agent failure.
+4. Client disconnect cancels the model call; every stream ends with exactly one `done` or `error` frame (§6a).
+5. Never act on partial output; never open a second stream from `onerror`.
 
 **The four real-world stacks:**
 

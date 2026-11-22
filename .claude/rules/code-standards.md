@@ -2,7 +2,7 @@
 
 ## Documentation Before Code
 
-Consult official docs via MCP before writing ANY code. This rule is enforced here (always-loaded) because CLAUDE.md is not visible to sub-agents.
+Consult official docs via MCP before writing ANY code. This rule is enforced here (always-loaded). Custom and general-purpose subagents inherit these rules; the built-in Explore and Plan subagents start without CLAUDE.md and rules, so paste what they need into their prompt.
 
 ```
 About to write code?

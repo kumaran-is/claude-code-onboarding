@@ -122,27 +122,6 @@ prevent false triggers.
 | Error/Bug (test/build/lint failure) | Load `systematic-debugging` skill | Missing env var (fix directly); user already gave fix |
 | Before claiming completion | Run `verification-before-completion` gate | Pure research/exploration; only changed docs/comments |
 | Complex task >5 files or >3 steps | Suggest `plan-mode-review` + `docs/plans/TEMPLATE.md` | User gave step-by-step; many files but each trivial |
-| Exit signal detected (see below) | Append `blackbox/session-log.md` entry | Mid-task pause; user says "hold on" or "hmm" |
 | New skill/MCP being added | Run §P0 Skill Security Audit above | Self-written from scratch, no external code |
+| Flutter Android/iOS UI/E2E test | Maestro CLI/MCP via `flutter-e2e-maestro.md` (`.claude/rules/testing-tool-selection.md`) | Web target: use `browser-testing` instead |
 | Architecture change proposed | Load `architecture-design` skill + create ADR | Single-file refactor with no cross-service impact |
-
-## Exit Signals
-
-These phrases trigger immediate blackbox session log append:
-
-```
-"that's all for now"
-"done for today"
-"i'm heading out" / "heading out"
-"going out"
-"talk later"
-"closing the window"
-"wrapping up"
-"end of session"
-```
-
-On any exit signal:
-1. Check if any code was changed this session (git diff)
-2. If yes → append entry to `blackbox/session-log.md` immediately
-3. Do NOT wait for user to run a command
-4. Do NOT batch — append immediately on signal detection

@@ -103,9 +103,6 @@ Before any architecture change:
 After any correction by the user:
   → Lesson written to lessons.md BEFORE continuing work
 
-After any session with code changes:
-  → Blackbox entry appended (stop-blackbox-log.sh handles this)
-
 After any refactor:
   → Dead code created by YOUR changes removed immediately
   → Pre-existing dead code: list it, ask before removing
@@ -116,9 +113,8 @@ After any refactor:
 **No unsolicited documentation.**
 Never create `.md` files, reports, READMEs, diagrams, or summaries unless the human
 explicitly asks for them. Proactively generating docs no one requested is scope creep.
-Exception: `blackbox/session-log.md` entries (governed by `blackbox-policy.md`) and
-`lessons.md` entries (governed by CLAUDE.md self-improvement loop) — both are mandatory
-post-session writes, not unsolicited.
+Exception: `lessons.md` entries (governed by the CLAUDE.md self-improvement loop) are a
+mandatory write, not unsolicited.
 
 **3-attempt hard stop.**
 If you have tried the same approach ≥ 3 times and it keeps failing: STOP.

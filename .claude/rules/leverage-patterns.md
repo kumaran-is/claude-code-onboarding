@@ -8,8 +8,11 @@ When any task involves creating a **new project** (trigger words: "create", "bui
 ### Why this matters
 Slash commands (`/scaffold-flutter-app`, `/scaffold-angular-app`, etc.) are processed by the
 interactive Claude Code shell. Sub-agents run headlessly — they **cannot** invoke slash commands.
-If a sub-agent tries `flutter create`, `ng new`, or `nest new`, the
-`block-raw-scaffold.sh` hook fires and hard-blocks the tool call with exit 2.
+If anyone runs a raw `flutter create`, `ng new`, or `nest new`, the `block-raw-scaffold.sh` hook
+hard-blocks the tool call with exit 2. The scaffold commands themselves run the creator with an inline
+per-command marker (`CC_SCAFFOLD=<scaffold-command-name> <creator> ...`), which the hook allows for that
+one command only and records in `.claude/state/scaffold-audit.log`. Do not add the marker to ad-hoc
+creator calls; run the scaffold command instead.
 
 ### Required sequence
 
@@ -152,11 +155,11 @@ For any non-trivial implementation, apply these passes in order. Each pass is in
 
 ## Browser MCP in the Loop
 
-When applicable, use a browser MCP for real-time validation. Verify against actual rendered output or live behavior, not just static code analysis.
+For **web** targets, use a browser MCP for real-time validation: verify against actual rendered output or live behavior, not just static code analysis. Flutter Android/iOS apps are validated with Maestro instead (`.claude/rules/testing-tool-selection.md`).
 
 ## Skill and Agent Selection
 
-Skills and agents are lazy-loaded — load the right one before working in a domain. CLAUDE.md has the full mapping tables, but sub-agents don't see CLAUDE.md. This section provides the selection logic.
+Skills and agents are lazy-loaded — load the right one before working in a domain. CLAUDE.md has the full mapping tables; custom and general-purpose subagents inherit it, but the built-in Explore and Plan subagents start without it. This section provides the selection logic in always-loaded form.
 
 ### When to Load a Skill
 
@@ -177,7 +180,8 @@ About to write or modify code?
         Debugging       -> systematic-debugging
         Security audit  -> load skill, then dispatch security-reviewer agent
         Code review     -> load skill, then dispatch tech-specific reviewer agent
-        Browser testing -> browser-testing
+        Browser testing (web targets only) -> browser-testing
+        Flutter mobile UI/E2E -> flutter-mobile skill + Maestro (never browser-testing)
         Plan review     -> plan-mode-review
 ```
 
@@ -281,7 +285,7 @@ The context window is finite. Protect it:
 - **Don't re-read files** you already have in context unless they were modified since your last read.
 - **Summarize at boundaries.** When a task spans many steps, summarize completed work before continuing — this is cheaper than re-reading everything.
 - **Prefer Grep/Glob over exploratory reads.** Find the exact file:line first, then read a narrow range.
-- **Don't load blackbox/session-log.md** or other append-only logs into context unless explicitly asked.
+- **Don't load append-only logs** (session transcripts, build logs) into context unless explicitly asked.
 
 #### Optimization Target: Tokens-per-Task, Not Tokens-per-Request
 
@@ -368,7 +372,7 @@ Sub-agents (via Task tool or Agent Teams) are powerful but have blind spots. Gov
 Before dispatching ANY agent (Task tool or TeamCreate):
 
 1. **Load the skill first.** The `subagent-driven-development` skill defines the Implementer -> Spec Reviewer -> Quality Reviewer pipeline. Skipping it means skipping review stages.
-2. **Pass explicit context.** Agents do NOT inherit: `CLAUDE.md`, `lessons.md`, rules files, or conversation history. For Task tool: include everything in the `prompt` param. For Teams: include in the initial `SendMessage` body.
+2. **Pass explicit context.** A subagent starts in a fresh context: it never receives the conversation history or tool results. Custom and general-purpose subagents load the `CLAUDE.md` hierarchy (which includes `.claude/rules/`, so `lessons.md` too) unless their definition sets `omitClaudeMd`; the built-in Explore and Plan subagents do not. For Task tool: include the task, file paths and decisions in the `prompt` param (and any rules an Explore/Plan agent needs). For Teams: include in the initial `SendMessage` body.
 3. **Specify the subagent_type.** Match the agent to the work — read-only agents (Explore, Plan) cannot edit files. Do not assign implementation to research agents.
 4. **Set isolation when needed.** Use `isolation: "worktree"` for changes that might conflict with concurrent work.
 
@@ -384,7 +388,7 @@ Before dispatching ANY agent (Task tool or TeamCreate):
 
 ### Limitations (Both Modes)
 
-- Agents cannot read `.claude/rules/` or `CLAUDE.md` unless you paste the relevant rules into the prompt or message
+- Explore and Plan subagents (and any agent with `omitClaudeMd`) start without `CLAUDE.md` and `.claude/rules/`; paste the relevant rules into the prompt or message. Other subagents inherit them
 - Agent memory (native `memory:` frontmatter, v2.1.33): an agent that declares it **does** reliably re-read the first 200 lines of its OWN `.claude/agent-memory/<agent>/MEMORY.md` on each invocation — it just never reads another agent's memory, and overflow topic files load only on demand. So don't treat a `memory:`-enabled agent's notes as unread "orphans"; durable, cross-cutting knowledge still flows into `lessons.md`/skills via `/promote-lessons` (the review-gated path), not raw committed memory.
 - Agents do not see prior conversation context unless the agent type description says "access to current context"
 - Agent output is not visible to the user — you must summarize results back

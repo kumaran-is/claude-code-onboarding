@@ -164,8 +164,6 @@ When resuming, recover context in this order:
 | Recent git log | What was committed vs what's pending | If task state is unclear |
 | `.claude/rules/lessons.md` | Auto-loaded — no action needed | Automatic |
 
-**Do NOT load** `blackbox/session-log.md` unless the user explicitly asks. It is an append-only audit trail, not a context source.
-
 ### What NOT to Do on Resume
 
 - Do not start fresh work without checking for in-progress tasks

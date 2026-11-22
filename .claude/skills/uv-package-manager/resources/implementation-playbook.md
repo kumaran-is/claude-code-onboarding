@@ -234,8 +234,8 @@ uv lock
 # Update lock file
 uv lock --upgrade
 
-# Lock without installing
-uv lock --no-install
+# uv lock never installs anything (there is no --no-install flag)
+uv lock --dry-run
 
 # Lock specific package
 uv lock --upgrade-package requests
@@ -376,18 +376,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<40-hex-sha> # v4.x.y
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v2
+        uses: astral-sh/setup-uv@<40-hex-sha> # pin by SHA, see deployment-ci-cd/reference/python-ci-supply-chain.md
         with:
           enable-cache: true
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install   # reads .python-version
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras
 
       - name: Run tests
         run: uv run pytest
@@ -395,7 +395,7 @@ jobs:
       - name: Run linting
         run: |
           uv run ruff check .
-          uv run black --check .
+          uv run ruff format --check .
 ```
 
 ### Pattern 14: Docker Integration
@@ -405,7 +405,8 @@ jobs:
 FROM python:3.14-slim
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# pin the uv image by version + digest, never :latest (own line: a trailing comment becomes COPY arguments)
+COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/
 
 # Set working directory
 WORKDIR /app
@@ -414,7 +415,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --frozen --no-dev
+RUN uv sync --locked --no-dev
 
 # Copy application code
 COPY . .
@@ -430,13 +431,14 @@ CMD ["uv", "run", "python", "app.py"]
 FROM python:3.14-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# pin the uv image by version + digest, never :latest (own line: a trailing comment becomes COPY arguments)
+COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/
 
 WORKDIR /app
 
 # Install dependencies to venv
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-editable
+RUN uv sync --locked --no-dev --no-editable
 
 # Runtime stage
 FROM python:3.14-slim
@@ -459,11 +461,11 @@ CMD ["python", "app.py"]
 # Create lockfile (uv.lock)
 uv lock
 
-# Install from lockfile (exact versions)
-uv sync --frozen
+# Install from lockfile (exact versions; fails if the lock is stale)
+uv sync --locked
 
-# Update lockfile without installing
-uv lock --no-install
+# Update lockfile (uv lock never installs; --no-install is not a flag)
+uv lock
 
 # Upgrade specific package in lock
 uv lock --upgrade-package requests
@@ -514,7 +516,7 @@ uv pip install --jobs 1 package
 uv pip install --offline package
 
 # Sync from lockfile offline
-uv sync --frozen --offline
+uv sync --locked --offline
 ```
 
 ## Comparison with Other Tools
@@ -560,7 +562,7 @@ pip-sync requirements.txt
 
 # uv
 uv lock
-uv sync --frozen
+uv sync --locked
 # ~2 seconds (7-8x faster)
 ```
 
@@ -705,7 +707,7 @@ uv lock --upgrade
 3. **Separate dev dependencies** from production
 4. **Use uv run** instead of activating venv
 5. **Commit uv.lock** to version control
-6. **Use --frozen in CI** for consistent builds
+6. **Use --locked in CI and Docker** (fails on a stale lock; `--frozen` silently installs it)
 7. **Leverage global cache** for speed
 8. **Use workspace** for monorepos
 9. **Export requirements.txt** for compatibility
@@ -714,8 +716,8 @@ uv lock --upgrade
 ### Performance Tips
 
 ```bash
-# Use frozen installs in CI
-uv sync --frozen
+# Use locked installs in CI (fails if the lock is stale; --frozen would install it anyway)
+uv sync --locked
 
 # Use offline mode when possible
 uv sync --offline
@@ -727,7 +729,7 @@ uv sync --offline
 # uv shares cache globally
 
 # Use lockfiles to skip resolution
-uv sync --frozen  # skips resolution
+uv sync --locked  # validates the lock, installs from it
 ```
 
 ## Migration Guide
@@ -772,7 +774,7 @@ pip-sync requirements.txt
 
 # After
 uv lock
-uv sync --frozen
+uv sync --locked
 ```
 
 ## Command Reference
@@ -823,7 +825,7 @@ uv --version                # Show version
 3. **Pin Python versions** - Use .python-version
 4. **Use uv run** - Avoid manual venv activation
 5. **Leverage caching** - Let uv manage global cache
-6. **Use --frozen in CI** - Exact reproduction
+6. **Use --locked in CI** - exact reproduction, fails if pyproject and lock disagree
 7. **Keep uv updated** - Fast-moving project
 8. **Use workspaces** - For monorepo projects
 9. **Export for compatibility** - Generate requirements.txt when needed

@@ -103,3 +103,8 @@ if __name__ == "__main__":
 ```
 
 Install and run: `uv pip install -e .` then `my-cli deploy staging --dry-run`
+
+## Services vs Libraries
+
+- A deployed SERVICE pins exactly: framework (and any library that patches its internals, such as tracing instrumentors) with `==`, lock committed, installed with `uv sync --locked` (never from loose `>=` ranges in a Dockerfile). A published LIBRARY declares compatible ranges and lets the consumer's lock decide; keep its `requires-python` as wide as you actually test.
+- Install the project non-editable (`uv sync --locked --no-editable`) in images so only `.venv` is copied to runtime. See `../deployment-ci-cd/reference/python-ci-supply-chain.md` §8.

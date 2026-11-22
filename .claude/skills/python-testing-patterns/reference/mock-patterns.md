@@ -96,47 +96,13 @@ reader imports `open` explicitly.
 
 ---
 
-## Section 4 — Parametrized fixtures for multiple database backends
+## Section 4 — Database-backed tests use real PostgreSQL, not a SQLite parametrization
 
-Use when you need to verify behavior is identical across SQLite (fast, CI-safe) and PostgreSQL
-(production). The fixture runs every dependent test once per backend automatically.
-
-```python
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
-@pytest.fixture(params=['sqlite', 'postgres'])
-def db_engine(request):
-    if request.param == 'sqlite':
-        engine = create_engine('sqlite:///:memory:')
-    else:
-        engine = create_engine('postgresql://test:test@localhost/test_db')
-
-    Base.metadata.create_all(engine)
-    yield engine
-    Base.metadata.drop_all(engine)
-    engine.dispose()
-
-@pytest.fixture
-def db_session(db_engine):
-    with Session(db_engine) as session:
-        yield session
-        session.rollback()
-
-# This test runs TWICE — once for sqlite, once for postgres
-def test_create_user(db_session):
-    user = User(name='Alice')
-    db_session.add(user)
-    db_session.commit()
-    assert db_session.get(User, user.id).name == 'Alice'
-```
-
-**Rule:** Use `params=` on the engine fixture, not on the session fixture. This keeps session
-teardown (rollback) identical across backends and avoids duplicating the rollback logic.
-
-**CI note:** Gate the `postgres` param with `pytest.mark.skipif` when `DATABASE_URL` env var is
-absent, so the SQLite path always runs in CI without a live database.
+A `params=['sqlite', 'postgres']` engine fixture proves the SQLite path and silently skips the
+behaviour you ship (constraints, JSONB, `ON CONFLICT`, savepoints, casts). Mock the database only
+for pure-logic units; for anything that builds an ORM session use the async outer-transaction +
+SAVEPOINT fixture, with skip-locally / fail-in-CI semantics, in
+[`postgres-integration-testing.md`](postgres-integration-testing.md).
 
 ---
 
@@ -170,8 +136,34 @@ async def test_fetch_user():
 `MagicMock` does not return awaitables — tests will fail with `TypeError: object MagicMock can't
 be used in 'await' expression`.
 
-**`pytest-asyncio` config** (required in `pyproject.toml`):
+**`pytest-asyncio` config** (required in `pyproject.toml`; with `auto` drop the `@pytest.mark.asyncio`
+decorators above, with the default `strict` keep them and use `@pytest_asyncio.fixture` for async fixtures):
 ```toml
 [tool.pytest.ini_options]
-asyncio_mode = "auto"  # avoids @pytest.mark.asyncio on every async test
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"   # set explicitly; unset emits a deprecation warning
+asyncio_default_test_loop_scope = "session"      # same scope as session-scoped async fixtures (engine)
 ```
+
+---
+
+## Section 6 — Fidelity traps
+
+```python
+from unittest.mock import MagicMock, create_autospec
+from pydantic import BaseModel
+
+class Out(BaseModel):
+    v: int
+
+Out.model_validate(MagicMock(), from_attributes=True)   # v=1: an UNSET attribute became a plausible value
+```
+
+Executed (pydantic 2.14): an unset `MagicMock` attribute validated as `1` (int), `1.0` (float) and
+`True` (bool); `str` and `Decimal` fields raised. A test can therefore pass while asserting nothing about the field.
+
+- Pin EVERY field the response model reads in the shared fixture; prefer `create_autospec(Cls, instance=True)` / `spec_set` so a missing or misspelled attribute raises.
+- A pinned `side_effect=[a, b]` list raises `StopIteration` on the third call (executed): adding one query to the code under test breaks every such test, so grep tests after adding a query.
+- `patch("pkg.mod.symbol")` patches a string path; if the code under test imports the symbol under another path (or after a package reload) you patch a module nobody calls. Assert the positive case (`mock.assert_awaited_once()`) or inject the dependency instead.
+- Import exception classes used with `pytest.raises` at module level, not inside the test after the package was reloaded.
+- Assert the outcome (one side effect, same status on replay), not that the mock was wired.

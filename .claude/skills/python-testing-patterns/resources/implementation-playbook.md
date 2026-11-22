@@ -368,6 +368,7 @@ def test_exception_info():
 ```python
 # test_async.py
 import pytest
+import pytest_asyncio
 import asyncio
 
 async def fetch_data(url: str) -> dict:
@@ -395,7 +396,7 @@ async def test_concurrent_fetches():
     assert all("data" in r for r in results)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture   # strict mode (default) needs this decorator; asyncio_mode = "auto" does not
 async def async_client():
     """Async fixture."""
     client = {"connected": True}
@@ -526,12 +527,8 @@ def database_url():
 
 @pytest.fixture(autouse=True)
 def reset_database(database_url):
-    """Auto-use fixture that runs before each test."""
-    # Setup: Clear database
-    print(f"Clearing database: {database_url}")
+    """Auto-use fixture that runs around each test (real cleanup goes here, never print)."""
     yield
-    # Teardown: Clean up
-    print("Test completed")
 
 
 @pytest.fixture
@@ -563,7 +560,6 @@ def db_backend(request):
 
 def test_with_db_backend(db_backend):
     """This test will run 3 times with different backends."""
-    print(f"Testing with {db_backend}")
     assert db_backend in ["sqlite", "postgresql", "mysql"]
 ```
 
@@ -694,7 +690,7 @@ def test_unix_specific():
     pass
 
 
-@pytest.mark.xfail(reason="Known bug #123")
+@pytest.mark.xfail(reason="Known bug (tracker id here)")
 def test_known_bug():
     """Mark expected failures."""
     assert False
@@ -727,115 +723,26 @@ pytest --cov=myapp --cov-report=term-missing tests/
 
 ## Testing Database Code
 
+ORM and SQL behaviour is tested on real PostgreSQL, not SQLite (SQLite accepts SQL PostgreSQL rejects and ignores constraints). Full, executed fixtures (skip-vs-fail with `REQUIRE_DB_TESTS`, outer transaction + SAVEPOINT, ASGI client with lifespan and dependency overrides, race tests with barriers) are in [`../reference/postgres-integration-testing.md`](../reference/postgres-integration-testing.md). The core fixture:
+
 ```python
-# test_database_models.py
-import pytest
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-
-Base = declarative_base()
-
-
-class User(Base):
-    """User model."""
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String(50))
-    email = Column(String(100), unique=True)
-
-
-@pytest.fixture(scope="function")
-def db_session() -> Session:
-    """Create in-memory database for testing."""
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-
-    SessionLocal = sessionmaker(bind=engine)
-    session = SessionLocal()
-
-    yield session
-
-    session.close()
-
-
-def test_create_user(db_session):
-    """Test creating a user."""
-    user = User(name="Test User", email="test@example.com")
-    db_session.add(user)
-    db_session.commit()
-
-    assert user.id is not None
-    assert user.name == "Test User"
-
-
-def test_query_user(db_session):
-    """Test querying users."""
-    user1 = User(name="User 1", email="user1@example.com")
-    user2 = User(name="User 2", email="user2@example.com")
-
-    db_session.add_all([user1, user2])
-    db_session.commit()
-
-    users = db_session.query(User).all()
-    assert len(users) == 2
-
-
-def test_unique_email_constraint(db_session):
-    """Test unique email constraint."""
-    from sqlalchemy.exc import IntegrityError
-
-    user1 = User(name="User 1", email="same@example.com")
-    user2 = User(name="User 2", email="same@example.com")
-
-    db_session.add(user1)
-    db_session.commit()
-
-    db_session.add(user2)
-
-    with pytest.raises(IntegrityError):
-        db_session.commit()
+# tests/conftest.py (engine fixture: see the reference for the skip-vs-fail version)
+@pytest_asyncio.fixture
+async def session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    async with engine.connect() as conn:
+        outer = await conn.begin()                        # outer transaction
+        maker = async_sessionmaker(bind=conn, expire_on_commit=False,
+                                   join_transaction_mode="create_savepoint")
+        async with maker() as s:
+            yield s                                       # commit() only releases a SAVEPOINT
+        await outer.rollback()                            # nothing persists
 ```
+
+Do NOT use this fixture to prove a commit boundary or a cross-connection race (two sessions on one connection see each other's uncommitted rows); use two connections and a remove-the-commit control.
 
 ## CI/CD Integration
 
-```yaml
-# .github/workflows/test.yml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-          pip install pytest pytest-cov
-
-      - name: Run tests
-        run: |
-          pytest --cov=myapp --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-```
+Pinned actions, locked installs, executed-count gate, dependency audit and path filters: [`deployment-ci-cd/reference/python-ci-supply-chain.md`](../../deployment-ci-cd/reference/python-ci-supply-chain.md) (workflow validated with `actionlint`). Test the Python you deploy (`.python-version`), not a matrix of old interpreters; install with `uv sync --locked`, never `pip install -e` from loose ranges; a tag-pinned `actions/*@v3` is not a pin.
 
 ## Configuration Files
 
@@ -850,8 +757,8 @@ addopts =
     -v
     --strict-markers
     --tb=short
-    --cov=myapp
-    --cov-report=term-missing
+# coverage runs in the gate (pytest --cov=myapp --cov-fail-under=80), not in addopts:
+# it slows every run and interferes with debuggers
 markers =
     slow: marks tests as slow
     integration: marks integration tests
@@ -864,11 +771,11 @@ markers =
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = [
-    "-v",
-    "--cov=myapp",
-    "--cov-report=term-missing",
-]
+addopts = ["-v", "--strict-markers"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"   # set explicitly; unset is deprecated
+asyncio_default_test_loop_scope = "session"
+timeout = 30                                     # pytest-timeout backstop against hangs
 
 [tool.coverage.run]
 source = ["myapp"]
@@ -904,3 +811,8 @@ exclude_lines = [
 8. **Test edge cases** and error conditions
 9. **Measure coverage** but focus on quality
 10. **Run tests in CI/CD** on every commit
+11. **Real PostgreSQL for ORM behaviour**; skip locally, FAIL in CI when it is absent (`REQUIRE_DB_TESTS=1`)
+12. **Prove tests ran**: pytest exits 0 when everything is skipped; assert executed count > 0
+13. **Deterministic**: inject clocks and id factories, explicit `ORDER BY`, no `sleep`, no real network in unit tests
+14. **Assert outcomes, not wiring**: one side effect and the same status on replay, not "a flag was set"
+15. **Restore globals with `monkeypatch`**; clear `app.dependency_overrides` in teardown

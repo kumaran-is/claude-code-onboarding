@@ -20,7 +20,8 @@
 - JWT tokens properly validated (signature, expiry, issuer)
 - Authorization checked on every route/endpoint (not just authentication)
 - **Client-side guards are UX, NOT security.** Angular route guards, Flutter widget visibility checks, and UI-level role hiding do NOT enforce authorization. All authorization MUST be enforced server-side. Anyone can call your API directly.
-- No IDOR -- users cannot access other users' resources by changing IDs
+- No IDOR -- users cannot access other users' resources by changing IDs: object fetches carry the caller's scope (organization/owner) in the query, foreign objects return 404 (not 403), and the actor id comes from the verified token, never the request body (`python-dev/reference/fastapi-authorization-boundaries.md`)
+- Side-effect endpoints (send, charge, publish, delete) are reachable only by the identity that owns the action, not by any authenticated user; denials are audit-logged without echoing submitted values
 - Rate limiting on auth endpoints (login, register, password reset)
 - Session management secure (httpOnly, secure, sameSite cookies)
 - **Prefer managed auth providers** (Firebase Auth, Auth0, Clerk) over custom JWT implementations for production apps. Custom auth with bcrypt+Passport is acceptable for learning/demo projects only. Managed providers handle token rotation, MFA, account recovery, and security patches automatically.
@@ -40,7 +41,7 @@
 
 ### 6. Dependencies (HIGH)
 - **Verify every package before installing:** Check npm/PyPI download count (>1K weekly), last publish date (<12 months), verify package name matches intended (typosquatting defense: `lodash` not `lodash-utils`). For AI-suggested packages, verify the package actually exists on the registry before running `npm install` / `pip install`.
-- `npm audit` / `pip audit` / dependency-check clean of critical/high CVEs
+- `npm audit` / `pip-audit` / dependency-check clean of critical/high CVEs, judged by the tool's own exit code (pip-audit prints no severity, `pip audit` is not a command; see `deployment-ci-cd/reference/python-ci-supply-chain.md`)
 - No deprecated or unmaintained packages in critical paths
 - Lock files committed; dependencies pinned
 - **Dependabot enabled:** `.github/dependabot.yml` committed with weekly updates for all package ecosystems used in this project (npm, maven, pip, pub)

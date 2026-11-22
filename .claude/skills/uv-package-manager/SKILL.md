@@ -9,12 +9,12 @@ metadata:
   role: specialist
   scope: tooling
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
 
-**ALWAYS USE `uv sync --frozen` IN CI AND DOCKER — never `uv sync` without --frozen in reproducible environments; without it, dependency resolution runs fresh and can pick up different versions**
+**ALWAYS USE `uv sync --locked` IN CI AND DOCKER — it fails when `pyproject.toml` and `uv.lock` disagree; `--frozen` installs a stale lock without complaint (executed: stale lock, `--frozen` exit 0, `--locked` exit 1); plain `uv sync` re-resolves and can pick different versions**
 
 # uv Package Manager
 
@@ -23,7 +23,7 @@ Deep reference for uv — the ultra-fast Python package manager written in Rust.
 ## When to Use
 
 Load this skill when:
-- Setting up lockfile workflows (`uv lock`, `uv sync --frozen`)
+- Setting up lockfile workflows (`uv lock`, `uv sync --locked`)
 - Managing Python version pinning (`uv python pin 3.14`)
 - Configuring Docker builds with uv cache mounts
 - Setting up GitHub Actions CI with uv dependency caching
@@ -38,7 +38,8 @@ The `python-dev` skill covers: `uv init`, `uv add`, basic virtual environment se
 | Task | Command |
 |------|---------|
 | Create lockfile | `uv lock` |
-| Install from lockfile (CI) | `uv sync --frozen` |
+| Install from lockfile (CI) | `uv sync --locked` |
+| Is the lock stale? | `uv lock --check` (exit 1 when stale) |
 | Pin Python version | `uv python pin 3.14` |
 | Run without activating | `uv run python script.py` |
 | Run tests | `uv run pytest` |
@@ -70,7 +71,7 @@ uv add --dev pytest pytest-asyncio httpx ruff mypy
 
 # Lockfile (add to CI and Docker)
 uv lock                          # Generate/update uv.lock
-uv sync --frozen                 # Install exact versions from lock
+uv sync --locked                 # Install exact versions; fails if the lock is stale
 
 # Python version
 uv python pin 3.14               # Write .python-version file
@@ -84,17 +85,20 @@ uv run uvicorn src.main:app      # Run server
 ## Docker Pattern (summary — full pattern in playbook)
 
 ```dockerfile
-FROM python:3.14-slim AS builder
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+FROM python:3.14-slim@sha256:<index-digest> AS builder
+COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --locked --no-dev
 ```
+
+Monorepo/workspace: plain `uv sync` skips workspace members; use `uv sync --all-packages --locked` and run one pytest process per package with the root config (`-c pyproject.toml --import-mode=importlib`). Dockerfile layering, pinning and audit: `../deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ## CI Pattern (summary — full pattern in playbook)
 
 ```yaml
-- uses: astral-sh/setup-uv@v4
+- uses: astral-sh/setup-uv@<40-hex-sha> # vX.Y.Z (pin by SHA)
   with:
     enable-cache: true
-- run: uv sync --frozen
+- run: uv lock --check
+- run: uv sync --locked
 ```

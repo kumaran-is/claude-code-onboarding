@@ -82,11 +82,23 @@ uv run pip-audit 2>&1 | grep -E "CRITICAL|HIGH" | head -20
 ```
 
 ### Flutter
+Capture each command's own exit code (a pipe into `tail` hides it). Report every check as `PASS` / `FAIL` /
+`BLOCKED` (could not run — say why) / `NOT RUN` (skipped — say why) / `NOT APPLICABLE`; only `PASS` counts toward
+READY TO SHIP. Proportional validation by change type:
+[flutter-testing-traps.md §10](../skills/flutter-mobile/reference/flutter-testing-traps.md).
+
 ```bash
-flutter analyze 2>&1 | tail -20
-flutter test 2>&1 | tail -20
-flutter build apk --release 2>&1 | tail -10
+dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
+flutter analyze > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -20 /tmp/analyze.log   # 0 issues, incl. info
+flutter test --coverage > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/test.log
+flutter build apk --release > /tmp/build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/build.log
 ```
+
+- Flutter mobile UI/E2E gates run with Maestro only (`.claude/rules/testing-tool-selection.md`); a missing Maestro/device is BLOCKED, not a browser substitute
+- Run heavy gates (device/E2E, release builds) LAST, after version bump and changelog are final — a later edit voids them.
+- Checks that cannot run here (iOS build on Linux, offline behaviour on a simulator) are `BLOCKED`, never `PASS`.
+- Zero findings from a scan/grep is evidence only if a known-bad input proved the same scan can fire (positive control).
+- Run against COMMITTED work: a diff-aware check on uncommitted changes sees nothing and passes vacuously.
 
 ## Step 3 — High Priority (should pass)
 

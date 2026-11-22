@@ -61,6 +61,7 @@ WHITELIST=(
     "fake"
     "<YOUR_"
     "YOUR_API"
+    "://[^:]+:[^@"   # regex source text inside secret scanners (e.g. stop-secret-scan.sh), not a credential
 )
 
 # ── File patterns to skip (docs and test fixtures) ───────────────────────────

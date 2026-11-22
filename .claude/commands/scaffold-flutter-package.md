@@ -83,6 +83,8 @@ export 'models/<model_name>/index.dart';
 
 ## Post-Scaffold Steps
 
+If the new package is a new workspace member, add its path to the root `pubspec.yaml` `workspace:` list, set `resolution: workspace` in its `pubspec.yaml`, and run `melos bootstrap` from the workspace root — never `flutter pub get` inside the member (Melos 7+; verify against your Melos version).
+
 ```bash
 # Regenerate all codegen (Freezed, Riverpod, json_serializable)
 melos run build_runner

@@ -20,7 +20,7 @@ Create a new Angular 21.x SPA project with the following:
 
 ## Steps
 
-1. **Scaffold the project** — `npx @angular/cli@latest new <name> --style=scss --ssr=false`. Verify flags against fetched docs.
+1. **Scaffold the project** — `CC_SCAFFOLD=scaffold-angular-app npx @angular/cli@latest new <name> --style=scss --ssr=false` (the `CC_SCAFFOLD=` prefix is the per-command authorization `block-raw-scaffold.sh` requires). Verify flags against fetched docs.
 2. **Install TailwindCSS 4.x + daisyUI** — `npm install tailwindcss @tailwindcss/postcss daisyui@latest`. Follow the `angular-spa` skill reference `tailwind-v4-config.md` for `.postcssrc.json` and `src/styles.css` setup.
 3. **Set up folder structure** — `core/services/`, `core/interceptors/`, `core/guards/`, `shared/components/`, `shared/pipes/`, `shared/directives/`, `features/dashboard/`.
 4. **Configure `app.config.ts`** — Follow the `angular-spa` skill template. Do NOT add zone-related providers.

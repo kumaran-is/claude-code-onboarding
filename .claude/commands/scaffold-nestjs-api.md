@@ -15,7 +15,7 @@ Delegate to the `nestjs-api` skill for all patterns, templates, and reference fi
 
 1. **Create `.gitignore` first** — before any other file. Include: `node_modules/`, `.env`, `*.pem`, `*.key`, `dist/`, `coverage/`, `.turbo/`, `.DS_Store`
 2. Read the `nestjs-api` skill and its reference files for exact code templates
-3. Create NestJS project — `npx @nestjs/cli new <name> --package-manager npm --strict --skip-git`
+3. Create NestJS project — `CC_SCAFFOLD=scaffold-nestjs-api npx @nestjs/cli new <name> --package-manager npm --strict --skip-git` (the `CC_SCAFFOLD=` prefix is the per-command authorization `block-raw-scaffold.sh` requires)
 3. Install dependencies (Fastify adapter, Prisma, config, swagger, terminus, throttler, validators, helmet) per skill conventions
 4. Replace Jest with Vitest (remove jest packages, add vitest + @swc/core + unplugin-swc)
 5. Replace Express with Fastify adapter in `src/main.ts`

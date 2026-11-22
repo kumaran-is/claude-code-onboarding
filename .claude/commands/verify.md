@@ -67,13 +67,38 @@ npm test -- --watch=false --browsers=ChromeHeadless 2>&1 | tail -5; echo "EXIT:$
 ```
 
 ### Flutter (`pubspec.yaml` with flutter:)
-```bash
-# quick
-flutter analyze --no-pub -q 2>&1 | tail -5; echo "EXIT:$?"
 
-# full
-flutter test -q 2>&1 | tail -5; echo "EXIT:$?"
+Capture each command's OWN exit code (a pipe into `tail` reports `tail`'s status, not the tool's):
+
+```bash
+# quick — static checks (every Dart change)
+dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
+flutter analyze --no-pub > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -5 /tmp/analyze.log
+
+# full — tests (per package root in a multi-package repo; mixing roots fabricates failures)
+flutter test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -5 /tmp/test.log
 ```
+
+Count `error`, `warning` AND `info` findings from `flutter analyze` — by default it exits non-zero on info-level issues too (confirm for your SDK version with `flutter analyze --help`).
+
+**Proportional validation.** Run what the change can affect — not everything, not less. The full change-type table is in
+[flutter-testing-traps.md §10](../skills/flutter-mobile/reference/flutter-testing-traps.md); summary:
+
+| Change | Minimum before reporting PASS |
+|--------|-------------------------------|
+| Dart source (logic, state) | format + analyze + the tests that reach the changed code |
+| Widget / screen / navigation | the above + a widget test per state; a routing/boot test for navigation |
+| Offline / sync | the above + the sync/outbox tests; device-only checks on a simulator are BLOCKED, not PASS |
+| Native / platform config (Gradle, Info.plist, manifests, entitlements) | analyze + a build for each affected platform |
+| Generated code / l10n inputs | regenerate first, then format + analyze + tests |
+| CI, hooks, scripts | run the script itself (self-test or dry run); app tests are NOT APPLICABLE |
+| Docs / comments only | app checks are NOT APPLICABLE; confirm no code file changed |
+
+**UI/E2E on a Flutter Android/iOS target** uses Maestro only (`.claude/rules/testing-tool-selection.md`); if Maestro or a device is missing the check is `BLOCKED`, never a browser substitute.
+
+**Status vocabulary** (per check, never blended): `PASS` ran and succeeded · `FAIL` ran and failed · `BLOCKED` could not
+run (say why: no device, tool missing, backend down) · `NOT RUN` skipped by choice (say why) · `NOT APPLICABLE` the change
+cannot affect it. Only `PASS` counts as a pass.
 
 ## Output Format
 
@@ -109,6 +134,8 @@ If any matches: list them. These are not blocking (human decides) but must be ac
 ## Rules
 
 - Run ALL detected stacks — never skip a stack silently
-- Report exact exit codes — not "it looks like it passed"
+- Report exact exit codes — not "it looks like it passed"; use the command's own exit code, never a pipe's
+- A scan that reports ZERO findings needs a positive control: a known-bad input the same scan must flag
+- A diff-aware check that is green on UNCOMMITTED work is vacuous (it sees no changed files) — commit first or say "vacuous"
 - If a stack build tool is missing (`mvnw`, `flutter`, etc.) → report "BUILD TOOL NOT FOUND — install X"
 - Do NOT interpret test failure messages — show raw output, human diagnoses

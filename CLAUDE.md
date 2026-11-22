@@ -43,6 +43,10 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 > Defined in `.claude/rules/core-behaviors.md` (always loaded). Process patterns in `.claude/rules/leverage-patterns.md`.
 >
 > **Rule precedence** (when rules conflict): `core-behaviors` > `first-principles` > `code-standards` > `verification-and-reporting` > `leverage-patterns`.
+>
+> **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools. Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
+>
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 
@@ -64,6 +68,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
 | Flutter | `.claude/skills/flutter-mobile/` | `flutter-mobile` | `/scaffold-flutter-app` |
 | Flutter GenUI (A2UI) | `.claude/skills/flutter-genui/` | `flutter-genui` | `/scaffold-genui` |
+| Flutter mobile UI/E2E tests | `.claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md` | `flutter-mobile` | Maestro CLI / MCP only |
 | Mobile Design (all platforms) | `.claude/skills/mobile-design/` | — | — |
 | React Native / Native Modules / Mobile CI-CD | `.claude/skills/mobile-developer/` | `mobile-developer` | — |
 | Database | `.claude/skills/database-schema-designer/` | `database-designer` | `/design-database` |

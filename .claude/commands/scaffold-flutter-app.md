@@ -12,7 +12,7 @@ Create a new Flutter mobile application with the following:
 **App name / theme:** $ARGUMENTS (default to "my_app" if not provided. If a theme is given like "fitness tracker" or "weather app", tailor the sample feature accordingly)
 
 ## Steps
-1. Run `flutter create --org com.company --platforms ios,android <name>`
+1. Run `CC_SCAFFOLD=scaffold-flutter-app flutter create --org com.company --platforms ios,android <name>` (the `CC_SCAFFOLD=` prefix is the per-command authorization that `block-raw-scaffold.sh` requires; it is logged to `.claude/state/scaffold-audit.log`)
 2. Update `pubspec.yaml` with Riverpod 3.x, Freezed 3.x, GoRouter 15, Firebase, riverpod_lint (see flutter-templates.md for exact versions)
 3. Create `build.yaml` with riverpod_generator, json_serializable (snake_case), and freezed options; create `l10n.yaml` with arb-dir, template-arb-file, and output-class settings
 4. Create `analysis_options.yaml` with `custom_lint` plugin and `riverpod_lint` rules
@@ -51,9 +51,10 @@ Create a new Flutter mobile application with the following:
 6. Create sample Freezed entity (domain) + DTO (data) with `fromJson`
 7. Create sample `@riverpod` notifier with Freezed sealed state
 8. Create sample `ConsumerWidget` screen + `AsyncValue.when()`
-9. Configure GoRouter as `@Riverpod(keepAlive: true)` with auth redirect guard
+9. Configure GoRouter as `@Riverpod(keepAlive: true)` with an auth redirect guard that reads state with `ref.read` and refreshes via `refreshListenable` (never `ref.watch`), redirects to a safe unauthenticated route — not `null` — while auth is unresolved, plus an auth-phase gate at the app root (see `flutter-navigation-and-auth-boot.md`)
 10. Add a sample widget test using `ProviderScope` overrides
 11. Run `dart run build_runner build --delete-conflicting-outputs`
-12. Print summary of created files, next steps, and how to run
+12. Workspace wiring — only if the app is created inside an existing pub/Melos workspace (root `pubspec.yaml` with a `workspace:` list): add the app path to that list, add `resolution: workspace` to the app `pubspec.yaml`, reference shared packages by name, then run `melos bootstrap` from the workspace root. Never run `flutter pub get` inside the member. Melos 7+ has no `melos.yaml`; check the workspace's Melos version first. Outside a workspace, skip this step.
+13. Print summary of created files, next steps, and how to run
 
 Use the flutter-mobile skill for patterns and templates.

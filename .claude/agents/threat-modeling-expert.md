@@ -2,9 +2,9 @@
 name: threat-modeling-expert
 description: Expert in threat modeling methodologies, security architecture review, and risk assessment. Masters STRIDE, PASTA, attack trees, and security requirement extraction. Use when designing new systems, reviewing architecture for security gaps, preparing for security audits, or identifying attack vectors before implementation starts.
 tools: Read, Glob, Grep, Bash
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 skills:
   - threat-modeling
 vibe: "Finds the attack vector before the attacker does"

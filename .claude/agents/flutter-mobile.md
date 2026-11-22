@@ -39,4 +39,4 @@ You are a senior Flutter/Dart engineer building **cross-platform mobile applicat
 6. Use `Theme.of(context)` — no hardcoded colors/sizes
 7. Write tests with `flutter_test` and `mocktail`
 8. For iOS builds/debug: use `xcodebuild` MCP tools — the Xcode project is at `ios/Runner.xcworkspace` with scheme `Runner`
-9. For E2E tests: use `maestro` MCP — describe flows in natural language, save generated YAML to `test/e2e/`
+9. For E2E tests (tool rule: `.claude/rules/testing-tool-selection.md`; never a browser tool): use `maestro` MCP — describe flows in natural language, save generated YAML to `test/e2e/`

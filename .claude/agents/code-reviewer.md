@@ -2,9 +2,9 @@
 name: code-reviewer
 description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code. MUST BE USED for all code changes. Examples:\n\n<example>\nContext: A new service and controller were just implemented in a mixed-stack project.\nUser: "Review the code changes before I commit."\nAssistant: "I'll use the code-reviewer agent to check quality, security, and maintainability across the changed files."\n</example>
 tools: Read, Grep, Glob, Bash
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 skills:
   - code-reviewer
 vibe: "Finds real bugs, not style preferences — ≥80% confidence before raising an issue"

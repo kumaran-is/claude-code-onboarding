@@ -2,9 +2,9 @@
 name: comment-analyzer
 description: Reviews code comments for accuracy against actual implementation, detects comment rot, outdated documentation, and misleading inline comments. Use proactively after writing code with docstrings, JSDoc, JavaDoc, or inline comments. Use before creating PRs to ensure documentation matches code. Examples:\n\n<example>\nContext: A refactored service still has old comments describing previous behavior.\nUser: "Check if the comments are still accurate after my refactor."\nAssistant: "I'll use the comment-analyzer agent to audit comment accuracy vs actual implementation and flag any comment rot or misleading documentation."\n</example>\n\n<example>\nContext: About to create a PR and want to make sure docs are clean.\nUser: "Review the comments before I open this PR."\nAssistant: "I'll use the comment-analyzer agent to verify all comments, JSDoc, and inline documentation accurately describe the current implementation."\n</example>
 tools: Read, Grep, Glob
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 vibe: "If the comment contradicts the code, the comment is wrong"
 color: blue
 emoji: "💬"

@@ -2,9 +2,9 @@
 name: agentic-ai-reviewer
 description: Code reviewer for Agentic AI services (Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2). Reviews graph correctness, safety, cost, testing, production readiness. Examples:\n\n<example>\nContext: A LangGraph agent with tool nodes and RAG retrieval was just implemented.\nUser: "Review the AI agent code I just wrote."\nAssistant: "I'll use the agentic-ai-reviewer agent to check graph correctness, guardrail coverage, iteration limits, cost efficiency, and production readiness."\n</example>
 tools: Read, Grep, Glob, Bash
+disallowedTools: Write, Edit
 model: opus
 permissionMode: default
-memory: project
 skills:
   - agentic-ai-dev
 vibe: "Finds the infinite loop before production does"

@@ -2,9 +2,9 @@
 name: pgvector-schema-reviewer
 description: PostgreSQL + pgvector migration reviewer. Extends postgresql-database-reviewer with vector-specific checks. Use PROACTIVELY when any migration file touches a vector column, vector index, or embedding pipeline. Checks operator-index alignment, dimension vs model match, null guards, embedding_model metadata column, and migration reversibility. Examples:\n\n<example>\nContext: A new Flyway migration adds a vector(1536) column and HNSW index to the vendors table.\nUser: "Review this pgvector migration before we run it on staging."\nAssistant: "I'll use the pgvector-schema-reviewer agent to verify operator-index alignment, dimension vs model match, null guard, metadata column presence, and rollback safety."\n</example>\n\n<example>\nContext: A migration switches from IVFFlat to HNSW for better recall.\nUser: "Check this index change migration."\nAssistant: "I'll use the pgvector-schema-reviewer agent to verify the ops class matches the query operator and the transition is safely reversible."\n</example>
 tools: Read, Bash, Grep, Glob
+disallowedTools: Write, Edit
 model: opus
 permissionMode: default
-memory: project
 skills:
   - vector-database
   - database-schema-designer

@@ -3,8 +3,8 @@ name: performance-oracle
 description: Quantified performance review specialist. Flags performance issues with measured or estimated impact — never vague warnings. Covers all stacks in this workspace: Java/Spring WebFlux, NestJS/Fastify, Python/FastAPI, Angular, Flutter, and PostgreSQL. Use after implementing features with database access, list rendering, reactive chains, or async operations. Every finding includes file:line, measured or estimated impact, and a concrete fix. Examples:\n\n<example>\nContext: A NestJS service was just implemented that queries a Prisma database and returns paginated results.\nUser: "Check this service for performance issues before we merge."\nAssistant: "I'll use the performance-oracle agent to scan for N+1 queries, missing pagination, synchronous operations in async chains, and unindexed query patterns — with estimated latency impact for each finding."\n</example>\n\n<example>\nContext: An Angular component renders a list of 500+ items and feels sluggish.\nUser: "The dashboard list is slow. Can you find the performance issues?"\nAssistant: "I'll use the performance-oracle agent to identify re-render storms, missing OnPush strategy, virtual scroll absence, and unnecessary subscriptions — with estimated frame-drop impact."\n</example>
 model: sonnet
 permissionMode: default
-memory: project
 tools: Read, Grep, Glob, Bash
+disallowedTools: Write, Edit
 vibe: "Every finding has a number — 'consider optimizing X' is not a finding"
 color: red
 emoji: "⚡"

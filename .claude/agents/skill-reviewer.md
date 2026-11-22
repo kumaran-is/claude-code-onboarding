@@ -2,9 +2,9 @@
 name: skill-reviewer
 description: Reviews a newly created or modified Claude Code skill against the writing-skills spec. Checks Iron Law presence, description quality (CSO trigger words), allowed-tools declaration, body line count (≤500), progressive disclosure structure, forbidden files, and cross-reference patterns. Use after creating or modifying any skill in .claude/skills/. Examples:\n\n<example>\nContext: A new react-spa skill was just created in .claude/skills/react-spa/.\nUser: "Review the react-spa skill I just created."\nAssistant: "I'll use the skill-reviewer agent to audit react-spa against the writing-skills spec — checking Iron Law, description trigger words, allowed-tools, body size, references structure, and forbidden files."\n</example>\n\n<example>\nContext: The user wants to verify a skill was built correctly before committing.\nUser: "Does my new tdd skill pass the skill authoring spec?"\nAssistant: "I'll use the skill-reviewer agent to check test-driven-development against all 10 criteria and report pass/fail with file:line evidence."\n</example>
 tools: Read, Glob, Grep
+disallowedTools: Write, Edit
 model: haiku
 permissionMode: default
-memory: project
 skills:
   - writing-skills
 vibe: "A skill without an Iron Law is just a suggestion — not good enough"

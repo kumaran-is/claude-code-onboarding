@@ -2,9 +2,9 @@
 name: nestjs-reviewer
 description: Specialized code reviewer for NestJS 11.17.x services with Fastify, Prisma, and TypeScript 5.9.x. Reviews for module correctness, security, resilience, testing, and production readiness. Examples:\n\n<example>\nContext: A new NestJS JWT auth guard and token strategy were just implemented.\nUser: "Review the auth guard I just added to the NestJS service."\nAssistant: "I'll use the nestjs-reviewer agent to check module correctness, JWT security, resilience patterns, Prisma usage, and test coverage."\n</example>
 tools: Read, Grep, Glob, Bash
+disallowedTools: Write, Edit
 model: opus
 permissionMode: default
-memory: project
 skills:
   - nestjs-api
 vibe: "Module correctness is non-negotiable — wiring errors fail silently in prod"

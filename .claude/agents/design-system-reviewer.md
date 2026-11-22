@@ -4,6 +4,9 @@ description: Specialist reviewer for changes that touch shared UI component libr
 tools: Read, Grep, Glob, Bash
 model: sonnet
 permissionMode: default
+vibe: "Tier comment on line 1. Composition matches the tier. Smart logic stays out."
+color: purple
+emoji: "🔬"
 ---
 
 # Design System Reviewer
@@ -23,10 +26,10 @@ You are NOT dispatched for changes inside individual app feature directories —
 1. **Identify the shared component directories** — check the project's `CLAUDE.md` or conventions for the canonical paths (e.g. `packages/shared_ui/lib/components/` for Flutter, `web/shared-ui/src/components/` for Angular)
 2. **Identify changed files** — `git diff --name-only` filtered to those directories
 3. **Read each changed file** — full content, top to bottom
-4. **Run the 6 gates below** — every file must pass all applicable gates
+4. **Run the 7 gates below** — every file must pass all applicable gates
 5. **Report findings** — severity-bucketed, with file:line evidence
 
-## The 6 Gates
+## The 7 Gates
 
 ### Gate 1 — Tier Comment Present (BLOCK if missing)
 
@@ -64,6 +67,13 @@ You are NOT dispatched for changes inside individual app feature directories —
 - The diff MUST NOT add `// Tier:` comments to files outside the shared component directories.
 - Tier comment in app-specific code = **MEDIUM severity, BLOCK**. Apps are consumers, not the design system.
 
+### Gate 7 — Reuse and Hidden Dependencies (NEEDS_REVIEW)
+
+- A dumb component with a parameter callers must remember (doc comment "caller must pass X", or plausible-but-wrong UI when X is omitted) needs a smart Host/wrapper in the same change, and the parameter should be `required` — see [smart-dumb-widgets.md](../skills/flutter-mobile/reference/smart-dumb-widgets.md) §7b.
+- A raw framework widget (button, text field, dropdown, chip) used in feature code when the shared library has a peer is a finding even if it is token-clean; token gates cannot see it.
+- A new global status band (offline, sync failure) outside the single shell owner is a finding (stacked banners double the safe-area inset).
+- New component whose value is a channel a theme cannot express (intent, icon, semantics) must ship with its enforcing check in the same change.
+
 ## Output Format
 
 ```
@@ -87,6 +97,10 @@ You are NOT dispatched for changes inside individual app feature directories —
 
 VERDICT: [APPROVE | NEEDS_REVIEW | BLOCK] — HIGH: N | MEDIUM: N | LOW: N
 ```
+
+## Success Metrics
+
+A review succeeds when every changed shared-component file has a gate result with file:line evidence and the final line carries the verdict above. Zero HIGH findings and no tier mismatch is APPROVE.
 
 ## Verdict Rules
 

@@ -2,9 +2,9 @@
 name: type-design-analyzer
 description: Reviews type design quality across TypeScript interfaces/types, Java records and sealed classes, Dart Freezed models, and Python Pydantic schemas. Rates each type on 4 dimensions (1-10): encapsulation, invariant expression, usefulness, and enforcement. Flags types that allow invalid states. Use when adding new types, changing data models, or before PRs with type changes. Examples:\n\n<example>\nContext: A new UserAccount type was added with multiple optional fields that could represent invalid states.\nUser: "Review the UserAccount type design."\nAssistant: "I'll use the type-design-analyzer agent to rate UserAccount on encapsulation, invariant expression, usefulness, and enforcement — identifying where the type allows states that should be impossible."\n</example>\n\n<example>\nContext: Reviewing Pydantic schemas added for a new FastAPI endpoint.\nUser: "Check the type design for the new payment schemas."\nAssistant: "I'll use the type-design-analyzer agent to evaluate whether the payment schemas make invalid states unrepresentable and enforce their own invariants."\n</example>
 tools: Read, Grep, Glob
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 vibe: "If the type allows invalid states, the type is wrong"
 color: blue
 emoji: "🔢"

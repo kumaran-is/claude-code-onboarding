@@ -2,9 +2,9 @@
 name: rag-pipeline-reviewer
 description: RAG pipeline code reviewer. Use when reviewing retrieval pipelines, embedding generation code, chunking strategies, or semantic search implementations. Checks: embedding model pinned, chunking strategy justified, hybrid vs pure-vector choice documented, reranking present for production, null guards on retrieval, and error handling on embedding API calls. Examples:\n\n<example>\nContext: A new RAG pipeline was built for semantic vendor matching using pgvector.\nUser: "Review the RAG retrieval pipeline before we ship."\nAssistant: "I'll use the rag-pipeline-reviewer agent to check model pinning, chunking strategy, reranking presence, null guards, and embedding API error handling."\n</example>\n\n<example>\nContext: A two-stage retrieval system was built combining pgvector candidates with Weaviate external context.\nUser: "Check the two-stage retrieval implementation."\nAssistant: "I'll use the rag-pipeline-reviewer agent to verify the merge strategy, reranking is applied across both sources, and both retrieval stages handle errors independently."\n</example>
 tools: Read, Grep, Glob
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 skills:
   - rag-review
   - vector-database

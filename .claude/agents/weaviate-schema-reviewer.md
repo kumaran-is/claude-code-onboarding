@@ -2,9 +2,9 @@
 name: weaviate-schema-reviewer
 description: Weaviate collection definition reviewer. Use when any Python code creates or modifies a Weaviate collection schema. Checks vectorizer validity, multi-tenancy flag, distance metric, no hardcoded API keys, named vector consistency, and client v4 API correctness. Examples:\n\n<example>\nContext: A new Weaviate collection was defined for storing scraped vendor reviews.\nUser: "Review the Weaviate collection schema before we deploy."\nAssistant: "I'll use the weaviate-schema-reviewer agent to check vectorizer config, multi-tenancy flag, distance metric, named vectors, and API key handling."\n</example>\n\n<example>\nContext: A collection is being updated to add named vectors for multi-modal search.\nUser: "Check my Weaviate named vectors setup."\nAssistant: "I'll use the weaviate-schema-reviewer agent to verify named vector config, source property mapping, and that multi-tenancy is declared at creation."\n</example>
 tools: Read, Grep, Glob
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
-memory: project
 skills:
   - vector-database
 vibe: "Multi-tenancy and vectorizer mismatches corrupt collections — caught here first"

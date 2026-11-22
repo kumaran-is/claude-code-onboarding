@@ -74,12 +74,22 @@ npm run build -- --configuration=production 2>&1 | tail -10
 ```
 
 ### Python / FastAPI
+Capture each tool's own exit code (a pipe into `tail` reports `tail`'s status). Report `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` / `NOT APPLICABLE` per check.
+
 ```bash
-uv run pytest -q 2>&1 | tail -20
-uv run mypy . --ignore-missing-imports 2>&1 | tail -10
-uv run ruff check . 2>&1 | tail -10
-uv run pip-audit 2>&1 | grep -E "CRITICAL|HIGH" | head -20
+uv lock --check; echo "LOCK EXIT:$?"
+uv run pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -20 /tmp/pytest.log
+uv run python scripts/check_executed.py /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # executed > 0; all-skipped exits 0 in pytest
+uv run mypy . > /tmp/mypy.log 2>&1; echo "MYPY EXIT:$?"; tail -10 /tmp/mypy.log
+uv run ruff check . > /tmp/ruff.log 2>&1; echo "RUFF EXIT:$?"; tail -10 /tmp/ruff.log
+uv run ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
+uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /dev/null; echo "EXPORT EXIT:$?"
+uv run pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -20 /tmp/audit.log
 ```
+
+- `pip-audit` prints name / version / advisory ID / fix versions and NO severity, so grepping it for `CRITICAL|HIGH` is always empty (a false green). Exit 0 = PASS; exit 1 = findings = FAIL unless each ID is accepted explicitly (`--ignore-vuln <ID>`, with reason and expiry); exit 2 = BLOCKED. `pip audit` is not a command.
+- Do not add `--ignore-missing-imports` to mypy as a default: it hides missing stubs; configure per-package overrides in `pyproject.toml`.
+- Canonical audit/CI details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ### Flutter
 Capture each command's own exit code (a pipe into `tail` hides it). Report every check as `PASS` / `FAIL` /

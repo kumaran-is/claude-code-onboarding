@@ -99,6 +99,9 @@ Status updates about actions (not just code state) must include proof:
 | "Deployed/launched" | URL, response, or deployment log |
 | "Fixed the bug" | Test that failed before, passes now |
 | "Installed dependency" | Package manager output or lockfile diff |
+| "Check/gate is green" | The tool's OWN exit code (`cmd; echo $?`, never a pipe's) and a positive control: the same check fails on a planted violation |
+| "Zero findings" on a diff-aware or generated-output check | Proof the check saw input: it is vacuous on uncommitted work or absent generated files |
+| "Passes locally" | Same pinned toolchain and lockfile as CI (env parity); say what differed if not |
 
 **Forbidden:** "Working on it" / "Done" without corresponding tool output in the same response.
 

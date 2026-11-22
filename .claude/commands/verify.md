@@ -33,17 +33,26 @@ Detected by file presence in current directory tree:
 ```
 
 ### Python (`pyproject.toml` or `requirements.txt`)
+
+Each command's OWN exit code is captured (`cmd | tail; echo $?` reports `tail`'s status: `false | tail; echo $?` prints 0).
+
 ```bash
 # quick
-python -m py_compile $(find src -name "*.py") && ruff check src/ -q
-echo "EXIT:$?"
+uv run ruff check . > /tmp/ruff.log 2>&1; echo "RUFF EXIT:$?"; tail -10 /tmp/ruff.log
+uv run ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
+uv lock --check; echo "LOCK EXIT:$?"          # exit 1 = pyproject and uv.lock disagree
 
 # full
-pytest -q 2>&1 | tail -5; echo "EXIT:$?"
+uv run pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -5 /tmp/pytest.log
+uv run python scripts/check_executed.py /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # all-skipped exits 0 in pytest: executed must be > 0
 
 # pre-pr additions
-bandit -r src/ -ll -q
+uv run bandit -r src/ -ll -q > /tmp/bandit.log 2>&1; echo "BANDIT EXIT:$?"; tail -10 /tmp/bandit.log
+uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /dev/null; echo "EXPORT EXIT:$?"
+uv run pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -15 /tmp/audit.log
 ```
+
+`pip-audit` has no severity column: gate on its exit code (0 = PASS, 1 = findings = FAIL unless every ID is listed with `--ignore-vuln <ID>` and a reason, 2 = tool/usage error = BLOCKED). `pip audit` is not a command. If `scripts/check_executed.py` does not exist, count executed tests from the junit file yourself (tests minus skipped). Details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ### NestJS (`package.json` with @nestjs/core)
 ```bash
@@ -136,6 +145,7 @@ If any matches: list them. These are not blocking (human decides) but must be ac
 - Run ALL detected stacks — never skip a stack silently
 - Report exact exit codes — not "it looks like it passed"; use the command's own exit code, never a pipe's
 - A scan that reports ZERO findings needs a positive control: a known-bad input the same scan must flag
+- A test run that EXECUTED zero tests is not a PASS (all-skipped exits 0): report collected / skipped / executed
 - A diff-aware check that is green on UNCOMMITTED work is vacuous (it sees no changed files) — commit first or say "vacuous"
 - If a stack build tool is missing (`mvnw`, `flutter`, etc.) → report "BUILD TOOL NOT FOUND — install X"
 - Do NOT interpret test failure messages — show raw output, human diagnoses

@@ -22,12 +22,14 @@ Detected by: `pom.xml` containing `spring-boot`
 Detected by: `pyproject.toml` or `requirements.txt` containing `fastapi`
 
 ```bash
-pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q 2>&1 | \
-  grep -E "(FAIL|PASS|ERROR|%)" | head -30
-# Files below threshold:
-pytest --cov=src --cov-report=term-missing -q 2>&1 | \
-  awk '/^TOTAL/{next} /[0-9]+%/{if(int($4)<80) print $4" "$1}' | sort -n
+# Capture pytest's OWN exit code: a --cov-fail-under failure is invisible behind `| grep`
+uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q > /tmp/cov.log 2>&1; echo "COVERAGE EXIT:$?"
+tail -40 /tmp/cov.log
+# Files below threshold (reads the saved log; the awk output is display only):
+awk '/^TOTAL/{next} /[0-9]+%/{if(int($4)<80) print $4" "$1}' /tmp/cov.log | sort -n
 ```
+
+A coverage percentage is a diagnostic, not a proof of quality: measure hand-written code only (exclude generated code and migrations in `[tool.coverage.run] omit`), ratchet floors up and never down, never pad with assertion-free tests, and keep `--cov` out of pytest `addopts` (it slows every run and interferes with debuggers; run it here). Zero executed tests is FAIL (all-skipped exits 0). For the riskiest modules prefer mutation testing on the PR diff over a higher percentage.
 
 ### NestJS (Node.js / TypeScript)
 Detected by: `package.json` containing `@nestjs/core`

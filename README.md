@@ -913,7 +913,7 @@ To add your own project-specific permissions, modify `.claude/settings.json` or 
 
 > **Note:** `SessionStart`, `SessionEnd`, `SubagentStop`, `PreCompact`, and `PermissionRequest` hooks were added in recent Claude Code releases. If a hook event doesn't fire, verify your Claude Code version with `claude --version` and update if needed. The core events (`PreToolUse`, `PostToolUse`, `Stop`) are available in all versions.
 
-This repo registers 33 hooks in `.claude/settings.json`. The ones most people interact with:
+This repo registers 34 hooks in `.claude/settings.json`. The ones most people interact with:
 
 | Hook | Script | Event | What It Does |
 |------|--------|-------|-------------|
@@ -924,6 +924,7 @@ This repo registers 33 hooks in `.claude/settings.json`. The ones most people in
 | **Auto-Format** | `post-edit-format.sh` | `PostToolUse` → Write/Edit | Runs Prettier (TS/JS/HTML/CSS), `dart format`, ruff/black (Python) |
 | **Flutter advisories** | `post-edit-flutter-ui-network-advisory.sh`, `post-edit-flutter-catch-wipe-advisory.sh` | `PostToolUse` → Write/Edit | Tell Claude when UI code imports an HTTP/cloud client directly, or a `catch` block clears a cache/queue (exempt with `// online-only:` / `// wipe-ok:` + reason) |
 | **Browser Tool Advisory** | `pre-browser-tool-advisory.sh` | `PreToolUse` → browser MCP tools / Bash | In a workspace containing a Flutter Android/iOS app, reminds Claude that mobile UI/E2E uses Maestro only and browser automation is for web targets (rule: `.claude/rules/testing-tool-selection.md`; checked statically by `.claude/scripts/lint-testing-tools.sh`) |
+| **Python lint advisory** | `post-edit-python-lint-advisory.sh` | `PostToolUse` → Write/Edit | Check-only `ruff` (plus F401/F811/F841 and hard-coded-config greps) on edited `.py` files, reported to Claude as advice; never auto-fixes; says so when `ruff` is missing. Typecheck and AI-pattern hooks were fixed and now have `--selftest` |
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
 | **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Warns if changed files contain AWS/GCP/GitHub/OpenAI API keys |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |

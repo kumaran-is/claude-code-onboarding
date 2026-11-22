@@ -23,9 +23,10 @@ Run a comprehensive security audit on the codebase.
    - Secrets in `docker-compose.yml` or CI config
    - Overly permissive CORS or security headers
 4. **Check dependencies** (if applicable):
-   - Run `npm audit` for Node.js projects
-   - Run `pip audit` for Python projects
+   - Node.js: `npm audit --audit-level=high > audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -30 audit.log`
+   - Python: `pip-audit --strict -r requirements.txt > audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -30 audit.log`, where `requirements.txt` is a pinned file (for a uv project, export it with `uv export --locked --no-hashes`). `pip audit` is not a command; commands and caveats: `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`
    - Flag known CVEs in `pom.xml` dependencies
+   - **Status comes from the tool's own exit code, never from grepping the output.** `pip-audit` prints no severity column, so `| grep -E "CRITICAL|HIGH"` is always empty and always "green". Exit 0 = PASS; exit 1 = FAIL (known vulnerabilities, or an audit error under `--strict`); tool missing, offline or unparseable lockfile = **BLOCKED**, not clean. Never report "scan completed with errors" as a pass. A severity policy needs `--format json` plus a stated rule.
 5. **Dependency vulnerability scan** (deep scan):
 
    Run the dependency scanner for a comprehensive CVE analysis with priority scoring:

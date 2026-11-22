@@ -157,14 +157,17 @@ Enable with `ALTER TABLE tbl ENABLE ROW LEVEL SECURITY`. Create policies: `CREAT
 
 ### Upsert-Friendly Design
 
-- **Requires UNIQUE index** on conflict target columns—`ON CONFLICT (col1, col2)` needs exact matching unique index (partial indexes don't work).
+- **Requires a matching UNIQUE index** on the conflict target—`ON CONFLICT (col1, col2)`. A partial unique index works when the statement repeats its predicate: `ON CONFLICT (col) WHERE live DO UPDATE ...` (SQLAlchemy `index_where=`); without the predicate Postgres reports "no unique or exclusion constraint matching" (verified on PostgreSQL 16).
 - **Use `EXCLUDED.column`** to reference would-be-inserted values; only update columns that actually changed to reduce write overhead.
+- **`DO UPDATE SET` touches only the named columns**: ORM `onupdate` defaults do not run (set `updated_at` yourself); an omitted column silently keeps its old value.
 - **`DO NOTHING` faster** than `DO UPDATE` when no actual update needed.
 
 ### Safe Schema Evolution
 
 - **Transactional DDL**: most DDL operations can run in transactions and be rolled back—`BEGIN; ALTER TABLE...; ROLLBACK;` for safe testing.
-- **Concurrent index creation**: `CREATE INDEX CONCURRENTLY` avoids blocking writes but can't run in transactions.
+- **Concurrent index creation**: `CREATE INDEX CONCURRENTLY` avoids blocking writes but can't run in transactions. In Alembic use `op.get_context().autocommit_block()`; a failed build leaves an INVALID index, so `DROP INDEX CONCURRENTLY IF EXISTS` first (`python-dev/reference/alembic-migration-safety.md`).
+- **Add constraints without a long lock**: `ADD CONSTRAINT ... CHECK (...) NOT VALID`, then `VALIDATE CONSTRAINT` (new rows are enforced immediately; the scan runs under a weaker lock).
+- **Set `lock_timeout` in migrations** so a DDL waiting for a lock fails fast instead of queueing every other query behind it.
 - **Volatile defaults cause rewrites**: adding `NOT NULL` columns with volatile defaults (e.g., `now()`, `gen_random_uuid()`) rewrites entire table. Non-volatile defaults are fast.
 - **Drop constraints before columns**: `ALTER TABLE DROP CONSTRAINT` then `DROP COLUMN` to avoid dependency issues.
 - **Function signature changes**: `CREATE OR REPLACE` with different arguments creates overloads, not replacements. DROP old version if no overload desired.

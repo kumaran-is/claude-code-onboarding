@@ -47,4 +47,29 @@ values (1, 123)
 on conflict (page_id, user_id) do nothing;
 ```
 
+Partial unique index: repeat the index predicate in the conflict target, or Postgres reports
+"no unique or exclusion constraint matching the ON CONFLICT specification" (verified on PostgreSQL 16):
+
+```sql
+create unique index uq_pu on pu (k) where live;
+insert into pu (k, live, v) values ('x', true, 1)
+on conflict (k) where live do update set v = excluded.v;   -- SQLAlchemy: index_where=pu.c.live
+```
+
+`do update set` changes only the columns it names: ORM `onupdate` defaults do not run (set `updated_at` yourself) and an omitted column keeps its old value.
+
+ORM flow when you need the winner's row (insert first; the unique constraint decides):
+
+```python
+session.add(Reservation(user_id=u, slot_id=s))
+try:
+    await session.flush()                      # the unique constraint picks the winner
+except IntegrityError:
+    await session.rollback()                   # also drops this attempt's other staged work
+    return await get_existing(session, u, s)   # idempotent: return the winner, do not 500
+```
+
+A pre-check `select` before the insert is a fast path, never the guard. Classify the violated constraint by name before treating it as "already exists":
+`python-dev/reference/sqlalchemy-async-sessions-and-transactions.md` section 7. Keys and replays: `reliability-idempotency-retries-outbox.md` section 1.
+
 Reference: [INSERT ON CONFLICT](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)

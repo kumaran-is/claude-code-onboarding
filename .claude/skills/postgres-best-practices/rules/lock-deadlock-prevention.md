@@ -53,6 +53,10 @@ where id in (1, 2);
 commit;
 ```
 
+Mixed lock types: acquire in one global order everywhere, advisory lock first, then row locks.
+Under `SERIALIZABLE` or `REPEATABLE READ` the application must also retry SQLSTATE `40001` (serialization failure) and `40P01`
+(deadlock detected) in a bounded loop; under the default `READ COMMITTED`, explicit locks plus constraints avoid most of this.
+
 Detect deadlocks in logs:
 
 ```sql

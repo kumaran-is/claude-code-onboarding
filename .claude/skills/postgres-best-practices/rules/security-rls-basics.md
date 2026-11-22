@@ -33,9 +33,12 @@ create policy orders_user_policy on orders
 -- Force RLS even for table owners
 alter table orders force row level security;
 
--- Set user context and query
-set app.current_user_id = '123';
+-- Set user context for THIS transaction only and query
+-- (a session-level `set` survives on a pooled connection and leaks to the next request)
+begin;
+select set_config('app.current_user_id', '123', true);   -- true = local to the transaction
 select * from orders;  -- Only returns orders for user 123
+commit;
 ```
 
 Policy for authenticated role:

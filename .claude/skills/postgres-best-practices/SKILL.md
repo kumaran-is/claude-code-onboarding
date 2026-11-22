@@ -59,7 +59,7 @@ NEVER TUNE WHAT YOU HAVEN'T MEASURED — CHECK `pg_stat_statements` AND `pg_stat
 - `rules/lock-skip-locked.md` — Atomic claim-and-update queue pattern, 10x worker throughput
 - `rules/lock-deadlock-prevention.md` — Consistent lock ordering, deadlock prevention patterns
 - `rules/lock-short-transactions.md` — Minimize transaction duration, 3-5x throughput
-- `rules/lock-advisory.md` — Application-level coordination without row-level locks
+- `rules/lock-advisory.md` — Transaction-scoped advisory locks (session-level locks leak across pooled connections)
 
 ### Security & RLS (NEW depth — not in other skills)
 - `rules/security-rls-basics.md` — `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + policy patterns
@@ -94,8 +94,10 @@ NEVER TUNE WHAT YOU HAVEN'T MEASURED — CHECK `pg_stat_statements` AND `pg_stat
 
 ### Python / FastAPI (asyncpg + SQLAlchemy)
 - Connection pooling: asyncpg pool `min_size`/`max_size` configuration (see `rules/conn-pooling.md`)
-- RLS: set `app.current_user_id` session variable before queries
-- SKIP LOCKED: use in background task workers
+- RLS: set `app.current_user_id` session variable before queries (transaction-local: `set_config(..., true)`; session-level state leaks across pooled connections)
+- SKIP LOCKED: use in background task workers, with a lease and attempts cap (`rules/lock-skip-locked.md`)
+- Session/transaction ownership, pool sizing, `IntegrityError` handling: `python-dev/reference/sqlalchemy-async-sessions-and-transactions.md`
+- Idempotency keys, advisory locks, outbox, retries: `python-dev/reference/reliability-idempotency-retries-outbox.md`
 
 ### NestJS / Prisma
 - Connection pooling: `DATABASE_URL=...?connection_limit=10&pool_timeout=20` (see `rules/conn-pooling.md`)
@@ -108,7 +110,7 @@ NEVER TUNE WHAT YOU HAVEN'T MEASURED — CHECK `pg_stat_statements` AND `pg_stat
 
 ## Related Skills
 
-- `database-schema-designer` — Schema design, Flyway migrations, normalization
+- `database-schema-designer` — Schema design, migrations (Alembic for Python, Flyway for Java), normalization
 - `sql-optimization-patterns` — EXPLAIN analysis, N+1, cursor pagination, batch ops
 - `postgresql` — PostgreSQL-specific types, gotchas, extensions, JSONB depth
 - `sql-pro` — Cloud analytics, HTAP, BigQuery/Snowflake

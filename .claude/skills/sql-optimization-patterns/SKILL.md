@@ -103,8 +103,9 @@ Load `resources/implementation-playbook.md` for full SQL code examples.
 ## Stack Integration
 
 ### Python / FastAPI (asyncpg + SQLAlchemy)
-- N+1 → use `selectinload` or `joinedload` in SQLAlchemy async
-- Batch insert → `execute_many` with asyncpg
+- N+1 → use `selectinload` or `joinedload` in SQLAlchemy async; make accidental lazy loads fail with `lazy="raise"` (see `python-dev/reference/sqlalchemy-async-sessions-and-transactions.md` section 6)
+- Batch insert → `await session.execute(insert(Model), list_of_dicts)` (SQLAlchemy 2.x batches it) or asyncpg `Connection.executemany` / `copy_records_to_table` (there is no `execute_many`)
+- Raw SQL in `text()`: write `CAST(:p AS uuid)`, never `:p::uuid` (the `::` form loses the bind and fails with a syntax error); verify by running it through the real session, not by EXPLAIN on a hand-substituted copy
 - Slow query → enable `echo=True` on engine to capture SQL, then EXPLAIN
 
 ### NestJS / Prisma

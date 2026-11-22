@@ -14,7 +14,7 @@ This skill is the single source of truth for "what does a production-grade RAG p
 
 ## How to use this skill
 
-**For human users:** Invoke `/rag-review` for an E2E audit. For deeper review, dispatch `@rag-implementation-reviewer` or `@rag-pipeline-reviewer` — both auto-load this skill.
+**For human users:** Invoke `/rag-review` for an E2E audit. For deeper review, dispatch `@rag-implementation-reviewer` — it auto-loads this skill.
 
 **For agents consuming this skill:** Walk the 8 stages in order. For every check, cite the file:line of the authoritative reference. Don't manufacture findings — if a stage is clean, say so in one line.
 
@@ -38,7 +38,8 @@ Cross-refs: `rag-architect/references/advanced-chunking-guide.md`, `rag-architec
 | 1.1 | Parser matches corpus type — not raw `pdf.extract_text()` for complex PDFs; Unstructured.io or LlamaParse for table-heavy docs | 🟠 | `advanced-chunking-guide.md §6` |
 | 1.2 | Document-aware chunking on headings/sections — NOT fixed-size sliding window as the only strategy | 🟠 | `advanced-chunking-guide.md §1` |
 | 1.3 | Chunk size calibrated by document type: prose 500–800 tokens, structured/SOP 300–600, tables = whole or row-groups | 🟡 | `advanced-chunking-guide.md §1` + `rag-operations-guide.md §6` |
-| 1.4 | 10–20% overlap on fixed-size strategies (unless chunking on natural boundaries like paragraphs) | 🟡 | `advanced-chunking-guide.md §1` |
+| 1.4 | ~10–15% overlap on size-based splitters; 0 allowed on natural boundaries with parent/neighbour expansion | 🟡 | `rag-architect/SKILL.md` (canonical overlap and cap rule) |
+| 1.11 | Max chunk tokens ≤ reranker input limit minus longest expected query; unit test asserts no chunk exceeds it | 🟠 | `rag-architect/SKILL.md` (canonical overlap and cap rule) |
 | 1.5 | Stable chunk IDs: `(document_id, document_version, chunk_index)` — never auto-increment IDs | 🟠 | `advanced-chunking-guide.md §4` |
 | 1.6 | Required metadata per chunk: `document_id`, `chunk_id`, `tenant_id`, `source_uri`, `section_title`, `page`, `chunk_index`, `embedding_model`, `chunker_version`, `parser_version`, `content_hash`, `created_at` | 🟠 | `advanced-chunking-guide.md §4` (16-field schema) |
 | 1.7 | Tables NOT split mid-row; column headers repeated in every row-group chunk | 🔴 | `table-chunking-strategy.md §3` |
@@ -62,7 +63,7 @@ Cross-refs: `rag-architect/references/versioning-and-freshness.md`, `rag-archite
 | 2.6 | Versioning metadata: `effective_from`, `effective_to`, `superseded_at` — default retrieval filter `superseded_at IS NULL` | 🟠 | `versioning-and-freshness.md §2–3` |
 | 2.7 | New document version supersession runs in a single atomic transaction (marks old superseded + inserts new together) | 🔴 | `versioning-and-freshness.md §5` |
 | 2.8 | Historical query detection implemented — temporal keywords trigger `effective_from`/`effective_to` filter instead of current-only filter | 🟡 | `versioning-and-freshness.md §4` |
-| 2.9 | GDPR/RTBF: hard-delete across all versions (vector index + metadata + caches); audit log entry retained forever even after deletion | 🔴 | `versioning-and-freshness.md §8` |
+| 2.9 | Erasure/RTBF: tenant-scoped hard delete of all versions (vector + FTS + metadata + object store + caches + derived artifacts) plus a tombstone; supersession is never erasure; audit row keeps ids/counts only | 🔴 | `versioning-and-freshness.md §8` |
 
 ---
 
@@ -73,12 +74,14 @@ Cross-refs: `vector-database` skill, `vector-database/references/embedding-migra
 | # | Check | Severity if failing | Reference |
 |---|---|---|---|
 | 3.1 | Embedding model pinned as a constant or env config — NEVER inline string literal at each call site | 🔴 | `vector-database/SKILL.md` |
-| 3.2 | `embedding_model` version stored in chunk metadata so index-time and query-time models can be verified | 🔴 | `advanced-chunking-guide.md §4` |
+| 3.2 | `embedding_model` version stored in chunk metadata AND every retrieval query filters on the active model | 🔴 | `advanced-chunking-guide.md §4` + `vector-database/SKILL.md` |
+| 3.9 | Embedding chokepoint asserts `len(vector) == SCHEMA_DIMS`; query and document task modes match | 🔴 | `rag-implementation-reviewer` agent checklist |
+| 3.10 | pgvector HNSW/IVFFlat column ≤ 2000 dims (else reduced dims or `halfvec` expression index) | 🔴 | `vector-database/SKILL.md` model table |
 | 3.3 | Query and index use the SAME distance operator (`cosine <=>` matches `vector_cosine_ops` index) | 🔴 | `vector-database/references/ann-vs-knn.md` |
 | 3.4 | ANN/HNSW used for production retrieval; KNN/Flat reserved for golden-set eval baseline and scoped high-risk paths | 🟠 | `vector-database/references/ann-vs-knn.md` Decision rule |
 | 3.5 | `efSearch` / `nprobe` calibrated against KNN ground truth on golden set — never tuned by feel | 🟠 | `vector-database/references/ann-vs-knn.md` Tuning |
-| 3.6 | Null guard: `WHERE embedding IS NOT NULL` (or equivalent) in retrieval query | 🟠 | `rag-pipeline-reviewer` agent checklist |
-| 3.7 | Batch embedding — NOT one API call per chunk in a loop | 🟡 | `rag-pipeline-reviewer` agent checklist |
+| 3.6 | Null guard: `WHERE embedding IS NOT NULL` (or equivalent) in retrieval query | 🟠 | `rag-implementation-reviewer` agent checklist |
+| 3.7 | Batch embedding — NOT one API call per chunk in a loop | 🟡 | `rag-implementation-reviewer` agent checklist |
 | 3.8 | Embedding model upgrade plan documented (dual-write or shadow index strategy before cutover) | 🟡 | `vector-database/references/embedding-migration-guide.md` |
 
 ---
@@ -107,11 +110,15 @@ Cross-refs: `rag-architect/SKILL.md` (Default Stack), `rag-architect/references/
 |---|---|---|---|
 | 5.1 | Hybrid retrieval: dense + BM25 — or documented measured justification for skipping sparse | 🟠 | `rag-architect/SKILL.md` Step 1 |
 | 5.2 | Fusion via RRF (k=60) — NOT ad-hoc weighted score blending without normalization | 🟠 | `rag-architect/SKILL.md` Step 1 |
-| 5.3 | **Pre-filtered ANN** (filters in vector DB call) — NEVER post-filter on top-k results | 🔴 | `rag-security-reviewer/SKILL.md §1` |
+| 5.3 | Tenant/ACL filter inside the retrieval call — NEVER post-filter on top-k results | 🔴 | `rag-security-reviewer/SKILL.md §1` |
+| 5.3a | Filtered-ANN recall: pgvector selective filters covered by iterative scan (≥ 0.8), partial index (bound tenant → `plan_cache_mode = force_custom_plan`), partition or exact scan; ≤ 1%-selective fixture asserts `count == LIMIT` over > 5 calls on one connection | 🟠 | `vector-database/references/ann-vs-knn.md` §Filtered ANN |
 | 5.4 | `top_k_retrieve` >> `top_k_final`: retrieve 50–80 candidates, rerank down to 5–10 for generation | 🟠 | `rag-operations-guide.md §6` |
-| 5.5 | Cross-encoder reranker present on production paths | 🟠 | `rag-architect/SKILL.md` Step 1 |
-| 5.6 | Environment-aware reranker: local/dev uses lighter model (Gemini Flash); staging/prod uses production-grade (Vertex AI Ranking API) | 🟡 | `rag-operations-guide.md §5` |
-| 5.7 | Query embedding cache keys include `tenant_id` — NOT query text alone | 🔴 | `rag-operations-guide.md §1` |
+| 5.5 | Cross-encoder reranker on production paths, or an eval result justifying its absence; reranks against the ORIGINAL user query | 🟠 | `rag-architect/SKILL.md` Step 1 |
+| 5.6 | Environment-aware reranker: local/dev may use a lighter reranker; staging/prod uses the production reranker that the eval gate measured | 🟡 | `rag-operations-guide.md §5` |
+| 5.7 | Retrieval and answer cache keys include tenant, permission fingerprint and index version (query-*embedding* cache may be tenant-independent: key = query + model + dims + task type) | 🔴 | `rag-operations-guide.md §1` (canonical) |
+| 5.9 | Weaviate `hybrid()` on self-provided vectors passes `vector=`; golden paraphrase case with zero keyword overlap hits | 🔴 | `weaviate-schema-reviewer` agent |
+| 5.10 | Every derived query (rewrite, expansion, HyDE, sub-query, hop) uses the same scoped retrieval entry; fan-out capped in code; one deadline | 🔴 | `query-transformation-guide.md §5` |
+| 5.11 | Keyword fallback on embed failure is logged and flagged to the generator — never silent | 🟠 | `rag-implementation-reviewer` agent checklist |
 | 5.8 | MMR or diversity filter applied during context packing to prevent near-duplicate chunks in final context | 🟡 | `context-packing-patterns.md §1` |
 
 ---
@@ -125,6 +132,7 @@ Cross-refs: `rag-architect/references/context-packing-patterns.md`, `rag-archite
 | 6.1 | Strict grounding prompt: "answer ONLY using the provided context" — no room for LLM to draw on training data | 🟠 | `context-packing-patterns.md §3` |
 | 6.2 | Structured answer contract returned (not free-form prose with embedded citations the system can't parse) | 🟠 | `rag-response-contract.md §1` |
 | 6.3 | Per-claim citations — every factual sentence in the answer carries a `[chunk_id]` reference | 🟠 | `context-packing-patterns.md §3` |
+| 6.3a | Runtime citation validation: cited ids ⊂ retrieved ids else abstain; support check below threshold → abstain; checker unavailable → `verified=false` | 🔴 | `rag-response-contract.md §10` |
 | 6.4 | `schema_version` emitted on every response | 🟠 | `rag-response-contract.md §8` |
 | 6.5 | `status` field is a value from the closed 7-value enum (`answered`/`partial`/`abstained`/`clarification_needed`/`tool_error`/`policy_blocked`/`no_retrieval`) | 🔴 | `rag-response-contract.md §3` |
 | 6.6 | `no_retrieval` status is explicitly policy-governed — NOT used as a silent fallback that bypasses RAG | 🔴 | `rag-response-contract.md §3` |
@@ -149,11 +157,11 @@ Cross-refs: `rag-architect/references/context-packing-patterns.md`, `rag-archite
 
 | # | Minimum gate (full coverage in rag-security-reviewer) | Severity | Reference |
 |---|---|---|---|
-| 7.1 | Pre-filtered ANN at a SINGLE chokepoint — NEVER post-filter on top-k for security enforcement | 🔴 | `rag-security-reviewer/SKILL.md §1–2` |
+| 7.1 | Filter inside the retrieval call at a SINGLE chokepoint, tenant/permissions from the verified auth context — NEVER post-filter on top-k | 🔴 | `rag-security-reviewer/SKILL.md §1–2` |
 | 7.2 | Retrieved content treated as untrusted: clear delimiters in prompt, no tool-call execution allowed from retrieved text | 🔴 | `rag-security-reviewer/SKILL.md §3` |
-| 7.3 | Per-response audit log: `request_id`, `user_id`, `tenant_id`, `filters_applied`, `chunks_used`, `model`, `prompt_version`, `latency_ms` | 🔴 | `rag-security-reviewer/SKILL.md §4` |
+| 7.3 | Per-response audit log: `request_id`, `user_id`, `tenant_id`, query hash (not raw text), `filters_applied`, `chunks_used`, `model`, `prompt_version`, `latency_ms` | 🔴 | `rag-security-reviewer/SKILL.md §4` |
 | 7.4 | PII redaction at ingest AND at response (`safety.redactions[]`) | 🔴 | `rag-security-reviewer/SKILL.md §5` + `rag-response-contract.md §6` |
-| 7.5 | Right-to-be-forgotten tested end-to-end: vector index + BM25 index + metadata + all caches; audit log entry retained | 🔴 | `rag-security-reviewer/SKILL.md §6` + `versioning-and-freshness.md §8` |
+| 7.5 | Right-to-be-forgotten tested end-to-end: vector index + BM25 index + metadata + object store + all caches + tombstone; audit row keeps ids/counts only | 🔴 | `rag-security-reviewer/SKILL.md` Deletion + `versioning-and-freshness.md §8` |
 
 If ANY 🔴 item in Stage 7 fails, the review verdict is **BLOCK** regardless of other stages.
 
@@ -167,7 +175,7 @@ Cross-refs: `rag-evaluator/SKILL.md`, `rag-architect/references/rag-operations-g
 |---|---|---|---|
 | 8.1 | Golden set exists with ≥ 50 labeled queries — or has a concrete plan with date | 🔴 | `rag-evaluator/SKILL.md` Golden set design |
 | 8.2 | Coverage targets met: ~60% happy path, ~20% edge cases, ~20% known unanswerable | 🟠 | `rag-evaluator/SKILL.md` Coverage targets |
-| 8.3 | CI gate configured: fails build on Recall@K, Faithfulness, or Citation Quality regression beyond tolerance | 🔴 | `rag-evaluator/SKILL.md` CI gate pattern |
+| 8.3 | CI gate configured: fails build on Recall@K, Faithfulness, or Citation Quality regression beyond tolerance; thresholds name the metric exactly (Recall@K = relevant retrieved ÷ all relevant; Hit@K = any relevant in top K — not interchangeable; formulas: `llm-evaluation` skill, canonical) | 🔴 | `rag-evaluator/SKILL.md` CI gate pattern |
 | 8.4 | Abstention metrics tracked as two separate rates — False Abstention Rate + False Answer Rate — NOT collapsed into one metric | 🟠 | `rag-evaluator/SKILL.md` Answer metrics |
 | 8.5 | Eval breakdown by dimension when corpus grows: doc type, recency, query style, query length, corpus segment | 🟡 | `rag-evaluator/SKILL.md` Eval Breakdown by Dimension |
 | 8.6 | LLM-as-judge calibrated against human labels (≥ 80% agreement) before use at scale | 🟠 | `rag-evaluator/SKILL.md` LLM-as-judge dangers |
@@ -191,6 +199,8 @@ Rules:
 - **BLOCK** — any 🔴 Critical finding. Must fix before merge.
 - **NEEDS_REVIEW** — zero Critical, but ≥ 1 High or pattern of Medium. Recommend fix.
 - **APPROVE** — zero Critical, zero High, ≤ 3 Medium. Ship with notes on Lows.
+
+Every finding carries severity, evidence (`file:line` + quoted code) and a remediation. Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
 
 ---
 
@@ -223,4 +233,4 @@ Rules:
 
 ## Maintenance note
 
-When a new reference file is added to any sibling skill (`rag-architect`, `rag-evaluator`, `rag-security-reviewer`, `vector-database`, `rag-debugger`), update the corresponding stage table here in the same PR. The skill is the single point of update; the consuming agents (`rag-implementation-reviewer`, `rag-pipeline-reviewer`) and command (`/rag-review`) inherit automatically via `skills:` frontmatter.
+When a new reference file is added to any sibling skill (`rag-architect`, `rag-evaluator`, `rag-security-reviewer`, `vector-database`, `rag-debugger`), update the corresponding stage table here in the same PR. The skill is the single point of update; the consuming agent (`rag-implementation-reviewer`) and command (`/rag-review`) inherit automatically via `skills:` frontmatter.

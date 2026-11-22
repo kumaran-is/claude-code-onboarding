@@ -49,6 +49,7 @@ Action: replay the query WITHOUT filters. Does the right chunk appear?
 
 - ❌ Right chunk only appears without filters → **stop here**. Root cause is filtering. Check tenant filter (should not exclude), version filter (`effective_to`), access_level mismatch.
 - Special case: post-filter on top-k → critical fix (§20.2)
+- Special case: right chunk appears with an exact scan but not with the ANN index under the same filter (pgvector `SET LOCAL enable_indexscan = off` to compare) → filter-after-index recall loss, not a filter bug; see `vector-database/references/ann-vs-knn.md` §Filtered ANN
 - ✅ Right chunk found with filters → continue to Layer 4.
 
 ### Layer 4: Sparse retrieval (BM25)

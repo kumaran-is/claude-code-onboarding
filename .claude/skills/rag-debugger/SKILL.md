@@ -62,17 +62,21 @@ Wrong answer
 | 2 Chunking | Condition separated from rule | Fixed-size split mid-statement | Document-aware chunking, parent-child, overlap |
 | 2 Chunking | Table broken across chunks | Naive splitter cut the table | Adaptive chunking, preserve tables whole |
 | 3 Filtering | Right chunk filtered out | Metadata mismatch, tenant filter too aggressive, version filter | Audit filter logic; check effective_to / version |
-| 3 Filtering | Post-filter killed recall | Top-k all filtered after retrieval | Switch to pre-filtered ANN |
+| 3 Filtering | Post-filter killed recall | Top-k all filtered after retrieval in app code | Move the filter into the retrieval call (`rag-security-reviewer` §1) |
+| 3 Filtering | Small tenant gets 0–few results on pgvector | `WHERE` runs after the HNSW/IVFFlat candidate list (`ef_search` 40) | Iterative scan (pgvector ≥ 0.8), partial index, partition, or exact scan; compare with `SET LOCAL enable_indexscan = off`. Works for 5 calls then returns 0 again → generic-plan trap: a partial index on a bound parameter (`tenant_id = $2`) needs `SET LOCAL plan_cache_mode = force_custom_plan`, or it silently stops being used after 5 prepared executions |
+| 3 Filtering | Results mix old and new model | No `embedding_model = active` filter during re-embed | Add the active-model filter |
 | 4 Sparse | Exact term not matched | Tokenizer issue, stop-words too aggressive | Check tokenization; rebuild with correct analyzer |
-| 5 Dense | Paraphrase not matched | Domain-weak embedder, chunk size wrong | Test domain embedder; adjust chunk size |
+| 5 Dense | Paraphrase not matched | Domain-weak embedder, chunk size wrong, query/document task mode mismatch | Test domain embedder; adjust chunk size; check task type / prefixes |
+| 5 Dense | Hybrid behaves like keyword search | Weaviate `hybrid()` on self-provided vectors called without `vector=` | Pass the query embedding |
 | 5 Dense | Proper noun missed | Model never saw the proper noun | Hybrid (BM25 catches it) |
 | 6 Fusion | Strong hit buried | One retriever had 1 great hit, other had 50 mediocre | Inspect rank-by-rank; consider weighted RRF |
 | 7 Reranker | Wrong chunk preferred | Reranker mismatched to domain | Try different reranker; eval on labeled pairs |
 | 7 Reranker | Length bias | Long irrelevant beat short relevant | Length normalization; switch reranker |
+| 7 Reranker | Answer in chunk tail never ranks | Chunk longer than reranker input limit; tail truncated | Cap chunks at reranker limit minus query length |
 | 8 Packing | Right chunk dropped | Aggressive top-k, dedup removed unique answer | Loosen top-k; smarter dedup |
 | 8 Packing | Lost in the middle | Right chunk at end of long context | Move highest-scored first |
 | 9 Generation | LLM ignored evidence | Weak grounding prompt; model priors | Strict grounding; structured output; abstention threshold |
-| 9 Generation | Hallucinated citation | Citation present, chunk doesn't support claim | Per-claim citation checking; answer contract validation |
+| 9 Generation | Hallucinated citation | Citation present, chunk doesn't support claim — or cites an id never retrieved | Runtime citation validation (`rag-architect/references/rag-response-contract.md` §10) |
 
 ## Common failure patterns (signature → layer)
 

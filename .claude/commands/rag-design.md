@@ -47,7 +47,7 @@ Based on answers, walk these decisions and explain each:
 2. **Chunking strategy** (chunking decision tree, §10.2)
 3. **Embedding model selection** (§14, §15)
 4. **Retrieval method** — likely hybrid (BM25 + dense + RRF), justify (§23)
-5. **Filtering / multi-tenancy pattern** (§17, §20.2 — always pre-filter)
+5. **Filtering / multi-tenancy pattern** (§17, §20.2 — filter inside the retrieval call, scope from the auth context; canonical: `rag-security-reviewer` §1–2; pgvector selective filters need the filtered-ANN mitigation)
 6. **Reranking** — cross-encoder default (§28)
 7. **Abstention threshold strategy** (§30)
 8. **Generation prompt + answer contract** (§32)
@@ -102,7 +102,7 @@ Save to `docs/adr/NNN-rag-architecture.md` using this template:
 
 ### Hard rules
 
-1. Pre-filter, never post-filter for security
+1. Filter inside the retrieval call, never post-filter for security
 2. Hybrid retrieval (dense + BM25) unless measured exception
 3. Versioned chunk IDs from day one
 4. Retrieved content is untrusted (prompt injection defenses)

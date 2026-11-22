@@ -1,93 +1,63 @@
 # ADK Agent Handoff and output_key Rules
 
-## 1. Agent Handoff (transfer_to_agent)
+Executed with `google-adk==1.29.0` and a scripted fake model. `MODEL` = `settings.agent_model`.
 
-The root agent routes to specialist sub-agents using the built-in `transfer_to_agent` tool. Sub-agents are listed in `sub_agents` on the root. Each sub-agent also carries `tools=[transfer_to_agent]` to allow further handoff.
+## 1. Handoff (transfer) vs agent-as-tool
+
+| | Transfer (`sub_agents`) | Agent as tool (`AgentTool`) |
+|---|---|---|
+| Control | Moves to the sub-agent, which answers the user | Parent keeps control and gets the result back |
+| Use for | Intent routing to specialists | A bounded sub-task with typed input/output |
+| Final author | the sub-agent (executed: `billing_agent`) | the parent (executed: `parent`) |
+
+When `sub_agents` is set, ADK injects the `transfer_to_agent` tool itself (executed: the root's tool list was `['transfer_to_agent']` with no `tools=`). Do not also list it in `tools=`. Each sub-agent's `description` is what the router model sees — keep it specific.
 
 ```python
-from google.adk import Agent, InMemoryRunner
-from google.adk.tools import transfer_to_agent
-from google.genai import types
-
+from google.adk.agents import Agent
+from google.adk.tools import AgentTool
 
 billing_agent = Agent(
     name="billing_agent",
-    model="gemini-3.1-flash",
-    description="Handles billing questions, invoice issues, and payment disputes.",
-    instruction=(
-        "You are a billing specialist. Help the user with any billing-related questions: "
-        "invoices, payments, refunds, and subscription changes. "
-        "If the question is technical (not billing), transfer back to the router."
-    ),
-    tools=[transfer_to_agent],
+    model=MODEL,
+    description="Handles invoices, payments, refunds and subscription changes.",
+    instruction="You are a billing specialist. If the question is not about billing, transfer back to router_agent.",
 )
-
 technical_agent = Agent(
     name="technical_agent",
-    model="gemini-3.1-flash",
-    description="Handles technical support, bugs, and product usage questions.",
-    instruction=(
-        "You are a technical support specialist. Help the user with technical issues: "
-        "bugs, setup problems, API questions, and feature usage. "
-        "If the question is about billing, transfer back to the router."
-    ),
-    tools=[transfer_to_agent],
+    model=MODEL,
+    description="Handles bugs, setup problems, API questions and feature usage.",
+    instruction="You are a technical support specialist. If the question is about billing, transfer back to router_agent.",
 )
-
 router_agent = Agent(
     name="router_agent",
-    model="gemini-3.1-flash",
-    description="Routes customer service requests to the correct specialist.",
-    instruction=(
-        "You are a customer service router. "
-        "For billing questions (invoices, payments, refunds), transfer to billing_agent. "
-        "For technical questions (bugs, setup, API), transfer to technical_agent. "
-        "Greet the user and route immediately — do not attempt to answer specialist questions yourself."
-    ),
+    model=MODEL,
+    description="Routes support requests to the right specialist.",
+    instruction="Route billing questions to billing_agent and technical questions to technical_agent.",
     sub_agents=[billing_agent, technical_agent],
-    tools=[transfer_to_agent],
 )
 
-runner = InMemoryRunner(agent=router_agent, app_name="support_app")
-session = runner.session_service.create_session(app_name="support_app", user_id="u1")
-
-for event in runner.run(
-    user_id="u1",
-    session_id=session.id,
-    new_message=types.UserContent(parts=[types.Part(text="I have a question about my invoice.")]),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(f"[{event.author}]: {part.text}")
+# agent as tool: the parent stays in charge
+summarizer = Agent(name="summarizer", model=MODEL, description="Summarizes text.", instruction="Summarize.")
+parent = Agent(name="parent", model=MODEL, instruction="Use summarizer for long inputs.", tools=[AgentTool(agent=summarizer)])
 ```
 
----
+Routing rules:
+- Treat the model's route as a proposal. Deterministic policy runs first (safety phrases, authoritative-state questions answered from records), and the route a model may pick is a closed set.
+- A sub-agent never gains authority or scope the caller lacks: the same principal, `org_id` (session state) and trace id flow through every hop.
+- Hop and call budgets cover the whole tree (`RunConfig(max_llm_calls=...)`).
+- Cross-service agents (A2A) are an optional extension, used only when agents are deployed separately — `multi-agent-patterns` skill.
 
-## 2. output_key State Passing Rules
+## 2. output_key state passing
 
-- Each sub-agent sets `output_key="key_name"` — ADK stores the agent's final text response in session state under that key after the agent completes.
-- Downstream agents reference it as `{key_name}` inside their `instruction` string — ADK performs the substitution at runtime from session state.
-- State is dict-like; tools and callbacks can also read it via `tool_context.state["key_name"]` or `callback_context.state["key_name"]`.
-- Only set `output_key` when the agent's output is needed downstream. Agents that produce final user-facing output do not need `output_key`.
-- Keys must be unique across all agents in the same pipeline to avoid overwriting.
-- `output_key` stores plain text. If `output_schema` is also set, the stored value is the model's raw JSON string — parse with `Model.model_validate_json(value)`.
+- `output_key="name"` stores the agent's final response in session state after the agent finishes; later agents read it with `{name}` in `instruction`, tools/callbacks via `tool_context.state["name"]`.
+- With `output_schema`, the stored value is the **validated dict**, not a JSON string (executed) — read it with `Model.model_validate(state["name"])`. A schema-invalid final response raises inside the run (`adk-structured-output.md` §3).
+- Keys must be unique per pipeline. Do not set `output_key` on the agent that calls `exit_loop` (it is overwritten with empty text — `adk-agent-types.md` §3).
+- Only set `output_key` where a downstream step needs it.
 
 ```python
-# output_key in a SequentialAgent pipeline — correct pattern
-stage_a = Agent(
-    name="stage_a",
-    model="gemini-3.1-flash",
-    instruction="Produce a summary of the topic.",
-    output_key="stage_a_output",          # stored to state["stage_a_output"]
-)
+from google.adk.agents import SequentialAgent
 
-stage_b = Agent(
-    name="stage_b",
-    model="gemini-3.1-flash",
-    instruction="Expand on this summary: {stage_a_output}",  # read from state
-    output_key="stage_b_output",
-)
-
+stage_a = Agent(name="stage_a", model=MODEL, instruction="Summarize the topic.", output_key="stage_a_output")
+stage_b = Agent(name="stage_b", model=MODEL, instruction="Expand on this summary: {stage_a_output}", output_key="stage_b_output")
 pipeline = SequentialAgent(name="pipeline", sub_agents=[stage_a, stage_b])
 ```

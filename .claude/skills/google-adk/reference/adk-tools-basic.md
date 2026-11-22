@@ -23,6 +23,11 @@ def get_weather(city: str, unit: str = "celsius") -> dict:
 
 Pass the function directly to `Agent(tools=[get_weather])` — no wrapper required.
 
+**Return contract (all stacks):** return a small JSON-serializable dict with an explicit error
+field, e.g. `{"ok": bool, "error_code": str | None, "data": ...}`, never raw backend bodies or
+exception text. The canonical rule lives in `agentic-ai-coding-standard`; the route inspects
+`ok`/`error_code` after the run (`agentic-ai-dev/reference/tool-execution-safety.md`).
+
 ---
 
 ## 2. Tool with ToolContext (State Access)
@@ -112,30 +117,51 @@ def place_order(order: OrderRequest, tool_context: ToolContext) -> dict:
 
 ---
 
-## 5. FunctionTool with Confirmation
+## 5. FunctionTool with Confirmation (human approval)
 
-Wrap a function in `FunctionTool` with `require_confirmation=True` to pause
-execution and request user approval before the tool runs.
+`FunctionTool(func, require_confirmation=True)` pauses before the tool runs. Confirmation is
+not authorization: the tool still checks scope and an allowlist itself, and side effects
+take an idempotency key (`agentic-ai-dev/reference/tool-execution-safety.md`).
 
 ```python
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, ToolContext
 
-def delete_file(filename: str) -> dict:
-    """Permanently delete a file.
+
+def archive_document(document_id: str, tool_context: ToolContext) -> dict:
+    """Archive one document owned by the caller's organization.
 
     Args:
-        filename: Path of the file to delete.
+        document_id: Id of the document to archive.
 
     Returns:
-        A dict with 'deleted' bool and 'filename' str.
+        {"ok": bool, "error_code": str | None, "data": {"document_id": str} | None}
     """
-    # implementation
-    return {"deleted": True, "filename": filename}
+    org_id = tool_context.state.get("org_id")  # server-set scope, never a model argument
+    if not org_id:
+        return {"ok": False, "error_code": "UNAUTHORIZED", "data": None}
+    # documents.archive(org_id=org_id, document_id=document_id, idempotency_key=...)
+    # must authorize the record itself and be idempotent
+    return {"ok": True, "error_code": None, "data": {"document_id": document_id}}
 
-dangerous_tool = FunctionTool(func=delete_file, require_confirmation=True)
+
+archive_tool = FunctionTool(archive_document, require_confirmation=True)
 ```
 
-Pass `dangerous_tool` (not the raw function) to `Agent(tools=[dangerous_tool])`.
+Round trip (executed on 1.29 with a scripted model): the first run does **not** execute the
+tool; it emits a function call named `adk_request_confirmation` (args `originalFunctionCall`,
+`toolConfirmation`). Show it to the user, then send the decision as the next message:
+
+```python
+decision = types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+    id=confirmation_call.id, name="adk_request_confirmation", response={"confirmed": True},
+))])
+async for event in runner.run_async(user_id=principal.user_id, session_id=session.id, new_message=decision):
+    ...
+```
+
+The decision must come from an authenticated endpoint for the session's owner, never from
+model text. `require_confirmation` may also be a callable `(**tool_args) -> bool` to confirm
+only risky argument values.
 
 ---
 
@@ -147,7 +173,8 @@ Pass `dangerous_tool` (not the raw function) to `Agent(tools=[dangerous_tool])`.
 | `load_memory` | `from google.adk.tools import load_memory` | Load from memory service |
 | `preload_memory` | `from google.adk.tools import preload_memory` | Preload memories into context |
 | `exit_loop` | `from google.adk.tools import exit_loop` | Exit LoopAgent iteration |
-| `transfer_to_agent` | `from google.adk.tools import transfer_to_agent` | Hand off to sub-agent |
+| `transfer_to_agent` | injected automatically when `sub_agents` is set — do not list it in `tools=` | Hand off to sub-agent |
+| `AgentTool` | `from google.adk.tools import AgentTool` | Call another agent as a tool (parent keeps control) |
 | `get_user_choice` | `from google.adk.tools import get_user_choice` | Get user selection |
 | `VertexAiSearchTool` | `from google.adk.tools import VertexAiSearchTool` | Enterprise search via Vertex AI |
 
@@ -155,54 +182,45 @@ Pass `dangerous_tool` (not the raw function) to `Agent(tools=[dangerous_tool])`.
 
 ## 7. McpToolset
 
-`McpToolset` connects an ADK agent to any MCP server. Use `tool_filter` to expose
-only specific tools. Always call `await runner.close()` when done — MCP sessions
-hold open connections.
+`McpToolset` connects an ADK agent to an MCP server. Always call `await runner.close()`
+on shutdown — MCP sessions hold open connections.
+
+**`tool_filter` is an allowlist you must enforce yourself.** ADK treats `None` AND an empty
+list as "expose every tool" (`base_toolset.py` `_is_tool_selected`: `if not self.tool_filter:
+return True`; `McpToolset(..., tool_filter=[])` constructs without error — executed on 1.29).
+Build toolsets through one project factory that raises on a missing/empty filter, and add a
+startup or CI check that every allowlisted name exists on the server (a typo silently leaves
+the agent with fewer tools).
 
 ```python
 from google.adk.tools import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import (
     StdioConnectionParams,
-    SseConnectionParams,
     StreamableHTTPConnectionParams,
 )
 from mcp import StdioServerParameters
 
-# --- stdio (subprocess MCP server) ---
-mcp_stdio = McpToolset(
-    connection_params=StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-    ),
-    tool_filter=["read_file", "write_file"],
-)
 
-# --- stdio with explicit timeout ---
-mcp_stdio_timeout = McpToolset(
-    connection_params=StdioConnectionParams(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+def mcp_toolset(connection_params, tool_filter: list[str]) -> McpToolset:
+    if not tool_filter:
+        raise ValueError("tool_filter must be a non-empty allowlist")  # ADK would expose ALL tools
+    return McpToolset(connection_params=connection_params, tool_filter=tool_filter)
+
+
+# stdio (subprocess). StdioConnectionParams takes server_params=, not command=/args=
+docs_tools = mcp_toolset(
+    StdioConnectionParams(
+        server_params=StdioServerParameters(command="npx", args=["-y", "<pinned-server-package>@<version>"]),
         timeout=30,
     ),
+    tool_filter=["search_documents", "get_document"],
 )
 
-# --- SSE (Server-Sent Events) ---
-mcp_sse = McpToolset(
-    connection_params=SseConnectionParams(
-        url="http://localhost:8080/sse",
-        timeout=60,
-    ),
+# Streamable HTTP (preferred for remote servers; SseConnectionParams is the older transport)
+orders_tools = mcp_toolset(
+    StreamableHTTPConnectionParams(url=settings.orders_mcp_url, timeout=60),
+    tool_filter=["get_order"],
 )
-
-# --- Streamable HTTP ---
-mcp_http = McpToolset(
-    connection_params=StreamableHTTPConnectionParams(
-        url="http://localhost:8080/mcp",
-        timeout=60,
-    ),
-    use_mcp_resources=True,
-)
-
-# Shutdown — always close after use
-# await runner.close()
 ```
+
+Pin the MCP server package version; never `npx -y <package>` unpinned in production.

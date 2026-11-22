@@ -1,227 +1,115 @@
 # ADK Core Patterns
 
-## 1. Agent Configuration
+Executed with `google-adk==1.29.0` and a scripted fake model (`adk-testing.md` §2) — no live Gemini call. Decide first whether the capability needs an agent at all (`ai-playbook` skill: deterministic code when rules are fixed; the model proposes, code authorizes).
 
-Full `Agent(...)` constructor showing all key parameters:
+## 1. Agent configuration
 
 ```python
-from google.adk import Agent
+import os
+
+from google.adk.agents import Agent
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+AGENT_MODEL = os.environ["AGENT_MODEL"]  # real code: settings.agent_model — no model id default in code
 
 
 class AnalysisResult(BaseModel):
     summary: str
-    confidence: float
-    recommendations: list[str]
+    recommendations: list[str] = Field(min_length=1)
 
 
-def search_web(query: str) -> str:
-    """Search the web for information about the given query."""
-    # implementation
-    return f"Results for: {query}"
+def lookup_usage(metric: str) -> dict:
+    """Return the current value of one usage metric.
 
+    Args:
+        metric: One of 'active_users', 'requests_per_day'.
 
-def calculate(expression: str) -> str:
-    """Evaluate a mathematical expression and return the result."""
-    # implementation
-    return str(eval(expression))  # noqa: S307 — replace with safe eval in prod
+    Returns:
+        {"ok": bool, "error_code": str | None, "data": {"metric": str, "value": int} | None}
+    """
+    values = {"active_users": 1200, "requests_per_day": 56000}  # real code: a service call
+    if metric not in values:
+        return {"ok": False, "error_code": "UNKNOWN_METRIC", "data": None}
+    return {"ok": True, "error_code": None, "data": {"metric": metric, "value": values[metric]}}
 
 
 analysis_agent = Agent(
     name="analysis_agent",
-    model="gemini-3.1-flash",
-    description="Analyzes data and produces structured analysis results.",
-    instruction=(
-        "You are a data analyst. Given the user's request, search for relevant "
-        "information and produce a structured analysis. Always include a confidence "
-        "score between 0.0 and 1.0 and at least one concrete recommendation."
-    ),
-    tools=[search_web, calculate],
-    # Structured output: final response is parsed into AnalysisResult
-    output_schema=AnalysisResult,
-    # Stores the final structured output into session state under this key
-    output_key="analysis_result",
-    # Sub-agents this agent can hand off to (optional)
-    sub_agents=[],
-    # Callbacks (optional — see adk-tools-callbacks.md)
-    before_model_callback=None,
-    after_model_callback=None,
-    on_model_error_callback=None,
-    before_tool_callback=None,
-    after_tool_callback=None,
-    on_tool_error_callback=None,
-    generate_content_config=types.GenerateContentConfig(
-        temperature=0.2,
-        safety_settings=[
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-            ),
-        ],
-    ),
+    model=AGENT_MODEL,
+    description="Analyzes usage metrics and recommends actions.",
+    instruction="Use lookup_usage for every number you cite. Return a summary and recommendations.",
+    tools=[lookup_usage],
+    output_schema=AnalysisResult,   # validated; works together with tools in 1.29
+    output_key="analysis_result",   # stores the validated dict in session state
+    generate_content_config=types.GenerateContentConfig(max_output_tokens=2048),
 )
 ```
 
-## 2. Runner Patterns
+Generation config rules (details: `gemini-api-dev` skill, "Sampling and thinking"):
+- Gemini 3.x: leave `temperature`/`top_p`/`top_k` at their defaults; Google documents that values below 1.0 can cause looping or degraded reasoning, and newer generations ignore them. Get determinism from `output_schema`, validators and evals.
+- Thinking tokens count against `max_output_tokens`: a small cap returns empty text with finish reason `MAX_TOKENS`. Lower `thinking_level` instead of shrinking the cap: `GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_level="LOW"))` or `planner=BuiltInPlanner(thinking_config=...)` — not both (the planner wins). Probe each model: some reject some levels.
+- Safety settings: set only what the product decision requires; a blocked response is a typed outcome, not an empty answer.
 
-### InMemoryRunner (dev/testing — sync)
+Never put `eval()`/`exec()` behind a tool: tool arguments are model-controlled input.
 
-```python
-from google.adk import InMemoryRunner
-from google.genai import types
+## 2. Running an agent
 
-runner = InMemoryRunner(agent=analysis_agent, app_name="my_app")
-
-# InMemoryRunner auto-creates a session; retrieve user_id and session_id
-session = runner.session_service.create_session(
-    app_name="my_app", user_id="user_001"
-)
-
-for event in runner.run(
-    user_id=session.user_id,
-    session_id=session.id,
-    new_message=types.UserContent(parts=[types.Part(text="Analyze renewable energy trends.")]),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(f"[{event.author}]: {part.text}")
-```
-
-### Runner with Production Session Service
+`Runner.run_async` is the API for services; `runner.run()` is a blocking wrapper for scripts and notebooks only. Session-service methods are coroutines — `await` them (an un-awaited `create_session` returns a coroutine and `.id` fails).
 
 ```python
-from google.adk import Runner
+from google.adk.agents import RunConfig
+from google.adk.runners import InMemoryRunner, Runner
 from google.adk.sessions import InMemorySessionService
-# For production: from google.adk.sessions import VertexAiSessionService
-from google.genai import types
-
-session_service = InMemorySessionService()
-# Production: session_service = VertexAiSessionService(project_id="my-project", location="us-central1")
-
-runner = Runner(
-    app_name="my_app",
-    agent=analysis_agent,
-    session_service=session_service,
-)
-
-session = session_service.create_session(app_name="my_app", user_id="user_001")
-
-for event in runner.run(
-    user_id="user_001",
-    session_id=session.id,
-    new_message=types.UserContent(parts=[types.Part(text="Hello")]),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(part.text)
-```
-
-### Async runner.run_async()
-
-```python
-import asyncio
-from google.adk import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
 
-async def run_agent(user_message: str) -> str:
-    session_service = InMemorySessionService()
-    runner = Runner(
-        app_name="my_app",
-        agent=analysis_agent,
-        session_service=session_service,
-    )
-    session = session_service.create_session(app_name="my_app", user_id="user_001")
-
+async def run_once(runner: Runner, user_id: str, text: str) -> str:
+    session = await runner.session_service.create_session(app_name=runner.app_name, user_id=user_id)
     final_text = ""
     async for event in runner.run_async(
-        user_id="user_001",
+        user_id=user_id,
         session_id=session.id,
-        new_message=types.UserContent(parts=[types.Part(text=user_message)]),
+        new_message=types.UserContent(parts=[types.Part(text=text)]),
+        run_config=RunConfig(max_llm_calls=10),   # default is 500: always cap
     ):
         if event.is_final_response() and event.content:
-            for part in event.content.parts:
-                if part.text:
-                    final_text += part.text
+            final_text = "".join(p.text for p in event.content.parts or [] if p.text)
     return final_text
 
 
-# asyncio.run(run_agent("Analyze solar energy adoption."))
+dev_runner = InMemoryRunner(agent=analysis_agent, app_name="my_app")   # in-memory services, REAL model
+service_runner = Runner(app_name="my_app", agent=analysis_agent, session_service=InMemorySessionService())
 ```
 
-### Debug Mode
+`InMemoryRunner` is not a test double: it still calls the configured model. Tests use a scripted model (`adk-testing.md`). In a service, wrap `run_async` in `asyncio.timeout(...)` and map failures to typed statuses (`adk-fastapi-integration.md` §5).
+
+## 3. App class
+
+Use `App` when you need plugins, context caching, events compaction or resumability (fields in 1.29: `name`, `root_agent`, `plugins`, `events_compaction_config`, `context_cache_config`, `resumability_config`):
 
 ```python
-runner.run_debug(
-    user_messages=["What are renewable energy trends?", "Summarize your findings."],
-    user_id="user_001",
-    session_id=session.id,
-    verbose=True,
-)
-```
-
-## 3. App Class
-
-Use `App` when you need plugins, context caching, or resumability configuration:
-
-```python
-from google.adk import Runner
 from google.adk.apps.app import App
-from google.adk.sessions import InMemorySessionService
 
-app = App(
-    name="my_adk_app",
-    root_agent=analysis_agent,
-    # plugins=[...],                         # optional: ADK plugin list
-    # context_cache_config=ContextCacheConfig(...),  # optional
-    # resumability_config=ResumabilityConfig(...),   # optional
-)
-
-runner = Runner(
-    app=app,
-    session_service=InMemorySessionService(),
-)
+app = App(name="my_app", root_agent=analysis_agent)  # plugins=[...] for cross-cutting callbacks
+runner = Runner(app=app, session_service=InMemorySessionService())
 ```
 
-## 4. Session Management
+## 4. Session management
 
 ```python
-from google.adk.sessions import InMemorySessionService
-# Production: from google.adk.sessions import VertexAiSessionService
-
-session_service = InMemorySessionService()
-# Production: session_service = VertexAiSessionService(project_id="my-project", location="us-central1")
-
-# Create session with optional initial state
-session = session_service.create_session(
-    app_name="my_app",
-    user_id="user_001",
-    state={"user_tier": "premium", "language": "en"},
-)
-
-# Get session
-existing_session = session_service.get_session(
-    app_name="my_app",
-    user_id="user_001",
-    session_id=session.id,
-)
-
-# List sessions for a user
-sessions = session_service.list_sessions(
-    app_name="my_app",
-    user_id="user_001",
-)
-
-# Delete session
-session_service.delete_session(
-    app_name="my_app",
-    user_id="user_001",
-    session_id=session.id,
-)
+async def sessions_demo() -> None:
+    svc = InMemorySessionService()
+    session = await svc.create_session(app_name="my_app", user_id="user_001", state={"language": "en"})
+    same = await svc.get_session(app_name="my_app", user_id="user_001", session_id=session.id)
+    listed = await svc.list_sessions(app_name="my_app", user_id="user_001")
+    await svc.delete_session(app_name="my_app", user_id="user_001", session_id=session.id)
+    assert same is not None and len(listed.sessions) == 1
 ```
 
-> See `adk-structured-output.md` — covers session state access, structured output schemas, and UserContent construction patterns.
+- `get_session` is scoped by `user_id`: another user's id returns `None` (executed). Pass the authenticated principal as `user_id` and treat `None` as 404.
+- Create the service once per process. Production backends:
+  - self-hosted Postgres / Cloud SQL: `DatabaseSessionService(db_url="postgresql+asyncpg://...")` — needs `sqlalchemy[asyncio]` and an async driver (executed on PostgreSQL 16)
+  - managed Agent Engine: `VertexAiSessionService(project=..., location=..., agent_engine_id=...)` — the kwarg is `project`, not `project_id` (`TypeError`, executed)
+- Put server-decided values (`org_id`, feature flags) in `state` at creation; tools read them from `tool_context.state`, the model never supplies them (`adk-tools-callbacks.md` §5).
+
+> Structured output parsing, state access and `UserContent` construction: `adk-structured-output.md`.

@@ -1,176 +1,142 @@
 # ADK Callbacks
 
-> See `adk-tools-basic.md` — covers plain functions, ToolContext injection, async tools, Pydantic input models, FunctionTool with confirmation, built-in tools reference, and McpToolset integration.
+> Tool definitions, `ToolContext`, confirmation and `McpToolset`: `adk-tools-basic.md`. Framework-neutral tool rules (scope injection, typed results, idempotency, approvals): `agentic-ai-dev/reference/tool-execution-safety.md`.
 
-## 1. before_model_callback
+Executed with `google-adk==1.29.0` and a scripted fake model (`adk-testing.md` §2): all six callbacks below fire, `ruff` and `mypy --strict` are clean, and neither the tool's nor the model's exception text appears in the logs.
 
-Called before each LLM request. Return `None` to continue; return an `LlmResponse`
-to short-circuit (the model is never called).
+## 0. Rules that break at run time
+
+- **ADK calls callbacks with keyword arguments.** The parameter names are part of the contract; `async def cb(ctx, request)` raises `TypeError: got an unexpected keyword argument 'callback_context'` on the first model call (executed).
+
+| Callback | Signature | Return to override |
+|---|---|---|
+| `before_model_callback` | `(callback_context, llm_request)` | `LlmResponse` skips the model |
+| `after_model_callback` | `(callback_context, llm_response)` | `LlmResponse` replaces it |
+| `on_model_error_callback` | `(callback_context, llm_request, error)` | `LlmResponse` recovers; `None` re-raises |
+| `before_tool_callback` | `(tool, args, tool_context)` | `dict` skips the tool and becomes its result |
+| `after_tool_callback` | `(tool, args, tool_context, tool_response)` | `dict` replaces the result |
+| `on_tool_error_callback` | `(tool, args, tool_context, error)` | `dict` recovers; `None` re-raises |
+
+- **Model callbacks exist only on `LlmAgent`.** `SequentialAgent(before_model_callback=...)` fails validation (`extra_forbidden`, executed), so screen input for orchestrator pipelines in the route before `run_async`.
+- **Session id:** `callback_context.session.id` / `tool_context.session.id` (there is no `session_id` attribute).
+- **Assert wiring in a test** (`agent.before_model_callback is guard_input`), not in a docstring (`adk-testing.md` §4).
+
+## 1. before_model_callback — deterministic gates
 
 ```python
-from google.adk.agents import CallbackContext
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
-from typing import Optional
-import time
 
-async def rate_limit_check(
-    ctx: CallbackContext, request: LlmRequest
-) -> Optional[LlmResponse]:
-    """Block requests that exceed the per-minute rate limit."""
-    call_times: list = ctx.state.get("model_call_times", [])
-    now = time.monotonic()
-    call_times = [t for t in call_times if now - t < 60]
 
-    if len(call_times) >= 10:
-        return LlmResponse(
-            content=types.Content(
-                role="model",
-                parts=[types.Part(text="Rate limit reached. Please wait a moment.")],
-            )
-        )
+def _text_response(text: str) -> LlmResponse:
+    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text=text)]))
 
-    call_times.append(now)
-    ctx.state["model_call_times"] = call_times
-    return None  # continue to model
+
+async def guard_input(callback_context: CallbackContext, llm_request: LlmRequest) -> LlmResponse | None:
+    """Short-circuit the model call when a deterministic policy flag is set."""
+    if callback_context.state.get("ai_disabled"):  # kill switch / policy decided by code
+        return _text_response("This assistant is temporarily unavailable.")
+    return None
 ```
 
----
+Rate limits and quotas belong in the API layer or a shared limiter keyed by principal (`python-dev/reference/fastapi-rate-limiting.md`), not in session state: a per-session counter is reset by opening a new session.
 
-## 2. after_model_callback
+## 2. after_model_callback — usage without content
 
-Called after a successful LLM response. Return `None` to use the original response;
-return a new `LlmResponse` to replace it.
+Log counts and finish reasons, never prompt or response text. `thoughts_token_count` matters on thinking models (thinking is billed as output).
 
 ```python
-import structlog
-from google.adk.agents import CallbackContext
-from google.adk.models.llm_response import LlmResponse
-from typing import Optional
-
-log = structlog.get_logger()
-
-async def log_response(
-    ctx: CallbackContext, response: LlmResponse
-) -> Optional[LlmResponse]:
-    """Log response metadata for observability."""
-    text_parts = [
-        p.text for p in (response.content.parts or []) if hasattr(p, "text")
-    ]
-    log.info(
+async def log_usage(callback_context: CallbackContext, llm_response: LlmResponse) -> LlmResponse | None:
+    usage = llm_response.usage_metadata
+    logger.info(
         "model_response",
-        session_id=ctx.session_id,
-        part_count=len(text_parts),
-        total_chars=sum(len(t) for t in text_parts),
+        agent=callback_context.agent_name,
+        session_id=callback_context.session.id,
+        prompt_tokens=usage.prompt_token_count if usage else None,
+        output_tokens=usage.candidates_token_count if usage else None,
+        thinking_tokens=usage.thoughts_token_count if usage else None,
+        finish_reason=llm_response.finish_reason.name if llm_response.finish_reason else None,
     )
-    return None  # keep original response unchanged
+    return None
 ```
-
----
 
 ## 3. on_model_error_callback
 
-Called when the LLM request raises an exception. Return an `LlmResponse` to
-recover gracefully, or return `None` to let the error propagate.
-
 ```python
-import structlog
-from google.adk.agents import CallbackContext
-from google.adk.models.llm_request import LlmRequest
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
-from typing import Optional
-
-log = structlog.get_logger()
-
-async def handle_model_error(
-    ctx: CallbackContext, request: LlmRequest, error: Exception
-) -> Optional[LlmResponse]:
-    """Return a safe fallback response on model failure."""
-    log.error("model_call_failed", error=str(error), session_id=ctx.session_id)
-    return LlmResponse(
-        content=types.Content(
-            role="model",
-            parts=[types.Part(text="I encountered an error. Please try again.")],
-        )
-    )
+async def model_error_fallback(
+    callback_context: CallbackContext, llm_request: LlmRequest, error: Exception
+) -> LlmResponse | None:
+    log_exception(logger, "model_call_failed", error, session_id=callback_context.session.id)
+    return _text_response("I could not answer right now. Please try again.")
 ```
 
----
+`log_exception` logs the type and ids only (`deployment-ci-cd/reference/python-observability.md` §2). Returning a canned answer hides the failure from the route: also record a metric, or return `None` and let the route map the exception to a typed status (`adk-fastapi-integration.md` §5).
 
-## 4. Tool Callbacks — before, after, and on_error
-
-All three tool callbacks share the same signature shape. Use them for
-validation, logging, and error recovery around tool execution.
+## 4. after_tool_callback / on_tool_error_callback
 
 ```python
-import structlog
-from google.adk.tools import BaseTool, ToolContext
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
-from typing import Any, Optional
+from typing import Any
 
-log = structlog.get_logger()
+from google.adk.tools.base_tool import BaseTool
+from google.adk.tools.tool_context import ToolContext
 
-# --- before_tool_callback ---
-# Return None to allow the call; return a dict to override the result entirely.
-async def validate_tool_args(
-    tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
-) -> Optional[dict]:
-    """Reject delete operations in read-only sessions."""
-    if tool.name.startswith("delete_") and tool_context.state.get("read_only"):
-        return {"error": "Delete operations are disabled in read-only mode."}
-    return None  # proceed normally
 
-# --- after_tool_callback ---
-# Return None to use the original result; return a dict to replace it.
 async def log_tool_result(
-    tool: BaseTool, args: dict[str, Any], tool_context: ToolContext, result: dict
-) -> Optional[dict]:
-    """Log every tool invocation with its outcome."""
-    log.info("tool_completed", tool_name=tool.name, args=args, result=result)
-    return None  # keep original result
+    tool: BaseTool, args: dict[str, Any], tool_context: ToolContext, tool_response: dict[str, Any]
+) -> dict[str, Any] | None:
+    # args and results can carry user data: log the outcome, not the payload
+    logger.info("tool_completed", tool=tool.name, ok=tool_response.get("ok"), session_id=tool_context.session.id)
+    return None
 
-# --- on_tool_error_callback ---
-# Return a dict to recover; return None to let the error propagate.
-async def handle_tool_error(
+
+async def tool_error_result(
     tool: BaseTool, args: dict[str, Any], tool_context: ToolContext, error: Exception
-) -> Optional[dict]:
-    """Log and return a structured error payload instead of raising."""
-    log.error("tool_failed", tool_name=tool.name, args=args, error=str(error))
-    return {"error": f"Tool '{tool.name}' failed: {error}", "success": False}
+) -> dict[str, Any] | None:
+    log_exception(logger, "tool_failed", error, tool=tool.name, session_id=tool_context.session.id)
+    return {"ok": False, "error_code": "TOOL_UNAVAILABLE", "data": None}  # no exception text to the model
 ```
 
----
+## 5. before_tool_callback — inject scope, fail closed
 
-## 5. Attaching Callbacks to Agent
+The model must never choose whose data a tool touches. Keep the authoritative `org_id` in session state (set server-side at session creation from the principal, `adk-fastapi-integration.md` §4) and overwrite whatever the model sent. Missing scope denies the call. Executed: a model call with `org_id="account-1"` reached the tool as the session's `org-real`; with no scope in state the tool did not run and the model received `UNAUTHORIZED`.
 
 ```python
-from google.adk import Agent
+SCOPED_TOOLS: dict[str, tuple[str, ...]] = {"get_order": ("org_id",)}  # tool -> scope params
+
+
+async def inject_scope(
+    tool: BaseTool, args: dict[str, Any], tool_context: ToolContext
+) -> dict[str, Any] | None:
+    """Overwrite model-supplied scope with server-side session state; deny if absent."""
+    for key in SCOPED_TOOLS.get(tool.name, ()):
+        trusted = tool_context.state.get(key)
+        if not trusted:
+            return {"ok": False, "error_code": "UNAUTHORIZED", "data": None}  # fail closed
+        args[key] = trusted  # the tool receives this dict after the callback
+    return None
+```
+
+Better still, leave the scope parameter out of the tool signature and read `tool_context.state["org_id"]` inside the tool, so the model never sees it. Either way the backend still authorizes the record (tool visibility, caller permission and resource authorization are three separate checks). Test that a forged value is ignored.
+
+## 6. Attaching callbacks
+
+```python
+from google.adk.agents import Agent
 
 agent = Agent(
-    name="my_agent",
-    model="gemini-3.1-flash",
-    instruction="You are a helpful assistant.",
-    tools=[get_weather, remember_preference],
-    before_model_callback=[rate_limit_check],   # list — multiple callbacks supported
-    after_model_callback=log_response,           # single callback also works
-    on_model_error_callback=handle_model_error,
-    before_tool_callback=validate_tool_args,
+    name="assistant",
+    model=settings.agent_model,
+    instruction="...",
+    tools=[get_order],
+    before_model_callback=guard_input,       # a list of callbacks is also accepted
+    after_model_callback=log_usage,
+    on_model_error_callback=model_error_fallback,
+    before_tool_callback=inject_scope,
     after_tool_callback=log_tool_result,
-    on_tool_error_callback=handle_tool_error,
+    on_tool_error_callback=tool_error_result,
 )
 ```
 
-**Imports summary:**
-
-```python
-from google.adk import Agent, Runner
-from google.adk.agents import CallbackContext
-from google.adk.models.llm_request import LlmRequest
-from google.adk.models.llm_response import LlmResponse
-from google.adk.tools import BaseTool, ToolContext
-from google.genai import types
-from typing import Any, Optional
-```
+Cross-cutting behaviour for every agent of an app (usage logging, scope injection) can instead be registered once as an ADK plugin on `App(plugins=[...])`; check the plugin API in the ADK docs for your pinned version before using it.

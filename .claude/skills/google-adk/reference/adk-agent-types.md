@@ -1,241 +1,98 @@
 # ADK Agent Types
 
-## 1. SequentialAgent — Pipeline
+Executed with `google-adk==1.29.0` and a scripted fake model (`adk-testing.md` §2). `MODEL` stands for `settings.agent_model` — never a literal id. Run every example with `run_once` from `adk-core-patterns.md` §2 (awaited `create_session`, `RunConfig(max_llm_calls=...)`).
 
-Sub-agents execute in order. Each agent writes its output to `output_key` in session state. Downstream agents reference earlier outputs via `{key}` in their `instruction`.
+Multi-agent only when it beats a single agent or deterministic workflow on evals (separate tool/authority scopes, isolation of untrusted input, parallel latency) — `multi-agent-patterns` skill. Agents never own multi-step transactions: side effects go through a domain service or durable workflow (`workflow-orchestration-patterns`).
+
+## 1. SequentialAgent — pipeline
+
+Sub-agents run in order. Each writes its final text to `output_key`; later agents read it with `{key}` in their `instruction`.
 
 ```python
-from google.adk import Agent, InMemoryRunner
-from google.adk.agents import SequentialAgent
-from google.genai import types
-
+from google.adk.agents import Agent, LoopAgent, ParallelAgent, SequentialAgent
 
 researcher = Agent(
     name="researcher",
-    model="gemini-3.1-flash",
+    model=MODEL,
     description="Researches a topic and produces raw findings.",
-    instruction=(
-        "Research the topic provided by the user. "
-        "Gather key facts, statistics, and relevant context. "
-        "Write detailed findings as plain text."
-    ),
+    instruction="Research the topic provided by the user. Write key facts and context as plain text.",
     output_key="research_findings",
 )
 
 writer = Agent(
     name="writer",
-    model="gemini-3.1-flash",
-    description="Transforms research findings into a draft article.",
-    instruction=(
-        "You are a technical writer. Using the following research findings, "
-        "write a clear, well-structured draft article:\n\n{research_findings}"
-    ),
+    model=MODEL,
+    description="Turns findings into a draft.",
+    instruction="Write a clear draft article from these findings:\n\n{research_findings}",
     output_key="draft_article",
 )
 
-editor = Agent(
-    name="editor",
-    model="gemini-3.1-flash",
-    description="Edits and polishes a draft article.",
-    instruction=(
-        "You are a professional editor. Review and improve this draft article "
-        "for clarity, grammar, and flow:\n\n{draft_article}\n\n"
-        "Return only the final polished version."
-    ),
-    output_key="final_article",
-)
-
-pipeline = SequentialAgent(
-    name="research_pipeline",
-    description="Researches a topic, writes a draft, then edits it into a final article.",
-    sub_agents=[researcher, writer, editor],
-)
-
-# Run the pipeline
-runner = InMemoryRunner(agent=pipeline, app_name="pipeline_app")
-session = runner.session_service.create_session(app_name="pipeline_app", user_id="u1")
-
-for event in runner.run(
-    user_id="u1",
-    session_id=session.id,
-    new_message=types.UserContent(parts=[types.Part(text="Write an article about quantum computing.")]),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(part.text)
-
-# Retrieve individual stage outputs from session state
-final_session = runner.session_service.get_session(
-    app_name="pipeline_app", user_id="u1", session_id=session.id
-)
-print(final_session.state.get("research_findings"))
-print(final_session.state.get("draft_article"))
-print(final_session.state.get("final_article"))
+pipeline = SequentialAgent(name="research_pipeline", sub_agents=[researcher, writer])
 ```
 
-## 2. ParallelAgent — Concurrent Analysis
+An identifier-like `{name}` in an instruction must exist in session state when the agent runs — a missing key raises `KeyError: Context variable not found` (executed). Use `{name?}` for optional keys; use an instruction provider callable (`instruction=lambda ctx: TEXT`) when the text contains placeholder-like braces such as `{source_name}` in a citation template — callables bypass templating (executed).
 
-Sub-agents execute concurrently and independently. Each writes to its own `output_key`. A downstream synthesizer (in a SequentialAgent wrapper) reads all keys.
+## 2. ParallelAgent — fan-out, then synthesize
+
+Branches run concurrently and must not depend on each other; each writes its own key. Wrap in a `SequentialAgent` to synthesize.
 
 ```python
-from google.adk import Agent, InMemoryRunner
-from google.adk.agents import ParallelAgent, SequentialAgent
-from google.genai import types
-
-
-technical_analyst = Agent(
-    name="technical_analyst",
-    model="gemini-3.1-flash",
-    description="Analyzes the technical aspects of a topic.",
-    instruction=(
-        "Analyze the technical feasibility and implementation details of: {topic}. "
-        "Focus on technology, infrastructure, and technical risks."
-    ),
-    output_key="technical_analysis",
-)
-
-market_analyst = Agent(
-    name="market_analyst",
-    model="gemini-3.1-flash",
-    description="Analyzes the market opportunity and competitive landscape.",
-    instruction=(
-        "Analyze the market opportunity for: {topic}. "
-        "Cover market size, competitors, and growth potential."
-    ),
-    output_key="market_analysis",
-)
-
-risk_analyst = Agent(
-    name="risk_analyst",
-    model="gemini-3.1-flash",
-    description="Identifies and assesses risks.",
-    instruction=(
-        "Identify and assess the key risks for: {topic}. "
-        "Cover financial, operational, regulatory, and reputational risks."
-    ),
-    output_key="risk_analysis",
-)
-
-analysis_team = ParallelAgent(
-    name="analysis_team",
-    description="Runs technical, market, and risk analysis concurrently.",
-    sub_agents=[technical_analyst, market_analyst, risk_analyst],
-)
-
+technical = Agent(name="technical_analyst", model=MODEL,
+                  instruction="Analyze technical feasibility of: {topic}", output_key="technical_analysis")
+market = Agent(name="market_analyst", model=MODEL,
+               instruction="Analyze the market for: {topic}", output_key="market_analysis")
 synthesizer = Agent(
     name="synthesizer",
-    model="gemini-3.1-flash",
-    description="Synthesizes all analyses into a final recommendation.",
-    instruction=(
-        "You have three independent analyses. Synthesize them into a concise executive summary "
-        "with a clear recommendation.\n\n"
-        "Technical Analysis:\n{technical_analysis}\n\n"
-        "Market Analysis:\n{market_analysis}\n\n"
-        "Risk Analysis:\n{risk_analysis}"
-    ),
+    model=MODEL,
+    instruction="Synthesize a recommendation.\n\nTechnical:\n{technical_analysis}\n\nMarket:\n{market_analysis}",
     output_key="executive_summary",
 )
 
-# Wrap in SequentialAgent: run parallel analyses first, then synthesize
 full_analysis = SequentialAgent(
     name="full_analysis_pipeline",
-    description="Runs parallel analysis then synthesizes results.",
-    sub_agents=[analysis_team, synthesizer],
+    sub_agents=[ParallelAgent(name="analysis_team", sub_agents=[technical, market]), synthesizer],
 )
-
-runner = InMemoryRunner(agent=full_analysis, app_name="analysis_app")
-session = runner.session_service.create_session(
-    app_name="analysis_app",
-    user_id="u1",
-    state={"topic": "electric vehicle charging network expansion"},
-)
-
-for event in runner.run(
-    user_id="u1",
-    session_id=session.id,
-    new_message=types.UserContent(
-        parts=[types.Part(text="Analyze electric vehicle charging network expansion.")]
-    ),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(part.text)
+# create the session with state={"topic": ...} so {topic} resolves
 ```
 
-## 3. LoopAgent — Iterative Refinement
+Parallel branches multiply model calls and cost; the per-request `max_llm_calls` cap covers the whole tree.
 
-Repeats sub-agents until `exit_loop` tool is called or `max_iterations` is reached. The agent's instruction must include logic to call `exit_loop` when the quality bar is met.
+## 3. LoopAgent — iterative refinement
+
+`LoopAgent.max_iterations` defaults to `None` = **unbounded** (verified on 1.29): always set it, and also pass `RunConfig(max_llm_calls=N)` (default 500; exceeding it raises `LlmCallsLimitExceededError`, executed). The loop stops early when a sub-agent calls `exit_loop`.
+
+Do not put `output_key` on the agent that calls `exit_loop`: its final response is the tool turn, so the key is overwritten with empty text (executed: the improved code was lost). Split review from rewrite:
 
 ```python
-from google.adk import Agent, InMemoryRunner
-from google.adk.agents import LoopAgent
 from google.adk.tools import exit_loop
-from google.genai import types
 
-
-code_improver = Agent(
-    name="code_improver",
-    model="gemini-3.1-flash",
-    description="Iteratively improves code quality until it meets the standard.",
-    instruction=(
-        "Review the code in session state under 'current_code'. "
-        "If the code has no issues (correct, readable, no bugs), call exit_loop() to stop. "
-        "Otherwise, rewrite the code with improvements and store it under 'current_code'. "
-        "Improve only one category of issues per iteration: "
-        "first correctness, then readability, then performance."
-    ),
+reviewer = Agent(
+    name="reviewer",
+    model=MODEL,
+    instruction="Review this code:\n{current_code}\nIf it has no issues, call exit_loop. Otherwise list the issues.",
     tools=[exit_loop],
+    output_key="review_notes",
+)
+refiner = Agent(
+    name="refiner",
+    model=MODEL,
+    instruction="Fix these issues:\n{review_notes}\n\nCode:\n{current_code}\nReturn only the code.",
     output_key="current_code",
 )
-
-refinement_loop = LoopAgent(
-    name="code_refinement_loop",
-    description="Iteratively refines code until it meets quality standards or max iterations reached.",
-    sub_agents=[code_improver],
-    max_iterations=5,
-)
-
-runner = InMemoryRunner(agent=refinement_loop, app_name="refine_app")
-session = runner.session_service.create_session(
-    app_name="refine_app",
-    user_id="u1",
-    state={
-        "current_code": "def add(a,b):\n  return a+b  # no type hints, no docstring"
-    },
-)
-
-for event in runner.run(
-    user_id="u1",
-    session_id=session.id,
-    new_message=types.UserContent(parts=[types.Part(text="Improve this code.")]),
-):
-    if event.is_final_response() and event.content:
-        for part in event.content.parts:
-            if part.text:
-                print(part.text)
-
-# Retrieve the refined code
-final_session = runner.session_service.get_session(
-    app_name="refine_app", user_id="u1", session_id=session.id
-)
-print(final_session.state.get("current_code"))
+refinement_loop = LoopAgent(name="code_refinement_loop", sub_agents=[reviewer, refiner], max_iterations=3)
+# session state={"current_code": ...}; executed: issues -> rewrite -> exit_loop, current_code kept
 ```
 
-**Important:** If `exit_loop` is never called, the loop runs exactly `max_iterations` times then stops. Always instruct the agent on the condition for calling `exit_loop` to avoid wasted iterations.
+When the cap is hit without `exit_loop`, return a typed status (e.g. `ITERATION_LIMIT`) to the caller, not the last draft as if it passed review. A same-model reviewer is not independent verification — gate on deterministic checks (tests, validators) where they exist.
 
-> See `adk-agent-handoff.md` — covers agent routing via transfer_to_agent and output_key state passing rules for multi-agent workflows.
+## 4. Composition patterns
 
-## 4. Composition Patterns
+| Pattern | Use case | Structure |
+|---|---|---|
+| Sequential | A feeds B feeds C | `SequentialAgent(sub_agents=[a, b, c])` |
+| Parallel + synthesize | Independent perspectives | `SequentialAgent([ParallelAgent([a, b]), synthesizer])` |
+| Loop | Refine until a check passes | `LoopAgent(sub_agents=[reviewer, refiner], max_iterations=N)` |
+| Handoff | Intent routing; the specialist talks to the user | root `sub_agents=[s1, s2]` (`transfer_to_agent` is injected) |
+| Agent as tool | Parent keeps control, typed I/O | `tools=[AgentTool(agent=specialist)]` |
 
-| Pattern | Use Case | Structure |
-|---------|----------|-----------|
-| Sequential | Pipeline (A outputs to B inputs to C) | `SequentialAgent(sub_agents=[a, b, c])` |
-| Parallel | Gather independent perspectives concurrently | `ParallelAgent(sub_agents=[a, b, c])` |
-| Parallel + Sequential | Fan-out then synthesize | `SequentialAgent([ParallelAgent([a, b, c]), synthesizer])` |
-| Loop | Iterative refinement until quality met | `LoopAgent(sub_agents=[refiner], max_iterations=N)` |
-| Handoff | Customer service / intent routing | Root with `sub_agents=[s1, s2]` + `tools=[transfer_to_agent]` |
-| Loop inside Sequential | Refine one stage of a pipeline | `SequentialAgent([researcher, LoopAgent([refiner], max_iterations=3), publisher])` |
-
-> See `adk-agent-handoff.md` for output_key state passing rules and examples.
+Orchestrators accept no model callbacks (`extra_forbidden`); screen input in the route. Handoff rules: `adk-agent-handoff.md`.

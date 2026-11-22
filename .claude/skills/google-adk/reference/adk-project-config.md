@@ -1,221 +1,142 @@
 # ADK Project Configuration
 
-## 1. pyproject.toml
+## 1. pyproject.toml — exact pins + lockfile
+
+Pin `google-adk` exactly and commit `uv.lock`; CI and Docker install with `uv sync --locked` (refuses a stale lock). A `>=` range lets a fresh resolve pull a different ADK whose APIs differ from these references.
 
 ```toml
 [project]
 name = "my-adk-service"
 version = "0.1.0"
-requires-python = ">=3.14"
+requires-python = "==3.14.*"        # the interpreter you deploy; google-adk 1.29 declares >=3.10
 dependencies = [
-    "google-adk>=1.28.0",
-    "google-genai>=1.0.0",
-    "fastapi>=0.135.2",
-    "uvicorn[standard]>=0.30.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "python-dotenv>=1.0.0",
-    "structlog>=24.0.0",
+    "google-adk==1.29.0",
+    "fastapi==<pin>",
+    "uvicorn[standard]==<pin>",
+    "pydantic-settings==<pin>",
+    "structlog==<pin>",
+    "sqlalchemy[asyncio]==<pin>",   # DatabaseSessionService needs the asyncio extra (greenlet)
+    "asyncpg==<pin>",               # async Postgres driver for postgresql+asyncpg:// URLs
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "httpx>=0.27.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
-]
+[dependency-groups]
+dev = ["pytest==<pin>", "pytest-asyncio==<pin>", "httpx==<pin>", "aiosqlite==<pin>", "ruff==<pin>", "mypy==<pin>"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
 strict = true
-python_version = "3.14"
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 ```
 
----
+`google-adk` brings `google-genai`; do not add a second, looser `google-genai` constraint. Fill `<pin>` with the versions `uv lock` resolves and you have tested. Verify `uv sync --locked` on your target Python before adopting a new interpreter (the references here were executed on Python 3.12 with google-adk 1.29.0). Supply-chain gates (lock check, audit): `deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
-## 2. .env Template
+## 2. Environment and auth per environment
 
-```
-GOOGLE_API_KEY=your-gemini-api-key-here
-GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-GOOGLE_CLOUD_LOCATION=us-central1
-APP_NAME=my-adk-service
-LOG_LEVEL=INFO
-```
-
-Never commit `.env` to version control. Add it to `.gitignore`.
-
----
-
-### .env File — API Key Loading (Critical)
-
-Google ADK and Gemini SDK do NOT auto-load `.env` files. You MUST explicitly load them.
-
-**Step 1 — Install python-dotenv** (already included in the pyproject.toml template above).
-
-**Step 2 — Load at app startup** (before any ADK/Gemini initialization):
-
-```python
-# main.py or app entry point — FIRST lines before any other imports that use env vars
-from dotenv import load_dotenv
-load_dotenv()  # loads .env from current working directory
-```
-
-**Step 3 — .env file format** (in project root, never committed):
+| Environment | Model endpoint | Credentials |
+|---|---|---|
+| local | developer API (Google AI Studio) or Vertex | `GOOGLE_API_KEY` in a local, git-ignored `.env` — or ADC via `gcloud auth application-default login` |
+| test / CI | none — scripted fake model (`adk-testing.md`) | none |
+| staging / production | Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`) | workload identity / ADC: **no API key exists**; startup fails if one is set |
 
 ```
-GOOGLE_API_KEY=your-key-here
-# OR
-GEMINI_API_KEY=your-key-here
+# .env (local only, never committed)
+ENVIRONMENT=local
+AGENT_MODEL=<model id from the models page, verified on this endpoint>
+GOOGLE_API_KEY=<local developer key>
+SESSION_DB_URL=sqlite+aiosqlite:///./sessions.db
 ```
 
-**Step 4 — .gitignore** must contain `.env`.
+`google-genai` reads `GOOGLE_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` from the **process environment**; pydantic-settings reading `.env` does not export them. Locally, load `.env` into the process (`uv run --env-file .env ...`) instead of copying secrets into `os.environ` in code. A model id proven on the developer endpoint is not proven on Vertex: probe each backend before changing it (`gemini-api-dev` skill).
 
-**Verification:** After startup, confirm the key loaded:
+## 3. Settings (fail fast, auth matrix enforced)
 
-```python
-import os
-assert os.getenv("GOOGLE_API_KEY"), "GOOGLE_API_KEY not loaded — check .env file and load_dotenv() call"
-```
-
-❌ Common mistake: placing `load_dotenv()` AFTER importing ADK modules that read env vars at import time. Always call it FIRST.
-
-> **Note:** The pydantic-settings approach in section 3 uses `env_file: ".env"` which also loads `.env`, but only into the `Settings` object — not into `os.environ`. ADK reads directly from `os.environ`, so the explicit `os.environ["GOOGLE_API_KEY"] = settings.google_api_key` export at the end of `config.py` is still required. If you skip pydantic-settings entirely and use `load_dotenv()` alone, ADK can read the key directly from `os.environ` after `load_dotenv()` populates it.
-
----
-
-## 3. Config Module (pydantic-settings)
+Executed: production + key → rejected; production with ADC + project/location → accepted; local without key or Vertex → rejected; missing `AGENT_MODEL` → `ValidationError`. `mypy --strict` clean.
 
 ```python
 # src/config.py
-import os
-from pydantic_settings import BaseSettings
+from typing import Literal, Self
+
+from pydantic import SecretStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    google_api_key: str
-    google_cloud_project: str = ""
-    google_cloud_location: str = "us-central1"
-    app_name: str = "my-adk-service"
-    log_level: str = "INFO"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    environment: Literal["local", "test", "staging", "production"]
+    agent_model: str                              # no default: fail fast
+    google_genai_use_vertexai: bool = False       # True => managed endpoint with ADC
+    google_cloud_project: str | None = None
+    google_cloud_location: str | None = None
+    google_api_key: SecretStr | None = None       # developer key: local only
+    session_db_url: SecretStr                     # contains credentials: never log
+    agent_timeout_s: float = 30.0
+    max_llm_calls: int = 20
 
-
-settings = Settings()
-
-# CRITICAL: ADK reads GOOGLE_API_KEY directly from os.environ, NOT from the
-# pydantic-settings object. pydantic-settings loads into Settings but does NOT
-# automatically populate os.environ. Must explicitly export:
-os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+    @model_validator(mode="after")
+    def check_auth_matrix(self) -> Self:
+        deployed = self.environment in ("staging", "production")
+        vertex_ready = self.google_genai_use_vertexai and self.google_cloud_project and self.google_cloud_location
+        if deployed and self.google_api_key is not None:
+            raise ValueError("deployed environments authenticate keylessly (ADC); remove GOOGLE_API_KEY")
+        if deployed and not vertex_ready:
+            raise ValueError("deployed environments need GOOGLE_GENAI_USE_VERTEXAI=true, project and location")
+        if self.environment == "local" and not self.google_genai_use_vertexai and self.google_api_key is None:
+            raise ValueError("local developer endpoint needs GOOGLE_API_KEY (or use Vertex with ADC)")
+        return self
 ```
 
-> **Why this matters:** `google-adk` and `google-genai` call `os.environ["GOOGLE_API_KEY"]` internally. If you only use pydantic-settings without the `os.environ` export, the ADK will raise `"No API key was provided"` even though your `.env` file is correct and `settings.google_api_key` has the value.
+Pass `settings.session_db_url.get_secret_value()` to `DatabaseSessionService`. Generic settings rules: `python-dev/reference/fastapi-architecture-and-config.md`, `deployment-ci-cd/reference/env-config-validation.md`.
 
-Import `settings` wherever config values are needed. For ADK-specific env vars (`GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT`), always export them to `os.environ` at startup.
-
----
-
-## 4. Directory Structure
+## 4. Directory structure
 
 ```
 my-adk-service/
 +-- src/
-|   +-- config.py             # pydantic-settings config
-|   +-- main.py               # FastAPI app
-|   +-- agents/
-|   |   +-- __init__.py
-|   |   +-- my_agent.py       # Agent definitions
-|   +-- tools/
-|   |   +-- __init__.py
-|   |   +-- my_tools.py       # Tool functions
-|   +-- api/
-|   |   +-- __init__.py
-|   |   +-- routes.py         # FastAPI routes
+|   +-- config.py
+|   +-- main.py               # FastAPI lifespan: session service + Runner once
+|   +-- agents/               # Agent definitions (model from settings)
+|   +-- tools/                # Tool functions (typed result envelope)
+|   +-- api/routes.py
 +-- tests/
-|   +-- test_my_agent.py
+|   +-- fakellm.py            # scripted model (adk-testing.md §2)
 +-- pyproject.toml
-+-- .env
++-- uv.lock                   # committed
 +-- Dockerfile
-+-- docker-compose.yml
 ```
-
----
 
 ## 5. Dockerfile
 
-Multi-stage build using `uv` for dependency resolution. Final image uses
-`python:3.14-slim` with no build tools.
+Use the canonical multi-stage `uv` Dockerfile in `deployment-ci-cd/reference/python-ci-supply-chain.md` §8: uv image pinned by version and digest, `uv sync --locked --no-dev`, non-root user, no secrets in the image (no `ENV GOOGLE_API_KEY=...`, not even empty). Deployed services get model access through the runtime service account (ADC), other secrets from Secret Manager at runtime (`adk-deploy-guide`).
 
-```dockerfile
-FROM python:3.14-slim AS builder
-WORKDIR /app
-RUN pip install uv
-COPY pyproject.toml .
-RUN uv sync --no-dev
+## 6. Logging
 
-FROM python:3.14-slim
-WORKDIR /app
-COPY --from=builder /app/.venv .venv
-COPY src/ src/
-ENV PATH="/app/.venv/bin:$PATH"
-ENV GOOGLE_API_KEY=""
-EXPOSE 8000
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-Pass secrets at runtime via environment variables or a secrets manager — never
-bake them into the image.
-
----
-
-## 6. Structured Logging Setup
-
-Use `structlog` for all logging. Never use `print()` or raw `logging.info()`.
+One logging stack: `deployment-ci-cd/reference/python-observability.md` §1 (structlog JSON, request-id middleware) and §2 (`log_exception(logger, event, exc, **ids)` — type and non-PII ids only). Never `error=str(e)`, `exc_info=True` or `logger.exception()` in agent code: model and validation errors echo user text. Never log prompts, model output, tool arguments or the session DB URL.
 
 ```python
 import structlog
 
-log = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 
-# In tool functions:
-log.info("tool_called", tool_name="my_tool", user_id="u123")
-log.error("tool_failed", tool_name="my_tool", error=str(e))
-
-# In API routes:
-log.info("request_received", path="/chat", session_id=session_id)
-log.error("request_failed", path="/chat", error=str(e))
+logger.info("tool_called", tool="get_order", session_id=session_id)
+try:
+    ...
+except errors.APIError as exc:
+    log_exception(logger, "model_call_failed", exc, session_id=session_id, status_code=exc.code)
+    raise
 ```
 
-Configure structlog once at application startup in `src/main.py`:
-
-```python
-import structlog
-
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-        structlog.processors.JSONRenderer(),
-    ]
-)
-```
-
----
-
-## 7. Common Commands
+## 7. Common commands
 
 ```bash
-uv run uvicorn src.main:app --reload      # Dev server with hot reload
-adk web                                    # ADK built-in web UI (dev only)
-uv run pytest -q                          # Run all tests
-uv run ruff check --fix .                 # Lint and auto-fix
-uv run mypy src/                          # Static type checking
+uv sync --locked                                     # install exactly the lock
+uv run --env-file .env uvicorn src.main:app --reload # local dev server
+adk web                                              # ADK dev UI (local only)
+uv run pytest -q                                     # fake model; no network
+uv run ruff check . && uv run mypy src/
 ```

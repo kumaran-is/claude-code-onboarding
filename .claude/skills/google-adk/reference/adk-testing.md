@@ -1,238 +1,226 @@
 # ADK Testing Patterns
 
-## 1. Test Dependencies
+Every snippet here was executed with `google-adk==1.29.0`, pytest and `asyncio_mode = "auto"` (12 tests passed; no network, no credentials). Eval sets, judges and golden cases: `adk-eval-guide` and `eval-guide`. Live end-to-end replay against the running service before merge: `agentic-ai-dev/reference/agentic-testing.md`.
+
+## 1. InMemoryRunner does NOT fake the model
+
+`InMemoryRunner` only swaps the session, artifact and memory services for in-memory ones. The agent still calls whatever `model` it was given: with a real Gemini id and no key the run fails with `ValueError` (executed); with a key it bills and is non-deterministic. Unit tests therefore need a **scripted model** as well.
 
 ```toml
 # pyproject.toml
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "httpx>=0.27.0",
-]
+[dependency-groups]
+dev = ["pytest==<pin>", "pytest-asyncio==<pin>", "httpx==<pin>", "aiosqlite==<pin>"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 ```
 
-> All ADK tests are async — `asyncio_mode = "auto"` removes the need for `@pytest.mark.asyncio` on every test.
+## 2. Scripted fake model
 
-## 2. InMemoryRunner for Unit Tests
-
-`InMemoryRunner` is the only approved runner for unit tests. It does not call the real Gemini API.
+Register a `BaseLlm` subclass for a model-id pattern; tests set the model setting to a matching id (`fake-model`), so production code is unchanged.
 
 ```python
-# tests/test_agent.py
+# tests/fakellm.py
+from collections.abc import AsyncGenerator
+from typing import Any, ClassVar
+
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.adk.models.registry import LLMRegistry
+from google.genai import types
+
+
+class ScriptedLlm(BaseLlm):
+    """Each call pops one step: str -> text, dict -> function call, exception -> raised."""
+
+    script: ClassVar[list[Any]] = []
+    requests: ClassVar[list[LlmRequest]] = []
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return [r"fake-.*"]
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        ScriptedLlm.requests.append(llm_request)
+        step = ScriptedLlm.script.pop(0) if ScriptedLlm.script else "done"
+        if isinstance(step, BaseException):
+            raise step
+        if isinstance(step, dict):
+            call = types.FunctionCall(name=step["name"], args=step.get("args", {}))
+            yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
+            return
+        if stream:  # mimic SSE mode: partial chunks, then one aggregated final response
+            for chunk in step.split(" "):
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=chunk + " ")]), partial=True)
+        yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text=step)]))
+
+
+LLMRegistry.register(ScriptedLlm)
+```
+
+## 3. Agent tests
+
+Sessions must exist before `run_async`: `InMemoryRunner.auto_create_session` is `False`, and an unknown `session_id` raises `SessionNotFoundError` (executed). `create_session` is a coroutine — await it.
+
+```python
+from typing import Any
+
 import pytest
+from google.adk.agents import Agent, LoopAgent, RunConfig, SequentialAgent
+from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.runners import InMemoryRunner
 from google.genai import types
-from src.agents.my_agent import build_agent
+
+from tests.fakellm import ScriptedLlm
+
+MODEL = "fake-model"
 
 
-@pytest.fixture
-def runner():
-    agent = build_agent()
-    return InMemoryRunner(agent=agent, app_name="test_app")
+@pytest.fixture(autouse=True)
+def reset_script():
+    ScriptedLlm.script.clear()
+    ScriptedLlm.requests.clear()
 
 
-async def test_basic_response(runner):
-    events = []
-    async for event in runner.run_async(
-        user_id="test_user",
-        session_id="test_session",
-        new_message=types.UserContent(parts=[types.Part(text="Hello")]),
-    ):
-        if event.is_final_response():
-            events.append(event)
+async def run_turn(runner: InMemoryRunner, text: str, state: dict[str, Any] | None = None, **kw: Any) -> list:
+    session = await runner.session_service.create_session(app_name=runner.app_name, user_id="u1", state=state)
+    return [e async for e in runner.run_async(
+        user_id="u1", session_id=session.id, new_message=types.UserContent(parts=[types.Part(text=text)]), **kw)]
 
-    assert len(events) > 0
-    assert events[0].content is not None
+
+async def test_tool_called_with_scripted_args():
+    ScriptedLlm.script = [{"name": "add_to_cart", "args": {"item": "apple", "quantity": 2}}, "Added."]
+    runner = InMemoryRunner(agent=Agent(name="shop", model=MODEL, instruction="x", tools=[add_to_cart]), app_name="t")
+    events = await run_turn(runner, "add two apples")
+    calls = [p.function_call.name for e in events for p in (e.content.parts if e.content else []) if p.function_call]
+    assert calls == ["add_to_cart"]
+    assert events[-1].is_final_response() and events[-1].content.parts[0].text == "Added."
+
+
+async def test_sequential_pipeline_final_author():
+    ScriptedLlm.script = ["one-line summary", "expanded text"]
+    pipeline = SequentialAgent(name="p", sub_agents=[
+        Agent(name="researcher", model=MODEL, instruction="Summarize.", output_key="summary"),
+        Agent(name="writer", model=MODEL, instruction="Expand on this summary: {summary}"),
+    ])
+    events = await run_turn(InMemoryRunner(agent=pipeline, app_name="t"), "topic")
+    assert [e.author for e in events if e.is_final_response()][-1] == "writer"
+    assert "one-line summary" in str(ScriptedLlm.requests[-1].config.system_instruction)  # state templating
+
+
+async def test_loop_is_capped():
+    ScriptedLlm.script = ["again"] * 10
+    loop = LoopAgent(name="l", sub_agents=[Agent(name="a", model=MODEL, instruction="x")], max_iterations=3)
+    events = await run_turn(InMemoryRunner(agent=loop, app_name="t"), "go")
+    assert len([e for e in events if e.author == "a"]) == 3
+    unbounded = LoopAgent(name="l2", sub_agents=[Agent(name="b", model=MODEL, instruction="x")])
+    with pytest.raises(LlmCallsLimitExceededError):
+        await run_turn(InMemoryRunner(agent=unbounded, app_name="t"), "go", run_config=RunConfig(max_llm_calls=2))
 ```
 
-## 3. Debug Mode for Quick Tests
+## 4. Tools and callbacks
 
-`run_debug` collects all events and returns them as a list. Use for exploratory tests or CI smoke checks.
-
-```python
-async def test_with_debug(runner):
-    events = await runner.run_debug(
-        user_messages=["What is 2+2?"],
-        user_id="debug_user",
-        session_id="debug_session",
-        verbose=True,
-    )
-    assert any(e.is_final_response() for e in events)
-```
-
-## 4. Testing Tools Directly
-
-Tool functions are plain Python — test them without a runner. No mocking required for pure logic.
-
-```python
-from src.tools.my_tools import get_weather
-
-
-def test_get_weather_returns_city_name():
-    result = get_weather("Paris")
-    assert "Paris" in result
-    assert isinstance(result, str)
-```
-
-## 5. Testing Tools with ToolContext (State)
-
-Use `MagicMock(spec=ToolContext)` to simulate state injection.
+Tools are plain functions: test them directly. `MagicMock(spec=ToolContext)` with a dict `state` covers state access.
 
 ```python
 from unittest.mock import MagicMock
+
 from google.adk.tools import ToolContext
-from src.tools.cart_tools import add_to_cart
 
 
 def test_stateful_tool_writes_state():
-    mock_ctx = MagicMock(spec=ToolContext)
-    mock_ctx.state = {}
-
-    result = add_to_cart("apple", 2, mock_ctx)
-
-    assert "apple" in result
-    assert mock_ctx.state["cart"] == [{"item": "apple", "quantity": 2}]
+    ctx = MagicMock(spec=ToolContext)
+    ctx.state = {}
+    assert add_to_cart("apple", 2, ctx)["ok"] is True
+    assert ctx.state["cart"] == [{"item": "apple", "quantity": 2}]
 ```
 
-## 6. Testing Sequential Pipelines
-
-Check `event.author` to confirm the correct agent in the pipeline produced the final response.
+Assert callback wiring with an identity check (a docstring claiming "guarded" proves nothing), and exercise the behaviour with the fake model. Callback parameter names must be ADK's keyword names (`callback_context`, `llm_request`) — `(ctx, request)` raises `TypeError` at run time (executed).
 
 ```python
-from google.adk.agents import SequentialAgent
-from google.adk import Agent
-from google.adk.runners import InMemoryRunner
-from google.genai import types
+def test_callback_is_wired():
+    assert build_guarded_agent().before_model_callback is block_when_flagged
+
+
+async def test_callback_short_circuits_model():
+    events = await run_turn(InMemoryRunner(agent=build_guarded_agent(), app_name="t"), "hi", state={"blocked": True})
+    assert events[-1].content.parts[0].text == "BLOCKED"
+    assert ScriptedLlm.requests == []  # the model was never called
+```
+
+## 5. FastAPI tests (contract from `adk-fastapi-integration.md`)
+
+Run the real lifespan with a real session service (SQLite via `aiosqlite` in tests, Postgres in integration), the fake model, and an overridden principal dependency.
+
+```python
+import json
+
+import pytest
+from google.genai import errors
+from httpx import ASGITransport, AsyncClient
+
+from src import main
+from src.api import routes
 
 
 @pytest.fixture
-def pipeline_runner():
-    researcher = Agent(
-        name="researcher",
-        model="gemini-3.1-flash",
-        instruction="Summarize the topic in one sentence. Output stored in state key 'summary'.",
-        output_key="summary",
-    )
-    writer = Agent(
-        name="writer",
-        model="gemini-3.1-flash",
-        instruction="Expand on this summary: {summary}",
-    )
-    pipeline = SequentialAgent(
-        name="research_pipeline",
-        sub_agents=[researcher, writer],
-    )
-    return InMemoryRunner(agent=pipeline, app_name="test_pipeline")
+async def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "fake-model")
+    monkeypatch.setenv("SESSION_DB_URL", f"sqlite+aiosqlite:///{tmp_path}/sessions.db")
+    current = {"p": routes.Principal(user_id="alice", org_id="org-a")}
+    main.app.dependency_overrides[routes.get_principal] = lambda: current["p"]
+    async with main.lifespan(main.app):
+        async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as c:
+            c.as_user = lambda p: current.update(p=p)
+            yield c
+    main.app.dependency_overrides.clear()
 
 
-async def test_sequential_pipeline_final_author(pipeline_runner):
-    final_events = []
-    async for event in pipeline_runner.run_async(
-        user_id="u1",
-        session_id="s1",
-        new_message=types.UserContent(parts=[types.Part(text="Explain quantum computing")]),
-    ):
-        if event.is_final_response():
-            final_events.append(event)
+async def test_foreign_session_is_404(client):
+    ScriptedLlm.script = ["x"]
+    sid = (await client.post("/api/chat", json={"message": "hi"})).json()["session_id"]
+    client.as_user(routes.Principal(user_id="mallory", org_id="org-m"))
+    assert (await client.post("/api/chat", json={"message": "hi", "session_id": sid})).status_code == 404
 
-    assert len(final_events) > 0
-    # The last agent in the pipeline should be the author of the final response
-    assert final_events[-1].author == "writer"
+
+async def test_model_error_maps_to_typed_status_without_text(client):
+    ScriptedLlm.script = [errors.ServerError(503, {"error": {"message": "secret-detail-123"}})]
+    r = await client.post("/api/chat", json={"message": "hi"})
+    assert r.json()["status"] == "MODEL_UNAVAILABLE" and "secret-detail-123" not in r.text
+
+
+async def test_stream_partials_only_one_terminal_event(client):
+    ScriptedLlm.script = ["alpha beta"]
+    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
+        lines = [ln async for ln in r.aiter_lines() if ln]
+    events = [ln.split(": ", 1)[1] for ln in lines if ln.startswith("event: ")]
+    texts = [json.loads(ln.split(": ", 1)[1]).get("text", "") for ln in lines if ln.startswith("data: ")]
+    assert events == ["content", "content", "done"] and "".join(texts) == "alpha beta "
+
+
+async def test_stream_error_is_opaque_and_terminal(client):
+    ScriptedLlm.script = [RuntimeError("db password=hunter2")]
+    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
+        text = "".join([ln async for ln in r.aiter_lines()])
+    assert "event: error" in text and "event: done" not in text and "hunter2" not in text
 ```
 
-## 7. Testing Callbacks
+## 6. Test checklist
 
-Patch callbacks by replacing the agent attribute before invoking `run_async`.
+- [ ] Fake model registered; no test reaches a real model id
+- [ ] Sessions created (awaited) before `run_async`
+- [ ] Tool selection asserted from events (`function_call.name`), tool logic tested directly
+- [ ] Pipeline: final author and `{key}` state templating asserted
+- [ ] Loop cap and `max_llm_calls` cap each have a test
+- [ ] Callback wiring (identity) + behaviour test
+- [ ] Foreign session → 404; model error → typed status with no exception text; SSE → one terminal event
+- [ ] Scope injection: a forged `org_id` from the model is overwritten (`adk-tools-callbacks.md` §5)
 
-```python
-from unittest.mock import AsyncMock
-from google.genai import types
+## 7. What not to do
 
-
-async def test_before_model_callback_is_invoked(runner):
-    called = []
-
-    async def spy_callback(ctx, request):
-        called.append(True)
-        return None  # returning None lets the model call proceed
-
-    runner.agent.before_model_callback = [spy_callback]
-
-    async for _ in runner.run_async(
-        user_id="u1",
-        session_id="s1",
-        new_message=types.UserContent(parts=[types.Part(text="Hello")]),
-    ):
-        pass
-
-    assert len(called) > 0
-```
-
-## 8. FastAPI Integration Test
-
-Use `httpx.AsyncClient` with `ASGITransport` — no real server needed.
-
-```python
-import pytest
-from httpx import AsyncClient
-from httpx._transports.asgi import ASGITransport
-from src.main import app
-
-
-async def test_chat_endpoint_returns_200():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/chat",
-            json={
-                "message": "Hello",
-                "user_id": "u1",
-                "session_id": "s1",
-            },
-        )
-    assert response.status_code == 200
-    body = response.json()
-    assert "message" in body
-    assert "author" in body
-
-
-async def test_stream_endpoint_returns_sse():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        async with client.stream(
-            "GET",
-            "/api/stream",
-            params={"message": "Hi", "user_id": "u1", "session_id": "s1"},
-        ) as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            chunks = []
-            async for line in response.aiter_lines():
-                chunks.append(line)
-            assert any("[DONE]" in c for c in chunks)
-```
-
-## 9. Test Checklist
-
-- [ ] Basic agent response (happy path) — `test_basic_response`
-- [ ] Tool called when expected — mock or assert on tool return value
-- [ ] State written/read correctly via ToolContext — `MagicMock(spec=ToolContext)`
-- [ ] Sequential pipeline produces output at each stage — check `event.author`
-- [ ] LoopAgent exits within `max_iterations` — confirm no infinite loop
-- [ ] Callback intercepted model call — spy on `before_model_callback`
-- [ ] Error scenario returns structured error (not exception) — assert on error response body
-- [ ] FastAPI `/chat` endpoint returns 200 with `message` field
-- [ ] FastAPI `/stream` endpoint returns SSE ending in `[DONE]`
-
-## 10. What NOT to Do in Tests
-
-- **Never call the real Gemini API** in unit tests — use `InMemoryRunner` only
-- **Never skip `asyncio_mode = "auto"`** — async tests silently pass without it
-- **Never test tool state** by reading `tool_context.state` after `run_async` — test tools directly with a mock context instead
-- **Never assert on exact model output text** — model responses are non-deterministic; assert on structure (not None, contains key, status code)
+- Do not assert on exact model wording from a live model; with the fake model, exact text is fine because you scripted it
+- Do not use `MagicMock` for the session service — the real in-memory/SQLite service catches un-awaited calls and ownership bugs
+- Do not call `runner.run()` (sync) inside async tests

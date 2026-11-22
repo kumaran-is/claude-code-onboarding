@@ -7,7 +7,7 @@
 # surfaces the exact format required so the author fixes it before committing.
 #
 # Works for both monorepo (multiple CHANGELOG.md files per service) and single-repo layouts.
-# Always exits 0 — this is a warning hook, not a blocker (blocking is done by pre-pr-checklist-guard).
+# Always exits 0 — this is a warning hook, not a blocker.
 set -o pipefail
 
 input=$(cat)
@@ -31,11 +31,23 @@ if grep -qE "^## \[[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?\]" "$file_path"; then
 fi
 
 # No versioned section found — only [Unreleased] with no version bump
-cat <<JSON
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "⚠️  CHANGELOG VERSION MISSING — ${file_path} has no versioned release section.\n\nAll changes are under ## [Unreleased] with no semver or date. This causes the version badge to never advance and makes the change history unreadable.\n\nRequired format:\n## [Unreleased]\n\n## [0.1.0] — $(date +%Y-%m-%d)\n### Added\n- ...\n\nAction required BEFORE committing:\n1. Move changes from ## [Unreleased] into ## [X.Y.Z] — $(date +%Y-%m-%d)\n2. Leave ## [Unreleased] empty at the top for future changes\n3. Follow semver: patch (0.0.x) = bug fix, minor (0.x.0) = new feature, major (x.0.0) = breaking change\n4. Add comparison URL links at bottom of the CHANGELOG (see https://keepachangelog.com/en/1.1.0/ for the pattern)"
-  }
-}
-JSON
+today=$(date +%Y-%m-%d)
+msg="⚠️  CHANGELOG VERSION MISSING — ${file_path} has no versioned release section.
+
+All changes are under ## [Unreleased] with no semver or date, so the change history cannot be read by release.
+
+Required format:
+## [Unreleased]
+
+## [0.1.0] — ${today}
+### Added
+- ...
+
+Before committing:
+1. Move changes from ## [Unreleased] into ## [X.Y.Z] — ${today}
+2. Leave ## [Unreleased] empty at the top for future changes
+3. Follow semver: patch (0.0.x) = bug fix, minor (0.x.0) = new feature, major (x.0.0) = breaking change
+4. Add comparison links at the bottom (https://keepachangelog.com/en/1.1.0/)"
+command -v jq >/dev/null 2>&1 || exit 0
+jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
+exit 0

@@ -33,7 +33,7 @@ if echo "$prompt" | grep -qE 'gh[ps]_[a-zA-Z0-9]{36,}|github_pat_[a-zA-Z0-9_]{80
 fi
 
 # Private key block
-if echo "$prompt" | grep -qE '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'; then
+if echo "$prompt" | grep -qE -e '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'; then
   echo "BLOCKED: Private key detected. Never paste private keys into chat." >&2
   exit 2
 fi

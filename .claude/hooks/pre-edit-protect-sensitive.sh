@@ -10,6 +10,12 @@ file=$(echo "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""' 2
 # Skip if no file path detected
 [ -z "$file" ] && exit 0
 
+# --- Git internals: hooks, config and objects must change through git, never through file edits ---
+if echo "$file" | grep -qE '(^|/)\.git/'; then
+  echo "BLOCKED: Cannot modify .git/ internals via Write/Edit (hooks, config, objects). Use git commands." >&2
+  exit 2
+fi
+
 # --- Environment and secret files ---
 if echo "$file" | grep -qE '(^|/)\.env($|\..+)'; then
   echo "BLOCKED: Cannot modify .env files. Edit environment files manually to prevent accidental secret exposure." >&2

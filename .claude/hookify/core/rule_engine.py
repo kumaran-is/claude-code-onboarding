@@ -53,12 +53,20 @@ class RuleEngine:
                     "reason": combined_message,
                     "systemMessage": combined_message
                 }
-            elif hook_event in ['PreToolUse', 'PostToolUse']:
+            elif hook_event == 'PreToolUse':
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
-                        "permissionDecision": "deny"
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": combined_message
                     },
+                    "systemMessage": combined_message
+                }
+            elif hook_event in ['PostToolUse', 'UserPromptSubmit']:
+                # permissionDecision is PreToolUse-only; these events block via decision/reason.
+                return {
+                    "decision": "block",
+                    "reason": combined_message,
                     "systemMessage": combined_message
                 }
             else:
@@ -66,7 +74,15 @@ class RuleEngine:
 
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            return {"systemMessage": "\n\n".join(messages)}
+            combined_message = "\n\n".join(messages)
+            response = {"systemMessage": combined_message}  # shown to the user only
+            if hook_event in ['PreToolUse', 'PostToolUse', 'UserPromptSubmit']:
+                # additionalContext is the supported channel that reaches Claude.
+                response["hookSpecificOutput"] = {
+                    "hookEventName": hook_event,
+                    "additionalContext": combined_message
+                }
+            return response
 
         return {}
 

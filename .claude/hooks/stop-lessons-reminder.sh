@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stop hook: Check for lessons ready to promote (x3+) and orphaned agent-memory files.
-# Prints reminders to stderr. Always exits 0 (never blocks).
+# Shows reminders to the user via systemMessage. Always exits 0 (never blocks).
 set -uo pipefail
 
 # Discard stdin JSON from hook protocol
@@ -35,12 +35,10 @@ if [ -d "$AGENT_MEMORY_DIR" ]; then
 fi
 
 # Print reminders if any
-if [ -n "$reminders" ]; then
-    echo "" >&2
-    echo "📋 LESSONS LIFECYCLE REMINDER" >&2
-    echo "Run /promote-lessons to process:" >&2
-    printf "%b" "$reminders" >&2
-    echo "" >&2
+if [ -n "$reminders" ] && command -v jq >/dev/null 2>&1; then
+    # stderr of an exit-0 hook is not delivered anywhere; systemMessage is shown to the user.
+    msg=$(printf 'LESSONS LIFECYCLE REMINDER - run /promote-lessons to process:\n%b' "$reminders")
+    jq -n --arg m "$msg" '{systemMessage:$m}'
 fi
 
 exit 0

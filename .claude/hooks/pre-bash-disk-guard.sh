@@ -1,48 +1,65 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash): advisory LOW-DISK warning before a disk-hungry build/container command.
 #
-# WHY: image builds, full-stack bring-up, and `--no-cache` rebuilds consume a lot of disk and
-# can wipe/repopulate volumes. When the host (or Docker Desktop's VM) disk is low, these fail
-# MID-WAY with opaque errors that read like code bugs. This warns *right before* such a command
-# so you can free space first. Advisory — ALWAYS exits 0; it never blocks the command.
+# WHY: image builds, full-stack bring-up, and `--no-cache` rebuilds consume a lot of disk. When the host
+# (or Docker Desktop's VM) disk is low they fail MID-WAY with opaque errors that read like code bugs.
+# This warns right before such a command so space can be checked first.
 #
-# Thresholds overridable for testing: PH_DISK_WARN_GB (default 30), PH_DISK_CRIT_GB (default 15).
+# Advisory: ALWAYS exits 0 and never blocks. Delivery: PreToolUse additionalContext (reaches Claude) plus
+# systemMessage (shown to the user). stderr of an exit-0 hook is not delivered to either.
+#
+# Thresholds (GB of free host space): GUARD_DISK_WARN_GB (default 30), GUARD_DISK_CRIT_GB (default 15).
+# Test: bash .claude/hooks/pre-bash-disk-guard.sh --selftest
 set -uo pipefail
 
-INPUT=$(cat)
-TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || TOOL=""
-[ "$TOOL" = "Bash" ] || exit 0
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || CMD=""
-[ -z "$CMD" ] && exit 0
+advise() { # $1 = free GB, $2 = threshold GB, $3 = level
+  local msg
+  if [ "$3" = crit ]; then
+    msg="Low disk: ${1} GB free (< ${2} GB) before a disk-hungry build or container command. A full image rebuild is likely to fail part-way with errors that look like code bugs. Check usage first (df -h, docker system df) and free space deliberately; do not run a blanket prune without asking."
+  else
+    msg="Disk is getting low: ${1} GB free (< ${2} GB) before a build or container command. A full rebuild may not complete. Check usage with df -h and docker system df."
+  fi
+  jq -n --arg m "$msg" '{systemMessage:$m, hookSpecificOutput:{hookEventName:"PreToolUse", additionalContext:$m}}'
+}
 
-# Fire ONLY for disk-hungry operations (image builds, full-stack bring-up, no-cache rebuilds).
-echo "$CMD" | grep -qiE 'docker[ -]?compose[^|]*(build|up)|docker (build|buildx)|podman build|nerdctl build|--no-cache|vagrant up|minikube start|kind create' || exit 0
+evaluate() { # $1 = command, $2 = free GB
+  echo "$1" | grep -qiE 'docker[ -]?compose[^|]*(build|up)|docker (build|buildx)|podman build|nerdctl build|--no-cache|vagrant up|minikube start|kind create' || return 0
+  local warn="${GUARD_DISK_WARN_GB:-30}" crit="${GUARD_DISK_CRIT_GB:-15}"
+  if [ "$2" -lt "$crit" ]; then advise "$2" "$crit" crit
+  elif [ "$2" -lt "$warn" ]; then advise "$2" "$warn" warn
+  fi
+  return 0
+}
 
-WARN_GB="${PH_DISK_WARN_GB:-30}"
-CRIT_GB="${PH_DISK_CRIT_GB:-15}"
-
-ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-# Portable available space on the repo's filesystem: `df -P -k` → col 4 = available 1024-blocks.
-avail_kb=$(df -P -k "$ROOT" 2>/dev/null | awk 'NR==2{print $4}')
-case "${avail_kb:-}" in ''|*[!0-9]*) exit 0 ;; esac   # unparseable → silent (never break the flow)
-free_gb=$(( avail_kb / 1024 / 1024 ))
-
-if [ "$free_gb" -lt "$CRIT_GB" ]; then
-  {
-    echo ""
-    echo "🛑 LOW DISK: ${free_gb} GB free (< ${CRIT_GB} GB) before a disk-hungry build/container command."
-    echo "   A full image rebuild + volume reseed will likely FAIL mid-way with opaque errors."
-    echo "   Free space first:  docker system prune -af --volumes"
-    echo "   (Measures HOST free space; on macOS Docker Desktop also has its OWN VM disk limit — verify with: docker system df)"
-    echo ""
-  } >&2
-elif [ "$free_gb" -lt "$WARN_GB" ]; then
-  {
-    echo ""
-    echo "⚠️  Low disk: ${free_gb} GB free (< ${WARN_GB} GB) before a build/container command — a full rebuild may not complete."
-    echo "   Consider freeing space:  docker system prune -af   (check usage: docker system df)"
-    echo ""
-  } >&2
+if [ "${1:-}" = "--selftest" ]; then
+  fail=0
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; exit 1; }
+  chk() { # label want(advise|silent) command freeGB
+    out=$(evaluate "$3" "$4")
+    case "$2" in
+      advise) printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext' >/dev/null 2>&1 && echo "  ok   $1" || { echo "  FAIL $1"; fail=1; } ;;
+      silent) [ -z "$out" ] && echo "  ok   $1" || { echo "  FAIL $1 (got output)"; fail=1; } ;;
+    esac
+  }
+  chk "positive: docker build at 5 GB free (critical)"        advise 'docker build -t x .' 5
+  chk "positive: compose up at 20 GB free (warning)"          advise 'docker compose up -d' 20
+  chk "positive: --no-cache rebuild at 10 GB"                 advise 'docker compose build --no-cache' 10
+  chk "negative: enough free space"                           silent 'docker build -t x .' 200
+  chk "negative: unrelated command at low disk"               silent 'ls -la' 1
+  chk "negative: command that only mentions docker build"     silent 'echo hello' 1
+  out=$(evaluate 'docker build .' 5); printf '%s' "$out" | grep -qi 'prune -af' && { echo "  FAIL advice recommends a blanket prune"; fail=1; } || echo "  ok   advice does not recommend a blanket prune"
+  [ "$fail" -eq 0 ] && echo "selftest PASS" || echo "selftest FAIL"
+  exit "$fail"
 fi
 
+INPUT=$(cat)
+command -v jq >/dev/null 2>&1 || exit 0
+[ "$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)" = "Bash" ] || exit 0
+CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
+[ -n "$CMD" ] || exit 0
+ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# df -P -k: column 4 of the data row = available 1024-blocks (portable across macOS/Linux).
+avail_kb=$(df -P -k "$ROOT" 2>/dev/null | awk 'NR==2{print $4}')
+case "${avail_kb:-}" in ''|*[!0-9]*) exit 0 ;; esac
+evaluate "$CMD" $(( avail_kb / 1024 / 1024 ))
 exit 0

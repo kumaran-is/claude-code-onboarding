@@ -38,14 +38,11 @@ while IFS= read -r file; do
   fi
 done <<< "$changed"
 
-if [ -n "$hits" ]; then
-  echo "" >&2
-  echo "⚠️  SECRET SCAN WARNING" >&2
-  echo "Possible API keys or secrets detected in changed files:" >&2
-  echo "$hits" >&2
-  echo "Please review these files before committing." >&2
-  echo "Consider using environment variables or a secrets manager instead." >&2
-  echo "" >&2
+if [ -n "$hits" ] && command -v jq >/dev/null 2>&1; then
+  # stderr of an exit-0 hook is not delivered anywhere; systemMessage is shown to the user.
+  msg="SECRET SCAN WARNING: possible API keys or secrets in changed files:
+${hits}Review these before committing; prefer environment variables or a secrets manager."
+  jq -n --arg m "$msg" '{systemMessage:$m}'
 fi
 
 exit 0

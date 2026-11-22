@@ -65,7 +65,7 @@ if [ $detected -eq 0 ] && echo "$content" | grep -qE 'eyJ[a-zA-Z0-9_-]{10,}\.[a-
 fi
 
 # Private key block
-if [ $detected -eq 0 ] && echo "$content" | grep -qE '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'; then
+if [ $detected -eq 0 ] && echo "$content" | grep -qE -e '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'; then
   reason="Private key block (-----BEGIN...PRIVATE KEY-----)"; detected=1
 fi
 
@@ -110,6 +110,10 @@ if [ $detected -eq 1 ]; then
   echo "   Action:  Move credentials to .env (gitignored) or a secrets manager." >&2
   echo "            Do not reference or repeat this value in responses or commits." >&2
   echo "" >&2
+
+  # stderr of an exit-0 hook never reaches Claude; PostToolUse additionalContext does.
+  command -v jq >/dev/null 2>&1 && jq -n --arg m "A credential-like value (${reason}) appeared in the output of ${tool_context}. Do not repeat, quote, or reference the value in responses, files or commits; refer to it by name only, and suggest moving it to an environment variable or secrets manager." \
+    '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
 
   # Append to audit log (never fails — errors suppressed)
   LOGFILE="$CLAUDE_PROJECT_DIR/.claude/secrets-detected.log"

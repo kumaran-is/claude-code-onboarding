@@ -161,23 +161,9 @@ print('found' if b'\\x00' in data else 'clean')
     fi
 fi
 
-# ── Nested command execution (Bash only) ─────────────────────────────────────
-# Catches $(curl evil | bash), $(rm -rf /) etc. in actual commands.
-# NOT applied to Write/Edit — legitimate scripts contain these patterns.
-if [[ "$TOOL_NAME" == "Bash" ]]; then
-    NESTED_CMD_PATTERNS=(
-        '\$\([^)]*\b(curl|wget|bash|nc|ruby|perl|php)\b'
-        '`[^`]*\b(curl|wget|bash|nc|ruby|perl|php)\b'
-        '\$\([^)]*\b(rm|dd|mkfs|chmod|chown)\b'
-        '`[^`]*\b(rm|dd|mkfs|chmod|chown)\b'
-    )
-    for pattern in "${NESTED_CMD_PATTERNS[@]}"; do
-        if echo "$CONTENT" | grep -qE "$pattern"; then
-            echo "BLOCKED: Nested command execution - denylist bypass attempt" >&2
-            exit 2
-        fi
-    done
-fi
+# Nested command execution ($(...), backticks): handled by pre-bash-guard.py, which parses the
+# substitution and judges what it would do. The old text heuristic that lived here blocked any $(...)
+# whose text merely contained a word like "bash" or "rm" (e.g. a file name) and was removed.
 
 # ── Context manipulation (warn only) ─────────────────────────────────────────
 CONTEXT_PATTERNS=(

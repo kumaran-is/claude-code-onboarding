@@ -2,8 +2,9 @@
 # Hook: Lessons Injector — injects lessons.md into sub-agent context
 # Event: PreToolUse (Agent)
 #
-# Problem: Sub-agents (Agent tool) don't inherit .claude/rules/lessons.md,
-# so accumulated corrections are lost across agent boundaries.
+# Problem: the built-in Explore/Plan sub-agents (and any agent whose definition sets omitClaudeMd)
+# start without CLAUDE.md and .claude/rules/, so accumulated corrections are lost across the
+# agent boundary. Other sub-agents already inherit lessons.md; for them this is a harmless repeat.
 # Solution: Intercept Agent tool calls and append lessons.md content
 # to the prompt parameter as additionalContext.
 

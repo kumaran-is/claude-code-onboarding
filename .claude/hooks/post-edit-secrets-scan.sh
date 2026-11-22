@@ -58,7 +58,7 @@ if [ $blocked -eq 0 ] && echo "$content" | grep -qE 'hv[sb]\.[A-Za-z0-9_\-]{20,}
 fi
 
 # Private key block
-if [ $blocked -eq 0 ] && echo "$content" | grep -qE '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'; then
+if [ $blocked -eq 0 ] && echo "$content" | grep -qE -e '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'; then
   reason="Private key (-----BEGIN ... PRIVATE KEY-----)"; blocked=1
 fi
 

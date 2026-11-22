@@ -21,7 +21,8 @@ import sys, json
 try:
     data = json.load(sys.stdin)
     # Handle both string and array message formats
-    msg = data.get('message', '') or ''
+    # UserPromptSubmit delivers the text in the prompt field; message is a fallback
+    msg = data.get('prompt', '') or data.get('message', '') or ''
     if isinstance(msg, list):
         # Extract text content from message array
         parts = [p.get('text','') for p in msg if isinstance(p,dict) and p.get('type')=='text']
@@ -47,7 +48,6 @@ CORRECTION_PATTERNS=(
     "wrong version"
     "wrong path"
     "that is wrong"
-    "incorrect"
     "you should have"
     "i already said"
     "i told you"
@@ -55,17 +55,11 @@ CORRECTION_PATTERNS=(
     "you did it again"
     "same mistake"
     "fix this mistake"
-    "you need to change"
-    "you need to update"
     "you got it wrong"
-    "should not have"
-    "shouldn't have"
     "don't do that"
     "never do that"
-    "stop doing"
     "you misunderstood"
     "that was wrong"
-    "undo that"
 )
 
 DETECTED=""
@@ -76,13 +70,9 @@ for PATTERN in "${CORRECTION_PATTERNS[@]}"; do
     fi
 done
 
-if [ -n "$DETECTED" ]; then
-    cat <<'EOF'
-{
-  "continue": true,
-  "additionalContext": "⚠️  CORRECTION SIGNAL DETECTED in this message.\n\nCLAUDE.md self-improvement loop REQUIRES:\n1. BEFORE doing anything else — open .claude/rules/lessons.md\n2. Check if this mistake already has an entry → increment [xN] counter\n3. If no existing entry → add a new one in the 4-line format\n4. ONLY THEN respond to or fix the correction\n\nThis is not optional. Skipping the lesson write is itself a tracked mistake."
-}
-EOF
+if [ -n "$DETECTED" ] && command -v jq >/dev/null 2>&1; then
+    MSG="CORRECTION SIGNAL DETECTED (\"$DETECTED\"). The CLAUDE.md self-improvement loop applies: before responding, open .claude/rules/lessons.md, check whether this mistake already has an entry (increment its [xN] counter), otherwise add a new 4-line entry, and only then fix the correction. Skip the lesson for preference changes or first-time clarifications."
+    jq -n --arg m "$MSG" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$m}}'
 else
     echo '{"continue": true}'
 fi

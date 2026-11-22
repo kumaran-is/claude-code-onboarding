@@ -5,10 +5,74 @@
 # Feeds the same prompt back to Claude to continue iterating.
 # Exits 0 immediately if no loop is active — zero interference with normal workflow.
 
+#
+# Loop-safety notes (verified against the hooks reference, code.claude.com/docs/en/hooks):
+#   - `stop_hook_active` is true whenever Claude is already continuing because of a stop hook.
+#     This hook deliberately does NOT exit on it: continuing across iterations IS the feature.
+#     The loop is bounded by max_iterations here, and (when max_iterations is 0) by the harness
+#     cap on consecutive stop-hook continuations (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).
+#   - Subagents must never be held by the main agent's loop: if the payload carries `agent_id`
+#     (subagent context) this hook exits 0 untouched. Subagent completion is normally a separate
+#     SubagentStop event, so this is a belt-and-braces guard.
+# Test: bash .claude/hooks/stop-ralph-loop.sh --selftest
+
 set -euo pipefail
+
+if [[ "${1:-}" == "--selftest" ]]; then
+  SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  FAIL=0
+  if bash -n "$SELF" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; exit 1; fi
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; exit 1; }
+  T=$(mktemp -d)
+  mkdir -p "$T/.claude"
+  state() { printf '%s\n' '---' 'iteration: 1' 'max_iterations: 5' 'completion_promise: "DONE"' '---' 'keep going' > "$T/.claude/ralph-loop.local.md"; }
+  # The hook greps the literal "role":"assistant" on a transcript line.
+  printf '%s\n' '{"role":"assistant","message":{"content":[{"type":"text","text":"working"}]}}' > "$T/transcript.jsonl"
+  state
+  OUT=$(printf '{"agent_id":"sub-1","transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if ! printf '%s' "$OUT" | grep -q '"decision"' && grep -q '^iteration: 1$' "$T/.claude/ralph-loop.local.md"; then echo "  ok   negative: subagent payload is ignored, state untouched"; else echo "  FAIL subagent payload not ignored (out: $OUT)"; FAIL=1; fi
+  state
+  OUT=$(printf '{"stop_hook_active":true,"transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if printf '%s' "$OUT" | grep -q '"decision": *"block"' && grep -q '^iteration: 2$' "$T/.claude/ralph-loop.local.md"; then echo "  ok   positive: main-agent stop (stop_hook_active=true) still continues the loop"; else echo "  FAIL main agent loop did not continue (out: $OUT)"; FAIL=1; fi
+  # Termination: iteration at max_iterations ends the loop and removes the state file.
+  printf '%s\n' '---' 'iteration: 5' 'max_iterations: 5' 'completion_promise: "DONE"' '---' 'keep going' > "$T/.claude/ralph-loop.local.md"
+  OUT=$(printf '{"transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if ! printf '%s' "$OUT" | grep -q '"decision"' && [[ ! -f "$T/.claude/ralph-loop.local.md" ]]; then echo "  ok   termination: max_iterations reached -> exit, state removed"; else echo "  FAIL max_iterations did not terminate (out: $OUT)"; FAIL=1; fi
+  # Termination: matching <promise> ends the loop.
+  state
+  printf '%s\n' '{"role":"assistant","message":{"content":[{"type":"text","text":"all done <promise>DONE</promise>"}]}}' > "$T/transcript.jsonl"
+  OUT=$(printf '{"transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if ! printf '%s' "$OUT" | grep -q '"decision"' && [[ ! -f "$T/.claude/ralph-loop.local.md" ]]; then echo "  ok   termination: completion promise matched -> exit, state removed"; else echo "  FAIL promise did not terminate (out: $OUT)"; FAIL=1; fi
+  # Termination: corrupted state file is removed, not looped on forever.
+  printf '%s\n' '---' 'iteration: abc' 'max_iterations: 5' '---' 'x' > "$T/.claude/ralph-loop.local.md"
+  OUT=$(printf '{"transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if ! printf '%s' "$OUT" | grep -q '"decision"' && [[ ! -f "$T/.claude/ralph-loop.local.md" ]]; then echo "  ok   termination: corrupted state -> exit, state removed"; else echo "  FAIL corrupted state not cleaned (out: $OUT)"; FAIL=1; fi
+  # No state file: zero interference.
+  OUT=$(printf '{"transcript_path":"%s"}' "$T/transcript.jsonl" | CLAUDE_PROJECT_DIR="$T" bash "$SELF" 2>/dev/null) || true
+  if [[ -z "$OUT" ]]; then echo "  ok   negative: no active loop -> silent exit"; else echo "  FAIL interfered without a loop (out: $OUT)"; FAIL=1; fi
+  rm -rf "$T"
+  if [[ "$FAIL" -eq 0 ]]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  exit "$FAIL"
+fi
+
+# Loop status notices are shown to the user through systemMessage on exit. stderr of an exit-0 hook is
+# never delivered, so every notice goes through note(). The loop-continue path emits a decision instead.
+NOTES=""
+note() { NOTES="${NOTES}${1}"$'\n'; }
+emit_notes() {
+  if [[ -n "$NOTES" ]] && command -v jq >/dev/null 2>&1; then
+    jq -n --arg m "$NOTES" '{systemMessage:$m}'
+  fi
+}
+trap emit_notes EXIT
 
 # Read hook input from stdin
 HOOK_INPUT=$(cat)
+
+# Subagent context: never hold a subagent inside the main agent's loop.
+if [[ -n "$(echo "$HOOK_INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)" ]]; then
+  exit 0
+fi
 
 # Check if ralph-loop is active — exit immediately if not
 RALPH_STATE_FILE="$CLAUDE_PROJECT_DIR/.claude/ralph-loop.local.md"
@@ -19,23 +83,23 @@ fi
 
 # Parse YAML frontmatter (between --- markers)
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
-ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
-MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
-COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//' || true)
+MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//' || true)
+COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/' || true)
 VERIFY_CMD=$(echo "$FRONTMATTER" | grep '^verify_cmd:' | sed 's/^verify_cmd: *//' | sed 's/^"\(.*\)"$/\1/' || true)
 
 # Validate iteration is a number
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
-  echo "⚠️  Ralph loop: State file corrupted — 'iteration' is not a number (got: '$ITERATION')" >&2
-  echo "   Stopping loop. Run /ralph-loop again to start fresh." >&2
+  note "⚠️  Ralph loop: State file corrupted — 'iteration' is not a number (got: '$ITERATION')"
+  note "   Stopping loop. Run /ralph-loop again to start fresh."
   rm "$RALPH_STATE_FILE"
   exit 0
 fi
 
 # Validate max_iterations is a number
 if [[ ! "$MAX_ITERATIONS" =~ ^[0-9]+$ ]]; then
-  echo "⚠️  Ralph loop: State file corrupted — 'max_iterations' is not a number (got: '$MAX_ITERATIONS')" >&2
-  echo "   Stopping loop. Run /ralph-loop again to start fresh." >&2
+  note "⚠️  Ralph loop: State file corrupted — 'max_iterations' is not a number (got: '$MAX_ITERATIONS')"
+  note "   Stopping loop. Run /ralph-loop again to start fresh."
   rm "$RALPH_STATE_FILE"
   exit 0
 fi
@@ -45,9 +109,9 @@ RALPH_PROGRESS_FILE="$CLAUDE_PROJECT_DIR/.claude/ralph-state.local.md"
 
 # Check iteration limit
 if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
-  echo "🛑 Ralph loop: Max iterations ($MAX_ITERATIONS) reached. Stopping." >&2
+  note "🛑 Ralph loop: Max iterations ($MAX_ITERATIONS) reached. Stopping."
   if [[ -f "$RALPH_PROGRESS_FILE" ]]; then
-    echo "   Progress + escalated items: .claude/ralph-state.local.md" >&2
+    note "   Progress + escalated items: .claude/ralph-state.local.md"
   fi
   rm "$RALPH_STATE_FILE"
   exit 0
@@ -57,7 +121,7 @@ fi
 TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
 
 if [[ -z "$TRANSCRIPT_PATH" ]] || [[ ! -f "$TRANSCRIPT_PATH" ]]; then
-  echo "⚠️  Ralph loop: Transcript not found — stopping loop." >&2
+  note "⚠️  Ralph loop: Transcript not found — stopping loop."
   rm "$RALPH_STATE_FILE"
   exit 0
 fi
@@ -71,7 +135,7 @@ LAST_OUTPUT=$(grep '"role":"assistant"' "$TRANSCRIPT_PATH" | tail -1 | jq -r '
 ' 2>/dev/null || echo "")
 
 if [[ -z "$LAST_OUTPUT" ]]; then
-  echo "⚠️  Ralph loop: No assistant output found — stopping loop." >&2
+  note "⚠️  Ralph loop: No assistant output found — stopping loop."
   rm "$RALPH_STATE_FILE"
   exit 0
 fi
@@ -97,9 +161,9 @@ if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
         VERIFY_RC=$?
       fi
       if [[ $VERIFY_RC -eq 0 ]]; then
-        echo "✅ Ralph loop: Promise '$COMPLETION_PROMISE' + verifier ('$VERIFY_CMD') exit 0. Loop complete." >&2
+        note "✅ Ralph loop: Promise '$COMPLETION_PROMISE' + verifier ('$VERIFY_CMD') exit 0. Loop complete."
         if [[ -f "$RALPH_PROGRESS_FILE" ]]; then
-          echo "   Run summary + lessons: .claude/ralph-state.local.md" >&2
+          note "   Run summary + lessons: .claude/ralph-state.local.md"
         fi
         rm -f "$VERIFY_LOG"
         rm "$RALPH_STATE_FILE"
@@ -108,13 +172,13 @@ if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then
       # Verifier FAILED — reject the promise, keep iterating with the evidence.
       VERIFY_TAIL=$(tail -n 25 "$VERIFY_LOG" 2>/dev/null || echo "")
       rm -f "$VERIFY_LOG"
-      echo "⛔ Ralph loop: Promise asserted but verifier '$VERIFY_CMD' exited $VERIFY_RC — rejecting promise, continuing." >&2
+      note "⛔ Ralph loop: Promise asserted but verifier '$VERIFY_CMD' exited $VERIFY_RC — rejecting promise, continuing."
       VERIFY_FEEDBACK="⛔ DETERMINISTIC VERIFIER FAILED. You emitted the completion promise, but \`$VERIFY_CMD\` exited ${VERIFY_RC} (non-zero), so the promise is REJECTED and the work is NOT done. Do NOT emit the promise again until \`$VERIFY_CMD\` exits 0 — and never weaken the verifier to force a pass. Last 25 lines of verifier output:
 ${VERIFY_TAIL}"
     else
-      echo "✅ Ralph loop: Promise detected — '$COMPLETION_PROMISE'. Loop complete." >&2
+      note "✅ Ralph loop: Promise detected — '$COMPLETION_PROMISE'. Loop complete."
       if [[ -f "$RALPH_PROGRESS_FILE" ]]; then
-        echo "   Run summary + lessons: .claude/ralph-state.local.md" >&2
+        note "   Run summary + lessons: .claude/ralph-state.local.md"
       fi
       rm "$RALPH_STATE_FILE"
       exit 0
@@ -129,7 +193,7 @@ NEXT_ITERATION=$((ITERATION + 1))
 PROMPT_TEXT=$(awk '/^---$/{i++; next} i>=2' "$RALPH_STATE_FILE")
 
 if [[ -z "$PROMPT_TEXT" ]]; then
-  echo "⚠️  Ralph loop: No prompt text in state file — stopping." >&2
+  note "⚠️  Ralph loop: No prompt text in state file — stopping."
   rm "$RALPH_STATE_FILE"
   exit 0
 fi

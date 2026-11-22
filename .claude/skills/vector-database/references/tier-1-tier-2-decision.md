@@ -41,15 +41,15 @@ Tick what applies to your data. Mostly Tier 1 column? → pgvector. Mostly Tier 
 
 | Criterion | Tier 1 (pgvector) | Tier 2 (Weaviate) |
 |---|---|---|
-| Joined with relational data? | ✓ Yes — vendors / rules JOIN other tables | ✗ No — pure text content |
-| Filtered by SQL aggregates / PostGIS / multi-table predicates? | ✓ Yes (`ST_Within`, multi-table joins) | ✗ Mostly tenant + maybe property |
-| Strong consistency required? | ✓ Yes — vendor onboarded → MUST match instantly | ✗ No — chunk indexed → readable in seconds is fine |
-| Hybrid search required? (BM25 + vector) | ✗ No — vector-only acceptable | ✓ Yes — exact phrases ("Section 5.3", "$2,400") matter |
-| Reranking required? | ✗ Not at MVP scale | ✓ Yes — production lease/FAQ QA needs it |
+| Joined with relational data? | ✓ Yes — entity profiles / rules JOIN other tables | ✗ No — pure text content |
+| Filtered by SQL aggregates / PostGIS / multi-table predicates? | ✓ Yes (`ST_Within`, multi-table joins) — mind filtered-ANN recall (`ann-vs-knn.md`) | ✗ Mostly tenant + a few metadata filters |
+| Strong consistency required? | ✓ Yes — new entity row → MUST match instantly | ✗ No — chunk indexed → readable in seconds is fine |
+| Hybrid search required? (BM25 + vector) | Possible in SQL (vector CTE + `tsvector` CTE + RRF — `rag-pipeline-patterns.md`) | ✓ Native `hybrid()` — exact phrases ("Section 5.3", "$2,400") matter |
+| Reranking required? | Decide by eval, not by store | Decide by eval, not by store |
 | Scale per tenant | Thousands → low millions of rows | Millions → billions of chunks |
 | User-blocking latency budget | <50ms (results page) | <500ms (chat response, can stream) |
 | Schema flexibility | Stable — Alembic migration per change | Flexible — chunks vary per document |
-| Multi-tenancy isolation strength | Logical (`WHERE tenant_id = ?`) | Physical (`with_tenant()` shards) |
+| Multi-tenancy isolation | `WHERE tenant_id` + RLS (`FORCE ROW LEVEL SECURITY`) or partitions | Native tenant shards (`with_tenant()`) |
 
 If your data hits ≥4 left-column boxes → **Tier 1**. If it hits ≥4 right-column boxes → **Tier 2**. If it splits roughly 50/50, your data may be in the wrong shape — re-think before adding it.
 
@@ -57,23 +57,23 @@ If your data hits ≥4 left-column boxes → **Tier 1**. If it hits ≥4 right-c
 
 ### "Why not put everything in Weaviate?"
 
-- Weaviate doesn't `JOIN` with Postgres. Vendor matching needs `vendors JOIN vendor_coverage` + `ST_Within` (PostGIS). Putting it in Weaviate forces denormalisation and 2-database write consistency.
-- Weaviate has no PostGIS. Geo filtering on coverage areas would happen client-side after pulling all vendors — terrible.
-- Weaviate Cloud is more expensive per row than pgvector (which sits inside your existing PostgreSQL).
-- Real-time freshness — vendor onboarded at T must match at T+1ms, not T+5s.
+- Weaviate doesn't `JOIN` with Postgres. Entity matching like `providers JOIN coverage_areas` + `ST_Within` (PostGIS) would force denormalisation and two-database write consistency.
+- Weaviate has no PostGIS polygon predicates. Geo filtering on coverage areas would happen client-side after pulling candidates.
+- A second managed store adds cost and operations; pgvector sits inside your existing PostgreSQL (compare current pricing for your sizes).
+- Transactional freshness — a row committed at T is visible to the next query in the same database.
 
 ### "Why not put everything in pgvector?"
 
-- pgvector HNSW index is fine up to ~10M vectors per table; beyond that, latency degrades. Lease chunks easily hit billions across all tenants.
-- pgvector hybrid search (combining `tsvector` BM25 with cosine) requires hand-rolled SQL and rank-fusion — Weaviate's `hybrid()` is one line with proper score fusion.
-- pgvector multi-tenancy is filter-only (`WHERE tenant_id = ?`). Weaviate's native multi-tenancy gives **physical sharding per tenant** — required when GDPR, data privacy, or regulatory isolation demands physical separation.
+- Very large chunk corpora strain one PostgreSQL instance (HNSW build memory, index size, vacuum); measure index build time and p95 latency at your projected size before committing — there is no fixed row limit.
+- pgvector hybrid search needs hand-written SQL (a vector CTE and a `ts_rank_cd` CTE fused with RRF — verified example in `rag-pipeline-patterns.md`); Weaviate's `hybrid()` is one call. Note `ts_rank_cd` is not BM25.
+- pgvector tenant isolation is a filter (+ RLS or partitions), and selective tenant filters lose ANN recall unless mitigated. Weaviate's native multi-tenancy gives one shard per tenant — useful when many small tenants need structural isolation.
 - Weaviate's reranker integration (Cohere, Voyage, BGE modules) is plug-and-play; in pgvector you build it yourself.
 
 ## Canonical placement examples (adapt to your domain)
 
 | Vector data | Tier | Reason |
 |---|---|---|
-| **Entity profile embeddings** (e.g. vendors, providers) | Tier 1 | JOIN with entity tables, geo filters, ratings |
+| **Entity profile embeddings** (e.g. suppliers, providers) | Tier 1 | JOIN with entity tables, geo filters, ratings |
 | **Policy / rule embeddings** | Tier 1 | JOIN with rules tables; compliance flag filters required |
 | **Location / coverage embeddings** | Tier 1 | JOIN with location data + PostGIS coverage |
 | **Document clause chunks** (e.g. contracts, policies) | Tier 2 | Document ingestion path; QA agent retrieval |

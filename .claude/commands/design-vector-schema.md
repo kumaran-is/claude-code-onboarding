@@ -22,22 +22,23 @@ Generate a production-ready pgvector migration for the following:
    - Distance metric (cosine / L2 / inner product)
    - Migration format (Flyway `V{N}__*.sql` or Alembic `{revision}_.py`)
 
-3. **Select index type** based on row count:
-   - < 100K rows: IVFFlat (with ANALYZE reminder)
-   - ≥ 100K rows: HNSW
-   - Always default to HNSW if count is unknown
+3. **Select index type**:
+   - Default: HNSW (no training step; works on an empty table)
+   - IVFFlat only for fast builds / memory-constrained / mostly-static data, built after the data load with `lists` = rows/1000 (≤ 1M rows) or sqrt(rows) (> 1M); note `REINDEX INDEX CONCURRENTLY` after large distribution changes (`ANALYZE` does not re-cluster)
+   - Dimension > 2000 → stop: HNSW/IVFFlat on `vector` cannot index it; propose reduced dimensions or a `halfvec` expression index (pgvector ≥ 0.7)
+   - Table queried with a selective filter (tenant, category) → add the filtered-ANN mitigation (partial index, partition, or iterative scan on pgvector ≥ 0.8) per `references/ann-vs-knn.md` §Filtered ANN. A partial index whose predicate value is a bind parameter (`tenant_id = $2`) must ship with `SET LOCAL plan_cache_mode = force_custom_plan` in the query transaction (generic-plan trap)
 
 4. **Generate migration file** with:
    - `CREATE EXTENSION IF NOT EXISTS vector;` at top of `up()`
    - `vector({dims})` column — dimension from model table
-   - `embedding_model varchar(100) DEFAULT '{model}'`
+   - `embedding_model varchar(100)` — set by the writer, no `DEFAULT`; plus `CHECK (embedding IS NULL OR embedding_model IS NOT NULL)`
    - `embedded_at timestamptz`
-   - Correct index with matching ops class
+   - Correct index with matching ops class, created with `CREATE INDEX CONCURRENTLY` outside the migration transaction (Alembic: `op.get_context().autocommit_block()`)
    - Null guard partial index (`WHERE embedding IS NOT NULL`) for tables > 50K rows
    - Reversible `down()` section
    - Comment block: model, dims, distance metric, index params reasoning
 
-5. **Run `pgvector-schema-reviewer` agent** on the generated file before presenting to user.
+5. **Run `pgvector-schema-reviewer` agent** on the generated file before presenting to user. If you have a disposable database, apply up → down → up and report the commands and output; otherwise mark the round-trip NOT RUN.
 
 6. **Save file** to `src/main/resources/db/migration/` (Flyway) or `alembic/versions/` (Alembic) depending on project structure. If neither exists, save to current directory with correct naming convention.
 

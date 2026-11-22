@@ -6,7 +6,7 @@
 
 ## Overview
 
-Safe migration from one embedding model to another using the `/migrate-embedding-model` command. Covers dimension mismatch handling, zero-downtime strategy (dual-write → backfill → cutover), pgvector schema migration, and Weaviate collection recreation. Uses `pgvector-schema-reviewer` and `rag-pipeline-reviewer` agents for validation.
+Safe migration from one embedding model to another using the `/migrate-embedding-model` command. Covers dimension mismatch handling, zero-downtime strategy (dual-write → backfill → cutover), pgvector schema migration, and Weaviate collection recreation. Uses `pgvector-schema-reviewer` and `rag-implementation-reviewer` agents for validation.
 
 ---
 
@@ -164,18 +164,22 @@ Weaviate does not support in-place vectorizer changes — must create new collec
 **Step 1 — Create new collection with new vectorizer**:
 ```python
 # Use weaviate-schema-reviewer agent on this code before running
+from weaviate.classes.config import Configure, DataType, Property
+
 client.collections.create(
     name="DocumentsV2",
-    vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(
-        model="text-embedding-3-large"   # New model
+    vector_config=Configure.Vectors.text2vec_openai(
+        model="text-embedding-3-large",   # New model
+        source_properties=["content"],    # never rely on the all-properties default
     ),
     properties=[
-        wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
-        wvc.config.Property(name="embedding_model",
-                           data_type=wvc.config.DataType.TEXT),
-    ]
+        Property(name="content", data_type=DataType.TEXT),
+        Property(name="embedding_model", data_type=DataType.TEXT),
+    ],
 )
 ```
+
+`vectorizer_config=Configure.Vectorizer.*` is deprecated (weaviate-client 4.24.1 emits Dep024 on `create()`); see `.claude/skills/vector-database/references/weaviate-collection-patterns.md`.
 
 **Step 2 — Backfill new collection**:
 ```python
@@ -208,7 +212,7 @@ with new_collection.batch.dynamic() as batch:
 - `embedding_model` metadata column
 - Migration is reversible
 
-**`rag-pipeline-reviewer`** — review the updated pipeline:
+**`rag-implementation-reviewer`** — review the updated pipeline:
 - Model name is pinned (not `latest`)
 - Chunking strategy unchanged or documented reason for change
 - Reranking still present

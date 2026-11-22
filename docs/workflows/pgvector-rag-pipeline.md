@@ -78,7 +78,7 @@ End-to-end pgvector RAG pipeline: schema design → pipeline scaffold → index 
 **Command**: `/scaffold-rag-pipeline [pipeline-name] pgvector [use-case]`
 **Source**: `commands/scaffold-rag-pipeline.md`
 **Skill**: `vector-database` with RAG pipeline reference
-**Agent**: `rag-pipeline-reviewer` (after generation)
+**Agent**: `rag-implementation-reviewer` (after generation)
 
 **Generated files** (from `commands/scaffold-rag-pipeline.md`):
 ```
@@ -108,7 +108,7 @@ src/<pipeline-name>/
 **Embedding API**: Always batch requests — never embed one at a time in a loop
 
 **Produces**: Complete RAG pipeline with all components
-**Gate**: `rag-pipeline-reviewer` agent passes; tests pass
+**Gate**: `rag-implementation-reviewer` agent passes; tests pass
 
 ---
 
@@ -154,8 +154,7 @@ src/<pipeline-name>/
 - Vibe: *"Operator-index mismatch is a silent full-table scan — caught here, not in prod"*
 - Checks: operator-index alignment, dimension vs model match, null guard presence, `embedding_model` metadata column, migration reversibility
 
-**Agent 2**: `rag-pipeline-reviewer`
-- Vibe: *"Unranked retrieval and unpinned models are production incidents waiting to happen"*
+**Agent 2**: `rag-implementation-reviewer`
 - Checks: embedding model pinned (not `latest`), chunking strategy justified, hybrid vs pure-vector documented, reranking present, null guards on retrieval results, error handling on embedding API calls
 
 **Gate**: Both agents pass; zero CRITICAL findings
@@ -168,9 +167,9 @@ src/<pipeline-name>/
 |-------|--------------|----------|------|
 | 1 — Decide | Load `vector-database` skill | Key decisions made | pgvector vs Weaviate decided |
 | 2 — Schema | `/design-vector-schema` + `pgvector-schema-reviewer` | Migration file | Agent passes |
-| 3 — Pipeline | `/scaffold-rag-pipeline pgvector` + `rag-pipeline-reviewer` | Pipeline files | Agent passes + tests pass |
+| 3 — Pipeline | `/scaffold-rag-pipeline pgvector` + `rag-implementation-reviewer` | Pipeline files | Agent passes + tests pass |
 | 4 — Index tuning | `/tune-vector-index` | Tuned index SQL | p95 latency target met |
-| 5 — Review | `pgvector-schema-reviewer` + `rag-pipeline-reviewer` | Findings | Zero CRITICAL |
+| 5 — Review | `pgvector-schema-reviewer` + `rag-implementation-reviewer` | Findings | Zero CRITICAL |
 
 ---
 

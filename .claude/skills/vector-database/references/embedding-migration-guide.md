@@ -117,139 +117,78 @@ ALTER TABLE {table}
 Weaviate does not support in-place dimension changes. Create a new collection.
 
 ```python
-import weaviate
-import weaviate.classes as wvc
+from weaviate.classes.config import Configure, VectorDistances
 
-# Step 1: Create new collection with new model
+# Step 1: Create the new collection (current v4 API; copy multi-tenancy and inverted-index settings)
 client.collections.create(
     name="{CollectionName}_v2",
-    vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_openai(
-        model="{new_model}",
+    vector_config=Configure.Vectors.self_provided(          # or Configure.Vectors.text2vec_<provider>(model=...)
+        vector_index_config=Configure.VectorIndex.hnsw(distance_metric=VectorDistances.COSINE),
     ),
-    vector_index_config=wvc.config.Configure.VectorIndex.hnsw(
-        distance_metric=wvc.config.VectorDistances.COSINE,
+    multi_tenancy_config=Configure.multi_tenancy(           # same tenancy model as the original
+        enabled=old_config.multi_tenancy_config.enabled,
+        auto_tenant_creation=old_config.multi_tenancy_config.auto_tenant_creation,
     ),
-    properties=[ ... ],  # same properties as original
+    properties=[...],                                       # same properties as the original
 )
 
-# Step 2: Re-ingest all objects (see Re-Embedding Script)
-# Step 3: Update application to use "{CollectionName}_v2"
-# Step 4: Delete old collection after cutover
+# Step 2: Re-ingest every object (per tenant) through the embedding chokepoint, stable uuid5 ids
+# Step 3: Recall gate on the golden set (shadow Recall@k >= baseline - 0.02), then switch reads via config/alias
+# Step 4: Delete the old collection only after the rollback window
 client.collections.delete("{CollectionName}")
-client.collections.get("{CollectionName}_v2").config.update(
-    # Can rename via backup/restore; or just keep _v2 name
-)
 ```
+`old_config = client.collections.use("{CollectionName}").config.get()`. Collection aliases (`client.alias.create(alias_name=..., target_collection=...)` / `client.alias.update(alias_name=..., new_target_collection=...)` in weaviate-client 4.24.1; the server must support aliases — check your version) let the application keep one name across the switch; otherwise switch the collection name in configuration.
 
 ---
 
 ## Re-Embedding Script
 
+Resumable, keyset-paginated, one transaction per batch, embeddings through the chokepoint (which asserts dimensions), model stamped on every row, identifiers validated. *Verified on PG16 + pgvector 0.6.2 with a scripted embedder: 250 rows, one pre-filled row skipped on resume, 0 remaining, all rows stamped; an injected table name is rejected.*
+
 ```python
-#!/usr/bin/env python3
-"""
-Re-embedding script for pgvector migration.
-Run AFTER Phase 1 (expand) migration.
-
-Usage:
-    python scripts/re_embed.py \
-        --table vendors \
-        --text-col description \
-        --from-col embedding \
-        --to-col embedding_v2 \
-        --model text-embedding-3-large \
-        --batch-size 100
-"""
-
+"""Resumable re-embed backfill into the shadow column (run AFTER the expand migration)."""
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Sequence
+
 import asyncpg
-import argparse
-from openai import AsyncOpenAI
-import os
-import time
+from pgvector import Vector
 
-openai_client = AsyncOpenAI()
+logger = logging.getLogger("re_embed")
+EmbedDocs = Callable[[Sequence[str]], Awaitable[list[list[float]]]]   # EmbeddingService(...).embed(..., "RETRIEVAL_DOCUMENT")
 
 
-async def re_embed(
-    pool: asyncpg.Pool,
-    table: str,
-    text_col: str,
-    from_col: str,
-    to_col: str,
-    model: str,
-    batch_size: int = 100,
-) -> None:
-    # Count pending rows
-    total = await pool.fetchval(
-        f"SELECT COUNT(*) FROM {table} WHERE {to_col} IS NULL"
-    )
-    print(f"Re-embedding {total} rows in {table} using {model}")
+def ident(name: str) -> str:
+    if not name.replace("_", "").isalnum():
+        raise ValueError(f"bad identifier: {name!r}")
+    return f'"{name}"'
 
-    processed = 0
+
+async def re_embed(pool: asyncpg.Pool, embed_docs: EmbedDocs, table: str, text_col: str,
+                   to_col: str, model_col: str, model: str, batch_size: int = 100,
+                   pause_s: float = 0.1) -> int:
+    t, txt, dst, mdl = map(ident, (table, text_col, to_col, model_col))
+    select_sql = (f"SELECT id, {txt} AS body FROM {t} WHERE {dst} IS NULL AND {txt} IS NOT NULL "
+                  f"AND id > $1 ORDER BY id LIMIT $2")
+    update_sql = (f"UPDATE {t} AS d SET {dst} = v.e, {mdl} = $3 "
+                  f"FROM unnest($1::bigint[], $2::vector[]) AS v(id, e) WHERE d.id = v.id")
+    last_id, done = 0, 0
     while True:
-        # Fetch a batch
-        rows = await pool.fetch(
-            f"""
-            SELECT id, {text_col}
-            FROM {table}
-            WHERE {to_col} IS NULL
-              AND {text_col} IS NOT NULL
-            LIMIT $1
-            FOR UPDATE SKIP LOCKED
-            """,
-            batch_size,
-        )
-
+        rows = await pool.fetch(select_sql, last_id, batch_size)       # keyset: resumable, no OFFSET
         if not rows:
             break
+        vectors = await embed_docs([r["body"] for r in rows])
+        async with pool.acquire() as conn, conn.transaction():
+            await conn.execute(update_sql, [r["id"] for r in rows], [Vector(v) for v in vectors], model)
+        last_id, done = rows[-1]["id"], done + len(rows)
+        logger.info("re_embed_progress", extra={"table": table, "done": done, "last_id": last_id})
+        await asyncio.sleep(pause_s)                                    # never time.sleep in async code
+    return done
 
-        texts = [r[text_col] for r in rows]
-        ids   = [r["id"] for r in rows]
-
-        # Generate embeddings
-        response = await openai_client.embeddings.create(
-            input=texts,
-            model=model,
-        )
-        embeddings = [item.embedding for item in response.data]
-
-        # Write back
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for row_id, embedding in zip(ids, embeddings):
-                    await conn.execute(
-                        f"UPDATE {table} SET {to_col} = $1 WHERE id = $2",
-                        embedding,
-                        row_id,
-                    )
-
-        processed += len(rows)
-        print(f"  Progress: {processed}/{total} ({100*processed//total}%)")
-        time.sleep(0.1)  # rate limiting pause
-
-    print(f"Done. Re-embedded {processed} rows.")
-
-
-async def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--table",      required=True)
-    parser.add_argument("--text-col",   required=True)
-    parser.add_argument("--from-col",   required=True)
-    parser.add_argument("--to-col",     required=True)
-    parser.add_argument("--model",      required=True)
-    parser.add_argument("--batch-size", type=int, default=100)
-    args = parser.parse_args()
-
-    pool = await asyncpg.create_pool(os.environ["DATABASE_URL"])
-    await re_embed(pool, args.table, args.text_col,
-                   args.from_col, args.to_col, args.model, args.batch_size)
-    await pool.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Wiring: pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], init=pgvector.asyncpg.register_vector)
 ```
+
+Run one worker per table (or shard by id range); transient embed errors are retried inside the chokepoint and anything else stops the run, which resumes from the last committed batch. Never `UPDATE` the live column in place while serving.
 
 ---
 
@@ -276,18 +215,11 @@ If migration fails during Phase 4 (contract), restore from pre-migration backup 
 tokens_per_row = avg_chars / 4  (rough approximation)
 total_tokens = tokens_per_row * row_count
 
-# OpenAI pricing (as of 2025):
-# text-embedding-3-small: $0.020 / 1M tokens
-# text-embedding-3-large: $0.130 / 1M tokens
-
-cost_small = (total_tokens / 1_000_000) * 0.020
-cost_large = (total_tokens / 1_000_000) * 0.130
+# price_per_1m = current price from the provider's pricing page (prices change — do not hard-code)
+cost = (total_tokens / 1_000_000) * price_per_1m
 ```
 
-**Example:** 100K vendor descriptions, avg 200 chars:
-- `total_tokens` = 100,000 × 50 = 5M tokens
-- `text-embedding-3-small`: ~$0.10
-- `text-embedding-3-large`: ~$0.65
+**Example:** 100K product descriptions, avg 200 chars → `total_tokens` ≈ 100,000 × 50 = 5M tokens → cost = 5 × `price_per_1m`. Add the cost of re-embedding queries in any shadow/dual-read period.
 
 ---
 

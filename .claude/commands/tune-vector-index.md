@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Recommend and generate an optimized pgvector index configuration.
 
-**Input:** $ARGUMENTS (e.g., "vendors 250000 50ms IVFFlat")
+**Input:** $ARGUMENTS (e.g., "documents 250000 50ms IVFFlat")
 
 ## Steps
 
@@ -47,10 +47,18 @@ Recommend and generate an optimized pgvector index configuration.
    | High recall (<50ms, recall>0.99) | 32 | 128 | 80 |
 
    ### IVFFlat parameter tuning:
-   | Row count | lists | probes |
+   | Row count | lists | probes (start) |
    |-----------|-------|--------|
-   | 10K–100K | sqrt(row_count) | lists/10 |
-   | 100K–1M | row_count/1000 | 10 |
+   | ≤ 1M | row_count / 1000 | sqrt(lists) |
+   | > 1M | sqrt(row_count) | sqrt(lists) |
+
+   (pgvector README formula. Build IVFFlat only after the data is loaded.)
+
+   ### Dimension limit
+   HNSW/IVFFlat on `vector` support ≤ 2000 dims. Above that: reduced dimensions or a `halfvec` expression index (≤ 4000 dims, pgvector ≥ 0.7).
+
+   ### Filtered queries
+   If the table is queried with a selective `WHERE` (tenant, category, `is_current`), the filter runs after the index scan and can return fewer than `LIMIT` rows. Recommend iterative scans (`hnsw.iterative_scan` / `ivfflat.iterative_scan`, pgvector ≥ 0.8), a partial index per hot value, partitioning, or exact scan for small scopes — `vector-database/references/ann-vs-knn.md` §Filtered ANN. When recommending a partial index: a partial index on a bound parameter (`tenant_id = $2`) needs `SET LOCAL plan_cache_mode = force_custom_plan`, or it silently stops being used after 5 prepared executions. Check the server's pgvector version (`SELECT extversion FROM pg_extension WHERE extname = 'vector'`) before emitting iterative-scan settings: below 0.8 the `SET` can be accepted silently and do nothing.
 
 5. **Generate SQL**:
 
@@ -63,17 +71,22 @@ Recommend and generate an optimized pgvector index configuration.
      ON {table} USING {hnsw|ivfflat} (embedding {ops_class})
      WITH ({params});
 
-   -- Analyze after creation (IVFFlat: also after any bulk insert)
+   -- Refresh planner statistics
    ANALYZE {table};
+
+   -- IVFFlat only: after a large change in data distribution, rebuild the lists.
+   -- ANALYZE does not re-cluster an IVFFlat index.
+   REINDEX INDEX CONCURRENTLY {table}_embedding_ivfflat_idx;
    ```
 
-   Note: `CONCURRENTLY` avoids table lock in production.
+   Note: `CONCURRENTLY` avoids blocking writes but cannot run inside a transaction block — run these statements outside the migration transaction (Alembic: autocommit block; see `python-dev/reference/alembic-migration-safety.md`). Size `maintenance_work_mem` for the build.
 
 6. **Generate EXPLAIN ANALYZE template**:
    ```sql
    -- Run this to verify index is being used
-   SET enable_seqscan = off;  -- force index for testing
-   SET hnsw.ef_search = {ef_search};  -- or ivfflat.probes = {probes}
+   BEGIN;
+   SET LOCAL enable_seqscan = off;              -- force index for testing only
+   SET LOCAL hnsw.ef_search = {ef_search};      -- or ivfflat.probes = {probes}
 
    EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
    SELECT id, 1 - (embedding <=> '{sample_vec}'::vector) AS similarity
@@ -81,16 +94,18 @@ Recommend and generate an optimized pgvector index configuration.
    WHERE embedding IS NOT NULL
    ORDER BY embedding <=> '{sample_vec}'::vector
    LIMIT 10;
-
-   RESET enable_seqscan;
+   ROLLBACK;
+   ```
+   Also compare the index result for a ≤ 1%-selective filter against an exact scan (`SET LOCAL enable_indexscan = off`) and report both row counts.
    ```
 
 7. **Generate query-time settings snippet** for application code:
    ```python
-   # In your database connection setup or per-query:
-   async with pool.acquire() as conn:
-       await conn.execute("SET hnsw.ef_search = {ef_search}")
-       # ... your vector query
+   # Per request, transaction-scoped. A plain SET on a pooled connection
+   # persists into the next request that borrows it.
+   async with pool.acquire() as conn, conn.transaction():
+       await conn.execute("SET LOCAL hnsw.ef_search = {ef_search}")
+       rows = await conn.fetch(SEARCH_SQL, query_vec, ctx.tenant_id, active_model, limit)
    ```
 
 8. **Provide monitoring queries**:

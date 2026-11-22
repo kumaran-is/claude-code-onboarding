@@ -60,9 +60,69 @@ ANN doesn't mean "bad recall" — **well-tuned HNSW can often reach 95–99% rec
 - **HNSW `ef_search`** (query-time) — higher = better recall, slower queries
 - **HNSW `ef_construction`** (build-time) — higher = better-quality graph, slower index build
 - **HNSW `M`** (build-time) — higher = better recall, more memory
-- **IVFFlat `nprobe`** (query-time) — higher = better recall, slower queries
+- **IVFFlat `probes`** (query-time, `ivfflat.probes`) — higher = better recall, slower queries; start near `sqrt(lists)`
 
-**The golden workflow:** Measure recall of your ANN config against KNN ground truth on a sample, then tune until recall@k is acceptable for your use case.
+**The golden workflow:** Measure recall of your ANN config against KNN ground truth on a sample, then tune until ANN-vs-exact overlap@k is acceptable for your use case. (This index-quality measure — the share of the exact top-k that ANN also returns — is distinct from retrieval Recall@K against labeled relevant chunks; metric formulas live in the `llm-evaluation` skill.)
+
+Set query-time knobs with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified on PG16: `SET LOCAL hnsw.ef_search = 100` reverts to 40 after commit; a session `SET` stays 100).
+
+---
+
+## Filtered ANN — isolation holds, recall does not
+
+pgvector applies the `WHERE` clause **after** the HNSW/IVFFlat index produces its candidate list (`hnsw.ef_search`, default 40). With a selective filter — a small tenant, a rare category, `is_current` on a mostly-superseded corpus — the query can return fewer than `LIMIT` rows or none. Unauthorized rows are still excluded (isolation is fine); the right rows are simply never reached.
+
+**Reproduced** on PostgreSQL 16 + pgvector 0.6.2 (20,000 rows, `vector(8)`, tenant 1 = 1% of rows, `LIMIT 10`):
+
+| Plan | Rows returned |
+|---|---|
+| HNSW, default `ef_search = 40` | **0** |
+| HNSW, `SET LOCAL hnsw.ef_search = 400` | 3–6 (two seeded fixtures) |
+| Exact scan (`SET LOCAL enable_indexscan = off`) | 10 |
+| Partial HNSW index `WHERE tenant_id = 1`, tenant bound as `$2` (asyncpg), 7 calls on one connection | `[10, 10, 0, 0, 0, 0, 0]` — see the generic-plan trap below |
+| Same, `SET LOCAL plan_cache_mode = force_custom_plan` in the transaction | `[10] × 7` |
+| Same, tenant written as a literal (`tenant_id = 1`) | 10 |
+
+Fixes, in order of preference:
+
+| Fix | When | Notes |
+|---|---|---|
+| Iterative index scans | pgvector ≥ 0.8.0 | `SET LOCAL hnsw.iterative_scan = relaxed_order` (or `strict_order`; `ivfflat.iterative_scan = relaxed_order`); bounded by `hnsw.max_scan_tuples` (default 20000) / `ivfflat.max_probes`. Not executed here — verify on your version |
+| Partial index per hot filter value | Few, stable filter values (e.g. `is_current`, a large tenant) | `CREATE INDEX … USING hnsw (embedding vector_cosine_ops) WHERE is_current`. If the predicate's value is a bind parameter (`tenant_id = $2`), you MUST also `SET LOCAL plan_cache_mode = force_custom_plan` (generic-plan trap below) |
+| Partition by tenant (or list/range key) | Many tenants, tenant-scoped queries | Each partition has its own index; the planner prunes |
+| Exact scan for small scopes | Tenant below a row threshold | Exact search over a few thousand rows is cheap and has perfect recall |
+| Raise `ef_search` | Stopgap only | Helps, does not guarantee `LIMIT` rows (3–6 of 10 above) |
+
+```sql
+BEGIN;
+SET LOCAL hnsw.iterative_scan = relaxed_order;   -- pgvector >= 0.8.0
+SET LOCAL hnsw.ef_search = 100;
+SELECT id FROM doc_chunks
+WHERE tenant_id = $1 AND embedding_model = $2 AND is_current
+ORDER BY embedding <=> $3 LIMIT 10;
+COMMIT;
+```
+
+**Generic-plan trap (partial indexes with bound parameters).** Drivers that use server-side prepared statements (asyncpg always; SQLAlchemy's asyncpg dialect; psycopg 3 once a query reaches its `prepare_threshold`) let PostgreSQL switch a statement to a **generic plan**: under the default `plan_cache_mode = auto` the first five executions get custom plans, after which the planner may keep a generic plan built without the parameter values. A generic plan cannot prove `tenant_id = $2` implies the partial index's `WHERE tenant_id = 1`, so it falls back to the full HNSW index and the hot tenant gets 0 rows again — silently, from the 6th call onward on that connection. Executed above: `pg_prepared_statements.custom_plans` stopped at 5 while `generic_plans` grew. Pick one:
+
+- `SET LOCAL plan_cache_mode = force_custom_plan` in the same transaction as the query (executed: `[10] × 7`). Costs one planning step per call; measure it on your query.
+- Inline the filter value as a literal, taken from a server-side allowlist of hot values (never from request input), so the predicate is visible to the planner.
+- Use the exact-scan path for the scope (`SET LOCAL enable_indexscan = off`), which does not depend on plan choice.
+
+Literal predicates in the query text (`AND is_current`, `AND embedding IS NOT NULL`) are not affected: the generic plan still sees them.
+
+```sql
+BEGIN;
+SET LOCAL plan_cache_mode = force_custom_plan;   -- partial index on a bound tenant_id
+SELECT id FROM doc_chunks
+WHERE tenant_id = $1 AND embedding_model = $2 AND is_current
+ORDER BY embedding <=> $3 LIMIT 10;
+COMMIT;
+```
+
+**`iterative_scan` on pgvector < 0.8 can be a silent no-op.** On pgvector 0.6.2, `SET LOCAL hnsw.iterative_scan = relaxed_order` was **accepted without error** in a backend where the vector library was not yet loaded (PostgreSQL stores it as a placeholder setting); it errored ("reserved prefix") only once the library was loaded. So the setting is not proof that iterative scans are active. Check the version at startup and fail closed: `SELECT extversion FROM pg_extension WHERE extname = 'vector'` must be ≥ `0.8.0` before you rely on fix #1.
+
+**Required test:** a fixture with a filter matching ≤ 1% of rows asserts `count == LIMIT` (and equals the exact-scan ids, modulo relaxed ordering). Run the query **more than 5 times on one pooled connection** with the production driver, so a generic-plan switch is caught. Weaviate multi-tenancy avoids this structurally (one shard per tenant); Weaviate property filters inside a shared collection are applied during the HNSW search, but still measure with the same test.
 
 ---
 
@@ -138,7 +198,8 @@ This gives the best of both worlds: ANN handles scale, exact KNN handles the nar
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
 | Production retrieval slow at scale | Using exact KNN on large dataset | Switch to HNSW |
-| ANN recall noticeably worse than KNN baseline | `ef_search` / `nprobe` too low | Increase ANN search params, re-measure |
+| ANN recall noticeably worse than KNN baseline | `ef_search` / `probes` too low | Increase ANN search params, re-measure |
+| Small tenant or rare filter returns 0–few rows | Filter applied after the ANN candidate list | See §Filtered ANN |
 | High latency even with HNSW | `ef_search` set too high, or k too large | Tune down, or add reranker on smaller top-k |
 | Right chunks exist but never retrieved | Embedding model mismatch, not an ANN issue | Validate with KNN — if KNN also misses, fix embeddings/chunking |
 | Memory pressure on vector DB | HNSW graph links + high `M` value | Lower `M`, or shard the index |

@@ -143,7 +143,7 @@ After implementation, dispatch the matching reviewer:
 | SQL migrations, schema files | `postgresql-database-reviewer` |
 | pgvector schema | `pgvector-schema-reviewer` |
 | Weaviate collections | `weaviate-schema-reviewer` |
-| RAG pipeline code | `rag-pipeline-reviewer` |
+| RAG pipeline code | `rag-implementation-reviewer` |
 | Auth, crypto, input handling | `security-reviewer` |
 | UI components | `ui-standards-expert` |
 | Accessibility-sensitive UI | `accessibility-auditor` |

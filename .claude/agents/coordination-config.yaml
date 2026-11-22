@@ -151,8 +151,8 @@ agent_registry:
       domain: Weaviate collection schema, vectorizer config, property types, module settings
       can_write: false
 
-    - name: rag-pipeline-reviewer
-      domain: RAG retrieval pipelines, embedding generation, chunking strategies, retrieval quality
+    - name: rag-implementation-reviewer
+      domain: RAG code + full system — embedding, chunking, retrieval, reranking, permission-aware filtering, generation, citations, evals
       can_write: false
 
     - name: security-reviewer
@@ -365,14 +365,14 @@ task_distribution:
     secondary:
       - pgvector-schema-reviewer
       - postgresql-database-reviewer
-      - rag-pipeline-reviewer       # If file is a retrieval pipeline
+      - rag-implementation-reviewer       # If file is a retrieval pipeline
 
   - pattern: "weaviate/**"
     signals: ["weaviate", "WeaviateClient", "collection.create", "vectorizer"]
     primary: python-dev
     secondary:
       - weaviate-schema-reviewer
-      - rag-pipeline-reviewer
+      - rag-implementation-reviewer
 
   # Infrastructure / DevOps
   - pattern: "*.tf"
@@ -469,7 +469,7 @@ cross_consultation:
       consult: agentic-ai-reviewer
       required: true
     - when: "RAG retrieval pipeline added or modified"
-      consult: rag-pipeline-reviewer
+      consult: rag-implementation-reviewer
       required: true
     - when: "vector store integration (pgvector or Weaviate)"
       consult: [pgvector-schema-reviewer, weaviate-schema-reviewer]
@@ -617,8 +617,8 @@ conflict_resolution_priority:
     domain: "Weaviate collection schema correctness"
 
   - rank: 10
-    agent: rag-pipeline-reviewer
-    domain: "RAG pipeline retrieval quality and safety"
+    agent: rag-implementation-reviewer
+    domain: "RAG pipeline retrieval quality, security and generation"
 
   - rank: 11
     agent: architect
@@ -767,7 +767,7 @@ capabilities:
     - plan-challenger               # Adversarial review only
     - postgresql-database-reviewer  # Review + EXPLAIN ANALYZE (Bash) — no writes
     - pr-test-analyzer              # Analysis only
-    - rag-pipeline-reviewer         # Review only
+    - rag-implementation-reviewer         # Review only
     - reality-checker               # Screenshot validation, no writes
     - riverpod-reviewer             # Review only
     - security-reviewer             # Audit + Bash scan — no writes
@@ -894,7 +894,7 @@ dispatch_examples:
     trigger: "Retrieval chain, embedding generation, or vector store query code"
     primary: agentic-ai-dev
     reviewers:
-      - rag-pipeline-reviewer
+      - rag-implementation-reviewer
       - pgvector-schema-reviewer   # If using pgvector
       - weaviate-schema-reviewer   # If using Weaviate
       - security-reviewer          # Retrieval pipelines can leak data

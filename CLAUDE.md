@@ -46,7 +46,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 >
 > **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools. Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
 >
-> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 
@@ -64,7 +64,8 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Java / Spring Boot | `.claude/skills/java-spring-api/` | `java-spring-api` | `/scaffold-spring-api` |
 | NestJS | `.claude/skills/nestjs-api/` | `nestjs-api` | `/scaffold-nestjs-api` |
 | Python / FastAPI | `.claude/skills/python-dev/` | `python-dev` | `/scaffold-python-api` |
-| Agentic AI | `.claude/skills/agentic-ai-dev/` | `agentic-ai-dev` | `/scaffold-agentic-ai` |
+| Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
+| Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
 | Flutter | `.claude/skills/flutter-mobile/` | `flutter-mobile` | `/scaffold-flutter-app` |
 | Flutter GenUI (A2UI) | `.claude/skills/flutter-genui/` | `flutter-genui` | `/scaffold-genui` |
@@ -90,14 +91,19 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | AI Launch Gate | `.claude/skills/ai-launch-check/` | — | `/ai-launch-check` |
 | AI Feature Audit | `.claude/skills/ai-audit/` | — | `/ai-audit` |
 | AI Incident Response | `.claude/skills/ai-incident-response/` | — | `/ai-incident-response` |
-| AI Design Playbook | `.claude/skills/ai-playbook/` | — | `/ai-playbook` |
+| AI Design Playbook + lifecycle router (design → inference → memory → agents/tools → RAG → evals → review → guardrails → observability → LLMOps) | `.claude/skills/ai-playbook/` | — | `/ai-playbook` |
+| AI Evaluation process, CI tiers, promotion gates | `.claude/skills/eval-guide/` | `ai-eval-designer` | — |
+| Eval metric formulas + A/B statistics (canonical) | `.claude/skills/llm-evaluation/` (`reference/evaluation-metrics.md` §2) | — | — |
+| AI Observability (OTel GenAI, tokens/cost, Langfuse optional) | `.claude/skills/deployment-ci-cd/reference/ai-observability.md` | — | — |
+| LLMOps: prompt/model release, canary, rollback | `.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md` | `deployment-engineer` | — |
 | RAG Architecture Design | `.claude/skills/rag-architect/` | — | `/rag-design` |
 | RAG Failure Debugging | `.claude/skills/rag-debugger/` | — | `/rag-debug` |
 | RAG Evaluation Framework | `.claude/skills/rag-evaluator/` | — | `/rag-eval-init` |
-| RAG Security Controls | `.claude/skills/rag-security-reviewer/` | — | — |
+| RAG Security Controls (canonical: permission-aware, tenant-scoped retrieval) | `.claude/skills/rag-security-reviewer/` | — | — |
 | RAG System Audit | — | — | `/rag-review` |
 | RAG Failure Trace | — | — | `/rag-failure-trace` |
-| Streaming Protocols (SSE, NDJSON, WebSocket, MCP transport) | `.claude/skills/streaming-protocols/` | — | — |
+| Streaming Protocols (SSE, NDJSON, WebSocket, MCP transport; server stream lifecycle) | `.claude/skills/streaming-protocols/` (`reference/server-stream-lifecycle.md`) | — | — |
+| Voice AI (optional: STT, TTS, live audio) | `.claude/skills/voice-ai-development/` | — | — |
 
 ### Code Review Agents
 
@@ -107,17 +113,17 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Java / Spring | `spring-reactive-reviewer` |
 | NestJS | `nestjs-reviewer` |
 | Agentic AI | `agentic-ai-reviewer` |
+| Google ADK | `adk-reviewer` |
 | Flutter | `riverpod-reviewer`, `flutter-security-expert` |
 | Security | `security-reviewer` |
 | Database | `postgresql-database-reviewer` |
 | pgvector schema | `pgvector-schema-reviewer` |
 | Weaviate schema | `weaviate-schema-reviewer` |
-| RAG pipeline (code) | `rag-pipeline-reviewer` |
-| RAG full system | `rag-implementation-reviewer` |
+| RAG code + full system (canonical RAG reviewer) | `rag-implementation-reviewer` |
 | RAG eval execution | `rag-eval-runner` |
 | UI/UX | `ui-standards-expert`, `frontend-design`, `accessibility-auditor` |
-| AI Security | `ai-security-reviewer` |
-| AI Evals | `ai-eval-designer` |
+| AI Security + full AI review (autonomy, tools, injection, memory, cost, observability) | `ai-security-reviewer` |
+| AI Evals (design) / eval code review | `ai-eval-designer` / `eval-reviewer` |
 | Tech debt | `dedup-code-agent` |
 
 ## Common Commands

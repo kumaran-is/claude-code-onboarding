@@ -64,7 +64,7 @@ code-reviewer + security-reviewer + silent-failure-hunter + pr-test-analyzer
 ### LangGraph agent
 ```
 agentic-ai-reviewer + security-reviewer + silent-failure-hunter
-+ rag-pipeline-reviewer (if RAG components present)
++ rag-implementation-reviewer (if RAG components present)
 ```
 
 ### Any stack — pre-deploy gate
@@ -150,7 +150,7 @@ Load `references/synthesis-protocol.md`
 | Flutter feature | riverpod-reviewer, flutter-security-expert, accessibility-auditor, ui-standards-expert | Parallel |
 | Pre-deploy gate | [stack reviewer], security-reviewer, pr-test-analyzer → output-evaluator | Parallel then sequential |
 | Architecture validation | architect → plan-challenger → threat-modeling-expert | Sequential |
-| Agentic AI review | agentic-ai-reviewer, security-reviewer, rag-pipeline-reviewer, silent-failure-hunter | Parallel |
+| Agentic AI review | agentic-ai-reviewer, security-reviewer, rag-implementation-reviewer, silent-failure-hunter | Parallel |
 | DB schema | postgresql-database-reviewer → pgvector-schema-reviewer (if vector) | Sequential |
 
 ---

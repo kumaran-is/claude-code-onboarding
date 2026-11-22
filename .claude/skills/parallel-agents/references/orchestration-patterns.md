@@ -104,7 +104,7 @@ After parallel agents complete:
    "Review [file list] for prompt injection and agentic AI security risks.
    Check: input sanitization, tool output validation, privilege escalation."
 
-3. rag-pipeline-reviewer (only if RAG components present)
+3. rag-implementation-reviewer (only if RAG components present)
    "Review [file list] for RAG pipeline correctness.
    Check: embedding model pinned, chunking justified, reranking present, null guards."
 

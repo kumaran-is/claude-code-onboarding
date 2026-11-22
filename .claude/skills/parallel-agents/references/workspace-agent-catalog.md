@@ -60,7 +60,7 @@ Last verified: 2026-03-15
 | `postgresql-database-reviewer` | Query optimization, schema, security, performance | EXPLAIN ANALYZE recommendations |
 | `pgvector-schema-reviewer` | Vector columns, HNSW/IVFFlat indexes, dimension alignment | Vector schema validation |
 | `weaviate-schema-reviewer` | Collection definition, vectorizer, multi-tenancy | Collection safety report |
-| `rag-pipeline-reviewer` | Chunking strategy, model pinning, reranking, error handling | RAG pipeline gaps |
+| `rag-implementation-reviewer` | Chunking strategy, model pinning, reranking, error handling | RAG pipeline gaps |
 
 ### UI/Accessibility
 | Agent | What It Reviews | Output |
@@ -122,7 +122,7 @@ code-reviewer + security-reviewer + silent-failure-hunter + pr-test-analyzer
 
 ### LangGraph agent review
 ```
-agentic-ai-reviewer + security-reviewer + rag-pipeline-reviewer (if RAG) + silent-failure-hunter
+agentic-ai-reviewer + security-reviewer + rag-implementation-reviewer (if RAG) + silent-failure-hunter
 ```
 
 ### Pre-merge full audit

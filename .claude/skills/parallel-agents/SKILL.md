@@ -58,7 +58,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `postgresql-database-reviewer` | PostgreSQL | Query optimization, schema, security, performance |
 | `pgvector-schema-reviewer` | pgvector | Vector schema, index alignment, embedding model |
 | `weaviate-schema-reviewer` | Weaviate | Collection definition, vectorizer, multi-tenancy |
-| `rag-pipeline-reviewer` | RAG | Chunking, model pinning, reranking, error handling |
+| `rag-implementation-reviewer` | RAG | Chunking, model pinning, reranking, error handling |
 | `accessibility-auditor` | Accessibility | WCAG 2.1, Semantics, focus management |
 | `ui-standards-expert` | UI/UX | Design tokens, theming, touch targets |
 | `flutter-security-expert` | Flutter | Secure storage, certificate pinning, GDPR |
@@ -138,7 +138,7 @@ silent-failure-hunter     → error handling in async code
 ```
 agentic-ai-reviewer       → graph correctness, guardrails
 security-reviewer         → prompt injection, input validation
-rag-pipeline-reviewer     → chunking, model pinning (if RAG used)
+rag-implementation-reviewer     → chunking, model pinning (if RAG used)
 silent-failure-hunter     → tool error handling
 ```
 

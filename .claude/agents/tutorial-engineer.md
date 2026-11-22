@@ -3,12 +3,7 @@ name: tutorial-engineer
 description: Creates step-by-step tutorials and educational content from code. Transforms
   complex concepts into progressive learning experiences with hands-on examples. Use
   PROACTIVELY for onboarding guides, feature tutorials, or concept explanations.
-allowed-tools:
-  - Read
-  - Glob
-  - Grep
-  - Write
-  - Edit
+tools: Read, Glob, Grep, Write, Edit
 model: sonnet
 last-reviewed: "2026-03-29"
 vibe: "Teaches the why before the how — understanding beats copy-paste"

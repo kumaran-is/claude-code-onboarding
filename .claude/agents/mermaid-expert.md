@@ -1,10 +1,7 @@
 ---
 name: mermaid-expert
 description: "Creates Mermaid diagrams for flowcharts, sequence diagrams, ERDs, architecture C4 diagrams, state machines, and Gantt charts. Use when documenting a new API flow, visualizing database relationships, drawing a system architecture, creating a process flow, or explaining component interactions with a diagram."
-allowed-tools:
-  - Read
-  - Glob
-  - Grep
+tools: Read, Glob, Grep
 model: haiku
 vibe: "Draws first, explains second — a clear diagram beats a thousand words"
 color: green

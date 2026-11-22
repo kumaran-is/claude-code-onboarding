@@ -6,7 +6,7 @@ description: Developer Experience specialist. Improves tooling, setup automation
   workflow automation, git hooks, IDE config, and README improvements. NOT for code
   review — use code-reviewer for that.
 model: sonnet
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep
 vibe: "If setup takes more than 10 minutes, it needs automation"
 color: yellow
 emoji: "⚡"

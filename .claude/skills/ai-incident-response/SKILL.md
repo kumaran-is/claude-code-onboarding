@@ -3,12 +3,17 @@ name: ai-incident-response
 description: Run the AI incident response procedure when something is going wrong in production AI. Use when the user explicitly runs /ai-incident-response or says "AI incident", "model is broken", "production AI is failing", "we're seeing weird outputs in prod", "hallucination in production", or similar urgent phrasing.
 disable-model-invocation: true
 allowed-tools: Read, Write
-last-reviewed: 2026-05-17
+last-reviewed: 2026-11-22
+metadata:
+  triggers: AI incident, model is broken, hallucination in production, AI outage, provider quota exhausted
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
 ---
 
 # AI Incident Response
 
-> **Iron Law:** Stabilize before investigating. Pull the kill switch or roll back before debugging root cause. Curiosity about why it broke must never delay stopping the bleeding.
+## Iron Law
+
+**Stabilize before investigating. Pull the kill switch or roll back before debugging root cause. Curiosity about why it broke must never delay stopping the bleeding.**
 
 When AI production behavior degrades, follow the procedure from the AI Playbook (Layer 4 §4.3). The objective: stabilize first, investigate second, learn third.
 
@@ -23,16 +28,17 @@ Do these in order. Do not investigate root cause yet — that comes after the bl
    - Is it ongoing right now?
 
 2. **Decide on rollback or kill.** Check the Decision Record for rollback triggers. If the symptom matches:
-   - **Pull the kill switch** if the feature is causing user-visible harm. Confirm in chat before pulling.
-   - **Roll back to last known good version** (prompt, model, retrieval index, threshold) if the kill switch is too aggressive.
+   - **Pull the kill switch** if the feature is causing user-visible harm. Confirm in chat before pulling. The kill switch disables the AI path only; deterministic safety and manual paths keep working.
+   - **Roll back to last known good version** (prompt, model, retrieval index, threshold) if the kill switch is too aggressive. Mechanics (move the label/flag back, confirm the old version is served after the cache TTL by reading spans): `.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md` §5, §9.
    - **Reduce traffic** (drop the percentage rollout step) if the impact is bounded but worsening.
 
 3. **Capture the crime scene** before anything else changes:
-   - Model version
-   - Prompt version
+   - Model id per backend (the response model on the span, not the configured alias)
+   - Prompt name, label, version and content hash, and which registry tier served it (fresh / last-known-good / bundled)
+   - Feature-flag states at the time
    - Retrieval index version (if RAG)
    - Tool versions (if agent)
-   - A sample of bad outputs with their inputs (sanitized)
+   - Trace ids of bad outputs (read inputs from your own stores by id; copy samples only after PII scrubbing)
    - The time window
    - Affected users / tenants
 
@@ -63,16 +69,18 @@ Do these in order. Do not investigate root cause yet — that comes after the bl
 ## Stage 3: Investigate (after stabilization)
 
 8. **Identify root cause.** Common categories:
-   - Model regression (vendor pushed an update; pinning may have failed)
+   - Model regression (provider pushed an update; pinning may have failed)
    - Prompt regression (recent prompt change shipped without canary)
    - Retrieval regression (chunking strategy changed, embeddings stale, ACL break)
    - Tool regression (downstream API changed behavior)
    - Prompt injection (intentional or accidental)
    - Data drift (input distribution changed)
    - Threshold miscalibration (confidence weights no longer fit reality)
-   - Cost or rate limit overrun (no infrastructure failure, just bill shock)
+   - Cost overrun or runaway loop (budget/call-limit counters, per-organization spend)
+   - Provider quota or outage: distinguish billing/quota exhaustion (stop retries, alert the billing owner, report LLM-dependent CI/eval jobs as BLOCKED, not FAILED) from transient 429 rate limits (bounded backoff) and provider 5xx (fallback to an approved provider)
+   - Credential leak (key in a prompt, log, trace or repo): revoke and rotate FIRST, then investigate
 
-9. **Identify the eval gap.** Every confirmed incident represents an example your eval set didn't catch. Capture:
+9. **Identify the eval gap.** Every confirmed incident represents an example your eval set didn't catch. Fetch the trace by id, rebuild the input, and capture:
    - The input that triggered the failure
    - The expected behavior
    - The actual behavior
@@ -120,7 +128,7 @@ Do these in order. Do not investigate root cause yet — that comes after the bl
 ```
 
 11. **Update artifacts.**
-   - Add new eval cases to the golden dataset.
+   - Add new eval cases to the golden dataset through a reviewed PR: run a PII scrubber on anything derived from production traces before commit, and confirm the case FAILS on the pre-fix version and passes after the fix (never edit an existing golden case to make it pass).
    - Add new adversarial cases to the CI test catalog if applicable.
    - Update the Decision Record if assumptions changed.
    - Update kill-switch tests if a new failure mode is now reachable.
@@ -176,4 +184,6 @@ After Stage 2, before moving to Stage 3:
 - AI Playbook Layer 4 §4.3 Incident response: `.claude/skills/ai-playbook/playbook.md`
 - AI Playbook Layer 4 §4.4 Kill switch tests: `.claude/skills/ai-playbook/playbook.md`
 - Post-mortem template: embedded in Stage 4 of this skill
-- New evals after incident: run `/ai-eval-designer` with the incident case as input
+- New evals after incident: dispatch the `ai-eval-designer` agent (it is an agent, not a slash command) with the incident case as input
+- Trace fields to read during an incident: `.claude/skills/deployment-ci-cd/reference/ai-observability.md` §6, §10
+- Rollback, flags/kill switches and incident replay into the golden set before re-promoting: `.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md` §5, §8, §9

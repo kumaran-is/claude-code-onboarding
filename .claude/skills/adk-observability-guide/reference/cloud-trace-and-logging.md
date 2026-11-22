@@ -4,12 +4,13 @@
 
 ## Cloud Trace
 
-Always-on distributed tracing via `otel_to_cloud=True` in the FastAPI app. Tracks every agent invocation through LLM calls and tool executions with latency analysis and error visibility.
+Distributed tracing via `get_fast_api_app(..., trace_to_cloud=True)` (or `otel_to_cloud=True`, experimental) in the FastAPI app. Tracks every agent invocation through LLM calls and tool executions with latency analysis and error visibility.
 
 ```python
 # Scaffolded projects — pre-configured. Manual projects — add this:
-from google.adk.telemetry import setup_telemetry
-setup_telemetry(otel_to_cloud=True)
+from google.adk.cli.fast_api import get_fast_api_app
+
+app = get_fast_api_app(agents_dir="./agents", web=False, trace_to_cloud=True)
 ```
 
 View traces: **Cloud Console > Trace > Trace explorer**
@@ -29,7 +30,7 @@ No additional configuration required. Works in local dev (`make playground`) and
 
 All provisioned automatically by `deployment/terraform/telemetry.tf`:
 
-- **Cloud Logging bucket** — 10-year retention, analytics enabled, dedicated to GenAI telemetry
+- **Cloud Logging bucket** — analytics enabled, dedicated to GenAI telemetry. Read the retention in `telemetry.tf` (template defaults have been very long) and set it to your written retention decision: this bucket can hold user content
 - **Log sinks** — Route GenAI inference logs and feedback logs to the telemetry bucket
 - **Linked dataset** — Cloud Logging bucket linked to BigQuery for SQL access
 - **GCS logs bucket** — Stores completions as NDJSON
@@ -45,7 +46,7 @@ Set automatically by Terraform on the deployed service:
 | Variable | Purpose |
 |----------|---------|
 | `LOGS_BUCKET_NAME` | GCS bucket for completions and logs. Required to enable prompt-response logging |
-| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Controls logging state and content capture (`NO_CONTENT`, `true`, or `false`) |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Content capture mode; `NO_CONTENT` in deployed environments (lock with the two ADK variables in `SKILL.md` "Content capture") |
 | `BQ_ANALYTICS_DATASET_ID` | BigQuery dataset for telemetry |
 | `BQ_ANALYTICS_CONNECTION_ID` | BigQuery connection for GCS access |
 | `GENAI_TELEMETRY_PATH` | Optional: override upload path within bucket (default: `completions`) |

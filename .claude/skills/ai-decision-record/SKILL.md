@@ -3,12 +3,17 @@ name: ai-decision-record
 description: Fill out the AI Feature Decision Record before building any AI feature. Use when the user explicitly runs /ai-decision-record or asks to "start a new AI feature", "create a decision record", "kick off an AI design", or similar ritual phrasing.
 disable-model-invocation: true
 allowed-tools: Read, Write
-last-reviewed: 2026-05-17
+last-reviewed: 2026-11-22
+metadata:
+  triggers: AI decision record, AI feature design doc, should we build this AI feature, AI risk tier
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
 ---
 
 # AI Feature Decision Record
 
-> **Iron Law:** Do not proceed to implementation without a completed Decision Record written to `docs/ai-decisions/<feature-slug>.md`. It is a required artifact — not optional documentation.
+## Iron Law
+
+**Do not proceed to implementation without a completed Decision Record written to `docs/ai-decisions/<feature-slug>.md`. It is a required artifact — not optional documentation.**
 
 Walk the user through filling out the Decision Record from the AI Playbook (Layer 3 §3.3). This is a required artifact before building any AI feature.
 
@@ -33,16 +38,16 @@ Ask these in order. Do not batch them. Wait for an answer before moving on.
 2. **Why is deterministic code insufficient?** (If you can't answer this in one sentence, the answer might be "it's not.")
 3. **Why is AI the right tool here?** (Pattern recognition, ambiguity, ranking, summarization, etc. Map to Layer 1 §1.5 Green Light Matrix.)
 4. **What pattern fits: assistant, workflow, agent, or autonomous?** (Default to the lower tier. Most "agent" problems are workflows.)
-5. **What is the risk tier (0–5)?** (Reference Layer 2 §2.2 Autonomy Ladder. Sum blast radius across a session, not per action.)
-6. **What is the fallback when AI fails?** (Timeout, vendor outage, low confidence, schema violation → what happens? A specific deterministic path.)
+5. **What is the risk tier (0–5)?** (Reference Layer 2 §2.2 Autonomy Ladder. Sum blast radius across a session, not per action.) **Which steps stay deterministic** (authorization, state transitions, final decisions) and which are AI (interpretation, ranking, drafting)? **Which tools can it call, at what authority** (read · draft · controlled write · high-consequence write), and which need approval? Adding a write tool later re-opens this record.
+6. **What is the fallback when AI fails?** (Timeout, provider outage, low confidence, schema violation → what happens? A specific deterministic path.)
 7. **What is the primary eval metric and target value?**
 8. **How large is the eval set and where does it come from?** (Default floor is 100; check Layer 2 §2.14 for risk-tiered minimums.)
 9. **What gets human review? Who reviews it? What's the SLA?** (Reference Layer 2 §2.1 default SLA table.)
-10. **What is the cost ceiling per task?** (Reference Layer 2 §2.10 cost tiers.)
+10. **What is the cost ceiling per task, and what are the per-run budgets** (model calls, tool calls, tokens, wall-clock), shared across sub-agents, retries and fallbacks? (Reference Layer 2 §2.6, §2.10.)
 11. **What is the p95 latency target?**
 12. **Which model? Smallest viable, or routing strategy with fallback?** (Reference Layer 2 §2.9.)
 13. **Has a security review covered prompt injection, tool-output injection, exfiltration, and tenant isolation?** (Reference Layer 2 §2.5.)
-14. **Has a data governance review covered: what enters context, what's logged, retention, training-use, tenant isolation, deletion propagation?** (Reference Layer 2 §2.13.)
+14. **Has a data governance review covered: what enters context, what's logged, retention, training-use, tenant isolation, deletion propagation?** Which data classes may be sent to which approved providers/regions, and which are blocked before the call? (Reference Layer 2 §2.13.)
 15. **Where is the kill switch / feature flag? Has it been tested?** (Reference Layer 4 §4.4.)
 16. **What is the rollback plan?**
 17. **What is the 12-month AI tax estimate?** (Model spend + evals + review queue + observability + drift fighting + security + compliance + on-call. Reference Layer 2 §2.11.)
@@ -65,7 +70,9 @@ Ask these in order. Do not batch them. Wait for an answer before moving on.
 ## Design
 - Pattern: <assistant | workflow | agent | autonomous>
 - Risk tier: <0-5>
-- Model and routing: ...
+- Deterministic steps vs AI steps: ...
+- Tools and authority tier (approval required for): ...
+- Model and routing (pinned versions; fallback only on transient errors, to approved providers): ...
 - Fallback when AI fails: ...
 
 ## Evaluation
@@ -73,13 +80,13 @@ Ask these in order. Do not batch them. Wait for an answer before moving on.
 - Eval set size & source: ...
 
 ## Operating envelope
-- Cost ceiling per task: $...
+- Cost ceiling per task: $... ; per-run budgets: <calls / tool calls / tokens / deadline>
 - p95 latency target: ...
 - Human review: <what / who / SLA>
 
 ## Reviews
 - Security review: <date, reviewer, link to adversarial test results>
-- Data governance review: <date, reviewer>
+- Data governance review: <date, reviewer>; allowed/prohibited data classes per provider: ...
 
 ## Operations
 - Kill switch location: ...

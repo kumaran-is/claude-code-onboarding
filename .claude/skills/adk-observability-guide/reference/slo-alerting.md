@@ -1,5 +1,7 @@
 # SLO-Based Alerting
 
+> Prometheus mechanics for burn-rate alerts. The AI alert catalog (signals, owners, dedup, drift) lives in `.claude/skills/deployment-ci-cd/reference/ai-observability.md` §9. Metric names below are examples: label only with bounded values (never user or tenant ids).
+
 > **Assumes Prometheus + Grafana stack.** Rule files are loaded via `rule_files:` in `prometheus.yml`. For alerting to fire, Alertmanager must be configured separately.
 
 ## SLO vs Threshold Alerting
@@ -29,15 +31,15 @@ The difference: burn-rate alerts tell you "at this rate, you will exhaust your m
 
 Reference: [Google SRE Workbook — Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)
 
-## SLO Targets (from weather-agent `slo_alert_rules.yml`)
+## SLO Targets (example values: set yours from measured baselines)
 
 | SLO | Target | Error Budget |
 |-----|--------|-------------|
 | Availability | 99.9% | 0.1% = 43.8 min/month |
 | Latency P95 — standard queries (`simple`, `standard` tier) | < 2s | Alert at 2x target (4s) |
 | Latency P95 — complex queries (`complex`, `emergency` tier) | < 5s | Alert at 2x target (10s) |
-| Correctness (weather data accuracy) | 95% | 5% |
-| Safety (hurricane category validation, PII) | 100% | Zero tolerance |
+| Correctness (sampled answers passing the frozen eval rubric) | 95% | 5% |
+| Safety (critical policy guardrail, PII leak) | 100% | Zero tolerance |
 
 ## Burn Rate Windows
 
@@ -45,23 +47,23 @@ Three tiers of response urgency, each with its own burn-rate multiplier and wind
 
 | Tier | Burn Rate | Window | Alert | Meaning |
 |------|-----------|--------|-------|---------|
-| Fast burn — page immediately | 14.4x | 1h | `SLOAvailabilityBurnRateCritical` | Budget exhausted in ~2.5 days |
+| Fast burn — page immediately | 14.4x | 1h | `SLOAvailabilityBurnRateCritical` | Budget exhausted in ~2 days |
 | Slow burn — page within 1h | 6x | 6h | `SLOAvailabilityBurnRateHigh` | Budget exhausted in ~5 days |
-| Budget exhaustion pace | 1x | 3d | `SLOAvailabilityBurnRateElevated` | Consuming budget at exactly SLO pace (ticket, no page) |
+| Budget exhaustion pace | 1x | 3d | `SLOAvailabilityBurnRateElevated` | Consuming budget at exactly SLO pace (non-paging notification) |
 
 **How to read burn rate:** `14.4x` means errors are arriving 14.4 times faster than your SLO allows. At `14.4x` on a 99.9% SLO (0.1% error budget), the monthly budget is gone in `720h / 14.4 ≈ 50h` — roughly 2 days.
 
-## Alert Rule Structure (Actual PromQL from `slo_alert_rules.yml`)
+## Alert Rule Structure (example PromQL for `slo_alert_rules.yml`)
 
 ### Error Budget Record Rule
 
 ```yaml
-- record: weather_ai:slo:availability:error_budget_remaining
+- record: ai_agent:slo:availability:error_budget_remaining
   expr: |
     1 - (
-      sum(increase(weather_ai_requests_total{status="error"}[30d]))
+      sum(increase(ai_agent_requests_total{status="error"}[30d]))
       /
-      sum(increase(weather_ai_requests_total[30d]))
+      sum(increase(ai_agent_requests_total[30d]))
     ) / 0.001
 ```
 
@@ -73,15 +75,15 @@ This produces a gauge of remaining budget (1.0 = full, 0.0 = exhausted). Use it 
 - alert: SLOAvailabilityBurnRateCritical
   expr: |
     (
-      sum(rate(weather_ai_requests_total{status="error"}[1h]))
+      sum(rate(ai_agent_requests_total{status="error"}[1h]))
       /
-      sum(rate(weather_ai_requests_total[1h]))
+      sum(rate(ai_agent_requests_total[1h]))
     ) > (14.4 * 0.001)
     and
     (
-      sum(rate(weather_ai_requests_total{status="error"}[5m]))
+      sum(rate(ai_agent_requests_total{status="error"}[5m]))
       /
-      sum(rate(weather_ai_requests_total[5m]))
+      sum(rate(ai_agent_requests_total[5m]))
     ) > (14.4 * 0.001)
   for: 2m
   labels:
@@ -95,7 +97,7 @@ This produces a gauge of remaining budget (1.0 = full, 0.0 = exhausted). Use it 
       Error rate is consuming error budget at 14.4x normal rate.
       At this rate, monthly budget will be exhausted in ~2.5 days.
       Current error rate: {{ $value | humanizePercentage }}
-    runbook_url: "https://runbooks.example.com/weather-ai/slo-availability"
+    runbook_url: "https://runbooks.example.com/ai-agent/slo-availability"
 ```
 
 ### High Burn Rate Alert (Dual-Window)
@@ -104,15 +106,15 @@ This produces a gauge of remaining budget (1.0 = full, 0.0 = exhausted). Use it 
 - alert: SLOAvailabilityBurnRateHigh
   expr: |
     (
-      sum(rate(weather_ai_requests_total{status="error"}[6h]))
+      sum(rate(ai_agent_requests_total{status="error"}[6h]))
       /
-      sum(rate(weather_ai_requests_total[6h]))
+      sum(rate(ai_agent_requests_total[6h]))
     ) > (6 * 0.001)
     and
     (
-      sum(rate(weather_ai_requests_total{status="error"}[30m]))
+      sum(rate(ai_agent_requests_total{status="error"}[30m]))
       /
-      sum(rate(weather_ai_requests_total[30m]))
+      sum(rate(ai_agent_requests_total[30m]))
     ) > (6 * 0.001)
   for: 15m
   labels:
@@ -125,9 +127,9 @@ This produces a gauge of remaining budget (1.0 = full, 0.0 = exhausted). Use it 
 ### Safety Alert (Zero-Tolerance, Immediate)
 
 ```yaml
-- alert: SLOSafetyHurricaneValidationFailure
+- alert: SLOSafetyCriticalPolicyViolation
   expr: |
-    increase(weather_ai_guardrail_violations_total{guardrail="hurricane_saffir_simpson"}[5m]) > 0
+    increase(ai_agent_guardrail_violations_total{guardrail="critical_policy"}[5m]) > 0
   for: 0s    # Fire immediately — no grace period
   labels:
     severity: critical
@@ -166,17 +168,17 @@ Latency SLOs use histogram quantile rules, not burn rate, because latency has no
 
 ```yaml
 # Record P95 for standard tier
-- record: weather_ai:slo:latency:standard:p95
+- record: ai_agent:slo:latency:standard:p95
   expr: |
     histogram_quantile(0.95,
-      sum(rate(weather_ai_request_latency_seconds_bucket{tier=~"simple|standard"}[5m])) by (le)
+      sum(rate(ai_agent_request_latency_seconds_bucket{tier=~"simple|standard"}[5m])) by (le)
     )
 
 # Alert at 2x target (4s, target is 2s)
 - alert: SLOLatencyStandardCritical
   expr: |
     histogram_quantile(0.95,
-      sum(rate(weather_ai_request_latency_seconds_bucket{tier=~"simple|standard"}[5m])) by (le)
+      sum(rate(ai_agent_request_latency_seconds_bucket{tier=~"simple|standard"}[5m])) by (le)
     ) > 4
   for: 5m
 ```
@@ -204,7 +206,7 @@ global:
   scrape_timeout: 10s
   external_labels:
     environment: 'production'
-    project: 'weather-ai-agent'
+    project: 'my-ai-agent'
 ```
 
 `evaluation_interval: 15s` means burn-rate calculations update every 15 seconds. For `for: 2m` alerts, the condition must be true for at least 8 consecutive evaluations before firing.
@@ -213,21 +215,21 @@ global:
 
 ```promql
 # Panel: Error budget remaining (0–1 gauge)
-weather_ai:slo:availability:error_budget_remaining
+ai_agent:slo:availability:error_budget_remaining
 
 # Panel: Current burn rate (multiplier)
 (
-  sum(rate(weather_ai_requests_total{status="error"}[1h]))
+  sum(rate(ai_agent_requests_total{status="error"}[1h]))
   /
-  sum(rate(weather_ai_requests_total[1h]))
+  sum(rate(ai_agent_requests_total[1h]))
 ) / 0.001
 
 # Panel: Time to budget exhaustion (hours)
 1 / (
   (
-    sum(rate(weather_ai_requests_total{status="error"}[1h]))
+    sum(rate(ai_agent_requests_total{status="error"}[1h]))
     /
-    sum(rate(weather_ai_requests_total[1h]))
+    sum(rate(ai_agent_requests_total[1h]))
   ) / 0.001
 ) * 720
 ```
@@ -240,7 +242,7 @@ Set thresholds on the burn rate panel: green < 1x, yellow 1–6x, red > 6x.
 - [ ] Latency SLO defined per query tier — `simple`/`standard` and `complex`/`emergency` have different targets
 - [ ] Burn rate alerts use dual-window pattern (long AND short window) — no single-window alerts
 - [ ] Fast burn fires in < 5 minutes; slow burn fires in < 30 minutes
-- [ ] Safety operations (life-critical, PII) have 100% SLO with `for: 0s` (immediate fire)
+- [ ] Safety operations (critical policy, PII) have 100% SLO with `for: 0s` (immediate fire)
 - [ ] SLO metrics exposed via Prometheus histogram (latency) and counter (errors/total)
 - [ ] Record rules pre-compute expensive quantile expressions (not inline in alert `expr`)
 - [ ] `slo_alert_rules.yml` is separate from `alert_rules.yml` — different concerns

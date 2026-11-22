@@ -4,11 +4,16 @@ description: Run a full AI Playbook audit against an existing agentic applicatio
 disable-model-invocation: true
 allowed-tools: Read, Write, Glob, Grep
 last-reviewed: 2026-05-17
+metadata:
+  triggers: audit my AI app, AI playbook audit, agentic system review, AI production readiness
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
 ---
 
 # AI Application Audit
 
-> **Iron Law:** Do not auto-fix. This skill produces reports and a remediation plan — not code changes. Every finding becomes a separate task for a follow-up session.
+## Iron Law
+
+**Do not auto-fix. This skill produces reports and a remediation plan — not code changes. Every finding becomes a separate task for a follow-up session.**
 
 Run a comprehensive audit of an existing agentic application or AI feature against the AI Playbook. This is for **verifying existing code**, not designing new features.
 
@@ -113,7 +118,7 @@ Proceed? (yes / narrow-scope / abort)
 After confirmation, invoke:
 
 ```
-@ai-security-reviewer audit the AI code at <paths> against the ai-playbook security defenses (Layer 2 §2.5) and the adversarial test catalog (Layer 3 §3.2).
+@ai-security-reviewer audit the AI code at <paths> against your full review checklist (architecture, autonomy, grounding, tool permissions and side effects, injection, exfiltration, isolation, memory privacy, eval leakage, fallback/retry safety, cost/latency, observability, production readiness) and the adversarial test catalog (Layer 3 §3.2).
 
 Focus on:
 - LLM call sites
@@ -122,12 +127,12 @@ Focus on:
 - Anywhere user input, retrieved documents, or tool outputs flow into prompts
 - Anywhere model output triggers side effects
 
-Output the standard findings report. For each finding, cite file:line and explain why a prompt-level mitigation is insufficient.
+Output the standard findings report with a status for every checklist area. For each finding, cite file:line with quoted evidence and explain why a prompt-level mitigation is insufficient. Mark any test, eval or runtime check you did not execute as NOT RUN.
 
 Decision Record context: docs/ai-decisions/<feature-slug>.md
 ```
 
-Write the subagent's report to `docs/ai-audits/<feature-slug>/02-security-review.md`.
+Write the subagent's report to `docs/ai-audits/<feature-slug>/02-security-review.md`. For framework-specific depth, also dispatch the stack reviewer (`agentic-ai-reviewer` for LangChain/LangGraph, `adk-reviewer` for Google ADK, `rag-implementation-reviewer` for RAG code, `eval-reviewer` for eval code) and append its findings to the same file.
 
 **Confirmation gate**:
 ```
@@ -241,7 +246,7 @@ Group every finding into one of four priority tiers:
 
 1. **Critical — fix before any further production traffic.** Security criticals; missing or untested kill switch; missing output contract on Tier-3+ features; missing tenant isolation; secrets in model context.
 2. **High — fix within 2 weeks.** High security findings; eval set below risk-tiered floor; missing observability; missing incident response plan; rollback path not tested.
-3. **Medium — schedule in the next quarter.** Medium security findings; drift detection gaps; vendor abstraction; multi-modal handling refinements; AI tax not estimated.
+3. **Medium — schedule in the next quarter.** Medium security findings; drift detection gaps; provider abstraction; multi-modal handling refinements; AI tax not estimated.
 4. **Structural — design debt to track.** Full reference architecture gaps; eval flywheel not in place; canary deployment infrastructure; full Layer 2 coverage.
 
 For each item, include:

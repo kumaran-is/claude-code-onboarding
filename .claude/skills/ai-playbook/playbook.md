@@ -116,7 +116,7 @@ Don't use AI when **any** are true:
 | Email draft suggestion | Assistant | 1 |
 | Customer email auto-reply (no action) | Workflow | 3a |
 | Document data extraction | Workflow | 2 |
-| Internal ticket routing / triage | Workflow | 2 |
+| Internal support-request routing / triage | Workflow | 2 |
 | Search ranking / personalization | Workflow | 0–1 |
 | Code completion | Assistant | 1 |
 | Meeting summary | Assistant | 1 |
@@ -192,6 +192,8 @@ Match autonomy to consequence. Sum blast radius across the session.
 
 **Composite-action rule**: every session has a blast-radius cap. Reaching the cap forces a human checkpoint regardless of individual action tiers.
 
+**Emergency and override rules**: an "urgent" path is not unrestricted authority (same allowlists, budgets and approvals, shorter SLA); a human override cancels any pending AI intent for that record; adding a write tool to an agent re-classifies its tier and triggers security review.
+
 **Default-vs-policy note**: Tier-3+-never-auto-commit is the **default stance**, not a universal law. Edge cases may justify exceptions — they require a written Decision Record exception and a tighter eval bar.
 
 ## 2.3 Reference Architecture
@@ -243,7 +245,7 @@ Every AI output passes through, in order:
 7. Route                     commit · review · fallback · reject
 ```
 
-What rejections look like in practice is in §3.1.
+A model's self-reported `confidence` is not verification: gate on deterministic validators or tool checks, and when they disagree with a judge, the deterministic check wins. Only operational confidence (policy over authoritative state) may unlock a consequential step. For cited answers, every cited source id must be in the set retrieved during this run; otherwise return the abstain/fallback shape. A failed check is never ignored: it routes. What rejections look like in practice is in §3.1.
 
 ## 2.5 Security Defenses
 
@@ -255,7 +257,7 @@ The axiom (§1.1) is operationalized as:
 | Tool-output injection | Sanitize and schema-validate every tool response before re-feeding. Tool result = data, not instructions. |
 | Data exfiltration | Allowlist outbound URLs, image refs, external calls. Watch for encoded payloads. |
 | Least-privilege tools | Smallest tool surface that works; scoped by tenant, user, action; read-only by default. |
-| Tenant isolation | Every retrieval, tool call, memory lookup scoped by authenticated principal — never by prompt. |
+| Tenant isolation | Every retrieval, tool call, memory lookup scoped by authenticated principal — never by prompt. Scope ids (account/org/user) are injected server-side into tool args, overwriting any model-supplied value, and kept out of the prompt. |
 | Secrets hygiene | Secrets never in model context. Tools authenticate; model orchestrates. |
 | No direct execution | Model output is never `eval`'d, shell-executed, or rendered as code without sandbox + review. |
 | Untrusted retrieval | Vector store = adversarial. Poisoned doc cannot override system rules. Sign or trust-label sources. |
@@ -268,21 +270,28 @@ The axiom (§1.1) is operationalized as:
 
 If you can't answer #2 *with code* (not a prompt instruction), the agent isn't ready.
 
+**Deterministic vs probabilistic controls** — only deterministic controls are a boundary. Guardrails fail **closed**: an error in a deterministic check blocks or routes to review, never passes.
+
+| Control | Kind | Can it be the boundary? |
+|---|---|---|
+| AuthN/AuthZ, ACL filter in the query, server-side scope injection, tool allowlist, schema/type/range/business rules, approval token, budgets and limits, egress allowlist, idempotency key | Deterministic | Yes |
+| Regex/classifier injection detection, PII NER, moderation model, LLM judge/groundedness, prompt "security rules", delimiters | Probabilistic | No — a signal that raises risk, routes to review, or is logged |
+
 ## 2.6 Agent Guardrails
 
 On top of §2.5:
 
-1. Bounded tool surface (whitelisted).
-2. Read-heavy by default; writes/deletes/sends/payments need approval or dry-run.
-3. Step budget caps (iterations, tokens, tool calls, wall-clock).
-4. Idempotency keys on side-effecting tools.
+1. Bounded tool surface: a non-empty allowlist per agent, a test that every allowlisted name resolves to a registered tool (a typo silently filters to zero tools), and the tool server enforces the same allowlist per caller.
+2. Read-heavy by default; writes/deletes/sends/payments need approval or dry-run. Classify tools by authority (read · draft · controlled write · high-consequence write); high-consequence writes get a propose/dry-run tool and only the authorized workflow executes.
+3. Budget caps (model calls, tool calls, tokens, cost, wall-clock) are **cumulative per run/session** across router, sub-agents, retries and fallback models; exhaustion stops and routes to a typed fallback.
+4. Idempotency keys on side-effecting tools; the audit record is written before (or atomically with) the effect, and an audit-write failure blocks the effect.
 5. Dry-run before live for destructive actions.
 6. Confidence thresholds gate autonomy (§2.1).
 7. Memory is a liability — scoping, expiration, redaction, ACLs.
 8. Multi-agent ≠ better. Add only when single-agent demonstrably fails.
-9. Plans and tool calls logged before destructive steps.
+9. Plans and tool calls logged before destructive steps; never report a business outcome from a tool's 200 alone — verify the resulting state.
 
-**Agent memory** — default to symbolic/scoped state. Vector memory when semantic recall is the proven bottleneck. Graph memory when relationship traversal is the proven bottleneck. Document memory is data, not memory — read via authorized retrieval.
+**Agent memory** — default to symbolic/scoped state. Vector memory when semantic recall is the proven bottleneck. Graph memory when relationship traversal is the proven bottleneck. Document memory is data, not memory — read via authorized retrieval. Authority order: canonical state > source documents > verified outcomes > derived memory > model inference; derived memory never authorizes or skips a review.
 
 ## 2.7 RAG Production Rules
 
@@ -328,7 +337,7 @@ Same framework, modality-specific notes:
 | $0.20–$0.50 | < 15 s | Background/async; strong justification |
 | > $0.50 | any | Written justification; usually means redesign |
 
-**Cost-control patterns**: model routing (small first, escalate on low confidence), predictive caching by semantic key, speculative execution for predictable next steps, truncation discipline, batching.
+**Cost-control patterns**: model routing (small first, escalate on low confidence — only where an objective verifier exists, never first-pass for irreversible actions; escalation reuses idempotency keys and never replays a successful mutation), predictive caching by semantic key, speculative execution for predictable next steps, truncation discipline, batching.
 
 ## 2.11 The AI Tax
 
@@ -336,13 +345,13 @@ Recurring cost beyond model spend: eval maintenance, human review queue, observa
 
 **Rule:** if a 12-month total cost can't be justified, it's a prototype, not a product.
 
-## 2.12 Vendor Strategy
+## 2.12 Provider Strategy
 
 - Abstract the model call (thin adapter: `generate`, `embed`, `tool_call`).
-- Pin versions; promote upgrades through the rollout pipeline.
-- Secondary vendor for critical paths — minimum: documented swap; better: integration tests; best: live shadow.
+- Pin versions (no `latest`/auto-upgrading aliases in prod); promote upgrades through the rollout pipeline. Version everything that changes behaviour: prompts, tool definitions, output schemas, retrieval config, thresholds, redaction policy, eval set.
+- Secondary provider for critical paths — minimum: documented swap; better: integration tests; best: live shadow.
 - Watch capability divergence (tool use, structured outputs, vision, long context).
-- Residency and terms differ — compliance is vendor-specific.
+- Residency and terms differ — compliance is provider-specific.
 
 ## 2.13 Data Governance
 
@@ -354,16 +363,17 @@ Answer in writing before launch:
 - Deletion propagation to embeddings, caches, logs, eval data?
 - Redaction before observability tools? (Code-policy, not prompt.)
 - Where does the model run; where does data go?
+- Per capability: allowed and prohibited data classes, approved providers/regions, retention and training terms. Authorization to read data ≠ authorization to send it to a provider; prohibited classes are blocked before the call (fail closed). Credentials never enter prompts, embeddings or memory.
 
 **Regulatory orientation** (not legal advice — engage legal/security for jurisdiction-specific design):
 
 | Framework | Design for |
 |-----------|-----------|
 | GDPR / UK GDPR | Lawful basis, DSAR/deletion, DPIA, cross-border transfer, minimization |
-| HIPAA | BAA with vendor, PHI minimization, audit trail, breach notification |
-| SOC 2 | Documented controls, evidence, vendor management |
+| HIPAA | BAA with the model provider, PHI minimization, audit trail, breach notification |
+| SOC 2 | Documented controls, evidence, supplier management |
 | PCI DSS | Card data never in prompts/logs/evals; segmentation |
-| DORA | ICT risk management, vendor oversight, resilience testing, incident reporting |
+| DORA | ICT risk management, third-party oversight, resilience testing, incident reporting |
 | EU AI Act | Risk classification, transparency, human oversight, technical docs |
 | Sector-specific | FERPA, GLBA, FCRA, etc. |
 
@@ -484,27 +494,7 @@ Rate limit per tenant / user:      ____
 
 ## 3.5 Observability Schema (minimum fields)
 
-```json
-{
-  "timestamp": "...",
-  "feature_id": "...",
-  "principal": {"tenant_id": "...", "user_id": "..."},
-  "model_version": "...",
-  "prompt_version": "...",
-  "input_hash": "...",
-  "retrieval": {"chunk_ids": [...], "doc_versions": [...]},
-  "output": {...},
-  "validation": {
-    "schema": "pass | fail",
-    "business_rule": "pass | fail",
-    "permission": "pass | fail",
-    "composite_confidence": 0.0
-  },
-  "routed_to": "commit | review | fallback | reject",
-  "downstream_outcome": "...",
-  "override_signal": "..."
-}
-```
+Per model call: `feature_id`, `request_id`/trace id, tenant/user as **ids** (never names or raw text), `gen_ai.provider.name`, request/response model, prompt name/label/version/content hash, `input_hash`, retrieved chunk ids + doc versions, token usage, latency, validation result per contract step, `routed_to`, `downstream_outcome`, `override_signal`. Store ids, hashes and versions, not raw prompts or outputs, unless a retention-scoped, access-controlled store requires them. Span names, semconv attributes, redaction and content-capture settings: `.claude/skills/deployment-ci-cd/reference/ai-observability.md`.
 
 ---
 
@@ -542,7 +532,7 @@ This consolidates the pre-flight, pre-production, and kill-switch checks into on
 - [ ] Model and routing strategy decided (§2.9)
 - [ ] Cost and latency budget filled (§3.4)
 - [ ] 12-month AI tax estimated and approved (§2.11)
-- [ ] Vendor abstraction in place; versions pinned (§2.12)
+- [ ] Provider abstraction in place; versions pinned (§2.12)
 - [ ] Observability schema implemented (§3.5)
 - [ ] Human review queue defined (§2.1, §2.14)
 - [ ] Data governance review completed (§2.13)
@@ -600,7 +590,7 @@ Run in staging or shadow before launch:
 
 - [ ] Disable feature via flag → graceful degradation to deterministic fallback
 - [ ] Force model downgrade → output contract still passes or routes to review
-- [ ] Simulate vendor outage → timeout fires, fallback serves, no infinite retry
+- [ ] Simulate provider outage → timeout fires, fallback serves, no infinite retry
 - [ ] Simulate retrieval poisoning → contract/security rejects; provenance logs source
 - [ ] Simulate cost spike (10× tokens) → rate limit + cost ceiling fire; alerts route
 - [ ] Simulate prompt injection from user input and retrieved doc → least-privilege prevents harm
@@ -658,7 +648,7 @@ Some teams adopt the full framework on the first feature and create complexity t
 - **Don't build a custom eval framework.** Run your golden set through a simple script. Add framework when you have ≥3 features.
 - **Don't build canary deployment infrastructure before you have a model upgrade to canary.** Wire it when the second model version arrives.
 - **Don't build a fine-tuning pipeline before you've measured the prompted ceiling.** Most teams never need to fine-tune.
-- **Don't build vendor abstraction before you have a second vendor in play.** A thin function wrapper is enough until then.
+- **Don't build provider abstraction before you have a second provider in play.** A thin function wrapper is enough until then.
 - **Don't build the full human-review tooling before sampling reveals it's the bottleneck.** A shared queue and a spreadsheet beats a custom workflow tool for the first 90 days.
 
 **The rule:** the framework defines the destination, not the starting point. The Implementation Minimum (§2.3) is the starting point. Earn each additional control with evidence from production.
@@ -691,11 +681,4 @@ Some teams adopt the full framework on the first feature and create complexity t
 
 ## Appendix C — Future Splits
 
-This document is a single file by design. If your org adopts it widely, the natural split is:
-
-- **Principles doc** (Layer 1) — executive-readable, ~3 pages, for design review.
-- **Operating Controls doc** (Layer 2) — engineering standard.
-- **Implementation Templates repo** (Layer 3) — code, schemas, eval scaffolds.
-- **Runbooks doc** (Layer 4) — on-call procedures, launch checklists.
-
-Split only when one of the four layers is being maintained by a different group than the others. Premature splitting causes drift; that's the failure mode this single-document version was refactored to avoid.
+Single file by design. Split into Principles / Operating Controls / Templates / Runbooks only when different groups maintain different layers; premature splitting causes drift.

@@ -2,12 +2,17 @@
 name: ai-playbook
 description: Production-grade decision framework for building AI features, AI workflows, AI agents, and AI-augmented systems. Use this skill whenever the user is designing, building, debugging, reviewing, or deciding whether to add AI to a system — including any work involving LLM calls, embeddings, RAG, agents, tool use, prompt engineering, evals, AI security/prompt injection, model routing, fine-tuning decisions, or AI-related architectural choices. Trigger on phrases like "build an agent", "add AI to", "use an LLM for", "RAG", "should I use AI", "AI feature", "agentic", "structured output", "tool calling", "eval set", "prompt injection", "vector store". Do NOT trigger for: pure non-AI coding tasks, questions about Claude Code tooling, or conceptual AI questions without an applied design context.
 allowed-tools: Read
-last-reviewed: 2026-05-17
+last-reviewed: 2026-11-22
+metadata:
+  triggers: AI feature design, should I use AI, build an agent, RAG design, LLM call, prompt injection, AI lifecycle, AI guardrails, AI observability
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
 ---
 
 # AI Application Playbook
 
-> **Iron Law:** Start one tier below where you think you need to be. Most "agent" problems are workflows; most "workflow" problems are a single model call. Use the smallest pattern that works.
+## Iron Law
+
+**Start one tier below where you think you need to be. Most "agent" problems are workflows; most "workflow" problems are a single model call. Use the smallest pattern that works.**
 
 This skill encodes a production-grade framework for deciding when to use AI and how to ship it safely. The full playbook is in `playbook.md` (10k+ words across four layers); load it only when needed using the routing below.
 
@@ -27,6 +32,26 @@ Before any AI design work, ask in order:
 4. **Pick the smallest pattern that works**: single model call in a workflow → ReAct loop in a state machine → planning agent → autonomous agent. Start at #1.
 
 If the answer to all three is "AI is appropriate," route to the relevant layer below.
+
+## Lifecycle router (canonical home per stage)
+
+This skill is the entry point for production AI work. Each stage has ONE canonical home; other files link there instead of restating it. Paths are under `.claude/`; skills load with the Skill tool, agents are dispatched with the Agent tool (read-only reviewers report NOT RUN for anything they did not execute). Always-on invariants for AI code: `rules/ai-engineering.md` (path-scoped).
+
+| Stage | Canonical skill / reference | Review / gate | Command |
+|---|---|---|---|
+| 1. Design: AI or not, pattern, risk tier, autonomy | `skills/ai-playbook/playbook.md` Layers 1–2; `skills/ai-decision-record/` | `architect` agent for system-level design | `/ai-decision-record` |
+| 2. Inference: provider abstraction, structured output, timeouts, retries/429, fallback, caching, token budgets | `skills/agentic-ai-dev/reference/llm-inference-and-model-routing.md`; Gemini specifics `skills/gemini-api-dev/`; prompts `skills/prompt-engineering-patterns/` | `agentic-ai-reviewer` | — |
+| 3. Context and memory | `skills/agentic-ai-dev/reference/agentic-memory-systems.md` (principles: playbook §2.6 "Agent memory") | `agentic-ai-reviewer`, `ai-security-reviewer` (memory privacy) | — |
+| 4. Agents and tool execution | `skills/agentic-ai-dev/` (LangChain/LangGraph), `skills/google-adk/` (ADK); tool safety `skills/agentic-ai-dev/reference/tool-execution-safety.md`; topologies `skills/multi-agent-patterns/`, durable workflows `skills/workflow-orchestration-patterns/` | `agentic-ai-reviewer`, `adk-reviewer` | `/scaffold-agentic-ai`, `/scaffold-google-adk` |
+| 5. RAG: retrieval, permissions, vector stores | `skills/rag-architect/`, `skills/vector-database/`, `skills/weaviate/`; debugging `skills/rag-debugger/`; security `skills/rag-security-reviewer/` | `rag-implementation-reviewer`, `pgvector-schema-reviewer`, `weaviate-schema-reviewer` | `/rag-design`, `/scaffold-rag-pipeline`, `/rag-debug`, `/rag-review` |
+| 6. Evals and testing (fake models, golden sets, judges, CI tiers) | `skills/eval-guide/`, `skills/llm-evaluation/`, `skills/rag-evaluator/`, `skills/adk-eval-guide/` | `ai-eval-designer` (design), `eval-reviewer` (code), `rag-eval-runner` (execution) | `/rag-eval-init` |
+| 7. Review (full AI checklist) | `agents/ai-security-reviewer.md` checklist; audit orchestration `skills/ai-audit/` | `ai-security-reviewer` + the stack reviewer above | `/ai-audit` |
+| 8. Guardrails and governance (deterministic vs probabilistic, fail closed, egress, approvals) | playbook §2.4 (output contract), §2.5 (security + control table), §2.6 (agent guardrails), §2.13 (data governance); code: `skills/agentic-ai-dev/reference/agentic-guardrails-security.md` | `ai-security-reviewer` | — |
+| 9. Observability (GenAI semconv traces, token/cost/TTFT metrics, redaction, prompt provenance, alerts) | `skills/deployment-ci-cd/reference/ai-observability.md` (extends `python-observability.md`); ADK specifics `skills/adk-observability-guide/` | — | — |
+| 10. LLMOps (prompt/model versioning, eval-gated promotion, canary/rollback, provider migration, quota) | `skills/deployment-ci-cd/reference/llmops-release-and-rollout.md`; prompt registry `skills/eval-guide/reference/langfuse-prompts.md`; ADK deploy `skills/adk-deploy-guide/` | launch gate `skills/ai-launch-check/`; incidents `skills/ai-incident-response/` | `/ai-launch-check`, `/ai-incident-response` |
+| 11. Streaming, multimodal, voice (optional) | `skills/streaming-protocols/`, `skills/ai-chat/`, `skills/voice-ai-development/` | — | — |
+
+Claude Code session guardrails for AI work (hooks in `.claude/hooks/`): `pre-prompt-injection.sh` blocks terminal-escape and NUL shapes and advises on injection phrases; `output-llm-quota-guard.sh` separates billing/quota exhaustion (stop, BLOCKED) from transient rate limits (bounded retry); `prompt-secret-scan.sh` blocks provider keys in prompts; `post-edit-python-log-pii-advisory.sh` flags exception text in log calls.
 
 ## When to load the full playbook
 
@@ -62,7 +87,7 @@ When advising on AI design work:
 - **Push back when AI is the wrong tool.** The Red Flag Matrix (Layer 1 §1.6) lists where deterministic code wins.
 - **Insist on the Output Contract** (Layer 2 §2.4) before any AI output mutates state.
 - **Treat all model inputs as untrusted** — including retrieved documents, tool outputs, file uploads, and prior conversation turns from external sources.
-- **Quote thumb rules sparingly.** Don't recite the playbook at the user; apply it.
+- **Cite thumb rules sparingly.** Don't recite the playbook at the user; apply it.
 
 ## When NOT to load the full playbook
 
@@ -75,10 +100,10 @@ When in doubt: skim the Fast Triage section, decide if AI is even the right answ
 ## Fast triage example
 
 ```
-User: "Should I use an LLM to classify support tickets into 5 buckets?"
+User: "Should I use an LLM to classify support requests into 5 buckets?"
 
 Fast triage:
-1. Is input messy/unstructured? YES — free-text tickets.
+1. Is input messy/unstructured? YES — free-text requests.
 2. Can a downstream verifier catch errors? YES — human review queue + SLA.
 3. On critical latency path with no fallback? NO — async classification.
 
@@ -126,5 +151,5 @@ Situation: user insists on AI after triage says no
 - Layer 2 §2.3 Implementation Minimum: 6 required items before shipping any AI feature
 - Layer 2 §2.4 Output Contract: schema → types → business rules → permissions → confidence → audit → route
 - Layer 3 §3.2 Adversarial test catalog: prompt injection, tool misuse, retrieval poisoning
-- Lifecycle skills: `/ai-decision-record` → `/ai-launch-check` → `/ai-incident-response` → `/ai-audit`
+- Lifecycle skills: `/ai-decision-record` → `/ai-launch-check` → `/ai-incident-response` → `/ai-audit` (full stage map: "Lifecycle router" above)
 - OWASP LLM Top 10: https://owasp.org/www-project-top-10-for-large-language-model-applications/

@@ -3042,7 +3042,7 @@ This repo includes Claude Code hooks (`.claude/hooks/`) and a git pre-commit hoo
 |------|-------|-----------------|
 | `pre-bash-guard.sh` | PreToolUse | `rm -rf /`, force-push to main, `DROP DATABASE`, piping curl to shell |
 | `pre-edit-protect-sensitive.sh` | PreToolUse | Direct edits to `.env`, private keys, credentials, lock files |
-| `pre-prompt-injection.sh` | PreToolUse | Role-override attacks, jailbreaks, delimiter injection, authority impersonation, encoded payloads in Bash commands |
+| `pre-prompt-injection.sh` | PreToolUse | Blocks terminal escape sequences and NUL bytes; role-override phrases and chat-template delimiters in Bash/WebFetch input are reported as an advisory, never blocked |
 | `pre-unicode-injection.sh` | PreToolUse | Zero-width characters, RTL overrides, ANSI escapes, null bytes hidden in file edits (CVE-2025-53109/53110) |
 | `session-claudemd-scan.sh` | SessionStart | Injection patterns in `CLAUDE.md` / `.claude/*.md` files loaded at session start |
 | `stop-secret-scan.sh` | Stop | Warns if changed files contain AWS/GCP/GitHub/Stripe/Anthropic API key patterns |

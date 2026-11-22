@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # .claude/scripts/lint-agents.sh
-# Usage: lint-agents.sh [--dir <path>] [--quiet]
-# Exit 0 = all pass, Exit 1 = failures found
+# Usage: lint-agents.sh [--dir <path>] [--quiet] | --selftest
+# Exit 0 = all pass, Exit 1 = failures found (or no agent files found: a lint that saw nothing fails)
+#
+# Tool grants: an AGENT is granted tools only by `tools:`. `allowed-tools:` is a skill/command field and
+# is IGNORED in agent frontmatter, so an agent that declares only `allowed-tools:` silently inherits
+# every tool (including Write/Edit). It is an error here.
+# Least privilege (warning, does not fail yet): an agent named *-reviewer / *-auditor / *-evaluator /
+# *-checker / *-challenger should declare `disallowedTools: Write, Edit`, must not grant Write/Edit in
+# `tools:` and must not declare `memory:` (memory re-grants Write/Edit for its memory directory).
 
 set -uo pipefail
 
@@ -10,8 +17,40 @@ AGENTS_DIR="${SCRIPT_DIR}/../agents"
 QUIET=false
 
 # Parse arguments
+selftest() {
+  local self tmp out rc fail=0
+  self="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   control 0: parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  tmp=$(mktemp -d) || return 1
+  mk() { # $1 file, $2 extra frontmatter lines, $3 body
+    printf -- '---\nname: %s\ndescription: A fixture agent used only by the lint selftest.\nmodel: sonnet\nvibe: calm\ncolor: blue\nemoji: "x"\n%b---\n%b\n' \
+      "${1%.md}" "$2" "$3" > "$tmp/$1"
+  }
+  check() { # $1 label, $2 expected rc, $3 needle ("" = none)
+    out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+    if [ "$rc" -eq "$2" ] && { [ -z "$3" ] || printf '%s' "$out" | grep -qF -- "$3"; }; then echo "  ok   $1"
+    else echo "  FAIL $1 (rc=$rc out=$out)"; fail=1; fi
+    rm -f "$tmp"/*.md
+  }
+  check "no agent files -> fail" 1 "no agent files"
+  mk good.md 'tools: Read, Grep\n' 'Body.'; check "negative: tools: grant passes" 0 "1 passed, 0 failed"
+  mk legacy.md 'allowed-tools: Read, Grep\n' 'Body.'; check "positive: allowed-tools only -> fail" 1 "allowed-tools is ignored for agents"
+  mk none.md '' 'Body.'; check "positive: no tools: -> fail" 1 "missing required field: tools"
+  mk x-reviewer.md 'tools: Read, Grep, Glob, Write\nmemory: project\n' '## Success Metrics'; check "warning: reviewer grants Write, has memory, no disallowedTools" 0 "WARN reviewer least-privilege"
+  mk y-reviewer.md 'tools: Read, Grep, Glob\ndisallowedTools: Write, Edit\n' '## Success Metrics'
+  out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && ! printf '%s' "$out" | grep -q WARN; then echo "  ok   negative: read-only reviewer has no warning"; else echo "  FAIL read-only reviewer (rc=$rc out=$out)"; fail=1; fi
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --selftest)
+      selftest
+      exit $?
+      ;;
     --dir)
       AGENTS_DIR="$2"
       shift 2
@@ -74,10 +113,29 @@ for agent_file in "$AGENTS_DIR"/*.md; do
     fi
   done
 
-  # ── 3. tools OR allowed-tools must be present ─────────────────────────────
-  if ! echo "$frontmatter" | grep -qE "^tools:" && ! echo "$frontmatter" | grep -qE "^allowed-tools:"; then
-    agent_errors+=("missing required field: tools (or allowed-tools)")
+  # ── 3. tools: must be present; allowed-tools: is not a grant for agents ───
+  if echo "$frontmatter" | grep -qE "^allowed-tools:"; then
+    agent_errors+=("allowed-tools is ignored for agents (the agent inherits ALL tools); declare tools: instead")
+  elif ! echo "$frontmatter" | grep -qE "^tools:"; then
+    agent_errors+=("missing required field: tools (an agent without tools: inherits ALL tools)")
   fi
+
+  # ── 3b. Least privilege for review/audit agents (warning only) ────────────
+  agent_warnings=()
+  case "${filename%.md}" in
+    *-reviewer|*-auditor|*-evaluator|*-checker|*-challenger)
+      if echo "$frontmatter" | grep -E "^tools:" | grep -qE "(^|[^A-Za-z])(Write|Edit|MultiEdit|NotebookEdit)([^A-Za-z]|$)"; then
+        agent_warnings+=("tools: grants Write/Edit to a review agent")
+      fi
+      dis_line=$(echo "$frontmatter" | grep -E "^disallowedTools:" | head -1)
+      if ! { echo "$dis_line" | grep -q "Write" && echo "$dis_line" | grep -q "Edit"; }; then
+        agent_warnings+=("missing disallowedTools: Write, Edit")
+      fi
+      if echo "$frontmatter" | grep -qE "^memory:"; then
+        agent_warnings+=("declares memory: (re-grants Write/Edit for its memory directory)")
+      fi
+      ;;
+  esac
 
   # ── 4. Valid color value ──────────────────────────────────────────────────
   color_value="$(get_field "$frontmatter" "color")"
@@ -135,16 +193,26 @@ for agent_file in "$AGENTS_DIR"/*.md; do
     if [[ "$QUIET" == false ]]; then
       echo "✅ $filename"
     fi
+    for w in ${agent_warnings[@]+"${agent_warnings[@]}"}; do
+      echo "   WARN reviewer least-privilege ($filename): $w"
+    done
   else
     failed=$((failed + 1))
     echo "❌ $filename"
     for err in "${agent_errors[@]}"; do
       echo "   → $err"
     done
+    for w in ${agent_warnings[@]+"${agent_warnings[@]}"}; do
+      echo "   WARN reviewer least-privilege ($filename): $w"
+    done
   fi
 done
 
 echo ""
+if [[ $((passed + failed)) -eq 0 ]]; then
+  echo "RESULT: no agent files found in ${AGENTS_DIR} (a lint that saw nothing fails)"
+  exit 1
+fi
 echo "RESULT: ${passed} passed, ${failed} failed"
 
 if [[ "$failed" -gt 0 ]]; then

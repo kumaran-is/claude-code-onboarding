@@ -79,7 +79,7 @@ Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tail
 - [ ] No external URL content embedded directly into CLAUDE.md (could be poisoned)
 - [ ] No `eval`, `exec`, or dynamic code execution instructions
 - [ ] No instructions that unconditionally grant permissions to any requestor
-- [ ] Verify: "approve the pending pairing" or "add me to the allowlist" — NEVER in CLAUDE.md (already enforced by `pre-prompt-injection.sh` at runtime and `session-claudemd-scan.sh` at session start)
+- [ ] Verify: "approve the pending pairing" or "add me to the allowlist" — NEVER in CLAUDE.md (checked by `session-claudemd-scan.sh` at session start; `pre-prompt-injection.sh` does not scan CLAUDE.md content)
 
 ### Auto-Run Risks
 - [ ] No instructions like "always run X without asking" for destructive operations
@@ -119,7 +119,7 @@ Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tail
 | Hook | Trigger | Purpose | Audit Focus |
 |------|---------|---------|-------------|
 | `pre-bash-guard.sh` | PreToolUse: Bash | Blocks destructive commands | Regex coverage for new attack patterns |
-| `pre-prompt-injection.sh` | PreToolUse: Bash\|Write\|Edit\|WebFetch | Blocks injection patterns | Pattern list completeness |
+| `pre-prompt-injection.sh` | PreToolUse: Bash\|Write\|Edit\|WebFetch | Blocks escape sequences and NUL bytes; advises on injection phrases | Advisory-only phrase list; no false blocks on grep/tests/commits (`--selftest`) |
 | `pre-unicode-injection.sh` | PreToolUse: Edit\|Write | Blocks unicode/homoglyph injection | Coverage of new unicode attack vectors |
 | `pre-edit-protect-sensitive.sh` | PreToolUse: Write\|Edit | Blocks writes to sensitive files | Sensitive file pattern completeness |
 | `pre-lessons-injector.sh` | PreToolUse: Agent | Injects lessons into sub-agents | Verify no sensitive data in lessons.md |

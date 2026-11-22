@@ -91,7 +91,7 @@ Developer asks Claude to build a feature
     → Claude implements the feature
     → Hookify rules check each file write (pattern match)
     → Claude dispatches reviewer agent after implementation
-    → Hook runs on stop (blackbox log, promote lessons)
+    → Hook runs on stop (lessons reminder)
 ```
 
 ---

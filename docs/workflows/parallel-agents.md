@@ -161,7 +161,7 @@ Load `references/synthesis-protocol.md`
 - **Vague dispatch prompts** — "Review this code" produces generic findings; always pass specific files, scope, and output format
 - **Skipping synthesis** — Raw agent outputs are not deliverables; always synthesize to one report
 - **Running output-evaluator too early** — It must be last, after all other agents complete
-- **Not passing context to agents** — Agents don't inherit CLAUDE.md; pass stack, rules, and file paths explicitly
+- **Not passing context to agents** — Agents never see the conversation; Explore/Plan agents also start without CLAUDE.md. Pass the task, stack, and file paths explicitly
 
 ---
 

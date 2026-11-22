@@ -1,11 +1,11 @@
 # Screenshot-to-Flutter Workflow
 
 > **When to use**: User provides a UI screenshot and asks to replicate, clone, or implement it in Flutter
-> **Prerequisites**: Flutter project scaffolded with PropertyHarbor design system (ColorScheme, AppSpacing, TextTheme)
+> **Prerequisites**: Flutter project scaffolded with project design system (ColorScheme, AppSpacing, TextTheme)
 
 ## Overview
 
-Replicate a UI screenshot as a production-ready Flutter widget with pixel-perfect visual accuracy, compliant with the PropertyHarbor design system. Uses `screenshot-to-flutter` skill.
+Replicate a UI screenshot as a production-ready Flutter widget with pixel-perfect visual accuracy, compliant with the project design system. Uses `screenshot-to-flutter` skill.
 
 ---
 

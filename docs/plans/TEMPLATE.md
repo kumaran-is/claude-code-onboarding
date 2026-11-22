@@ -90,7 +90,7 @@ Record every change to this plan after it is APPROVED. Do NOT edit tasks silentl
 - `reorder` — dependency order changed
 - `abandon` — task permanently dropped (must state what replaces it or why it's no longer needed)
 
-> Every mutation must also be appended to `blackbox/session-log.md` under `### Decisions`.
+> Every mutation must be recorded in this table before work continues.
 
 ---
 

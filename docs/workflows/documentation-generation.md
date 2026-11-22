@@ -164,7 +164,7 @@ What's new in 1.3.0:
 **Agent**: `mermaid-expert`
 
 **When**: After implementing a new service, flow, or integration
-**Trigger from `blackbox-policy.md`**: If files modified this session map to `docs/diagrams/`, update the diagram.
+**Diagram update trigger**: name diagrams after the folder they describe (`src/auth/` → `docs/diagrams/auth-flow.md`). If files modified in a change are covered by an existing diagram, update it in the same change; if a new service, flow or integration has no diagram, create `docs/diagrams/<feature>-flow.md` (Mermaid).
 
 **Diagram types**:
 
@@ -248,7 +248,7 @@ Before declaring documentation complete:
 
 - **Generating docs from memory** — always read the actual code before generating docs; APIs change
 - **No example in OpenAPI** — specs without examples are harder to consume; always include `example:` fields
-- **Diagram not updated after code change** — `blackbox-policy.md` requires diagram updates when covered code changes
+- **Diagram not updated after code change** — update the covering diagram in the same change (see the diagram update trigger above)
 - **Generic release notes** — "bug fixes and improvements" tells users nothing; be specific
 - **Including implementation details** — API docs describe the contract, not the internal implementation
 

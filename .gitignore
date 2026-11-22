@@ -19,6 +19,11 @@ Thumbs.db
 .claude/settings.local.json
 .claude/temp/
 .claude/ralph-loop.local.md
+
+# Runtime state and retired logging systems — never commit prompt logs or generated state
+.claude/state/
+blackbox/
+.claude/smart-suggest.jsonl
 CLAUDE.local.md
 
 # Credentials & secrets

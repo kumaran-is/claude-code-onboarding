@@ -913,17 +913,19 @@ To add your own project-specific permissions, modify `.claude/settings.json` or 
 
 > **Note:** `SessionStart`, `SessionEnd`, `SubagentStop`, `PreCompact`, and `PermissionRequest` hooks were added in recent Claude Code releases. If a hook event doesn't fire, verify your Claude Code version with `claude --version` and update if needed. The core events (`PreToolUse`, `PostToolUse`, `Stop`) are available in all versions.
 
-This repo includes 4 hooks out of the box:
+This repo registers 33 hooks in `.claude/settings.json`. The ones most people interact with:
 
 | Hook | Script | Event | What It Does |
 |------|--------|-------|-------------|
-| **Bash Guard** | `pre-bash-guard.sh` | `PreToolUse` → Bash | Blocks `rm -rf /`, `rm -rf .`, force-push to main, `DROP DATABASE` |
-| **Protect Sensitive Files** | `pre-edit-protect-sensitive.sh` | `PreToolUse` → Write/Edit | Blocks edits to `.env`, credentials, private keys, lock files |
+| **Bash Guard** | `pre-bash-guard.sh` (+ `pre-bash-guard.py`) | `PreToolUse` → Bash | Parses the command (quotes, `$(...)`, `bash -c`, pipelines) and blocks `rm` that resolves outside the project/temp dirs or to an unresolvable path, deleting `.env`/keys, pushes to `main`/`master`/`develop`, destructive SQL via a DB client, `curl … \| sh`. Does not match text that merely mentions a command. |
+| **Restore Guard** | `pre-bash-destructive-restore-guard.sh` | `PreToolUse` → Bash | Asks for confirmation before `git checkout --`, `git restore`, `git reset --hard`, `git clean -f` when they would discard uncommitted work |
+| **Raw Scaffold Block** | `block-raw-scaffold.sh` | `PreToolUse` → Bash | Blocks `flutter create` / `ng new` / `nest new` etc. unless the call carries the owning scaffold command's `CC_SCAFFOLD=<command>` marker (logged to `.claude/state/scaffold-audit.log`) |
+| **Protect Sensitive Files** | `pre-edit-protect-sensitive.sh` | `PreToolUse` → Write/Edit | Blocks edits to `.git/` internals, `.env`, credentials, private keys, lock files |
 | **Auto-Format** | `post-edit-format.sh` | `PostToolUse` → Write/Edit | Runs Prettier (TS/JS/HTML/CSS), `dart format`, ruff/black (Python) |
-| **Smart Suggest** | `smart-suggest.sh` | `UserPromptSubmit` | Behavioral coaching — detects intent (debug/review/deploy/scaffold) and injects the right command/agent suggestion before Claude responds. Tier 0 blocks policy violations. |
+| **Flutter advisories** | `post-edit-flutter-ui-network-advisory.sh`, `post-edit-flutter-catch-wipe-advisory.sh` | `PostToolUse` → Write/Edit | Tell Claude when UI code imports an HTTP/cloud client directly, or a `catch` block clears a cache/queue (exempt with `// online-only:` / `// wipe-ok:` + reason) |
+| **Browser Tool Advisory** | `pre-browser-tool-advisory.sh` | `PreToolUse` → browser MCP tools / Bash | In a workspace containing a Flutter Android/iOS app, reminds Claude that mobile UI/E2E uses Maestro only and browser automation is for web targets (rule: `.claude/rules/testing-tool-selection.md`; checked statically by `.claude/scripts/lint-testing-tools.sh`) |
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
 | **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Warns if changed files contain AWS/GCP/GitHub/OpenAI API keys |
-| **Blackbox Log** | `stop-blackbox-log.sh` | `Stop` | Appends session decisions, user constraints, and changed files to `blackbox/session-log.md` |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |
 
 > After cloning: `chmod +x .claude/hooks/*.sh`
@@ -983,63 +985,11 @@ Or manage existing rules:
 | `pattern` | Regex string (shorthand for single condition) | One of pattern or conditions |
 | `conditions` | List of `{field, operator, pattern}` | One of pattern or conditions |
 
-### Blackbox — Session Decision Log
+### Architecture Diagrams
 
-The **blackbox** is a persistent, append-only log of every session where decisions were made, code was written, or user constraints were stated. Think of it as a **flight data recorder for your AI sessions** — you don't look at it every day, but when something goes wrong or you need to trace a decision, it's invaluable.
+Keep architecture diagrams next to the code they describe and update them in the same change as the code.
 
-**How it works:**
-
-| Component | Location | Auto-loaded? | Purpose |
-|-----------|----------|-------------|---------|
-| Policy rule | `.claude/rules/blackbox-policy.md` | ✅ Always | Instructs Claude to write entries at session end |
-| Log data | `blackbox/session-log.md` | ❌ Never | Actual entries — grows freely without bloating context |
-| Hook script | `.claude/hooks/stop-blackbox-log.sh` | Runs at `Stop` | Mechanically appends git-changed files as backup |
-
-**Each log entry looks like this:**
-
-```
-## 2026-02-28T09:00Z
-### Decisions
-- Used PostgreSQL per user constraint (not AI default)
-### Constraints Stated by User
-- No mobile app — web only
-### Files Modified
-- src/db/config.ts — switched connection pool to postgres
-### Deferred
-- Rate limiting — explicitly deferred to post-launch
----
-```
-
-**Key design principles:**
-- **Never bloats context** — `blackbox/session-log.md` lives outside `.claude/` so it's never auto-loaded into every session
-- **Auto-created** — hook creates the `blackbox/` directory and log file on first session end if missing
-- **Monthly rotation** — on month boundary, hook auto-renames to `archive-YYYY-MM.md` and starts fresh
-- **Two-layer logging** — Claude writes decisions (policy rule); hook writes git facts (mechanical backup)
-- **Committed to git** — full history preserved, team-visible
-
-**When to read it:**
-
-```bash
-# "What did we decide last week?"
-cat blackbox/session-log.md
-
-# "Why was this file changed?"
-grep -A 10 "2026-02-20" blackbox/session-log.md
-
-# Read archived months
-cat blackbox/archive-2026-01.md
-```
-
-**Diagram Staleness Detection:**
-
-The blackbox also tracks when source code changes may have made an architecture diagram stale. The hook checks if any modified files match a known diagram by folder name and appends a warning automatically:
-
-```
-⚠️  Diagrams that may need updating:
-  - docs/diagrams/auth-flow.md (auth/ was modified)
-```
-
-Naming convention: `src/auth/` → `docs/diagrams/auth-flow.md` (folder prefix = diagram prefix). The policy rule instructs Claude to update or create diagrams during the session; the hook warns if it was missed.
+Naming convention: the folder name is the diagram prefix, so `src/auth/` maps to `docs/diagrams/auth-flow.md`. If a change touches files covered by an existing diagram, update that diagram; if a new service, flow or integration has no diagram, add a Mermaid one (`docs/diagrams/<feature>-flow.md`). See [documentation-generation](docs/workflows/documentation-generation.md).
 
 ```
 docs/
@@ -1210,7 +1160,7 @@ Re-measure score (e.g. 41 issues)
 
 The **lessons log** is the team's shared record of corrections — mistakes Claude made that you corrected, expressed as rules to prevent recurrence.
 
-Unlike the blackbox (which is never auto-loaded), `lessons.md` lives in `.claude/rules/` so it is **always active** in every session.
+`lessons.md` lives in `.claude/rules/` so it is **always active** in every session.
 
 | Component | Location | Auto-loaded? | Purpose |
 |-----------|----------|-------------|---------|
@@ -1236,15 +1186,6 @@ Promoted to matching rules file (core-behaviors.md, code-standards.md, etc.)
 ```
 
 `lessons.md` stays lean (~60 lines max). Repeated lessons become permanent rules. One-off mistakes that never recur get pruned at the 15-entry cap.
-
-**Difference from blackbox:**
-
-| | `blackbox/session-log.md` | `.claude/rules/lessons.md` |
-|--|--|--|
-| Auto-loaded? | Never | Always |
-| Records | Decisions + files changed | Correction patterns |
-| Grows? | Unboundedly (append-only) | Capped at 15 entries |
-| Purpose | Audit trail | Active mistake prevention |
 
 ### Model Selection & Cost Awareness
 
@@ -3104,7 +3045,6 @@ This repo includes Claude Code hooks (`.claude/hooks/`) and a git pre-commit hoo
 | `pre-unicode-injection.sh` | PreToolUse | Zero-width characters, RTL overrides, ANSI escapes, null bytes hidden in file edits (CVE-2025-53109/53110) |
 | `session-claudemd-scan.sh` | SessionStart | Injection patterns in `CLAUDE.md` / `.claude/*.md` files loaded at session start |
 | `stop-secret-scan.sh` | Stop | Warns if changed files contain AWS/GCP/GitHub/Stripe/Anthropic API key patterns |
-| `stop-blackbox-log.sh` | Stop | Appends session decisions and changed files to `blackbox/session-log.md` for accountability |
 | `post-edit-format.sh` | PostToolUse | Not security-related, but auto-formats to prevent malformed code commits |
 
 **Git pre-commit hook** — fires on every `git commit`, before the commit is created:

@@ -1,5 +1,7 @@
 # Browser E2E Testing
 
+> **Scope:** web targets (Angular, React, websites, Flutter web builds). Flutter Android/iOS UI/E2E is Maestro-only, see Phase 7 and `.claude/rules/testing-tool-selection.md`.
+
 > **When to use**: Validating critical user journeys end-to-end in a running browser — login flows, checkout, core feature workflows
 > **Time estimate**: 30 min per E2E scenario; 2–4 hours for full critical path suite
 > **Prerequisites**: App running locally or on staging; Chrome DevTools MCP and Browser-Use MCP configured

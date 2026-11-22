@@ -122,7 +122,6 @@ Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tail
 | `pre-prompt-injection.sh` | PreToolUse: Bash\|Write\|Edit\|WebFetch | Blocks injection patterns | Pattern list completeness |
 | `pre-unicode-injection.sh` | PreToolUse: Edit\|Write | Blocks unicode/homoglyph injection | Coverage of new unicode attack vectors |
 | `pre-edit-protect-sensitive.sh` | PreToolUse: Write\|Edit | Blocks writes to sensitive files | Sensitive file pattern completeness |
-| `scope-monitor.sh` | PreToolUse: Write\|Edit | Enforces task scope | Path allowlist accuracy |
 | `pre-lessons-injector.sh` | PreToolUse: Agent | Injects lessons into sub-agents | Verify no sensitive data in lessons.md |
 | `block-raw-scaffold.sh` | PreToolUse: Bash | Blocks `flutter create`, `ng new` etc. | Pattern list for new scaffold commands |
 | `output-secrets-scanner.sh` | PostToolUse: Bash\|Read\|WebFetch | Scans output for secrets | Pattern list for new secret formats |
@@ -132,12 +131,9 @@ Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tail
 | `post-edit-format.sh` | PostToolUse: Write\|Edit | Code formatting | Does not exfiltrate code |
 | `post-validate-structured-data.sh` | PostToolUse: Write\|Edit | Validates JSON/YAML/TOML | Does not execute content |
 | `prompt-secret-scan.sh` | UserPromptSubmit | Scans user prompts for secrets | Pattern completeness |
-| `prompt-audit-log.sh` | UserPromptSubmit | Logs user prompts | Log file is gitignored? Verify. |
 | `session-claudemd-scan.sh` | SessionStart | Scans CLAUDE.md for injection | Pattern completeness |
 | `session-start.sh` | SessionStart | Session initialization | Verify no network calls |
-| `smart-suggest.sh` | UserPromptSubmit | Skill suggestions | Verify no prompt content sent externally |
 | `stop-secret-scan.sh` | Stop | Final secret scan | Pattern completeness |
-| `stop-blackbox-log.sh` | Stop | Writes session log | Log file contents — no secrets |
 | `stop-lessons-reminder.sh` | Stop | Lessons reminder | Informational only |
 | `stop-ralph-loop.sh` | Stop | Ralph loop cleanup | Verify no orphan processes |
 | `stop-notify-completion.sh` | Stop | Completion notification | Verify notification target is local only |
@@ -228,9 +224,6 @@ grep -rn "curl\|wget" .claude/hooks/*.sh | grep -v "pre-bash-guard\|# "
 
 # Verify secrets-detected.log is gitignored
 grep "secrets-detected" .gitignore || echo "WARNING: .claude/secrets-detected.log may not be gitignored"
-
-# Verify prompt audit log is gitignored (if prompt-audit-log.sh writes a file)
-grep -rn "LOGFILE\|logfile\|log_file" .claude/hooks/prompt-audit-log.sh
 ```
 
 ---

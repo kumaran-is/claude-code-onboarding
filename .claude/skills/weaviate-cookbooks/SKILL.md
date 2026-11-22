@@ -74,5 +74,5 @@ If the user has no Weaviate instance, direct them to [Weaviate Cloud](https://co
 
 After scaffolding a cookbook app, dispatch:
 - `weaviate-schema-reviewer` — collection schema, v4 API compliance, multi-tenancy
-- `rag-pipeline-reviewer` — if the cookbook includes a RAG pipeline
+- `rag-implementation-reviewer` — if the cookbook includes a RAG pipeline
 - `security-reviewer` — if the app handles user input or external data

@@ -101,4 +101,4 @@ All scripts support `--json` flag. Default output is markdown tables.
 
 After writing Weaviate code, dispatch:
 - `weaviate-schema-reviewer` — collection schema, v4 API, multi-tenancy, distance metric
-- `rag-pipeline-reviewer` — if building a retrieval pipeline
+- `rag-implementation-reviewer` — if building a retrieval pipeline

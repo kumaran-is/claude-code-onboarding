@@ -18,7 +18,7 @@ uv run scripts/create_collection.py CollectionName --properties '[...]' [--descr
 | `--vectorizer` | `-v` | No | `text2vec_weaviate` | Vectorizer module to use |
 | `--replication-factor` | `-r` | No | — | Replication factor (defers to server default when not set) |
 | `--multi-tenancy` | `-m` | No | `false` | Enable multi-tenancy for data isolation |
-| `--auto-tenant-creation` | `-a` | No | `false` | Auto-create tenants on insert (requires `--multi-tenancy`) |
+| `--auto-tenant-creation` | `-a` | No | `false` | Auto-create tenants on insert (requires `--multi-tenancy`). Caveat: a write with a mistyped or forged tenant name silently creates a tenant, and reads/deletes on a never-written tenant raise — guard with `collection.tenants.exists(...)` in application code |
 | `--json` | — | No | `false` | Output in JSON format |
 
 ## Property Definition Format

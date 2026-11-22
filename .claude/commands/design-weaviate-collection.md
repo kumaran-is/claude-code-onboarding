@@ -28,16 +28,20 @@ Generate production-ready Weaviate Python client v4 collection code.
    - Correct `weaviate.connect_to_*()` (v4 API, NOT deprecated `weaviate.Client()`)
    - API keys from `os.environ["..."]` — NEVER hardcoded
    - `client.close()` in `finally` block
-   - `Configure.multi_tenancy(enabled=True/False)` — explicitly declared
-   - `Configure.VectorIndex.hnsw(distance_metric=...)` — explicit, not default
+   - `vector_config=Configure.Vectors.self_provided(...)` (app-side embedding) or `Configure.Vectors.text2vec_<provider>(...)` — NOT the deprecated `vectorizer_config=` / `vector_index_config=` create arguments or `Configure.NamedVectors` (Dep024/025/026 in weaviate-client 4.24.1)
+   - `Configure.multi_tenancy(enabled=True/False)` — explicitly declared; if `auto_tenant_creation=True`, also generate the shared `tenants.exists()` guard for read/delete paths
+   - `Configure.VectorIndex.hnsw(distance_metric=...)` inside `vector_config` — explicit, not default
+   - Create-only settings decided now: `inverted_index_config=Configure.inverted_index(index_null_state=True)` if any query filters on null (e.g. `superseded_at`), tokenization per property
+   - `embedding_model` property on every object
    - All properties with explicit `DataType`
    - `generate_uuid5(stable_id)` for batch inserts (idempotent)
-   - `collection.batch.failed_objects` check after batch
+   - `collection.batch.failed_objects` read after each batch context, logged by id/count, failing the run above a failure-rate threshold
 
 4. **Generate helper functions**:
    - `create_collection_if_not_exists()` — checks existence before creating
    - `batch_insert(items)` — with error checking
-   - Query example matching the use case (nearText / hybrid / bm25)
+   - `scoped(tenant_id)` helper (multi-tenant collections) — every call goes through `.with_tenant(tenant_id)`, tenant from the auth context
+   - Query example matching the use case. Self-provided vectors: `near_vector` or `hybrid(query=..., vector=...)` — `hybrid` without `vector=` silently degrades to keyword-only; fusion enum `HybridFusion.RANKED` / `RELATIVE_SCORE`
 
 5. **Run `weaviate-schema-reviewer` agent** on the generated code before presenting.
 

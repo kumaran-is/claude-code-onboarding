@@ -90,7 +90,7 @@ export OPENAI_API_KEY="..."  # or COHERE_API_KEY, ANTHROPIC_API_KEY
 **Command**: `/scaffold-rag-pipeline [pipeline-name] weaviate [use-case]`
 **Source**: `commands/scaffold-rag-pipeline.md`
 **Skill**: `vector-database` + `weaviate-cookbooks`
-**Agent**: `rag-pipeline-reviewer`
+**Agent**: `rag-implementation-reviewer`
 
 **Select cookbook type** (from `skills/weaviate-cookbooks/SKILL.md`):
 
@@ -119,7 +119,7 @@ src/<pipeline-name>/
 ```
 
 **Produces**: Complete Weaviate-backed RAG pipeline
-**Gate**: `rag-pipeline-reviewer` passes; end-to-end pipeline test succeeds
+**Gate**: `rag-implementation-reviewer` passes; end-to-end pipeline test succeeds
 
 ---
 
@@ -129,8 +129,7 @@ src/<pipeline-name>/
 - Vibe: *"Multi-tenancy and vectorizer mismatches corrupt collections — caught here first"*
 - Checks: vectorizer validity, multi-tenancy flag, distance metric correctness, no hardcoded API keys, named vector consistency, Python client v4 API correctness
 
-**Agent 2**: `rag-pipeline-reviewer` (sonnet)
-- Vibe: *"Unranked retrieval and unpinned models are production incidents waiting to happen"*
+**Agent 2**: `rag-implementation-reviewer`
 - Checks: embedding model pinned, chunking strategy justified, reranking present for production, null guards on retrieval, error handling on Weaviate API calls
 
 **Gate**: Both agents pass; zero CRITICAL findings
@@ -186,8 +185,8 @@ Returns: AI-generated answer with source citations
 |-------|--------------|----------|------|
 | 1 — Onboarding | `/weaviate:quickstart` | Connected instance | Collections list succeeds |
 | 2 — Design | `/design-weaviate-collection` + `weaviate-schema-reviewer` | Collection code | Agent passes |
-| 3 — Pipeline | `/scaffold-rag-pipeline weaviate` + `rag-pipeline-reviewer` | Pipeline files | Agent passes + tests pass |
-| 4 — Review | `weaviate-schema-reviewer` + `rag-pipeline-reviewer` | Findings | Zero CRITICAL |
+| 3 — Pipeline | `/scaffold-rag-pipeline weaviate` + `rag-implementation-reviewer` | Pipeline files | Agent passes + tests pass |
+| 4 — Review | `weaviate-schema-reviewer` + `rag-implementation-reviewer` | Findings | Zero CRITICAL |
 | 5 — Operations | `/weaviate:search`, `/weaviate:ask`, `/weaviate:explore` | Query results | Live data returned |
 
 ---

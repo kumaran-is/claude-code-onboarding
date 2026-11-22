@@ -2,6 +2,8 @@
 
 Combines vector similarity and keyword (BM25) matching for balanced search results on a single collection.
 
+> **Self-provided vectors:** this script sends only the query text. On a collection created with `Configure.Vectors.self_provided()` (no server vectorizer) the vector leg has nothing to search and results are keyword-only, with no error. Use it on collections with a server-side vectorizer; for self-provided vectors call `collection.query.hybrid(query=q, vector=embed_query(q))` from application code. Multi-tenant collections also need `.with_tenant(...)`, which this script does not set.
+
 ## Usage
 
 ```bash

@@ -113,124 +113,111 @@ def calculate_bertscore(
 
 ---
 
-## Section 2: RAG Evaluation Metrics
+## Section 2: Retrieval Rank Metrics (canonical)
+
+This section is the **single canonical home** for Recall@K, Precision@K, Hit@K, MRR and nDCG in this toolkit. `rag-evaluator`, `/rag-eval-init`, `eval-guide` and `vector-database` link here; copy this module verbatim rather than re-deriving it. Executed: the worked examples below run as pytest (6 tests pass, `mypy --strict` clean); the previous versions of these functions failed 4 of them (shared-pool MRR 1.0 instead of 0.75, nDCG 2.13 on duplicates, P@10 = 1.0 for a single hit, Recall = 1.0 or 0.0 for zero-relevant queries).
 
 ```python
+"""Rank metrics for retrieval evaluation (one query at a time).
+
+Conventions (state them in every report):
+- ``ranked`` is the retrieved id list in rank order; duplicates are removed first
+  (a chunk earns gain once). Report the duplicate rate separately.
+- ``relevant`` / ``grades`` are THIS query's judgments, never a pool shared across queries.
+- A query with no relevant documents returns ``None`` (undefined): exclude it from the
+  mean and score it as an abstention case instead.
+- Precision@K divides by K, even when fewer than K results came back.
+- nDCG uses linear gain (grade / log2(rank + 1)); the ideal ranking is built from ALL
+  judged grades for the query, including documents that were not retrieved.
+"""
+
+from __future__ import annotations
+
 import math
+from collections.abc import Iterable, Sequence
 
 
-def calculate_mrr(
-    ranked_results: list[list[str]],
-    relevant_docs: list[str],
-) -> float:
-    """Calculate Mean Reciprocal Rank (MRR) over a set of queries.
-
-    MRR measures how high the first relevant document appears in each ranked list.
-    Best for settings where finding a single correct answer is the goal (e.g., QA).
-
-    Args:
-        ranked_results: List of ranked document-ID lists, one per query.
-            ranked_results[i] is the ordered retrieval list for query i.
-        relevant_docs: Flat list of all relevant document IDs across all queries.
-            For per-query relevance, use calculate_ndcg instead.
-
-    Returns:
-        MRR score in [0.0, 1.0]. Returns 0.0 if no relevant doc is found.
-    """
-    relevant_set = set(relevant_docs)
-    reciprocal_ranks: list[float] = []
-
-    for ranked_list in ranked_results:
-        rr = 0.0
-        for rank, doc_id in enumerate(ranked_list, start=1):
-            if doc_id in relevant_set:
-                rr = 1.0 / rank
-                break
-        reciprocal_ranks.append(rr)
-
-    if not reciprocal_ranks:
-        return 0.0
-    return sum(reciprocal_ranks) / len(reciprocal_ranks)
+def dedupe(ranked: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for doc_id in ranked:
+        if doc_id not in seen:
+            seen.add(doc_id)
+            out.append(doc_id)
+    return out
 
 
-def calculate_ndcg(
-    ranked_results: list[str],
-    relevance_scores: dict[str, int],
-    k: int = 10,
-) -> float:
-    """Calculate Normalized Discounted Cumulative Gain (NDCG@K) for a single query.
-
-    NDCG accounts for both the relevance grade and the rank position of each result.
-    Graded relevance (0/1/2/3) is more informative than binary when available.
-
-    Args:
-        ranked_results: Ordered list of retrieved document IDs for a single query.
-        relevance_scores: Mapping of document ID to graded relevance (0 = not relevant,
-            higher = more relevant). Documents absent from the map are treated as 0.
-        k: Cutoff rank for the evaluation.
-
-    Returns:
-        NDCG@K score in [0.0, 1.0]. Returns 0.0 if ideal DCG is 0.
-    """
-    def dcg(docs: list[str], scores: dict[str, int], cutoff: int) -> float:
-        total = 0.0
-        for i, doc_id in enumerate(docs[:cutoff], start=1):
-            rel = scores.get(doc_id, 0)
-            total += rel / math.log2(i + 1)
-        return total
-
-    actual_dcg = dcg(ranked_results, relevance_scores, k)
-    ideal_docs = sorted(relevance_scores.keys(), key=lambda d: relevance_scores[d], reverse=True)
-    ideal_dcg = dcg(ideal_docs, relevance_scores, k)
-
-    if ideal_dcg == 0.0:
-        return 0.0
-    return actual_dcg / ideal_dcg
+def duplicate_rate(ranked: Sequence[str]) -> float:
+    return 0.0 if not ranked else 1 - len(set(ranked)) / len(ranked)
 
 
-def calculate_precision_at_k(
-    ranked_results: list[str],
-    relevant_docs: set[str],
-    k: int = 5,
-) -> float:
-    """Calculate Precision@K — fraction of top-K results that are relevant.
-
-    Args:
-        ranked_results: Ordered list of retrieved document IDs.
-        relevant_docs: Set of relevant document IDs for this query.
-        k: Cutoff rank.
-
-    Returns:
-        Precision@K in [0.0, 1.0].
-    """
-    if k == 0:
-        return 0.0
-    top_k = ranked_results[:k]
-    hits = sum(1 for doc_id in top_k if doc_id in relevant_docs)
-    return hits / k
+def precision_at_k(ranked: Sequence[str], relevant: set[str], k: int) -> float | None:
+    if k <= 0:
+        raise ValueError("k must be positive")
+    if not relevant:
+        return None
+    return sum(d in relevant for d in dedupe(ranked)[:k]) / k
 
 
-def calculate_recall_at_k(
-    ranked_results: list[str],
-    relevant_docs: set[str],
-    k: int = 5,
-) -> float:
-    """Calculate Recall@K — fraction of all relevant docs found in top-K results.
+def recall_at_k(ranked: Sequence[str], relevant: set[str], k: int) -> float | None:
+    if not relevant:
+        return None
+    return len(set(dedupe(ranked)[:k]) & relevant) / len(relevant)
 
-    Args:
-        ranked_results: Ordered list of retrieved document IDs.
-        relevant_docs: Set of all relevant document IDs for this query.
-        k: Cutoff rank.
 
-    Returns:
-        Recall@K in [0.0, 1.0]. Returns 0.0 if relevant_docs is empty.
-    """
-    if not relevant_docs:
-        return 0.0
-    top_k = set(ranked_results[:k])
-    hits = len(top_k & relevant_docs)
-    return hits / len(relevant_docs)
+def hit_at_k(ranked: Sequence[str], relevant: set[str], k: int) -> float | None:
+    if not relevant:
+        return None
+    return 1.0 if set(dedupe(ranked)[:k]) & relevant else 0.0
+
+
+def reciprocal_rank(ranked: Sequence[str], relevant: set[str]) -> float | None:
+    if not relevant:
+        return None
+    for rank, doc_id in enumerate(dedupe(ranked), start=1):
+        if doc_id in relevant:
+            return 1.0 / rank
+    return 0.0
+
+
+def ndcg_at_k(ranked: Sequence[str], grades: dict[str, int], k: int) -> float | None:
+    dcg = sum(grades.get(d, 0) / math.log2(i + 1) for i, d in enumerate(dedupe(ranked)[:k], start=1))
+    ideal = sorted((g for g in grades.values() if g > 0), reverse=True)[:k]
+    idcg = sum(g / math.log2(i + 1) for i, g in enumerate(ideal, start=1))
+    return None if idcg == 0 else dcg / idcg
+
+
+def mean_defined(values: Iterable[float | None]) -> tuple[float | None, int]:
+    """Mean over defined values plus the count of undefined (excluded) queries."""
+    vals = list(values)
+    defined = [v for v in vals if v is not None]
+    return (sum(defined) / len(defined) if defined else None), len(vals) - len(defined)
 ```
+
+**Definitions.** Recall@K = unique relevant ids in the top K / all relevant ids for the query. Hit@K = 1 if any relevant id is in the top K (do not call it recall). Precision@K = relevant ids in the top K / K. Reciprocal rank = 1 / rank of the first relevant id; MRR = mean over queries that have relevant ids. nDCG@K = DCG@K / IDCG@K with DCG@K = Σ_{i=1..K} grade_i / log2(i + 1); IDCG uses the top-K grades of all judged documents, retrieved or not. Exponential gain (2^grade - 1) is an alternative: say which one a threshold uses.
+
+**Worked examples (asserted in tests):**
+
+| Case | Input | Correct value | Common wrong value |
+|---|---|---|---|
+| Per-query MRR | q1 relevant={a} ranked [a]; q2 relevant={b} ranked [a, b] | (1 + 0.5) / 2 = **0.75** | 1.0 with a relevant pool shared across queries |
+| K > results | ranked [r1], relevant={r1, r2}, K=10 | P@10 = **0.1** | 1.0 when dividing by results returned |
+| Duplicates | ranked [a, a, a], relevant={a: 1}, K=3 | nDCG@3 = **1.0**, P@3 = **0.333**, duplicate rate 0.667 | nDCG 2.13, P@3 1.0 |
+| Zero relevant | relevant = {} | **None** (excluded, scored as abstention) | 1.0 (inflates) or 0.0 (deflates) |
+| Graded nDCG@5 | ranked [d1..d5]; grades d1=3, d2=2, d3=0, d4=1, d6=2 (d6 not retrieved) | DCG = 3 + 2/log2(3) + 1/log2(5) = 4.6926; IDCG (3,2,2,1) = 5.6926; **0.8243** (exponential gain: 0.8614) | 0.9854 when IDCG is built from the retrieved list only (ignores unretrieved d6) |
+
+```python
+# test_rank_metrics.py (excerpt)
+def test_mrr_uses_per_query_relevance() -> None:
+    mrr, excluded = mean_defined([reciprocal_rank(["a"], {"a"}), reciprocal_rank(["a", "b"], {"b"})])
+    assert mrr == pytest.approx(0.75) and excluded == 0
+
+def test_worked_ndcg_at_5() -> None:
+    grades = {"d1": 3, "d2": 2, "d3": 0, "d4": 1, "d6": 2}
+    assert ndcg_at_k(["d1", "d2", "d3", "d4", "d5"], grades, 5) == pytest.approx(0.8243, abs=1e-4)
+```
+
+Report alongside every mean: the number of queries excluded as undefined, the duplicate rate, and raw-retrieval vs post-rerank values separately. Score retrieval on canonical chunk ids, not keyword-substring proxies.
 
 ---
 

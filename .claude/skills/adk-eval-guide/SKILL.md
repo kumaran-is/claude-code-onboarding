@@ -1,6 +1,6 @@
 ---
 name: adk-eval-guide
-description: "Use when evaluating ADK agents, running adk eval, writing evalsets, configuring eval metrics, or debugging evaluation results. Covers all 8 criteria (tool_trajectory_avg_score, response_match_score, final_response_match_v2, rubric_based_final_response_quality_v1, rubric_based_tool_use_quality_v1, hallucinations_v1, safety_v1, per_turn_user_simulator_quality_v1), eval schema, LLM-as-judge configuration, user simulation, multimodal evaluation, and common eval failure causes."
+description: "Use when evaluating ADK agents, running adk eval, writing evalsets, configuring eval metrics, or debugging evaluation results. Covers the 13 documented criteria (trajectory, response match, coherence, semantic match, rubric-based, hallucinations, safety, user-simulator and multi-turn criteria) with score scales and directions, eval schema, LLM-as-judge configuration, user simulation, multimodal evaluation, and common eval failure causes."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: adk eval, adk evaluation, evalset, tool_trajectory_avg_score, response_match_score, final_response_match_v2, rubric_based, hallucinations_v1, safety_v1, LLM-as-judge, eval criteria, eval config
@@ -9,21 +9,21 @@ metadata:
   role: specialist
   scope: evaluation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 # ADK Evaluation Guide
 
 ## Iron Law
 
-**NEVER evaluate agents against the live Gemini API in unit tests. Use `adk eval` with evalsets.**
-Hitting the real API in eval makes results non-deterministic, incurs cost, and breaks CI. Always run evaluations through the ADK eval CLI with a defined evalset and config file.
+**UNIT TESTS USE A SCRIPTED FAKE MODEL; `adk eval` IS A LIVE-MODEL TIER, AND EVERY THRESHOLD IS READ ON ITS CRITERION'S OWN SCALE AND DIRECTION.**
+`adk eval` calls the real agent model (and a judge for LLM-judged criteria): it is non-deterministic and costs money, so it runs in the nightly/pre-release tiers (`eval-guide/reference/ci-tiers.md`), not as a unit test. PR-time tests drive the agent with a scripted model (`eval-guide/reference/pytest-harness.md`). Every criterion is a minimum score (higher = better); `hallucinations_v1` is the share of supported sentences, so its gate is e.g. `≥ 0.9`, never `0` or `≤ 0.05`.
 
 ## Reference Files
 
 | File | Contents |
 |------|----------|
-| `reference/criteria-guide.md` | Complete metrics reference — all 8 criteria, match types, custom metrics, judge model config |
+| `reference/criteria-guide.md` | Complete metrics reference — all 13 criteria with scales, match types, custom metrics, judge model config |
 | `reference/user-simulation.md` | Dynamic conversation testing — ConversationScenario, user simulator config, compatible criteria |
 | `reference/builtin-tools-eval.md` | google_search and model-internal tools — trajectory behavior, metric compatibility |
 | `reference/multimodal-eval.md` | Multimodal inputs — evalset schema, built-in metric limitations, custom evaluator pattern |
@@ -32,7 +32,7 @@ Hitting the real API in eval makes results non-deterministic, incurs cost, and b
 
 ## Process
 
-1. **Define criteria** — choose metrics based on your goal (see Choosing the Right Criteria below); read `reference/criteria-guide.md` for all 8 options
+1. **Define criteria** — choose metrics based on your goal (see Choosing the Right Criteria below); read `reference/criteria-guide.md` for all 13 criteria
 2. **Write evalset** — create `evalset.json` with eval cases; include `intermediate_data.tool_uses` for every turn that expects tool calls
 3. **Write eval config** — create `eval_config.json` with criteria thresholds; set `match_type` to `IN_ORDER` unless you need strict `EXACT` regression tests
 4. **Run eval** — `adk eval ./app <path_to_evalset.json> --config_file_path=<path_to_config.json> --print_detailed_results`
@@ -89,7 +89,7 @@ adk eval_set add_eval_case <agent_path> <eval_set_id> --scenarios_file <path> --
 |---------|-----------|
 | Trajectory always 0 | Check if agent uses `google_search` — see `reference/builtin-tools-eval.md` |
 | Extra tool calls failing EXACT match | Switch to `IN_ORDER` or `ANY_ORDER` match type |
-| Non-deterministic scores | Set `temperature=0` or switch to rubric-based eval |
+| Non-deterministic scores | Run k trials and gate on the median (or k/N); set `judge_model_options.num_samples` for judge criteria. `temperature=0` reduces but does not remove variance |
 | Multi-turn trajectory failures | Ensure `tool_uses` is defined for ALL turns, not just the final one |
 | App name mismatch error | `App(name=...)` must match the directory name exactly |
 | State type mismatch | `session_input.state` types must match Python initialization types |
@@ -104,8 +104,10 @@ adk eval_set add_eval_case <agent_path> <eval_set_id> --scenarios_file <path> --
 |---------|-------|-----|
 | `tool_trajectory_avg_score` always 0 | Agent uses `google_search` (model-internal) | Remove trajectory metric; see `reference/builtin-tools-eval.md` |
 | Missing `tool_uses` in intermediate turns | Trajectory expects match per invocation | Add expected tool calls to all turns |
-| "Session not found" error | App name mismatch | Ensure `App(name=...)` matches directory name |
-| Score fluctuates between runs | Non-deterministic model | Set `temperature=0` or use rubric-based eval |
+| "Session not found" error | App name mismatch, or `run_async` before `create_session` in a custom runner | Ensure `App(name=...)` matches directory name; call `runner.session_service.create_session(app_name=runner.app_name, ...)` first |
+| A 0.8 threshold on `response_evaluation_score` always passes | Criterion is on a 1-5 scale | Set the threshold on 1-5 (e.g. 4.0) |
+| `hallucinations_v1` threshold 0 "passes" everything | Score is a minimum share of supported sentences | Gate at e.g. 0.9 |
+| Score fluctuates between runs | Non-deterministic model and judge | k trials with a median; never rerun until green (`eval-guide/SKILL.md`) |
 | Trajectory fails but tools are correct | Extra tools called | Switch to `IN_ORDER`/`ANY_ORDER` match type |
 | Agent mentions data not in tool output | Hallucination | Tighten instructions; add `hallucinations_v1` |
 | LLM judge ignores image/audio | `get_text_from_content()` skips non-text | Use custom metric with vision-capable judge |

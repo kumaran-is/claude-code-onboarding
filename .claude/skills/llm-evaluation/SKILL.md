@@ -1,20 +1,20 @@
 ---
 name: llm-evaluation
-description: "Implement comprehensive evaluation strategies for LLM applications — automated metrics (BLEU, ROUGE, BERTScore, RAG metrics), A/B testing with statistical rigor, regression detection, and benchmarking. Use when measuring agent quality, comparing models or prompts, or building eval pipelines for LangGraph or Google ADK agents."
+description: "Metric formulas and statistics for LLM evaluation — canonical retrieval rank metrics (Recall@K, Precision@K, MRR, nDCG with worked examples), text metrics (BLEU, ROUGE, BERTScore), paired A/B tests and McNemar for prompt/model comparison, power and sample size, fail-closed regression detection, trajectory scoring. Use when computing or reviewing metric code, comparing models or prompts statistically, or sizing an eval. Eval tooling, CI tiers and golden-set process live in eval-guide."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: evaluate LLM, measure quality, BLEU, ROUGE, BERTScore, MRR, NDCG, A/B test prompts, regression test, benchmark model, RAG evaluation, agent quality metrics, compare prompts, eval pipeline
+  triggers: BLEU, ROUGE, BERTScore, MRR, NDCG, Recall@K, Precision@K, metric formula, paired t-test, Wilcoxon, McNemar, bootstrap CI, sample size, statistical significance, A/B test prompts, compare models, regression detector, trajectory score
   related-skills: agentic-ai-dev, google-adk, adk-eval-guide, python-testing-patterns, vector-database
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
 
-**NO EVALUATION CONCLUSION WITHOUT A BASELINE — comparing model A to model B means nothing without a defined baseline and statistical test. Every eval claim requires: metric name, sample size, statistical significance (p < 0.05), and effect size.**
+**NO EVALUATION CONCLUSION WITHOUT A BASELINE AND THE RIGHT TEST — two variants on the same golden cases are paired data (paired t / Wilcoxon / McNemar, never an independent-samples test). Every eval claim states: metric name and definition, n, test used, effect size with CI, dataset and judge version.**
 
 # LLM Evaluation Skill — Python 3.14 + LangGraph + Google ADK
 
@@ -35,7 +35,7 @@ last-reviewed: "2026-03-15"
 | RAG Retrieval | MRR, NDCG@K | Precision@K, Recall@K | When you have no relevance judgments |
 | Text Generation (summarization) | ROUGE-L, BERTScore-F1 | BLEU | When output style matters more than content |
 | Classification | F1 (macro) | Precision/Recall | When class imbalance makes accuracy misleading |
-| A/B Prompt Comparison | Cohen's d effect size | p-value alone | When sample size < 30 |
+| A/B prompt/model comparison (same cases) | paired delta + bootstrap CI, McNemar for pass/fail | Cohen's d | Independent-samples tests on paired data |
 | RAG Generation Quality | BERTScore + Groundedness | Perplexity | For factual domain QA |
 
 ## Framework Decision Tree
@@ -54,15 +54,17 @@ What are you evaluating?
 
 | File | Content | When to Use |
 |------|---------|-------------|
-| `reference/evaluation-metrics.md` | BLEU, ROUGE, BERTScore, RAG metrics (MRR, NDCG, Precision@K), classification metrics, custom groundedness | Implementing metrics for any eval task |
-| `reference/ab-testing.md` | A/B test with t-test + Cohen's d, regression detector class, sample size calculator, CI/CD integration | Comparing prompts/models, detecting regressions |
+| `reference/evaluation-metrics.md` | BLEU, ROUGE, BERTScore; §2 = **canonical** rank metrics (Recall@K, Precision@K, Hit@K, MRR, nDCG) with executed worked examples; groundedness | Implementing or reviewing metric code anywhere in the toolkit |
+| `reference/ab-testing.md` | Paired comparison, McNemar, online A/B (Welch + power), model/prompt comparison protocol, fail-closed RegressionDetector | Comparing prompts/models, detecting regressions |
 | `reference/evaluation-harness.md` | Full eval harness for LangGraph agents and ADK agents, benchmark runner, inter-rater agreement | Building end-to-end eval pipeline |
 | `reference/trajectory-evaluation.md` | 4-pillar evaluation (Effectiveness 40%, Efficiency 20%, Robustness 20%, Safety 20%), safety zero-tolerance, EvaluationResult structure, batch eval, pass/fail gates | Evaluating LangGraph agent trajectories end-to-end |
 
 ## Post-Code Review
 
-After implementing any eval pipeline, dispatch the `agentic-ai-reviewer` agent to verify:
-- Statistical assumptions are met (sample size, normality, independence)
-- Baseline is committed and versioned (not ephemeral)
-- Regression thresholds are documented and justified
-- No silent metric failures (every metric error must surface, not default to 0.0)
+After implementing any eval pipeline, dispatch the `eval-reviewer` agent to verify:
+- The test matches the design (paired for same-case comparisons) and n is sufficient for the claimed delta
+- Rank metrics use per-query relevance, dedupe ids, divide Precision@K by K and exclude zero-relevant queries
+- Baselines are versioned and the comparator fails closed
+- No silent metric failures: an error or an unmeasured metric raises or is reported NOT RUN, never 0.0
+
+Eval process, judge trials, CI tiers and golden-set discipline: `eval-guide`. RAG metric concepts and judge calibration: `rag-evaluator`.

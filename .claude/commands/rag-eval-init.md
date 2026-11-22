@@ -1,5 +1,6 @@
 ---
-description: Scaffold a RAG evaluation setup — golden set template, eval runner, metrics, CI gate
+description: Scaffold a RAG evaluation setup — golden set template, eval runner, canonical metrics, fail-closed CI gate
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # /rag-eval-init — Bootstrap RAG Evaluation
@@ -19,10 +20,10 @@ Ask:
 ```
 evals/
   golden_set.yaml          # Hand-labeled queries
-  run_eval.py              # Eval runner
-  metrics.py               # Retrieval + answer metrics
-  judges.py                # LLM-as-judge (v2, marked as not-yet-used)
-  baselines.json           # Baseline scores for CI comparison
+  run_eval.py              # Eval runner (exit 0 PASS / 1 FAIL / 2 NOT RUN / 3 usage or refused)
+  rank_metrics.py          # Copied verbatim from llm-evaluation/reference/evaluation-metrics.md §2
+  metrics.py               # Aggregation, context precision, answer checks
+  baselines/               # One baseline file per golden-set version (sha256), never overwritten
   reports/                 # Per-run reports (gitignored except .gitkeep)
   README.md                # How to add queries, run evals, interpret results
 ```
@@ -50,8 +51,8 @@ queries:
       - "REPLACE: section name"
     expected_answer_contains:
       - "REPLACE: phrase that must appear"
-    must_not_contain:
-      - "REPLACE: phrase that must NOT appear (hallucination check)"
+    must_not_claim:
+      - "REPLACE: a violating claim, e.g. a wrong figure (not a topic word)"
     expected_abstention: false
 
   - id: q-002
@@ -74,115 +75,70 @@ queries:
   # ... add 7 more placeholders following the same pattern
 ```
 
+### `evals/rank_metrics.py`
+
+Copy the module in `.claude/skills/llm-evaluation/reference/evaluation-metrics.md` §2 verbatim (Recall@K, Precision@K, MRR, nDCG, de-duplication, `mean_defined`). It is the single canonical implementation with executed worked examples; do not re-derive the formulas here. Copy its tests too.
+
 ### `evals/metrics.py`
 
-Provide working implementations of Recall@K, Precision@K, MRR, NDCG@K, plus stubs for faithfulness and citation quality:
-
 ```python
-"""Retrieval and answer metrics for RAG evaluation."""
+"""RAG eval metrics. Rank metrics: rank_metrics.py is evaluation-metrics.md §2 copied verbatim."""
 from __future__ import annotations
+
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
-import math
+
+from evals.rank_metrics import dedupe, mean_defined, ndcg_at_k, precision_at_k, recall_at_k, reciprocal_rank
 
 
-@dataclass
+@dataclass(frozen=True)
 class RetrievalResult:
     query_id: str
-    retrieved_doc_ids: list[str]   # in rank order
-    expected_doc_ids: set[str]
+    retrieved_doc_ids: list[str]   # rank order, as returned
+    expected_doc_ids: set[str]     # this query's relevant ids (empty for unanswerable queries)
 
 
-def recall_at_k(result: RetrievalResult, k: int) -> float:
-    top_k = set(result.retrieved_doc_ids[:k])
-    if not result.expected_doc_ids:
-        return 1.0
-    return len(top_k & result.expected_doc_ids) / len(result.expected_doc_ids)
-
-
-def precision_at_k(result: RetrievalResult, k: int) -> float:
-    top_k = result.retrieved_doc_ids[:k]
-    if not top_k:
-        return 0.0
-    hits = sum(1 for d in top_k if d in result.expected_doc_ids)
-    return hits / len(top_k)
-
-
-def mrr(result: RetrievalResult) -> float:
-    for i, doc_id in enumerate(result.retrieved_doc_ids, start=1):
-        if doc_id in result.expected_doc_ids:
-            return 1.0 / i
-    return 0.0
-
-
-def ndcg_at_k(result: RetrievalResult, k: int) -> float:
-    def dcg(docs: list[str]) -> float:
-        return sum(
-            (1.0 if d in result.expected_doc_ids else 0.0) / math.log2(i + 1)
-            for i, d in enumerate(docs[:k], start=1)
-        )
-    actual = dcg(result.retrieved_doc_ids)
-    ideal_docs = list(result.expected_doc_ids)[:k]
-    ideal = dcg(ideal_docs) if ideal_docs else 1.0
-    return actual / ideal if ideal > 0 else 0.0
-
-
-def context_precision_at_k(result: RetrievalResult, k: int) -> float:
-    """Measures whether relevant chunks are ranked near the top of the retrieved set.
-
-    Unlike Precision@k (binary: how many are relevant?), Context Precision rewards
-    retrievers that put relevant chunks at positions 1-2 over those that bury them
-    at positions 4-5. Critical signal for reranker quality.
-
-    Formula: sum(Precision@i * rel_i for i in 1..k) / total_relevant_in_top_k
-    """
-    if not result.expected_doc_ids:
-        return 1.0
-    running_hits = 0
-    precision_sum = 0.0
-    for i, doc_id in enumerate(result.retrieved_doc_ids[:k], start=1):
-        if doc_id in result.expected_doc_ids:
-            running_hits += 1
-            precision_sum += running_hits / i  # Precision@i
-    return precision_sum / len(result.expected_doc_ids) if result.expected_doc_ids else 0.0
+def context_precision_at_k(ranked: list[str], relevant: set[str], k: int) -> float | None:
+    """RAGAS definition: sum(Precision@i * v_i) / relevant items in the top K. None if none in top K."""
+    hits, total = 0, 0.0
+    for i, doc in enumerate(dedupe(ranked)[:k], start=1):
+        if doc in relevant:
+            hits += 1
+            total += hits / i
+    return total / hits if hits else None
 
 
 def aggregate(results: Iterable[RetrievalResult], k: int = 10) -> dict[str, float]:
-    results = list(results)
-    if not results:
-        return {}
-    return {
-        f"recall@{k}":            sum(recall_at_k(r, k) for r in results) / len(results),
-        f"precision@{k}":         sum(precision_at_k(r, k) for r in results) / len(results),
-        f"context_precision@{k}": sum(context_precision_at_k(r, k) for r in results) / len(results),
-        "mrr":                    sum(mrr(r) for r in results) / len(results),
-        f"ndcg@{k}":              sum(ndcg_at_k(r, k) for r in results) / len(results),
+    """Means over queries where each metric is defined; '<metric>.excluded' counts the rest."""
+    rows = list(results)
+    per_metric: dict[str, list[float | None]] = {
+        f"recall@{k}": [recall_at_k(r.retrieved_doc_ids, r.expected_doc_ids, k) for r in rows],
+        f"precision@{k}": [precision_at_k(r.retrieved_doc_ids, r.expected_doc_ids, k) for r in rows],
+        f"context_precision@{k}": [context_precision_at_k(r.retrieved_doc_ids, r.expected_doc_ids, k) for r in rows],
+        "mrr": [reciprocal_rank(r.retrieved_doc_ids, r.expected_doc_ids) for r in rows],
+        f"ndcg@{k}": [ndcg_at_k(r.retrieved_doc_ids, dict.fromkeys(r.expected_doc_ids, 1), k) for r in rows],
     }
+    out: dict[str, float] = {}
+    for name, values in per_metric.items():
+        mean, excluded = mean_defined(values)
+        if mean is not None:
+            out[name] = mean
+        out[f"{name}.excluded"] = float(excluded)
+    if "mrr" not in out:
+        raise RuntimeError("no query has expected documents: retrieval metrics were not measured")
+    return out
 
-
-# Answer metrics — stub implementations
-# Real faithfulness and citation_quality need an LLM judge (see judges.py)
-# Defer these to v2; v1 should rely on retrieval metrics + human spot checks.
 
 def answer_contains_check(answer: str, must_contain: list[str]) -> bool:
     return all(s.lower() in answer.lower() for s in must_contain)
 
 
-def answer_does_not_contain_check(answer: str, must_not_contain: list[str]) -> bool:
-    return not any(s.lower() in answer.lower() for s in must_not_contain)
-
-
-def abstention_check(answer: str, expected_abstention: bool) -> bool:
-    refusal_signals = [
-        "i don't have",
-        "i don't know",
-        "not available in the provided",
-        "insufficient evidence",
-        "cannot determine",
-    ]
-    abstained = any(sig in answer.lower() for sig in refusal_signals)
-    return abstained == expected_abstention
+def answer_does_not_claim_check(answer: str, must_not_claim: list[str]) -> bool:
+    """must_not_claim lists violating claims ("the cost will be"), not topic words."""
+    return not any(s.lower() in answer.lower() for s in must_not_claim)
 ```
+
+Zero-relevant (unanswerable) queries are **excluded** from retrieval means and scored by `abstention_ok_rate`; the report records how many were excluded.
 
 ### `evals/run_eval.py`
 
@@ -190,197 +146,128 @@ A runner with a pluggable RAG callable:
 
 ```python
 """
-RAG eval runner.
+RAG eval runner. Exit codes: 0 PASS, 1 FAIL (regression or floor), 2 NOT RUN (no baseline for this golden set),
+3 usage error or refused action (e.g. a baseline for this golden set already exists).
 
 Usage:
     python -m evals.run_eval --rag-callable myapp.rag:answer
-    python -m evals.run_eval --rag-callable myapp.rag:answer --update-baseline
+    python -m evals.run_eval --rag-callable myapp.rag:answer --record-baseline   # deliberate, reviewed step
 """
 from __future__ import annotations
+
 import argparse
+import hashlib
 import importlib
 import json
 import sys
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, NoReturn
+
 import yaml
 
-from evals.metrics import (
-    RetrievalResult, aggregate,
-    answer_contains_check, answer_does_not_contain_check, abstention_check,
-)
+from evals.metrics import RetrievalResult, aggregate, answer_contains_check, answer_does_not_claim_check
 
 EVAL_DIR = Path(__file__).parent
 GOLDEN = EVAL_DIR / "golden_set.yaml"
-BASELINES = EVAL_DIR / "baselines.json"
+BASELINES = EVAL_DIR / "baselines"   # one file per golden-set version; never overwritten
 REPORTS = EVAL_DIR / "reports"
 
-# CI gate thresholds — regression beyond this fails the build
-REGRESSION_TOLERANCE = {
-    "recall@10":    0.02,
-    "ndcg@10":      0.02,
-    "mrr":          0.02,
-    "answer_contains_rate": 0.03,
-    "abstention_correct_rate": 0.05,
-}
+MAX_DROP = {"recall@10": 0.02, "ndcg@10": 0.02, "mrr": 0.02, "answer_ok_rate": 0.03, "abstention_ok_rate": 0.05}
+FLOORS: dict[str, float] = {}         # absolute floors, e.g. {"abstention_ok_rate": 0.9}, once you have data
+
+RagFn = Callable[[str], dict[str, Any]]
 
 
-def load_callable(spec: str):
-    """Load a 'module.path:function' spec."""
+def load_callable(spec: str) -> RagFn:
     mod_path, func_name = spec.split(":")
-    return getattr(importlib.import_module(mod_path), func_name)
+    fn: RagFn = getattr(importlib.import_module(mod_path), func_name)
+    return fn
 
 
-def run(rag_callable, golden_path: Path) -> dict:
-    with open(golden_path) as f:
-        golden = yaml.safe_load(f)
-
-    retrieval_results = []
-    answer_pass = answer_fail = 0
-    abstention_pass = abstention_fail = 0
-
-    per_query = []
+def run(rag: RagFn, golden: dict[str, Any]) -> dict[str, Any]:
+    retrieval: list[RetrievalResult] = []
+    per_query: list[dict[str, Any]] = []
     for q in golden["queries"]:
-        # The RAG callable must return: {"answer": str, "retrieved_doc_ids": [str], "abstained": bool}
-        response = rag_callable(q["question"])
-
-        # Retrieval check
-        if q.get("expected_documents"):
-            retrieval_results.append(RetrievalResult(
-                query_id=q["id"],
-                retrieved_doc_ids=response.get("retrieved_doc_ids", []),
-                expected_doc_ids=set(q["expected_documents"]),
-            ))
-
-        # Answer content check
-        contains_ok = answer_contains_check(
+        # Contract: {"answer": str, "retrieved_doc_ids": [str], "abstained": bool}
+        response = rag(q["question"])
+        expected = set(q.get("expected_documents", []))
+        retrieval.append(RetrievalResult(q["id"], response["retrieved_doc_ids"], expected))
+        answer_ok = answer_contains_check(
             response["answer"], q.get("expected_answer_contains", [])
-        )
-        not_contains_ok = answer_does_not_contain_check(
-            response["answer"], q.get("must_not_contain", [])
-        )
-        if contains_ok and not_contains_ok:
-            answer_pass += 1
-        else:
-            answer_fail += 1
-
-        # Abstention check
-        if abstention_check(response["answer"], q.get("expected_abstention", False)):
-            abstention_pass += 1
-        else:
-            abstention_fail += 1
-
-        per_query.append({
-            "id": q["id"],
-            "question": q["question"],
-            "contains_ok": contains_ok,
-            "not_contains_ok": not_contains_ok,
-            "abstention_ok": abstention_check(response["answer"], q.get("expected_abstention", False)),
-        })
-
-    metrics = aggregate(retrieval_results, k=10)
-    metrics["answer_contains_rate"] = answer_pass / (answer_pass + answer_fail) if (answer_pass + answer_fail) else 0
-    metrics["abstention_correct_rate"] = abstention_pass / (abstention_pass + abstention_fail) if (abstention_pass + abstention_fail) else 0
-
-    return {"metrics": metrics, "per_query": per_query, "n_queries": len(golden["queries"])}
+        ) and answer_does_not_claim_check(response["answer"], q.get("must_not_claim", []))
+        abstention_ok = bool(response["abstained"]) == bool(q.get("expected_abstention", False))
+        per_query.append({"id": q["id"], "answer_ok": answer_ok, "abstention_ok": abstention_ok,
+                          "passed": answer_ok and abstention_ok})
+    planned = len(golden["queries"])
+    if planned == 0 or len(per_query) != planned:
+        raise RuntimeError(f"accounting: planned {planned}, recorded {len(per_query)}")
+    metrics = aggregate(retrieval, k=10)
+    metrics["answer_ok_rate"] = sum(r["answer_ok"] for r in per_query) / planned
+    metrics["abstention_ok_rate"] = sum(r["abstention_ok"] for r in per_query) / planned
+    return {"metrics": metrics, "per_query": per_query, "planned": planned}
 
 
-def compare_to_baseline(metrics: dict) -> tuple[bool, list[str]]:
-    if not BASELINES.exists():
-        return True, ["No baseline exists yet. Run with --update-baseline to create one."]
-    baseline = json.loads(BASELINES.read_text())["metrics"]
-    failures = []
-    for k, tolerance in REGRESSION_TOLERANCE.items():
-        if k in metrics and k in baseline:
-            if metrics[k] < baseline[k] - tolerance:
-                failures.append(f"{k}: {metrics[k]:.3f} < baseline {baseline[k]:.3f} (tolerance {tolerance})")
-    return len(failures) == 0, failures
+def verdict(run_key: str, metrics: dict[str, float]) -> tuple[int, list[str]]:
+    path = BASELINES / f"{run_key}.json"
+    if not path.exists():
+        return 2, [f"no baseline for golden set {run_key}: record one deliberately (--record-baseline)"]
+    baseline = json.loads(path.read_text())["metrics"]
+    failures = [f"{m}: {metrics.get(m)} below floor {f}" for m, f in FLOORS.items() if metrics.get(m, -1.0) < f]
+    for m, drop in MAX_DROP.items():
+        if m not in metrics or m not in baseline:
+            failures.append(f"{m}: missing from {'run' if m not in metrics else 'baseline'}")
+        elif metrics[m] < baseline[m] - drop:
+            failures.append(f"{m}: {metrics[m]:.3f} < baseline {baseline[m]:.3f} - {drop}")
+    return (1 if failures else 0), failures
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--rag-callable", required=True,
-                        help="Importable 'module.path:function' that takes a question and returns a response dict")
-    parser.add_argument("--update-baseline", action="store_true",
-                        help="Save current results as the new baseline (use after intentional improvements)")
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:   # argparse exits 2 by default, which means NOT RUN here
+        self.print_usage(sys.stderr)
+        self.exit(3, f"{self.prog}: error: {message}\n")
+
+
+def main() -> None:
+    parser = _Parser()
+    parser.add_argument("--rag-callable", required=True, help="'module.path:function'")
+    parser.add_argument("--record-baseline", action="store_true",
+                        help="Write the baseline for this golden-set version (refuses to overwrite)")
     args = parser.parse_args()
-
-    rag = load_callable(args.rag_callable)
-    result = run(rag, GOLDEN)
-
+    raw = GOLDEN.read_bytes()
+    run_key = "golden-" + hashlib.sha256(raw).hexdigest()[:12]
+    result = run(load_callable(args.rag_callable), yaml.safe_load(raw))
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     REPORTS.mkdir(exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    report_path = REPORTS / f"run-{timestamp}.json"
-    report_path.write_text(json.dumps(result, indent=2))
-    print(f"Report saved: {report_path}")
-    print(f"\nMetrics: {json.dumps(result['metrics'], indent=2)}")
-
-    if args.update_baseline:
-        BASELINES.write_text(json.dumps({"metrics": result["metrics"], "updated_at": timestamp}, indent=2))
-        print(f"Baseline updated.")
-        sys.exit(0)
-
-    passed, failures = compare_to_baseline(result["metrics"])
-    if not passed:
-        print("\n❌ Regression detected:")
-        for f in failures:
-            print(f"  - {f}")
-        sys.exit(1)
-    print("\n✅ No regression.")
+    (REPORTS / f"run-{stamp}.json").write_text(json.dumps({**result, "run_key": run_key}, indent=2))
+    if args.record_baseline:
+        BASELINES.mkdir(exist_ok=True)
+        path = BASELINES / f"{run_key}.json"
+        if path.exists():
+            refusal = f"{path} exists: a new baseline needs a new golden-set version or a reviewed manual edit"
+            print(refusal, file=sys.stderr)  # noqa: T201 - CLI output
+            sys.exit(3)                      # refused: distinct from 1 (FAIL)
+        path.write_text(json.dumps({"metrics": result["metrics"], "recorded_at": stamp}, indent=2))
+        print(f"Baseline recorded: {path}")  # noqa: T201 - CLI output
+        return
+    code, failures = verdict(run_key, result["metrics"])
+    print(json.dumps(result["metrics"], indent=2))  # noqa: T201 - CLI output
+    print({0: "PASS", 1: "FAIL", 2: "NOT RUN"}[code], *failures, sep="\n  ")  # noqa: T201 - CLI output
+    sys.exit(code)
 
 
 if __name__ == "__main__":
     main()
 ```
 
-### `evals/judges.py`
+Verified with a scripted fake RAG callable: no baseline → exit 2 (NOT RUN), `--record-baseline` writes `baselines/golden-<sha>.json` and refuses a second write with exit 3, unchanged run → exit 0, broken answer and retrieval → exit 1 with per-metric reasons. `mypy --strict` and ruff clean (including `T201`: CLI `print()` calls carry `# noqa: T201`; this is a CLI, not service code).
 
-LLM-as-judge stub with calibration warnings:
+**Gate notes.** On 50-200 queries an absolute drop of 0.02 is inside sampling noise: also compare per-query flips with an exact McNemar test (`llm-evaluation/reference/ab-testing.md`) and set absolute `FLOORS` once you have data. Editing the golden set changes its hash, so the next run is NOT RUN until a baseline is deliberately recorded for the new version.
 
-```python
-"""
-LLM-as-judge for faithfulness and citation quality.
+### LLM-as-judge (v2: not scaffolded)
 
-⚠️  Do NOT use as the primary signal until calibrated against human labels.
-    Uncalibrated judges have position, verbosity, self-preference, and style biases.
-
-Recommended workflow:
-1. Hand-grade 50 responses.
-2. Run the judge on the same 50.
-3. Compute agreement (Cohen's kappa or % agreement).
-4. If agreement < 80%, refine the judge prompt and repeat.
-5. Re-calibrate weekly in production.
-"""
-# Intentionally left as stubs — implement when you reach v2 evaluation.
-
-def faithfulness_judge(question: str, answer: str, context: str) -> dict:
-    """TODO: implement with calibration against human labels."""
-    raise NotImplementedError("Implement after v1 hand-labeled eval is working.")
-
-
-def citation_quality_judge(claim: str, cited_chunk: str) -> dict:
-    """
-    For each cited claim, check whether the cited chunk actually contains the assertion.
-    Citation presence != citation quality.
-    """
-    raise NotImplementedError("Implement after v1 hand-labeled eval is working.")
-```
-
-### `evals/baselines.json`
-
-```json
-{
-  "metrics": {
-    "recall@10": 0.0,
-    "precision@10": 0.0,
-    "mrr": 0.0,
-    "ndcg@10": 0.0,
-    "answer_contains_rate": 0.0,
-    "abstention_correct_rate": 0.0
-  },
-  "updated_at": "set-by-first-run"
-}
-```
+Do not scaffold judge code in v1. When retrieval and deterministic answer checks are stable, add faithfulness and citation-quality judges following `rag-evaluator` (calibration with Cohen's kappa and false-PASS rate on 100+ human-labelled cases) and `eval-guide` (explicit judge model, median-of-3 trials, judge errors recorded as UNSCORED, never PASS).
 
 ### `evals/README.md`
 
@@ -405,19 +292,19 @@ def citation_quality_judge(claim: str, cited_chunk: str) -> dict:
    python -m evals.run_eval --rag-callable yourapp.rag:answer
    ```
 
-4. After your first successful run, save a baseline:
+4. Record the baseline for this golden-set version (a reviewed step; commit the file):
    ```bash
-   python -m evals.run_eval --rag-callable yourapp.rag:answer --update-baseline
+   python -m evals.run_eval --rag-callable yourapp.rag:answer --record-baseline
    ```
 
-5. Wire into CI — any PR that regresses beyond `REGRESSION_TOLERANCE` will fail.
+5. Wire into CI: exit 1 (regression or floor), exit 2 (no baseline for this golden set) and exit 3 (usage/refused) all fail the job.
 
 ## What to evaluate (v1 vs v2)
 
 - v1: retrieval metrics (Recall@K, NDCG, MRR) + content checks (`expected_answer_contains`) + abstention correctness
-- v2: LLM-as-judge for faithfulness and citation quality, calibrated against human labels
+- v2: LLM-as-judge for faithfulness and citation quality, calibrated against human labels (`rag-evaluator`)
 
-Do not start with LLM-as-judge. See `judges.py` for the calibration workflow.
+Do not start with LLM-as-judge.
 
 ## Coverage target
 
@@ -432,7 +319,7 @@ GitHub Actions:
 - name: RAG eval gate
   run: python -m evals.run_eval --rag-callable yourapp.rag:answer
 ```
-The runner exits 1 on regression beyond tolerance.
+The runner exits 1 on regression or a floor breach and 2 when no baseline exists for the golden-set version; never mark the step `continue-on-error`.
 ```
 
 ## Phase 4: Confirm and finish
@@ -448,4 +335,5 @@ After creating the files:
 
 - Create real, runnable code — not pseudocode placeholders.
 - Stack-agnostic where possible; Python because the user said FastAPI + ADK.
-- Mark v2 features (judges) as explicit `NotImplementedError` so they're not accidentally relied on.
+- Do not scaffold v2 judges as stubs; point to `rag-evaluator` and `eval-guide` instead.
+- Metric formulas come from `llm-evaluation/reference/evaluation-metrics.md` §2, never re-derived.

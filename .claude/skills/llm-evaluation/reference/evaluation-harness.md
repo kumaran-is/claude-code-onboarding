@@ -42,6 +42,7 @@ class EvalCase:
     input: str
     expected: str
     context: str | None = None
+    relevant_ids: frozenset[str] = frozenset()  # THIS case's relevant doc ids (rank metrics)
     metadata: dict = field(default_factory=dict)
 
 
@@ -125,8 +126,9 @@ class BenchmarkRunner:
         """
         scores: dict[str, list[float]] = {m.__name__: [] for m in self.metrics}
 
-        for i, case in enumerate(self.test_cases):
-            session_id = f"benchmark-{i}"
+        for case in self.test_cases:
+            # One fresh session per case; run_async on a missing session raises SessionNotFoundError
+            session = await runner.session_service.create_session(app_name=runner.app_name, user_id=user_id)
             user_message = genai_types.Content(
                 role="user",
                 parts=[genai_types.Part(text=case.input)],
@@ -135,7 +137,7 @@ class BenchmarkRunner:
             hypothesis = ""
             async for event in runner.run_async(
                 user_id=user_id,
-                session_id=session_id,
+                session_id=session.id,
                 new_message=user_message,
             ):
                 if event.is_final_response() and event.content and event.content.parts:
@@ -330,14 +332,14 @@ from __future__ import annotations
 import pytest
 from collections.abc import Callable
 
-from eval.ab_testing import RegressionDetector
+from eval.regression import Baseline, RegressionDetector  # ab-testing.md Section 3
 from eval.evaluation_harness import BenchmarkRunner, EvalCase
 from eval.evaluation_metrics import (
     calculate_bleu,
     calculate_bertscore,
-    calculate_mrr,
     calculate_groundedness,
 )
+from eval.rank_metrics import mean_defined, reciprocal_rank  # evaluation-metrics.md §2
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +355,7 @@ def eval_cases() -> list[EvalCase]:
             input="What is the capital of France?",
             expected="The capital of France is Paris.",
             context="France is a country in Western Europe. Its capital city is Paris.",
+            relevant_ids=frozenset({"geo-france-001"}),
         ),
         EvalCase(
             input="Explain transformer attention in one sentence.",
@@ -364,19 +367,16 @@ def eval_cases() -> list[EvalCase]:
                 "The attention mechanism assigns different weights to different "
                 "positions in the input sequence based on their relevance."
             ),
+            relevant_ids=frozenset({"ml-attention-004"}),
         ),
     ]
 
 
 @pytest.fixture
-def baseline_metrics() -> dict[str, float]:
-    """Committed baseline — update after deliberate model promotion."""
-    return {
-        "calculate_bleu": 0.65,
-        "bertscore_f1": 0.84,
-        "mrr": 0.78,
-        "groundedness": 0.72,
-    }
+def baseline() -> Baseline:
+    """Versioned baseline keyed by dataset/judge/tier; written only by a reviewed promotion step."""
+    key = {"dataset": "sha256:<manifest hash>", "judge": "n/a (no judge metrics)", "tier": "R3"}
+    return Baseline(key, {"calculate_bleu": 0.65, "bertscore_f1": 0.84, "mrr": 0.78, "groundedness": 0.72})
 
 
 # ---------------------------------------------------------------------------
@@ -387,13 +387,12 @@ def baseline_metrics() -> dict[str, float]:
 async def _invoke_rag_agent(
     agent_fn: Callable,
     cases: list[EvalCase],
-) -> tuple[list[float], list[float], list[list[str]]]:
-    """Run agent over cases; return BLEU scores, BERTScore inputs, MRR ranked lists."""
+) -> dict[str, float]:
+    """Run agent over cases; return aggregate BLEU, BERTScore, MRR (per-query relevance), groundedness."""
     bleu_scores: list[float] = []
     refs: list[str] = []
     hyps: list[str] = []
-    ranked_lists: list[list[str]] = []
-    all_relevant: list[str] = []
+    reciprocal_ranks: list[float | None] = []
     groundedness_scores: list[float] = []
 
     for case in cases:
@@ -404,7 +403,7 @@ async def _invoke_rag_agent(
         bleu_scores.append(calculate_bleu(case.expected, output))
         refs.append(case.expected)
         hyps.append(output)
-        ranked_lists.append(retrieved)
+        reciprocal_ranks.append(reciprocal_rank(retrieved, set(case.relevant_ids)))  # None if no relevant
 
         if case.context:
             groundedness_scores.append(
@@ -412,17 +411,15 @@ async def _invoke_rag_agent(
             )
 
     bs_result = calculate_bertscore(refs, hyps)
-    mrr = calculate_mrr(ranked_lists, all_relevant)
+    mrr, _excluded = mean_defined(reciprocal_ranks)
+    if mrr is None or not groundedness_scores:
+        raise RuntimeError("no case had relevant ids / context: MRR or groundedness was not measured")
 
     return {
         "calculate_bleu": sum(bleu_scores) / len(bleu_scores),
         "bertscore_f1": bs_result["f1"],
         "mrr": mrr,
-        "groundedness": (
-            sum(groundedness_scores) / len(groundedness_scores)
-            if groundedness_scores
-            else 0.0
-        ),
+        "groundedness": sum(groundedness_scores) / len(groundedness_scores),
     }
 
 
@@ -454,19 +451,13 @@ async def test_benchmark_aggregate(
 async def test_no_regression_against_baseline(
     rag_agent_fn,
     eval_cases: list[EvalCase],
-    baseline_metrics: dict[str, float],
+    baseline: Baseline,
 ) -> None:
-    """Assert no metric drops more than 5% relative to the committed baseline."""
-    detector = RegressionDetector(baseline_metrics, threshold=0.05)
+    """Fail closed on missing/mismatched baseline or a drop beyond the absolute tolerance."""
+    detector = RegressionDetector(baseline, max_drop={m: 0.02 for m in baseline.metrics})
     current_metrics = await _invoke_rag_agent(rag_agent_fn, eval_cases)
-    report = detector.check_for_regression(current_metrics)
-
-    assert not report["has_regression"], (
-        f"Metric regression detected — failing CI.\n"
-        f"Regressions: {report['regressions']}\n"
-        f"Current: {current_metrics}\n"
-        f"Baseline: {baseline_metrics}"
-    )
+    failures = detector.check(baseline.key, current_metrics)   # real runs pass the run's own key
+    assert not failures, f"Regression detected: {failures}; current={current_metrics}"
 
 
 @pytest.mark.asyncio
@@ -483,10 +474,10 @@ async def test_groundedness_above_threshold(
         score = calculate_groundedness(result["output"], case.context)
         scores.append(score)
 
-    if scores:
-        mean_groundedness = sum(scores) / len(scores)
-        assert mean_groundedness >= 0.70, (
-            f"Mean groundedness {mean_groundedness:.3f} < 0.70 threshold. "
-            "Agent may be hallucinating outside provided context."
-        )
+    assert scores, "no case has context: groundedness NOT RUN (never a vacuous pass)"
+    mean_groundedness = sum(scores) / len(scores)
+    assert mean_groundedness >= 0.70, (
+        f"Mean groundedness {mean_groundedness:.3f} < 0.70 threshold. "
+        "Agent may be hallucinating outside provided context."
+    )
 ```

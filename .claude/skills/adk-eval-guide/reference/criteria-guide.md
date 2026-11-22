@@ -1,17 +1,26 @@
 # Evaluation Criteria Reference
 
-## All 8 Criteria
+## All 13 Criteria
 
-| Criterion | What it evaluates | Needs reference data? |
-|-----------|------------------|----------------------|
-| `tool_trajectory_avg_score` | Did the agent call the right tools in the right order? | Yes — provide `tool_uses` in evalset |
-| `response_match_score` | Does the final response match expected text? (lexical) | Yes |
-| `final_response_match_v2` | Does the final response match expected meaning? (LLM judge) | Yes |
-| `rubric_based_final_response_quality_v1` | Is the final response high quality? (custom rubrics) | No — define rubrics |
-| `rubric_based_tool_use_quality_v1` | Did the agent use tools well? (custom rubrics) | No — define rubrics |
-| `hallucinations_v1` | Is the response grounded / not hallucinating? | No |
-| `safety_v1` | Is the response safe and harmless? | No |
-| `per_turn_user_simulator_quality_v1` | Is the user simulator following the conversation plan? | No |
+Source: adk-docs `evaluate/criteria.md` (main branch, checked via Context7 2026-11-22). Re-check on your pinned google-adk: criteria are added between releases. Every threshold is a **minimum** (higher = better); the case passes when score ≥ threshold.
+
+| Criterion | What it evaluates | Scale | Reference? | Judge? | User sim? |
+|-----------|------------------|-------|-----------|--------|-----------|
+| `tool_trajectory_avg_score` | Tool calls match expected list (`EXACT` / `IN_ORDER` / `ANY_ORDER`), averaged over invocations | 0-1 | Yes (`tool_uses`) | No | No |
+| `response_match_score` | ROUGE-1 similarity to the reference response | 0-1 | Yes | No | No |
+| `response_evaluation_score` | Vertex AI coherence score | **1-5** (a 0-1 threshold passes everything) | Yes | Yes | No |
+| `final_response_match_v2` | Semantic match to reference; majority vote over `num_samples` | 0-1 | Yes | Yes | No |
+| `rubric_based_final_response_quality_v1` | Final response quality against your rubrics | 0-1 | No (rubrics) | Yes | Yes |
+| `rubric_based_tool_use_quality_v1` | Tool use quality against your rubrics | 0-1 | No (rubrics) | Yes | Yes |
+| `rubric_based_multi_turn_trajectory_quality_v1` | Multi-turn trajectory quality against your rubrics | 0-1 | No (rubrics) | Yes | Yes |
+| `hallucinations_v1` | Share of response sentences labelled `supported` or `not_applicable` against instructions, prompt, tool definitions and tool results | 0-1 (e.g. ≥ 0.9; **never `0`**) | No | Yes | Yes |
+| `safety_v1` | Safety/harmlessness (needs `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`) | 0-1 | No | Yes | Yes |
+| `per_turn_user_simulator_quality_v1` | Whether the user simulator follows the scenario | 0-1 | No | Yes | Yes |
+| `multi_turn_task_success_v1` | Whether the agent achieves the conversation goal(s) | 0-1 | No | Yes | Yes |
+| `multi_turn_trajectory_quality_v1` | Overall trajectory of the conversation | 0-1 | No | Yes | Yes |
+| `multi_turn_tool_use_quality_v1` | Function calls made during the conversation | 0-1 | No | Yes | Yes |
+
+Judge-based criteria are probabilistic: score them with k trials (median) and record the judge model; deterministic criteria (`tool_trajectory_avg_score`, `response_match_score`) and your own tool-log/state assertions outrank them (`eval-guide/SKILL.md`, verdict precedence). Per-flow threshold tables: `eval-guide/reference/per-agent-thresholds.md`.
 
 Default when no config provided: `tool_trajectory_avg_score: 1.0` + `response_match_score: 0.8`
 
@@ -101,7 +110,7 @@ All LLM-as-judge criteria accept `judge_model_options`:
       ]
     },
     "hallucinations_v1": {
-      "threshold": 0.8
+      "threshold": 0.9
     }
   }
 }

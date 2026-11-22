@@ -1,6 +1,6 @@
 # Python Backend Service Consistency Patterns
 
-> Every `services/backend/<service>/` MUST follow every pattern in this file.
+> Every backend service in this repository MUST follow every pattern in this file.
 > Violations block PR merge — pre-commit gates enforce each rule automatically.
 
 ---
@@ -8,39 +8,46 @@
 ## Why This File Exists
 
 Backend service consistency audits repeatedly find the same drift points appearing across
-independent services. These patterns codify hard-learned lessons so they cannot re-appear
+independent services. Wiring, lifespan, settings and transaction rules are in
+`fastapi-architecture-and-config.md`; per-route authorization in `fastapi-authorization-boundaries.md`. These patterns codify hard-learned lessons so they cannot re-appear
 in new or modified services.
 
-Load this file BEFORE writing any code in `services/backend/`.
+Load this file BEFORE writing any code in a backend service. Gate paths below assume
+`src/<package>/...` inside each service; adjust the globs to your layout.
 
 ---
 
 ## P1 — Internal Secret Guard (Security-Critical)
 
 **Rule:** Internal endpoints (server-to-server, not user-facing) MUST use timing-safe
-comparison. Never write `!=` or unguarded string comparison for secrets. Use a shared
-factory that wraps `hmac.compare_digest`.
+comparison, and the guard MUST refuse to be built with an empty secret (`hmac.compare_digest(b"", b"")`
+is `True`, so an empty expected secret admits everyone). Never write `!=` or an unguarded string
+comparison for secrets. Always `.encode()` before comparing (a non-ASCII `str` raises `TypeError`, i.e. a 500).
 
 ```python
 # ✅ REQUIRED — timing-safe internal secret dependency
 import hmac
+from typing import Annotated
 from fastapi import Depends, Header, HTTPException
 
 
 def make_internal_secret_dep(secret: str):
     """Factory: returns a FastAPI dependency that validates X-Internal-Secret."""
-    def _check(x_internal_secret: str | None = Header(None, alias="X-Internal-Secret")) -> None:
-        if not x_internal_secret or not hmac.compare_digest(
-            x_internal_secret.encode(), secret.encode()
-        ):
+    if not secret:
+        # fail at construction, not at 3 a.m.
+        raise ValueError("internal secret must be non-empty")
+    expected = secret.encode()
+
+    def _check(x_internal_secret: Annotated[str | None, Header()] = None) -> None:
+        if not x_internal_secret or not hmac.compare_digest(x_internal_secret.encode(), expected):
             raise HTTPException(status_code=403, detail="Forbidden")
     return _check
 
 # Wire at module level (captures config once, not per request)
-_require_secret = make_internal_secret_dep(settings.INTERNAL_API_SECRET)
+_require_secret = make_internal_secret_dep(settings.internal_api_secret.get_secret_value())
 
 @router.post("/internal/action", dependencies=[Depends(_require_secret)])
-async def internal_action(...): ...
+async def internal_action() -> None: ...
 
 # ❌ BANNED — bare != comparison (timing attack)
 if x != settings.SECRET: ...
@@ -51,10 +58,15 @@ async def handler(request: Request, db=Depends(get_session)):
     if not secret or ...: raise HTTPException(403)
 ```
 
+Test every variant: header absent, empty, wrong, correct; and `make_internal_secret_dep("")` raises.
+The `/internal/` prefix is a convention; the guard is the control. Endpoints with third-party
+side effects (send, charge, metered calls) must use it, never an end-user JWT:
+`fastapi-authorization-boundaries.md` §3.
+
 **Pre-commit gate:**
 ```bash
 # Bare != comparison against a secret string in service routes
-grep -rn "!= settings\.\|!= secret\b" services/backend/*/src/*/api/routes/ --include="*.py" \
+grep -rn "!= settings\.\|!= secret\b" src/*/api/routes/ --include="*.py" \
   | grep -v "test_\|#" → must return 0
 ```
 
@@ -62,38 +74,40 @@ grep -rn "!= settings\.\|!= secret\b" services/backend/*/src/*/api/routes/ --inc
 
 ## P2 — Config: Required Fields Have No Default
 
-**Rule:** Every secret or environment-specific value in `core/config.py` is a bare `str`
-(or `Field(min_length=N)`). `str | None = None` is forbidden for any field that must be
-present — it silently passes `None` to downstream callers and hides misconfiguration until
-production.
+**Rule:** Every secret or environment-specific value in `core/config.py` has no default.
+Secrets are `SecretStr` (with `Field(min_length=N)`). `str | None = None` is forbidden for any field
+that must be present — it silently passes `None` downstream and hides misconfiguration until
+production. Full template (fail-fast loader that prints field names only, boot-contract test):
+`fastapi-architecture-and-config.md` §2.
 
 ```python
-# ✅ REQUIRED — fails at startup (ValidationError) if env var absent
-from pydantic import Field
+# ✅ REQUIRED — fails at startup (ValidationError) if the env var is absent
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    INTERNAL_API_SECRET: str = Field(min_length=32)  # enforces length, no default
-    DATABASE_URL: str                                  # required, no default
-    PUBSUB_TOPIC_EVENTS: str = "my-service-events"    # operational default OK
-    LOG_LEVEL: str = "INFO"                           # operational default OK
+    # enforces length, no default, masked in repr
+    internal_api_secret: SecretStr = Field(min_length=32)
+    database_url: SecretStr                                  # required, no default
+    events_topic: str = "my-service-events"                  # operational default OK
+    log_level: str = "INFO"                                  # operational default OK
 
-# ❌ BANNED — silently passes None to DB/Pub/Sub
-    DATABASE_URL: str | None = None
-# ❌ BANNED — secret with no minimum length
-    INTERNAL_API_SECRET: str = "changeme"
+# ❌ BANNED — silently passes None to DB/messaging
+    database_url: str | None = None
+# ❌ BANNED — secret with a default
+    internal_api_secret: str = "changeme"
 ```
 
 **Allowed defaults** (non-sensitive operational values that are stable across environments):
-- Pub/Sub topic names: `PUBSUB_TOPIC_X: str = "my-topic-name"`
-- Ports: `PORT: int = 8080`
-- Service names: `SERVICE_NAME: str = "my-service"`
-- Log level: `LOG_LEVEL: str = "INFO"`
+- Topic/queue names: `events_topic: str = "my-topic-name"`
+- Ports: `port: int = 8080`
+- Service names: `service_name: str = "my-service"`
+- Log level: `log_level: str = "INFO"`
 
 **Pre-commit gate:**
 ```bash
-grep -rn "str | None = None" services/backend/*/src/*/core/config.py → must return 0
-grep -rn "INTERNAL_API_SECRET.*=.*['\"]" services/backend/*/src/*/core/config.py → must return 0
+grep -rn "str | None = None" src/*/core/config.py → must return 0
+grep -rniE "(secret|password|token).*=.*['\"]" src/*/core/config.py → must return 0
 ```
 
 ---
@@ -101,7 +115,9 @@ grep -rn "INTERNAL_API_SECRET.*=.*['\"]" services/backend/*/src/*/core/config.py
 ## P3 — Logger Naming: Always `logger`, Never `log`
 
 **Rule:** Every module uses `logger = structlog.get_logger(__name__)`. The name `log` is
-forbidden — it shadows the Python stdlib `log` function and creates inconsistency.
+forbidden — one name everywhere keeps greps and gates reliable. Never pass `str(exc)`, `exc_info=True`
+or a connection URL to a logger on request paths: log the exception type and ids
+(`fastapi-error-handling.md` §6).
 
 ```python
 # ✅ REQUIRED — in every .py file that logs
@@ -116,8 +132,8 @@ logger = structlog.get_logger()          # missing __name__
 
 **Pre-commit gate:**
 ```bash
-grep -rn "^log = structlog" services/backend/ --include="*.py" → must return 0
-grep -rn "structlog.get_logger()" services/backend/ --include="*.py" | grep -v "__name__" → must return 0
+grep -rn "^log = structlog" src/ --include="*.py" → must return 0
+grep -rn "structlog.get_logger()" src/ --include="*.py" | grep -v "__name__" → must return 0
 ```
 
 ---
@@ -126,14 +142,17 @@ grep -rn "structlog.get_logger()" services/backend/ --include="*.py" | grep -v "
 
 **Rule:** Routes NEVER call `session.add()`, `session.commit()`, or `session.rollback()`.
 The service layer owns all DB mutations. Routes call service methods and translate
-exceptions to HTTP responses.
+exceptions to HTTP responses. Repositories `flush()` and never commit. A commit placed after
+`yield` in a default-scope dependency runs **after the response is sent**: a failed commit still
+returns 200 (executed). Dependency chain and the `scope="function"` alternative:
+`fastapi-architecture-and-config.md` §4; session internals: `sqlalchemy-async-sessions-and-transactions.md`.
 
 ```python
 # ✅ REQUIRED — route layer (thin)
 @router.post("/entities", status_code=201)
 async def create_entity(
     data: EntityCreate,
-    svc: EntityService = Depends(_entity_service),
+    svc: ServiceDep,                      # Annotated[EntityService, Depends(get_service)]
 ) -> EntityResponse:
     entity = await svc.create(data)       # service owns commit
     return EntityResponse.model_validate(entity)
@@ -148,7 +167,7 @@ class EntityService:
 
 # ❌ BANNED — route calling session directly
 @router.post("/entities")
-async def create_entity(data: EntityCreate, session: AsyncSession = Depends(get_session)):
+async def create_entity(data: EntityCreate, session: SessionDep):
     entity = Entity(**data.model_dump())
     session.add(entity)
     await session.commit()                # route owns session mutation
@@ -157,7 +176,7 @@ async def create_entity(data: EntityCreate, session: AsyncSession = Depends(get_
 **Pre-commit gate:**
 ```bash
 grep -rn "session\.add\|session\.commit\|session\.rollback" \
-  services/backend/*/src/*/api/routes/ --include="*.py" | grep -v "test_\|#.*Session-isolated" → must return 0
+  src/*/api/routes/ --include="*.py" | grep -v "test_\|#.*Session-isolated" → must return 0
 ```
 
 ---
@@ -192,78 +211,94 @@ async def publish_something():
 
 **Pre-commit gate:**
 ```bash
-grep -rn "PublisherClient()" services/backend/ --include="*.py" | grep -v "lru_cache\|test_\|#" → must return 0
+grep -rn "PublisherClient()" src/ --include="*.py" | grep -v "lru_cache\|test_\|#" → must return 0
 ```
 
 ---
 
-## P6 — Fire-and-Forget Pub/Sub: Always `asyncio.create_task()`
+## P6 — Fire-and-Forget Publishes: Retained `create_task()`
 
-**Rule:** Informational Pub/Sub publishes MUST be wrapped in `asyncio.create_task()`.
-Never `await` the publish inside a route or service method — that couples Pub/Sub latency
-to the HTTP response. Never `.result()` at the call site — that raises on failure.
+**Rule:** Informational publishes (losing one is acceptable) MUST NOT be awaited inside a route or
+service method — that couples broker latency to the HTTP response — and MUST NOT call `.result()`
+at the call site. Schedule them through ONE helper that keeps a **strong reference** to the task
+(the event loop keeps only weak ones, so an un-referenced task can be garbage-collected mid-flight)
+and logs failures. Load-bearing events go through a transactional outbox, not a task.
 
 ```python
-# ✅ REQUIRED
+# ✅ REQUIRED — one helper, strong reference, failures logged by type
 import asyncio
+from collections.abc import Coroutine
+from typing import Any
 
-asyncio.create_task(
-    _publish_event({
-        "event_type": "entity.created",
-        "entity_id": str(entity.id),
-        "published_at": datetime.now(tz=UTC).isoformat(),
-    })
-)
+_background: set[asyncio.Task[None]] = set()
+
+
+def spawn(coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
+    task = asyncio.create_task(coro)
+    _background.add(task)                        # strong reference until done
+    task.add_done_callback(_background.discard)
+    task.add_done_callback(_log_task_failure)
+    return task
+
+
+def _log_task_failure(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.error("background_task_failed", error_type=type(exc).__qualname__)
+
+
+spawn(_publish_event({"event_type": "entity.created", "entity_id": str(entity.id)}))
 
 # ❌ BANNED
-await _publish_event(...)            # blocks response; Pub/Sub outage = service outage
+await _publish_event(...)            # blocks response; broker outage = service outage
 publisher.publish(...).result()      # synchronous; raises on failure at call site
+asyncio.create_task(_publish_event(...))   # reference dropped; ruff RUF006
 ```
 
-See `pubsub-firestore-patterns.md` for the full Pattern A/B/C decision tree.
+Executed: a failing task was logged as `error_type=RuntimeError` without its message and removed from
+the set. "Never raise on publish" is not enough: a swallowed failure must still be logged.
+The canonical `spawn()` (named tasks) and the `drain_background()` call for `lifespan` shutdown live in
+`asyncio-concurrency-and-tasks.md`; keep one helper per codebase. See `pubsub-firestore-patterns.md`
+for the full Pattern A/B/C decision tree.
 
 ---
 
-## P7 — Redis Lifecycle: Startup/Shutdown Hooks
+## P7 — Redis Lifecycle: `lifespan`, Never `on_startup`
 
-**Rule:** Redis client initialization belongs in `app.router.on_startup` hooks, not in route
-dependencies or module-level singletons. Shutdown uses `contextlib.suppress(Exception)` — a
-Redis close error must never crash shutdown.
+**Rule:** Client initialization belongs in the app's `lifespan`. Handlers added with
+`app.router.on_startup.append(...)` or `@app.on_event(...)` are **never called** once
+`lifespan=` is set (executed: handler count 0), and `on_event` is deprecated. `redis.asyncio.from_url`
+is lazy, so a `try/except` around it never detects an outage: call `ping()` at boot. Never log the
+URL (it carries credentials).
 
 ```python
-# ✅ REQUIRED — in main.py
-import contextlib
-import redis.asyncio as aioredis
-
-async def _startup_redis() -> None:
+# ✅ REQUIRED — in the app factory (full version: fastapi-architecture-and-config.md §3)
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    cache = aioredis.from_url(settings.redis_url.get_secret_value(), decode_responses=True)
     try:
-        app.state.redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        logger.info("redis_connected", url=settings.REDIS_URL)
-    except Exception:
-        logger.warning("redis_unavailable", url=settings.REDIS_URL, exc_info=True)
-        app.state.redis = None          # service runs degraded, not crashed
+        await cache.ping()
+        app.state.cache = cache
+    # optional dependency: degrade loudly; required one: re-raise
+    except aioredis.RedisError as exc:
+        logger.error("cache_unavailable", error_type=type(exc).__qualname__)
+        await cache.aclose()
+        app.state.cache = None
+    try:
+        yield
+    finally:
+        if app.state.cache is not None:
+            await app.state.cache.aclose()
 
-async def _shutdown_redis() -> None:
-    redis_client: aioredis.Redis | None = getattr(app.state, "redis", None)
-    if redis_client is not None:
-        with contextlib.suppress(Exception):
-            await redis_client.aclose()
-
+# ❌ BANNED — startup hook beside lifespan= (silently never runs)
 app.router.on_startup.append(_startup_redis)
-app.router.on_shutdown.append(_shutdown_redis)
 
-# ❌ BANNED — module-level Redis pool (crashes on import if Redis is down)
-_redis: aioredis.Redis = aioredis.from_url(settings.REDIS_URL)
-
-# ❌ BANNED — bare except/pass in shutdown (silent failure, no log)
-async def _shutdown_redis():
-    try:
-        await redis_client.aclose()
-    except:
-        pass
+# ❌ BANNED — module-level pool (crashes on import if Redis is down) / bare except in shutdown
+_redis = aioredis.from_url(settings.REDIS_URL)
 ```
 
-Routes read Redis from `request.app.state.redis` — never from a module-level variable.
+Routes read the client from `request.app.state.cache` — never from a module-level variable.
+Executed: with an unreachable host the service booted with `cache is None` and logged
+`error_type=ConnectionError` without the host.
 
 ---
 
@@ -336,7 +371,8 @@ in individual service route files. Extract to a shared auth module used across a
 
 ```python
 # ✅ REQUIRED — import from shared module
-from services_shared.auth.route_helpers import get_actor_id, get_db_uid, get_role, get_uid
+# your shared package
+from shared.auth.route_helpers import get_actor_id, get_db_uid, get_role, get_uid
 
 # ❌ BANNED — local reimplementation per service
 def _uid(current_user: dict) -> str:
@@ -349,7 +385,7 @@ def _uid(current_user: dict) -> str:
 **Pre-commit gate:**
 ```bash
 grep -rn "def _uid\|def _db_uid\|def _role\|def _actor_id" \
-  services/backend/*/src/*/api/routes/ --include="*.py" → must return 0
+  src/*/api/routes/ --include="*.py" → must return 0
 ```
 
 ---
@@ -381,10 +417,10 @@ class Settings(BaseSettings):
 **Pre-commit gate:**
 ```bash
 # Hardcoded localhost for services that differ between environments
-grep -rn '"redis://localhost\|"http://localhost' services/backend/*/src/*/core/config.py → must return 0
+grep -rn '"redis://localhost\|"http://localhost' src/*/core/config.py → must return 0
 
 # os.getenv with sentinel fallback in service code
-grep -rn 'os\.getenv.*or\s*"' services/backend/ --include="*.py" \
+grep -rn 'os\.getenv.*or\s*"' src/ --include="*.py" \
   | grep -v "test_\|#" → must return 0
 ```
 
@@ -401,7 +437,7 @@ Never define local copies. Common targets for duplication:
 
 ```python
 # ✅ REQUIRED — import shared Pub/Sub topic path builder
-from services_shared.utils.pubsub_utils import topic_path as _build_topic_path
+from shared.utils.pubsub_utils import topic_path as _build_topic_path   # your shared package
 
 def _topic_path(topic: str) -> str:
     return _build_topic_path(settings.GOOGLE_CLOUD_PROJECT, topic)
@@ -416,13 +452,13 @@ def _topic_path(project_id: str, topic: str) -> str:
 ## New Service Checklist (run before opening any PR adding a new backend service)
 
 ```
-□ P1: /internal/* endpoints use timing-safe secret comparison — no bare != against secrets
-□ P2: core/config.py — required fields have no default; INTERNAL_API_SECRET uses Field(min_length=32)
+□ P1: /internal/* endpoints use timing-safe comparison, refuse an empty secret at construction — no bare != against secrets
+□ P2: core/config.py — required fields have no default; secrets are SecretStr with Field(min_length=32)
 □ P3: Every .py file uses logger = structlog.get_logger(__name__) — zero log = structlog occurrences
 □ P4: Routes contain zero session.add/commit/rollback calls — service layer owns all mutations
 □ P5: Pub/Sub publisher wrapped in @lru_cache(maxsize=1) factory
-□ P6: All fire-and-forget publishes use asyncio.create_task() — zero await publish at route/service level
-□ P7: Redis lifecycle in on_startup/on_shutdown hooks; contextlib.suppress in shutdown
+□ P6: All fire-and-forget publishes go through the retained-task helper — zero bare create_task, zero await publish at route/service level
+□ P7: Redis lifecycle in lifespan with ping() — zero on_startup/on_event/router.on_startup
 □ P8: Count queries use func.count() subquery — zero len(results.all()) patterns
 □ P9: Any GCS URI input validated against bucket allowlist before use
 □ P10: Auth helpers imported from shared module — zero local reimplementations
@@ -441,8 +477,8 @@ def _topic_path(project_id: str, topic: str) -> str:
 □ New config field that is required → P2 gate (no str|None=None)
 □ New module-level logger → P3 gate (logger = structlog.get_logger(__name__))
 □ New DB write in route → P4 gate (must move to service layer)
-□ New Pub/Sub publish → P5 (singleton) + P6 (create_task) gates
-□ New Redis usage → P7 gate (startup/shutdown hooks, app.state.redis)
+□ New Pub/Sub publish → P5 (singleton) + P6 (retained task) gates
+□ New Redis usage → P7 gate (lifespan + ping, app.state)
 □ New count query → P8 gate (func.count() subquery)
 □ New GCS URI input → P9 gate (validate against allowlist before use)
 □ New auth helper → P10 gate (import from shared, not local def)

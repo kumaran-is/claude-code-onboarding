@@ -92,12 +92,23 @@ def test_query_performance(benchmark, db_session):
 import asyncio
 import httpx
 
-async def fetch_all(urls: list[str]) -> list[dict]:
-    async with httpx.AsyncClient() as client:
-        tasks = [client.get(url) for url in urls]
-        responses = await asyncio.gather(*tasks)
-        return [r.json() for r in responses]
+async def fetch_all(client: httpx.AsyncClient, urls: list[str], limit: int = 10) -> list[dict]:
+    sem = asyncio.Semaphore(limit)                        # bound concurrency
+
+    async def one(url: str) -> dict:
+        async with sem:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json()
+
+    # one deadline; first failure cancels siblings
+    async with asyncio.timeout(20), asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(one(u)) for u in urls]
+    return [t.result() for t in tasks]
 ```
+
+Plain `asyncio.gather(*coros)` does NOT cancel siblings after the first failure (verified: the sibling ran to completion); use `TaskGroup`,
+or `gather(..., return_exceptions=True)` for best-effort. Fire-and-forget, cancellation and thread bridges: `asyncio-concurrency-and-tasks.md`.
 
 ### Caching with functools
 
@@ -126,22 +137,22 @@ total = sum([x ** 2 for x in range(1_000_000)])
 total = sum(x ** 2 for x in range(1_000_000))
 ```
 
-### Multiprocessing for CPU-Bound Work
+### CPU-Bound Work
 
 ```python
-from concurrent.futures import ProcessPoolExecutor
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
+
+# create ONCE at startup, shut down in lifespan; never per call
+pool = ProcessPoolExecutor(max_workers=4)
 
 async def process_large_dataset(items: list[dict]) -> list[dict]:
-    loop = asyncio.get_event_loop()
-    with ProcessPoolExecutor() as executor:
-        results = await loop.run_in_executor(
-            executor,
-            cpu_intensive_transform,
-            items
-        )
-    return results
+    loop = asyncio.get_running_loop()           # get_event_loop() is the legacy spelling
+    # fn must be a picklable top-level function
+    return await loop.run_in_executor(pool, cpu_intensive_transform, items)
 ```
+
+Blocking sync SDK calls use `await asyncio.to_thread(fn, ...)` plus the SDK's own timeout and an outer `asyncio.timeout`: a thread cannot be cancelled.
 
 ---
 
@@ -228,27 +239,31 @@ class User:
 
 ```python
 from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import AsyncSession
+from collections.abc import AsyncIterator
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 
 @asynccontextmanager
-async def get_db_transaction(session: AsyncSession):
-    """Context manager that auto-commits or rolls back."""
-    async with session.begin():
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+async def unit_of_work(factory: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession]:
+    """Fresh session per unit: commit on clean exit, rollback on exception, close always."""
+    async with factory() as session, session.begin():
+        yield session
 
-# Usage
-async def create_user_with_audit(payload: UserCreate, session: AsyncSession) -> User:
-    async with get_db_transaction(session) as txn:
+
+async def create_user_with_audit(
+    payload: UserCreate, factory: async_sessionmaker[AsyncSession]
+) -> uuid.UUID:
+    async with unit_of_work(factory) as session:
         user = User(**payload.model_dump(exclude={"password"}))
-        txn.add(user)
-        audit = AuditLog(action="user_created", entity_id=user.id)
-        txn.add(audit)
-    return user
+        session.add(user)
+        await session.flush()  # server-generated id is None until here
+        session.add(AuditLog(action="user_created", entity_id=user.id))
+        # read ids before the block exits (commit/rollback may expire state)
+        return user.id
 ```
+
+Never call `session.begin()` on a session that already ran a statement (`InvalidRequestError: A transaction is already begun`), and do not
+add `rollback()` inside `begin()`. Ownership rules: `sqlalchemy-async-sessions-and-transactions.md`.
 
 ---
 
@@ -259,6 +274,7 @@ async def create_user_with_audit(payload: UserCreate, session: AsyncSession) -> 
 - Using pattern matching for command dispatch or event routing
 - Building custom descriptors for reusable validation logic
 - Optimizing memory usage in data processing pipelines
+- Bounding async fan-out or offloading blocking/CPU work (then read `asyncio-concurrency-and-tasks.md` for task lifetime and cancellation)
 
 ---
 
@@ -361,38 +377,35 @@ slotted_objects = [SlottedClass(i, i+1, i+2) for i in range(10000)]
 
 ### SQLAlchemy Bulk Operations — Batch Insert/Update
 
-Individual ORM `session.add()` per record causes one `INSERT` per row. For bulk data loading, use `insert()` with `executemany` semantics or `bulk_insert_mappings`.
+On SQLAlchemy 2.x the unit of work already batches plain `session.add()` calls into one multi-row INSERT at flush; the real slowdown is flushing or committing per row.
+`session.execute(insert(Model), records)` is the bulk form.
 
 ```python
+from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
 from app.models import User
 
-# ❌ Slow: one INSERT per record (N round-trips)
+# Slow: a flush (round-trip) per record
 async def slow_bulk_create(session: AsyncSession, records: list[dict]) -> None:
     for record in records:
-        user = User(**record)
-        session.add(user)
+        session.add(User(**record))
+        await session.flush()
     await session.commit()
 
-# ✅ Fast: single executemany — one round-trip for all rows
+# Fast: one executemany-style statement
 async def fast_bulk_create(session: AsyncSession, records: list[dict]) -> None:
     await session.execute(insert(User), records)
     await session.commit()
 
-# ✅ Fast bulk update using Core UPDATE with WHERE
-from sqlalchemy import update
-
+# Bulk update: each dict carries the PK plus the changed fields
 async def fast_bulk_update(session: AsyncSession, updates: list[dict]) -> None:
-    # Each dict must contain the PK field plus updated fields
-    await session.execute(
-        update(User),
-        updates  # e.g. [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
-    )
+    # e.g. [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+    await session.execute(update(User), updates)
     await session.commit()
 ```
 
-**Benchmark reference:** 1000 individual inserts ~400ms vs batch insert ~15ms (SQLite in-memory). Real PostgreSQL gap is similar — batch is 10–30x faster depending on row size and network latency.
+**Measured (PostgreSQL 16 over a local socket, 1000 rows, one run, SQLAlchemy 2.1.9 + asyncpg):** flush per row 101 ms; plain `add` x1000 then one commit 15 ms;
+`insert(User), records` 8 ms. Network latency widens the per-row gap; re-measure on your infrastructure.
 
 **Constraints:**
 - `insert()` with `executemany` skips ORM events (`before_insert`, `after_insert`) — acceptable for bulk data loads, not for business-logic-heavy creates

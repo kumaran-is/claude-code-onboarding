@@ -242,12 +242,21 @@ Benefits:
 ├── Testability — mock dependencies in tests
 ├── Clean separation — routes stay thin
 └── Automatic cleanup via yield
+
+Rules:
+├── Declare dependencies as Annotated aliases (ruff FAST002)
+├── Exit code after `yield` runs AFTER the response is sent (default scope):
+│   never commit there — the service commits, or use Depends(scope="function")
+└── A dependency result is cached per request: copy before narrowing, never mutate
 ```
+
+Details: `python-dev/reference/fastapi-architecture-and-config.md` §4 and `fastapi-authorization-boundaries.md`.
 
 ### Pydantic v2 Integration
 
 ```python
 # Request validation — user is fully validated before handler runs
+# (UserCreate sets model_config = ConfigDict(extra="forbid"): unknown keys are a 422)
 @app.post("/users")
 async def create(user: UserCreate) -> UserResponse:
     ...
@@ -277,6 +286,9 @@ FastAPI BackgroundTasks:
 ├── No persistence needed
 ├── Fire-and-forget
 └── Same process as API
+
+BackgroundTasks run AFTER the response is sent: pass ids/primitives (the request session is
+closed), and use an outbox/queue for anything that must not be lost.
 
 Celery/ARQ:
 ├── Long-running tasks

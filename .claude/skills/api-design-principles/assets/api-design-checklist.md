@@ -42,6 +42,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] Default page size defined (20 recommended)
 - [ ] Maximum page size enforced (100 recommended)
 - [ ] Pagination strategy chosen: offset-based (admin/report) or cursor-based (feed/real-time)
+- [ ] Bounds enforced: `page >= 1`, `1 <= page_size <= MAX_PAGE_SIZE` (shared constant); deterministic `ORDER BY` with a unique tiebreak
 - [ ] Pagination metadata included in response (`total`, `pages`, `has_more`)
 - [ ] **FastAPI**: `page_size: int = Query(default=20, le=100)`
 - [ ] **NestJS**: `@Max(100) @Type(() => Number) pageSize: number = 20`
@@ -59,15 +60,16 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] Versioning strategy decided: URL path (`/api/v1/`) recommended
 - [ ] Version prefix consistent across all endpoints in the service
 - [ ] Deprecation policy defined (Sunset header for old versions)
+- [ ] Deprecated routes marked in the spec (`deprecated=True`), emit `Deprecation`/`Sunset` headers, and a check fails once a removal date has passed
 - [ ] Breaking vs non-breaking changes understood (removing/renaming fields = breaking)
 
 ## Error Handling
 
 - [ ] Consistent error response format across all endpoints (code, message, details, timestamp, path, requestId)
 - [ ] Field-level validation errors in `details` array
-- [ ] Machine-readable error codes (e.g., `VALIDATION_ERROR`, `EMAIL_EXISTS`)
+- [ ] Machine-readable error codes (e.g., `VALIDATION_ERROR`, `ORDER_NOT_FOUND`); never a code or status that reveals whether an account exists (`EMAIL_EXISTS` on sign-up is an enumeration oracle)
 - [ ] `requestId` included for log correlation
-- [ ] **FastAPI**: `HTTPException` with detail dict, or Pydantic `ValidationError` handler
+- [ ] **FastAPI**: one envelope for domain errors, `RequestValidationError` (422 without echoing `input`), `HTTPException` and a catch-all 500 — `python-dev/reference/fastapi-error-handling.md`
 - [ ] **NestJS**: `HttpException` subclasses or `@Catch()` filter returning `ProblemDetail`
 - [ ] **Spring WebFlux**: `@ControllerAdvice` returning `ProblemDetail` (RFC 9457)
 
@@ -78,13 +80,15 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] 401 used for missing/invalid token (not 403)
 - [ ] 403 used for valid token with insufficient permissions (not 401)
 - [ ] Token expiration handled with 401 and `WWW-Authenticate` header
+- [ ] The caller's own id comes from the verified token, never the request body; fetch-by-id carries the caller's scope (404 for missing and foreign)
+- [ ] Endpoints with third-party side effects (send, charge, metered call) require a service credential, not an end-user token — `python-dev/reference/fastapi-authorization-boundaries.md`
 
 ## Rate Limiting
 
 - [ ] Rate limits defined (per user, per IP, or per API key)
 - [ ] `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers set
 - [ ] `Retry-After` header set on 429 responses
-- [ ] **FastAPI**: `slowapi` or `fastapi-limiter`
+- [ ] **FastAPI**: `slowapi` or `fastapi-limiter`; routes with path parameters use a constant shared scope; enumeration/spend limits keyed on user id; shared storage wired — `python-dev/reference/fastapi-rate-limiting.md`
 - [ ] **NestJS**: `@nestjs/throttler` with `ThrottlerGuard`
 - [ ] **Spring WebFlux**: Bucket4j or custom `WebFilter`
 
@@ -102,6 +106,12 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] Idempotency cache TTL defined (24 hours recommended)
 - [ ] Idempotency key format documented (UUID v4 recommended)
 
+## Replayed / queued clients (offline-capable apps)
+
+- [ ] Endpoints that a queue-replaying client calls accept suspicious-but-processable payloads and flag them on a server-set column; a 4xx there makes the client drop the queued operation (permanent data loss)
+- [ ] 4xx only for unprocessable bodies, failed authorization or state-machine violations; the flag is never set inside a validator (that would be a 422)
+- [ ] Mutations are idempotent (`Idempotency-Key`), since a replay can arrive twice
+
 ## Bulk Operations (if batch endpoints exist)
 
 - [ ] Batch endpoint uses `POST /resource/batch` pattern
@@ -112,7 +122,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 
 ## CORS
 
-- [ ] CORS configured for allowed origins (no wildcard `*` in production)
+- [ ] CORS configured for allowed origins (no wildcard `*` in production); origins come from per-environment config with an empty default
 - [ ] `Idempotency-Key` included in `allowedHeaders`
 - [ ] Credentials mode (`allowCredentials`) matched to frontend requirements
 
@@ -130,7 +140,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] 401/403 auth failure scenarios tested
 - [ ] 404 not-found scenario tested
 - [ ] Pagination boundary conditions tested (page=0, page > total)
-- [ ] Idempotency: duplicate key returns cached response (not reprocessed)
+- [ ] Idempotency: duplicate key returns cached response (not reprocessed); a concurrent-duplicate test proves exactly one write; same key + different body is rejected
 - [ ] Bulk: mixed success/failure batch returns 207 with correct counts
 
 ## Security Baseline
@@ -155,7 +165,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 
 - [ ] **API1 — Broken Object Level Authorization**: every endpoint verifies the caller owns or has access to the requested object (no IDOR)
 - [ ] **API2 — Broken Authentication**: strong auth enforced; token expiry, rotation, and revocation implemented
-- [ ] **API3 — Broken Object Property Level Authorization**: restrict which fields the caller can read or write (no mass assignment)
+- [ ] **API3 — Field-level authorization (mass assignment / excessive data exposure)**: restrict which fields the caller can read or write (no mass assignment)
 - [ ] **API4 — Unrestricted Resource Consumption**: rate limiting and payload size limits enforced on all endpoints
 - [ ] **API5 — Broken Function Level Authorization**: role/scope verified on every function, not just at collection level
 - [ ] **API6 — Unrestricted Access to Sensitive Business Flows**: critical workflows (payments, account creation) protected from automated abuse

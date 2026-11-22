@@ -63,34 +63,45 @@ async def _publish_event(data: dict) -> None:
             lambda: publisher.publish(_topic_path(settings.PUBSUB_MY_TOPIC), encoded).result()
         )
         logger.info("pubsub_publish_ok", event_type=data.get("event_type"))
-    except Exception:
-        logger.error("pubsub_publish_failed", event_type=data.get("event_type"), exc_info=True)
+    except Exception as exc:
+        logger.error(
+            "pubsub_publish_failed",
+            event_type=data.get("event_type"),
+            error_type=type(exc).__name__,
+        )
 
 
-# In the route/service — always create_task, never await directly
-asyncio.create_task(
-    _publish_event({
-        "event_type": "entity.created",
-        "entity_id": str(entity.id),
-        "published_at": datetime.now(tz=UTC).isoformat(),
-    })
+# In the route/service — always spawn(), never await directly and never a bare create_task
+# (spawn keeps a strong reference and logs failures: asyncio-concurrency-and-tasks.md section 1)
+spawn(
+    _publish_event(
+        {
+            "event_type": "entity.created",
+            "entity_id": str(entity.id),
+            "published_at": datetime.now(tz=UTC).isoformat(),
+        }
+    ),
+    name="publish-entity-created",
 )
 ```
 
 ### Hard rules
 
-- ALWAYS wrap in `asyncio.create_task()` at the call site — never `await _publish_event()`
-  inside a route or service method (this adds Pub/Sub latency to HTTP response time)
+- ALWAYS run it through `spawn()` at the call site (never `await _publish_event()` inside a route or service method: it adds Pub/Sub
+  latency to the HTTP response) and NEVER a bare `asyncio.create_task(...)` statement: the loop holds only a weak reference, so the task can be
+  garbage-collected mid-flight and its exception is lost. Drain with `drain_background()` in lifespan shutdown
+- Log `error_type=type(exc).__name__`, not `str(exc)` or `exc_info=True` (messages can carry URLs, tokens, payload fragments)
 - ALWAYS catch all exceptions inside `_publish_event` — log and return, never raise
 - NEVER use this pattern for events that trigger cross-service state changes (use Pattern B)
 - Use `@lru_cache(maxsize=1)` for the publisher client — the GCP SDK is expensive to instantiate per request
+- `publisher.publish(...).result()` blocks a thread: keep `asyncio.to_thread` and set a publish timeout, or the thread outlives a cancelled task
 
 ---
 
 ## Pattern B — Transactional Outbox
 
 **Use for:** Load-bearing events where losing the event breaks a downstream workflow.
-Examples: `quote.approved` triggers job scheduling, `payment.captured` triggers fulfillment.
+Examples: `order.approved` triggers fulfillment scheduling, `payment.captured` triggers shipping.
 
 ### Required implementation
 
@@ -113,6 +124,13 @@ class MyServiceEventsOutbox(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # NULL = unpublished / pending retry; non-NULL = successfully published
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    # gave up: alert, never delete
+    exhausted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
 ```
 
 **Step 2 — Write outbox row inside the state-change transaction**:
@@ -137,37 +155,46 @@ async def approve_entity(self, entity_id: uuid.UUID, session: AsyncSession) -> E
     return entity
 ```
 
-**Step 3 — Outbox processor** (called by Cloud Scheduler endpoint):
+**Step 3 — Outbox processor** (called by the scheduler endpoint). Attempts, backoff, `ORDER BY` and an exhausted state are mandatory:
+without them one permanently failing row refills every batch and starves the rest (full executed version: `reliability-idempotency-retries-outbox.md` section 4).
 
 ```python
 async def process_outbox(
-    session: AsyncSession,
-    topic: str,
-    batch_size: int = 50,
+    session: AsyncSession, topic: str, *, now: datetime, batch_size: int = 50
 ) -> list[str]:
-    """Publish unpublished outbox rows. Returns IDs of successfully published rows."""
     rows = (
-        await session.execute(
+        await session.scalars(
             select(MyServiceEventsOutbox)
-            .where(MyServiceEventsOutbox.published_at.is_(None))
+            .where(
+                MyServiceEventsOutbox.published_at.is_(None),
+                MyServiceEventsOutbox.exhausted_at.is_(None),
+                MyServiceEventsOutbox.next_attempt_at <= now,
+            )
+            .order_by(MyServiceEventsOutbox.created_at)
             .limit(batch_size)
-            .with_for_update(skip_locked=True)   # safe for concurrent sweeps
+            .with_for_update(skip_locked=True)  # safe for concurrent sweeps
         )
-    ).scalars().all()
+    ).all()
 
     published_ids: list[str] = []
     for row in rows:
+        row.attempts += 1
         try:
             await publish_outbox_payload(
-                topic=topic,
-                event_type=row.event_type,
-                payload=row.payload,
+                topic=topic, event_type=row.event_type, payload=row.payload
             )
-            row.published_at = datetime.now(UTC)
+        except Exception as exc:
+            row.last_error_type = type(exc).__name__
+            if row.attempts >= MAX_ATTEMPTS:
+                row.exhausted_at = now
+                # alert
+                logger.error("outbox_exhausted", row_id=str(row.id), error_type=row.last_error_type)
+            else:
+                # e.g. min(30s * 2**(n-1), 10min)
+                row.next_attempt_at = now + backoff(row.attempts)
+        else:
+            row.published_at = now
             published_ids.append(str(row.id))
-        except Exception:
-            logger.error("outbox_publish_failed", row_id=str(row.id), exc_info=True)
-            # Leave published_at NULL — next sweep will retry
 
     await session.commit()
     return published_ids
@@ -196,9 +223,14 @@ async def process_outbox_endpoint(
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     _verify_internal_secret(request)
-    published_ids = await process_outbox(session, topic=settings.PUBSUB_MY_TOPIC)
+    # one reading of ONE clock (the database) per run
+    now = await session.scalar(select(func.now()))
+    published_ids = await process_outbox(session, topic=settings.PUBSUB_MY_TOPIC, now=now)
     return {"published_count": len(published_ids), "event_ids": published_ids}
 ```
+
+Sweep endpoint rules: cap the batch and the wall-clock budget and report what was deferred (never silently); `rollback()` before re-raising so the
+shared session is not left in a failed transaction; `commit()` to release `FOR UPDATE` locks on an empty result; stamp with an `IS NULL` guard so a re-run is a no-op.
 
 ### Hard rules
 
@@ -207,6 +239,10 @@ async def process_outbox_endpoint(
 - `publish_outbox_payload` MUST raise — the processor relies on the exception to leave
   `published_at` NULL for retry
 - Use `SELECT … FOR UPDATE SKIP LOCKED` in the processor — safe for concurrent scheduler runs
+- Delivery is at-least-once: a crash between publish and commit republishes, so consumers MUST be idempotent
+- Any consumer-side dedupe TTL must exceed the retry horizon (first wait + summed backoffs + margin); assert it at startup
+- The sweep holds row locks across the publish call: give writers touching the same rows a `lock_timeout`
+- Optional low latency: queue an after-commit publish (dropped on rollback) and keep the sweep as the backstop (same reference, section 4)
 - Outbox table belongs in shared migrations — not per-service
 
 ---
@@ -256,22 +292,28 @@ async def write_status_event(
             .collection("status_events")
             .document(str(event_id))
         )
-        await doc_ref.set({
-            "status": status,
-            "previous_status": previous_status,
-            "actor_id": str(actor_id) if actor_id else None,
-            "actor_type": actor_type,
-            "timestamp": datetime.now(tz=UTC).isoformat(),
-        })
-    except Exception:
-        logger.error("firestore_status_write_failed", resource_id=str(resource_id), exc_info=True)
+        await doc_ref.set(
+            {
+                "status": status,
+                "previous_status": previous_status,
+                "actor_id": str(actor_id) if actor_id else None,
+                "actor_type": actor_type,
+                "timestamp": datetime.now(tz=UTC).isoformat(),
+            }
+        )
+    except Exception as exc:
+        logger.error(
+            "firestore_status_write_failed",
+            resource_id=str(resource_id),
+            error_type=type(exc).__name__,
+        )
     finally:
         if client is not None:
             await client.close()
 
 
-# In the route/service — always create_task, never await
-asyncio.create_task(
+# In the route/service — always spawn(), never await
+spawn(
     write_status_event(
         resource_id=resource_id,
         event_id=uuid.uuid4(),
@@ -279,14 +321,15 @@ asyncio.create_task(
         previous_status=previous_status,
         actor_id=actor_id,
         actor_type=actor_type,
-    )
+    ),
+    name="firestore-status-event",
 )
 ```
 
 ### Hard rules
 
 - NEVER write canonical entity data to Firestore — status_events subcollection ONLY
-- ALWAYS wrap in `asyncio.create_task()` — never `await write_status_event()` at call site
+- ALWAYS `spawn()` it — never `await write_status_event()` at the call site
 - ALWAYS catch all exceptions — Firestore failure must never surface to the HTTP caller
 - The relational DB (PostgreSQL) remains canonical — Firestore is a write-through feed only
 - Mobile clients read via `.snapshots()` stream listener, NOT one-time `.get()` calls
@@ -317,36 +360,47 @@ make up                # new topic created on stack start
 
 ## Subscriber Pattern
 
+`subscribe()` returns a `StreamingPullFuture`; stream errors are set ON that future. A discarded future is a consumer that died silently.
+Route every subscription through `SubscriptionSupervisor` (re-subscribes with capped backoff, stops on `stop()`; code and executed test in
+`reliability-idempotency-retries-outbox.md` section 7) and start it from lifespan, not at import time.
+
 ```python
 from google.cloud import pubsub_v1
 
-def start_pubsub_consumer(subscription: str, dispatch_fn) -> pubsub_v1.SubscriberClient:
-    """Streaming pull subscriber. Returns client for lifecycle management.
 
-    # Fallback: if emulator unavailable, log and return — HTTP endpoints still work.
-    """
+def start_consumer(
+    subscription: str, dispatch_fn, loop: asyncio.AbstractEventLoop
+) -> SubscriptionSupervisor:
     subscriber = pubsub_v1.SubscriberClient()
-    subscription_path = subscriber.subscription_path(settings.GOOGLE_CLOUD_PROJECT, subscription)
+    path = subscriber.subscription_path(settings.GOOGLE_CLOUD_PROJECT, subscription)
 
     def callback(message: pubsub_v1.subscriber.message.Message) -> None:
+        # loop captured in lifespan
+        fut = asyncio.run_coroutine_threadsafe(dispatch_fn(json.loads(message.data)), loop)
         try:
-            payload = json.loads(message.data.decode())
-            asyncio.run_coroutine_threadsafe(dispatch_fn(payload), loop).result(timeout=30)
+            fut.result(timeout=30)
             message.ack()
+        except TimeoutError:
+            fut.cancel()  # otherwise the handler keeps running while the message is redelivered
+            message.nack()
         except Exception as exc:
-            logger.error("pubsub_dispatch_failed", error=str(exc))
-            message.nack()   # triggers redelivery
+            logger.error("pubsub_dispatch_failed", error_type=type(exc).__name__)
+            message.nack()  # triggers redelivery
 
-    try:
-        subscriber.subscribe(subscription_path, callback=callback)
-        logger.info("pubsub_consumer_started", subscription=subscription_path)
-    except Exception as exc:
-        logger.error("pubsub_consumer_failed", error=str(exc))
-
-    return subscriber
+    flow = pubsub_v1.types.FlowControl(max_messages=50)  # default is 1000 in-flight messages
+    supervisor = SubscriptionSupervisor(
+        lambda: subscriber.subscribe(path, callback=callback, flow_control=flow), name=subscription
+    )
+    supervisor.start()
+    return supervisor  # lifespan shutdown: supervisor.stop(); subscriber.close()
 ```
 
 **Hard rules for subscribers:**
-- ALWAYS `ack()` on success, `nack()` on exception — no silent drops
+- ALWAYS `ack()` on success, `nack()` on exception or timeout — no silent drops; cancel the bridged future on timeout
 - ALWAYS set a `timeout` on `run_coroutine_threadsafe().result()` — unbounded wait = thread leak
 - NEVER process messages synchronously in the callback if the handler is async — use `run_coroutine_threadsafe`
+- NEVER discard the `subscribe()` future or swallow a startup failure behind a "fallback": a consumer that never started must fail the readiness check
+- Poison input (malformed) -> dead-letter/ack after logging; transient failure -> nack for redelivery. For push handlers: malformed -> 4xx, transient -> 5xx,
+  attempts exhausted -> publish a "failed" event then 2xx; verify the caller's signed identity and keep the write idempotent
+- Side effects that must not repeat (e.g. push notifications): commit a `pending` claim row BEFORE the external call (`reliability-idempotency-retries-outbox.md` section 6)
+- Not executed here: the `google-cloud-pubsub` client was not installed in the validation environment; confirm `subscribe(..., flow_control=...)` against your pinned version

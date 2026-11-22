@@ -67,6 +67,8 @@ Read `reference/rest-design-principles.md` for detailed patterns covering:
 - CORS configuration — all 3 stacks
 - Health and monitoring endpoints
 
+For FastAPI implementation of what the design decides, load `python-dev/reference/`: `fastapi-authorization-boundaries.md` (actor vs subject, object scope, service-only endpoints), `fastapi-rate-limiting.md`, `fastapi-error-handling.md`, and `fastapi-architecture-and-config.md` §7 (atomic idempotency). Two design decisions to settle up front: the **wire type** of money/decimal fields (`Decimal` serialises as a string, `float` as a number: changing it later breaks clients), and what **queue-replaying clients** receive (a 4xx makes them drop the queued operation).
+
 ### Step 3: Document with OpenAPI
 
 Once the design is finalized, hand off to `openapi-spec-generation` to generate the OpenAPI 3.1 spec.

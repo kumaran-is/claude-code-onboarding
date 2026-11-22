@@ -129,12 +129,8 @@ Response:
 
 **Python FastAPI:**
 ```python
-from pydantic import BaseModel, Field
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
-
-class PaginatedResponse(BaseModel, Generic[T]):
+MAX_PAGE_SIZE = 100
+class PaginatedResponse[T](BaseModel):
     items: list[T]
     page: int
     page_size: int
@@ -142,8 +138,11 @@ class PaginatedResponse(BaseModel, Generic[T]):
     pages: int
 
 @router.get("/users", response_model=PaginatedResponse[UserResponse])
-async def list_users(page: int = 1, page_size: int = Query(default=20, le=100)):
-    offset = (page - 1) * page_size
+async def list_users(
+    page: Annotated[int, Query(ge=1)] = 1,   # bare `page: int = 1` allows 0; PostgreSQL rejects a negative OFFSET
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 20,
+):
+    offset = (page - 1) * page_size    # needs ORDER BY with a unique tiebreak
     ...
 ```
 
@@ -314,16 +313,17 @@ X-RateLimit-Reset: 1640000000    # Unix timestamp when window resets
 Retry-After: 3600                # Seconds (on 429 only)
 ```
 
-**Python FastAPI** — use `slowapi` or `fastapi-limiter`:
+**Python FastAPI** — use `slowapi` or `fastapi-limiter` (rules and executed examples: `python-dev/reference/fastapi-rate-limiting.md`):
 ```python
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, storage_uri=settings.rate_limit_storage_uri)  # shared store
 
 @router.get("/users")
-@limiter.limit("100/minute")
+@limiter.limit("100/minute")                      # fine: no path parameter
 async def list_users(request: Request): ...
+
+@router.get("/invites/{code}")                    # path parameter: .limit() would bucket per code
+@limiter.shared_limit("10/hour", scope="invite-lookup", key_func=user_id_key)  # key on user id, not IP
+async def lookup_invite(request: Request, code: str): ...
 ```
 
 **NestJS** — use `@nestjs/throttler`:
@@ -375,8 +375,7 @@ Consistent across all 3 stacks. Matches RFC 9457 (Problem Details) where used.
   "details": [
     {
       "field": "email",
-      "message": "Must be a valid email address",
-      "value": "not-an-email"
+      "message": "Must be a valid email address"
     }
   ],
   "timestamp": "2025-10-16T12:00:00Z",
@@ -389,10 +388,10 @@ Consistent across all 3 stacks. Matches RFC 9457 (Problem Details) where used.
 |-------|----------|---------|
 | `code` | Yes | Machine-readable error code for programmatic handling |
 | `message` | Yes | Human-readable description |
-| `details` | No | Per-field validation errors (validation errors only) |
+| `details` | No | Per-field validation errors (validation errors only). Never echo the submitted `value`: it may be a password or token |
 | `timestamp` | Yes | ISO 8601 UTC |
 | `path` | Yes | The request path — aids log correlation |
-| `requestId` | Yes | Include in support tickets for log correlation |
+| `requestId` | Yes | Include in support requests for log correlation |
 
 ---
 
@@ -497,23 +496,24 @@ Content-Type: application/json
 - Duplicate request with same key: return cached response immediately (200 OK, not 201)
 - Different key: fresh processing
 
-**Python FastAPI:**
+**Python FastAPI:** the key check and the write must be one atomic step: "read key, then write" lets two
+concurrent retries both pass the check.
 ```python
 @router.post("/orders", status_code=201)
 async def create_order(
     body: CreateOrderRequest,
-    idempotency_key: str = Header(..., alias="Idempotency-Key"),
-    response: Response = None,
-):
-    cached = await idempotency_store.get(idempotency_key)
-    if cached:
-        response.status_code = 200
-        return cached
-    order = await order_service.create(body)
-    await idempotency_store.set(idempotency_key, order, ttl=86400)
-    response.headers["Location"] = f"/api/v1/orders/{order.id}"
-    return order
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=128)],
+    user: CurrentUser, response: Response, service: OrderServiceDep,
+) -> OrderResponse:
+    # one transaction: INSERT key ON CONFLICT DO NOTHING RETURNING, write, store response, commit
+    result, replayed = await service.create_idempotent(user.id, idempotency_key, body)
+    if replayed:
+        response.status_code = 200            # replay, never re-execute
+    return result
 ```
+Scope the key to the caller, store a request fingerprint (same key + different body → 422/409), add a TTL.
+Executed on PostgreSQL: 8 concurrent calls produced 1 order. Code and the Redis caveat:
+`python-dev/reference/fastapi-architecture-and-config.md` §7.
 
 **NestJS:**
 ```typescript
@@ -662,7 +662,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://app.example.com"],  # Never use ["*"] in production
+    allow_origins=settings.cors_origins,  # from config, EMPTY default; never ["*"] in production
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],

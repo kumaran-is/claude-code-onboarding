@@ -6,22 +6,21 @@ patterns are async-safe — no `time.sleep()` in async routes.
 > **Workspace rule:** NO silent failures, NO fallbacks, NO mock data on error.
 > Every catch block MUST log AND either rethrow or return an explicit error state.
 > See `code-standards.md §Error Handling`.
+>
+> **Logging rule:** on request paths never log `str(exc)`, `%s`/f-string of the exception,
+> `exc_info=True` or `logger.exception(...)`: `ValidationError` and `IntegrityError` messages contain
+> the submitted values (executed: an e-mail address and a unique-key value appeared in both).
+> Log the exception **type** and non-PII ids through the one `log_exception` helper
+> (`deployment-ci-cd/reference/python-observability.md` §2; handler-side rules in §6). Logging
+> is `structlog` with the stdlib bridge, configured once as described there. Snippets below were
+> executed on FastAPI 0.165 / Starlette 1.10 / Pydantic 2.14 / SQLAlchemy 2.1.
 
 ---
 
 ## Dependencies
 
 ```bash
-uv add tenacity circuitbreaker
-```
-
-```toml
-# pyproject.toml
-[project]
-dependencies = [
-    "tenacity>=9.0.0",
-    "circuitbreaker>=2.0.0",
-]
+uv add structlog tenacity circuitbreaker httpx   # then pin the resolved versions (templates guide)
 ```
 
 ---
@@ -30,115 +29,153 @@ dependencies = [
 
 Domain-layer exceptions — HTTP translation happens at the FastAPI boundary only.
 Services raise typed domain exceptions; never raise `HTTPException` inside services.
+Messages are static or contain ids only — never submitted values.
 
 ```python
 # src/my_service/core/exceptions.py
-from __future__ import annotations
-import logging
-from datetime import datetime, timezone
-
-logger = logging.getLogger(__name__)
+from typing import Any
 
 
 class AppError(Exception):
     """Base exception for all application domain errors."""
 
-    def __init__(self, message: str, code: str, details: dict | None = None) -> None:
+    def __init__(self, message: str, code: str, details: dict[str, Any] | None = None) -> None:
         super().__init__(message)
-        self.code = code
-        self.details = details or {}
-        self.timestamp = datetime.now(timezone.utc)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(code={self.code!r}, message={str(self)!r})"
+        self.message, self.code, self.details = message, code, details or {}
 
 
-class ValidationError(AppError):
-    """Input failed business-rule validation (distinct from Pydantic schema validation)."""
+class DomainValidationError(AppError):
+    """Business-rule violation. Named to avoid colliding with pydantic.ValidationError."""
 
     def __init__(self, message: str, field: str | None = None) -> None:
-        super().__init__(message, code="VALIDATION_ERROR", details={"field": field} if field else {})
+        super().__init__(message, "VALIDATION_ERROR", {"field": field} if field else {})
 
 
 class NotFoundError(AppError):
-    """Requested resource does not exist."""
-
     def __init__(self, resource: str, identifier: str) -> None:
         super().__init__(
-            f"{resource} not found",
-            code="NOT_FOUND",
-            details={"resource": resource, "id": identifier},
+            f"{resource} not found", "NOT_FOUND", {"resource": resource, "id": identifier}
         )
 
 
 class ConflictError(AppError):
-    """Operation conflicts with current resource state (e.g. duplicate)."""
+    """Operation conflicts with current state (e.g. duplicate)."""
 
-    def __init__(self, message: str, details: dict | None = None) -> None:
-        super().__init__(message, code="CONFLICT", details=details)
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, "CONFLICT", details)
 
 
 class ExternalServiceError(AppError):
-    """Dependency (external API, payment gateway, etc.) failed."""
+    """A dependency (external API, payment gateway, ...) failed."""
 
-    def __init__(self, message: str, service: str, details: dict | None = None) -> None:
-        super().__init__(message, code="EXTERNAL_SERVICE_ERROR", details={"service": service, **(details or {})})
+    def __init__(self, message: str, service: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, "EXTERNAL_SERVICE_ERROR", {"service": service, **(details or {})})
         self.service = service
 ```
 
 ---
 
-## 2. FastAPI Exception Handlers
+## 2. One error envelope for everything
 
-Register once in `main.py`. Translates domain exceptions to HTTP responses.
-Never catch `AppError` subclasses inside route handlers — let the handler do it.
+Domain errors, `RequestValidationError`, `HTTPException` (including router 404/405) and a
+catch-all `Exception` all use one body shape (same fields as `rest-design-principles.md`
+"Error Response Format"), each carrying `requestId`. A custom envelope that covers only domain errors
+leaves 422/404/405 in FastAPI's default shape. RFC 9457 `application/problem+json` is an
+equally valid choice; pick one per service.
 
 ```python
 # src/my_service/core/exception_handlers.py
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from .exceptions import AppError, ValidationError, NotFoundError, ConflictError, ExternalServiceError
-import logging
+from datetime import UTC, datetime
+from typing import Any
 
-logger = logging.getLogger(__name__)
+import structlog
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from .exceptions import AppError
+from .logging import log_exception  # python-observability.md §2: the ONE helper
+
+logger = structlog.get_logger(__name__)
+_STATUS_BY_CODE = {
+    "NOT_FOUND": 404,
+    "CONFLICT": 409,
+    "VALIDATION_ERROR": 422,
+    "EXTERNAL_SERVICE_ERROR": 502,
+}
+
+
+def envelope(
+    request: Request, status: int, code: str, message: str, details: Any = None
+) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", None)
+    response = JSONResponse(
+        status_code=status,
+        content={
+            "code": code,
+            "message": message,
+            "details": details,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "path": request.url.path,
+            "requestId": request_id,
+        },
+    )
+    if request_id:
+        # belt and braces: a plain FastAPI + add_middleware would miss the 500
+        response.headers["X-Request-ID"] = request_id
+    return response
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    @app.exception_handler(NotFoundError)
-    async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
-        logger.info("Resource not found: %s", exc, extra={"code": exc.code, "details": exc.details})
-        return JSONResponse(status_code=404, content={"code": exc.code, "detail": str(exc), "details": exc.details})
-
-    @app.exception_handler(ValidationError)
-    async def validation_handler(request: Request, exc: ValidationError) -> JSONResponse:
-        logger.info("Validation error: %s", exc, extra={"code": exc.code, "details": exc.details})
-        return JSONResponse(status_code=422, content={"code": exc.code, "detail": str(exc), "details": exc.details})
-
-    @app.exception_handler(ConflictError)
-    async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
-        logger.warning("Conflict: %s", exc, extra={"code": exc.code, "details": exc.details})
-        return JSONResponse(status_code=409, content={"code": exc.code, "detail": str(exc), "details": exc.details})
-
-    @app.exception_handler(ExternalServiceError)
-    async def external_service_handler(request: Request, exc: ExternalServiceError) -> JSONResponse:
-        logger.error("External service failed: %s | service=%s", exc, exc.service, extra=exc.details)
-        return JSONResponse(status_code=502, content={"code": exc.code, "detail": str(exc)})
-
     @app.exception_handler(AppError)
-    async def app_error_fallback_handler(request: Request, exc: AppError) -> JSONResponse:
-        logger.error("Unclassified application error: %r", exc, extra={"code": exc.code})
-        return JSONResponse(status_code=500, content={"code": exc.code, "detail": str(exc)})
+    async def app_error(request: Request, exc: AppError) -> JSONResponse:
+        status = _STATUS_BY_CODE.get(exc.code, 500)
+        log_exception(
+            logger, "app_error", exc, level="error" if status >= 500 else "warning", code=exc.code
+        )
+        return envelope(request, status, exc.code, exc.message, exc.details or None)
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default 422 echoes every offending "input" (passwords, tokens) into responses,
+        # proxies and error trackers. Return loc/msg/type only.
+        details = [
+            {"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in exc.errors()
+        ]
+        return envelope(request, 422, "VALIDATION_ERROR", "Request validation failed", details)
+
+    @app.exception_handler(StarletteHTTPException)  # also covers router 404 / 405
+    async def http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        resp = envelope(request, exc.status_code, f"HTTP_{exc.status_code}", str(exc.detail))
+        resp.headers.update(exc.headers or {})  # keep WWW-Authenticate etc.
+        return resp
+
+    # catch-all: generic body, detail only in logs
+    @app.exception_handler(Exception)
+    async def unhandled(request: Request, exc: Exception) -> JSONResponse:
+        # ServerErrorMiddleware runs this AFTER the request-id middleware reset its contextvar:
+        # pass the id explicitly or the most important log line cannot be correlated (§6).
+        log_exception(
+            logger,
+            "unhandled_error",
+            exc,
+            method=request.method,
+            request_id=getattr(request.state, "request_id", None),
+        )
+        return envelope(request, 500, "INTERNAL_ERROR", "Internal server error")
 ```
 
-Register in `main.py`:
+Register once in the app factory (`fastapi-architecture-and-config.md` §3): `register_exception_handlers(app)`.
+Never catch `AppError` subclasses inside route handlers. A tracebacks-in-responses flag, if you
+need one, must be an explicit non-production setting; the default 500 body is generic.
 
-```python
-# src/my_service/main.py
-from .core.exception_handlers import register_exception_handlers
-
-app = FastAPI(...)
-register_exception_handlers(app)
-```
+Executed: default 422 body contained the submitted e-mail and password value, ours did not; domain
+404, router 404, router 405 and an unhandled `RuntimeError("card ... declined")` all returned the
+envelope with `requestId`, and the card text appeared in neither the body nor the logs. Starlette
+re-raises after the catch-all responds, so the server still logs a traceback: scrub that sink.
+Executed (§6 middleware): a request with a valid `X-Request-ID` that hit an unhandled error got the same id in
+the response header, the body and the `unhandled_error` log line.
 
 ---
 
@@ -148,11 +185,13 @@ Services raise typed exceptions. Never raise `HTTPException` here.
 
 ```python
 # src/my_service/services/order_service.py
-import logging
+import structlog
 from sqlalchemy.exc import IntegrityError
-from .core.exceptions import NotFoundError, ConflictError, ExternalServiceError
 
-logger = logging.getLogger(__name__)
+from .core.exceptions import ConflictError, ExternalServiceError, NotFoundError
+from .core.logging import log_exception
+
+logger = structlog.get_logger(__name__)
 
 
 async def get_order(order_id: str, session: AsyncSession) -> Order:
@@ -170,7 +209,8 @@ async def create_order(data: CreateOrderRequest, session: AsyncSession) -> Order
         return order
     except IntegrityError as exc:
         await session.rollback()
-        logger.error("Duplicate order creation attempt: %s", exc)
+        # the exception text contains the values
+        log_exception(logger, "order_conflict", exc, order_ref=data.reference)
         raise ConflictError("Order already exists", details={"reference": data.reference}) from exc
 
 
@@ -178,116 +218,167 @@ async def charge_order(order: Order) -> PaymentResult:
     try:
         return await payment_client.charge(order.total)
     except PaymentClientError as exc:
-        logger.error("Payment failed for order %s: %s", order.id, exc)
+        log_exception(logger, "payment_failed", exc, order_id=str(order.id))
         raise ExternalServiceError(
             "Payment processing failed",
             service="payment_service",
-            details={"order_id": str(order.id), "amount": str(order.total)},
+            details={"order_id": str(order.id)},
         ) from exc
 ```
 
 ---
 
-## 4. Async Retry with Tenacity
+## 4. Async Retry with Tenacity: transient failures only
 
-Use `tenacity` — it is async-safe. **Never use `time.sleep()` inside async routes.**
+Use `tenacity` (async-safe; **never `time.sleep()` in async routes**). Retry only what is transient
+and make the decorated function raise the RAW client exception: wrapping every `httpx.HTTPError` in
+one retried domain exception makes a 404 get retried and a non-idempotent POST get sent three times
+(rules and jitter: `reliability-idempotency-retries-outbox.md` §3). Wrap into `ExternalServiceError`
+AFTER the retry.
 
 ```python
 # src/my_service/core/retry.py
+from collections.abc import Awaitable, Callable
+
+import httpx
+import structlog
 from tenacity import (
+    RetryCallState,
     retry,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
 )
-import logging
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
 
-# Decorator — use on any async function that calls external APIs
-def with_retry(
+
+def _log_retry(state: RetryCallState) -> None:
+    """tenacity's before_sleep_log needs a stdlib logger; this keeps the one structlog stack."""
+    exc = state.outcome.exception() if state.outcome else None
+    logger.warning(
+        "retrying", attempt=state.attempt_number, error_type=type(exc).__name__ if exc else None
+    )
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Worth repeating: the network or an overloaded dependency, never a 4xx the caller caused."""
+    if isinstance(exc, httpx.ConnectError | httpx.TimeoutException):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE_STATUS
+
+
+def with_retry[**P, R](
     max_attempts: int = 3,
     min_wait: float = 1.0,
     max_wait: float = 10.0,
-    retry_on: tuple = (ExternalServiceError,),
-):
+    retry_on: Callable[[BaseException], bool] = is_transient,
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     return retry(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=1, min=min_wait, max=max_wait),
-        retry=retry_if_exception_type(retry_on),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        reraise=True,  # MUST rethrow after max attempts — no silent fallback
+        retry=retry_if_exception(retry_on),
+        before_sleep=_log_retry,
+        reraise=True,  # MUST rethrow after max attempts: no silent fallback
     )
 ```
 
-Usage:
-
 ```python
-from .core.retry import with_retry
-from .core.exceptions import ExternalServiceError
+# src/my_service/core/clients.py
+# a structlog logger: log_exception(logger, event, exc, **ids)
+logger = structlog.get_logger(__name__)
 
-@with_retry(max_attempts=3, retry_on=(ExternalServiceError,))
-async def fetch_exchange_rate(currency: str) -> float:
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        try:
-            resp = await client.get(f"https://api.rates.io/{currency}")
-            resp.raise_for_status()
-            return resp.json()["rate"]
-        except httpx.HTTPError as exc:
-            logger.error("Exchange rate fetch failed for %s: %s", currency, exc)
-            raise ExternalServiceError(
-                f"Rate service unavailable for {currency}",
-                service="exchange_rate_api",
-            ) from exc
+
+@with_retry()
+async def _get_rate(client: httpx.AsyncClient, currency: str) -> float:
+    resp = await client.get(f"/rates/{currency}")
+    resp.raise_for_status()
+    return float(resp.json()["rate"])
+
+
+async def fetch_exchange_rate(client: httpx.AsyncClient, currency: str) -> float:
+    try:
+        return await _get_rate(client, currency)
+    except httpx.HTTPError as exc:  # after the retry: a 404 was one call, a 503 three
+        log_exception(logger, "exchange_rate_failed", exc, currency=currency)
+        raise ExternalServiceError("Rate service unavailable", service="exchange_rate_api") from exc
 ```
+
+Executed through `httpx.MockTransport` (`mypy --strict` and the lint baseline clean): 404 -> 1 call,
+`ExternalServiceError`; `503, 503, 200` -> 3 calls, success. For production load add jitter and a total
+window (`wait_exponential_jitter`, `stop_after_delay`: reliability §3).
 
 ---
 
 ## 5. Async Circuit Breaker
 
-Prevents cascading failures when an external service is down.
+Prevents cascading failures when a dependency is down. Count dependency health only (5xx, transport
+errors), never a caller's 4xx, and put the breaker **outside** the retry so one logical call is one count.
 
 ```python
 # src/my_service/core/circuit.py
-from circuitbreaker import circuit
-from .exceptions import ExternalServiceError
+from collections.abc import Awaitable, Callable
+from http import HTTPStatus
 
-# failure_threshold: open after N consecutive failures
-# recovery_timeout: seconds before allowing one test call (HALF_OPEN)
-# expected_exception: only these exceptions count as failures
+import httpx
+from circuitbreaker import circuit  # type: ignore[import-untyped]  # no stubs or py.typed
 
-def breaker(service_name: str, failure_threshold: int = 5, recovery_timeout: int = 60):
-    """Factory returning a circuit breaker decorator for a named external service."""
-    return circuit(
+
+def is_dependency_failure(exc_type: type[BaseException], exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    return isinstance(exc, httpx.TransportError)
+
+
+def breaker[**P, R](
+    service_name: str, failure_threshold: int = 5, recovery_timeout: int = 60
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+    # failure_threshold: failures to open; recovery_timeout: seconds until a HALF_OPEN probe
+    return circuit(  # type: ignore[no-any-return]
         failure_threshold=failure_threshold,
         recovery_timeout=recovery_timeout,
-        expected_exception=ExternalServiceError,
+        expected_exception=is_dependency_failure,
         name=service_name,
     )
 ```
 
-Usage:
-
 ```python
-from .core.circuit import breaker
-from .core.retry import with_retry
+@breaker("payment_service")  # outermost: the attempts inside are ONE count
+@with_retry()
+async def _post_charge(
+    client: httpx.AsyncClient, order_id: str, amount: Decimal, idempotency_key: str
+) -> httpx.Response:
+    resp = await client.post(  # retried only because the key makes a repeat safe:
+        "/charge",
+        json={"order_id": order_id, "amount": str(amount)},
+        # a required parameter, so it cannot be forgotten
+        headers={"Idempotency-Key": idempotency_key},
+    )
+    resp.raise_for_status()
+    return resp
 
-@breaker("payment_service", failure_threshold=5, recovery_timeout=60)
-@with_retry(max_attempts=3)
-async def call_payment_service(order_id: str, amount: Decimal) -> PaymentResult:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            resp = await client.post("/charge", json={"order_id": order_id, "amount": str(amount)})
-            resp.raise_for_status()
-            return PaymentResult(**resp.json())
-        except httpx.HTTPError as exc:
-            logger.error("Payment service call failed: %s", exc)
-            raise ExternalServiceError("Payment service unavailable", service="payment_service") from exc
+
+async def call_payment_service(
+    client: httpx.AsyncClient, order_id: str, amount: Decimal, key: str
+) -> PaymentResult:
+    try:
+        return PaymentResult(**(await _post_charge(client, order_id, amount, key)).json())
+    except httpx.HTTPError as exc:
+        log_exception(logger, "payment_call_failed", exc, order_id=order_id)
+        raise ExternalServiceError(
+            "Payment service unavailable", service="payment_service"
+        ) from exc
 ```
 
-> **Circuit open state:** When circuit opens, `circuitbreaker` raises `CircuitBreakerError`.
-> Add a handler for it in `exception_handlers.py` returning `503 Service Unavailable`.
+Executed (threshold 3, `MockTransport`): three logical calls answered 503 sent 9 requests, all with the
+same `Idempotency-Key`, then the breaker opened and the next call sent nothing; five 404s sent five
+requests and left the breaker closed. Never put a POST without a key behind `with_retry`.
+`circuitbreaker` 2.1.3 calls `asyncio.iscoroutinefunction`, which Python 3.14 reports as a
+`DeprecationWarning` at decoration time: a suite run with `-W error` fails on import, so add a targeted
+`filterwarnings` ignore for that message and watch for a fixed release.
+
+> **Circuit open state:** `circuitbreaker` raises `CircuitBreakerError`. Add a handler returning `503`.
 
 ```python
 # Add to register_exception_handlers()
@@ -295,49 +386,32 @@ from circuitbreaker import CircuitBreakerError
 
 @app.exception_handler(CircuitBreakerError)
 async def circuit_open_handler(request: Request, exc: CircuitBreakerError) -> JSONResponse:
-    logger.error("Circuit breaker open: %s", exc)
-    return JSONResponse(status_code=503, content={"code": "SERVICE_UNAVAILABLE", "detail": str(exc)})
+    log_exception(logger, "circuit_open", exc)
+    return envelope(request, 503, "SERVICE_UNAVAILABLE", "Service temporarily unavailable")
 ```
 
 ---
 
-## 6. Error Logging Context Pattern
+## 6. Request id: the handler-side contract
 
-Structured logging with request context — include user, path, method in every error log.
+The canonical logging setup, `log_exception` and the pure-ASGI `RequestIdMiddleware` live in
+`deployment-ci-cd/reference/python-observability.md` (§1, §2, §4). The handlers depend on three
+behaviours of that middleware:
 
-```python
-# src/my_service/middleware/logging_middleware.py
-import logging
-import uuid
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+| Behaviour | Why the handlers need it |
+|----------|--------------------------|
+| It sets `scope["state"]["request_id"]` (so `request.state.request_id` works) | the envelope's `requestId` is `null` without it (executed) |
+| It accepts an inbound id only if it parses as a UUID, else generates one | a junk `X-Request-ID: bad\r\nvalue` is replaced by a generated UUID |
+| It sets `X-Request-ID` by wrapping `send`, and wraps the whole app in `App.__call__` | covers EVERY response, including the framework's 500 (executed) |
 
-logger = logging.getLogger(__name__)
+One hole remains on the unhandled-exception path, closed in the §2 handlers: the log line is written after the middleware reset its context, so the catch-all passes
+`request_id=request.state.request_id` explicitly. Executed with a valid inbound id: header, body
+`requestId` and the `unhandled_error` log line all carried it, and the `RuntimeError("card 4111 ...")`
+text appeared in none of them.
 
-
-class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        request_id = str(uuid.uuid4())
-        request.state.request_id = request_id
-        try:
-            response = await call_next(request)
-            return response
-        except Exception as exc:
-            logger.error(
-                "Unhandled exception: %s %s — %r",
-                request.method,
-                request.url.path,
-                exc,
-                extra={"request_id": request_id},
-            )
-            raise
-```
-
-Register in `main.py`:
-```python
-from .middleware.logging_middleware import RequestContextMiddleware
-app.add_middleware(RequestContextMiddleware)
-```
+Less diagnostic detail in logs is the trade-off; compensate with `requestId`, error type and stable
+event names, and send tracebacks only to a scrubbed sink. Allow a documented marker for
+infrastructure start-up diagnostics only.
 
 ---
 
@@ -349,65 +423,103 @@ app.add_middleware(RequestContextMiddleware)
 | **Never swallow exceptions** | Every `except` MUST log AND rethrow or raise domain error |
 | **No fallbacks** | Returning empty list/None/default on error is forbidden (`code-standards.md`) |
 | **Chain exceptions** | Use `raise NewError(...) from original_exc` to preserve traceback |
-| **Async-safe retry** | Use `tenacity` — never `time.sleep()` in async routes |
+| **Async-safe retry** | `tenacity`, transient errors only, POST only with an idempotency key (§4); never `time.sleep()` in async routes |
 | **Circuit breaker on external services** | Wrap all third-party HTTP clients |
 | **Log at correct level** | 4xx expected errors → `INFO`/`WARNING`; 5xx → `ERROR` |
-| **Never log sensitive data** | No passwords, tokens, PII in error details |
+| **Never log sensitive data** | No passwords, tokens, PII in error details; no `str(exc)`, `exc_info=True` or connection URLs on request paths (`python-observability.md` §2) |
+| **One envelope** | Domain, 422, HTTP and catch-all errors share one body; 422 never echoes `input` |
 
 ---
 
 ## 8. Testing Error Paths
 
+`raise_app_exceptions=False` shows what a real client sees (the catch-all re-raises for the server log).
+`Settings` and `create_app(settings)` come from the templates guide (the `settings` fixture below builds
+explicit values, never the developer's `.env`); the test-only `/boom` route is added inside the test.
+
 ```python
 # tests/test_error_handling.py
+from collections.abc import AsyncIterator
+
+import httpx
 import pytest
-from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, patch
-from src.my_service.main import app
-from src.my_service.core.exceptions import NotFoundError, ExternalServiceError
+import structlog
+from httpx import ASGITransport, AsyncClient
+from tenacity import wait_none
+
+from my_service.core.exceptions import ExternalServiceError
+from my_service.core.clients import _get_rate, fetch_exchange_rate   # the section 4 example
+from my_service.main import create_app
+from my_service.core.config import Settings
+
 
 @pytest.fixture
-async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+def settings() -> Settings:
+    url = "postgresql+asyncpg://u:p@localhost/test"
+    return Settings(_env_file=None, database_url=url, jwt_secret="j" * 32)
+
+
+@pytest.fixture
+async def client(settings: Settings) -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=create_app(settings), raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
-@pytest.mark.asyncio
-async def test_not_found_returns_404(client):
-    resp = await client.get("/api/v1/orders/does-not-exist")
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "NOT_FOUND"
 
-@pytest.mark.asyncio
-async def test_external_service_failure_returns_502(client, seed_order):
-    with patch("src.my_service.services.order_service.payment_client.charge",
-               new_callable=AsyncMock) as mock_charge:
-        mock_charge.side_effect = ExternalServiceError("down", service="payment_service")
-        resp = await client.post(f"/api/v1/orders/{seed_order.id}/charge")
-    assert resp.status_code == 502
-    assert resp.json()["code"] == "EXTERNAL_SERVICE_ERROR"
+async def test_domain_error_is_404_envelope_not_500(client: AsyncClient) -> None:
+    resp = await client.get("/api/v1/orders/does-not-exist")      # the service raises NotFoundError
+    assert resp.status_code == 404 and resp.json()["code"] == "NOT_FOUND"
 
-@pytest.mark.asyncio
-async def test_retry_succeeds_after_transient_failure(client):
-    call_count = 0
 
-    async def flaky_call():
-        nonlocal call_count
-        call_count += 1
-        if call_count < 3:
-            raise ExternalServiceError("transient", service="test")
-        return {"rate": 1.5}
+async def test_422_never_echoes_submitted_values(client: AsyncClient) -> None:
+    resp = await client.post("/api/v1/signup", json={"email": "not-an-email", "password": 123456})
+    assert resp.status_code == 422 and resp.json()["code"] == "VALIDATION_ERROR"
+    assert "not-an-email" not in resp.text and "123456" not in resp.text
 
-    with patch("src.my_service.services.exchange_service.fetch_exchange_rate", side_effect=flaky_call):
-        resp = await client.get("/api/v1/exchange/USD")
-    assert resp.status_code == 200
-    assert call_count == 3  # confirmed: retried twice, succeeded on third
 
-@pytest.mark.asyncio
-async def test_domain_exception_never_leaks_as_500(client):
-    """NotFoundError must produce 404, not 500 — verify handler is registered."""
-    with patch("src.my_service.services.order_service.get_order",
-               side_effect=NotFoundError("Order", "abc")):
-        resp = await client.get("/api/v1/orders/abc")
-    assert resp.status_code == 404
-    assert "INTERNAL" not in resp.json().get("code", "")
+async def test_unhandled_error_is_generic_and_carries_the_request_id(settings: Settings) -> None:
+    app = create_app(settings)
+
+    @app.get("/api/v1/boom")
+    async def boom() -> None:
+        raise RuntimeError("card 4111 declined")
+
+    rid = "11111111-2222-4333-8444-555555555555"
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    with structlog.testing.capture_logs() as logs:
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/v1/boom", headers={"X-Request-ID": rid})
+    assert resp.status_code == 500 and resp.json()["code"] == "INTERNAL_ERROR"
+    assert resp.headers["x-request-id"] == rid and resp.json()["requestId"] == rid
+    logged = next(e for e in logs if e["event"] == "unhandled_error")
+    assert logged["request_id"] == rid and "4111" not in str(logs) + resp.text
+
+
+async def test_transient_failure_is_retried_and_4xx_is_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    # default backoff sleeps 1 s + 2 s
+    monkeypatch.setattr(_get_rate.retry, "wait", wait_none())      # type: ignore[attr-defined]
+    statuses = iter([503, 503, 200])
+    calls: list[httpx.Request] = []
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(next(statuses), json={"rate": 1.5})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(flaky), base_url="http://dep") as c:
+        assert await fetch_exchange_rate(c, "USD") == 1.5
+    # retried twice, succeeded on the third
+    assert len(calls) == 3
+
+    calls.clear()
+
+    def not_found_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(404)
+
+    not_found = httpx.MockTransport(not_found_handler)
+    async with httpx.AsyncClient(transport=not_found, base_url="http://dep") as c:
+        with pytest.raises(ExternalServiceError):
+            await fetch_exchange_rate(c, "USD")
+    # a 4xx is the caller's error: never repeated
+    assert len(calls) == 1
 ```

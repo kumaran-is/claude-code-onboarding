@@ -19,14 +19,14 @@
 
 ### Zero-Shot CoT
 
-Add "think step by step" trigger to any prompt.
+Add a "think step by step" trigger — for **non-thinking** models. Models with built-in reasoning (Gemini thinking models, other providers' reasoning models) already reason internally; an explicit scaffold mostly adds output tokens and latency. For them, set the thinking level/budget, ask for the answer's structure, and judge the change with evals.
 
 **LangGraph:**
 ```python
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_anthropic import ChatAnthropic
 
-llm = ChatAnthropic(model="claude-sonnet-4-6")
+llm = ChatAnthropic(model=settings.llm_model)  # model id from config
 
 def reasoning_node(state: AgentState) -> AgentState:
     messages = [
@@ -45,7 +45,7 @@ from google.adk.agents import LlmAgent
 
 reasoning_agent = LlmAgent(
     name="reasoning_agent",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="""You are an expert analyst.
 Think through problems step by step before answering.
 
@@ -91,7 +91,7 @@ Now convert the following query using the same step-by-step reasoning."""
 ```python
 sql_agent = LlmAgent(
     name="sql_agent",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="""You are a SQL expert. Convert natural language to SQL.
 
 Example 1:
@@ -131,7 +131,8 @@ def self_consistency_node(state: AgentState) -> AgentState:
     N = 5
     answers = []
     for _ in range(N):
-        response = llm.invoke(prompt, config={"temperature": 0.7})
+        response = llm.invoke(prompt)  # sampling diversity comes from the default temperature;
+        # Gemini 3.x: keep the default (lowering it can cause loops); check your provider's guidance
         # Extract final answer (last line or after "Answer:")
         answer = response.content.split("Answer:")[-1].strip()
         answers.append(answer)
@@ -145,6 +146,7 @@ def self_consistency_node(state: AgentState) -> AgentState:
 ```python
 import asyncio
 from collections import Counter
+from google.adk.agents import RunConfig
 from google.adk.runners import Runner
 from google.genai import types
 
@@ -162,14 +164,16 @@ async def self_consistent_answer(question: str, n_samples: int = 5) -> str:
             app_name="consistency_check",
             user_id=f"run_{i}"
         )
-        result = await runner.run_async(
+        final_text = ""
+        async for event in runner.run_async(          # an async generator: iterate, never await
             user_id=session.user_id,
             session_id=session.id,
-            new_message=types.Content(role="user", parts=[types.Part(text=question)])
-        )
-        # Extract last agent response
-        last = [e for e in result if e.author != "user"][-1]
-        answers.append(last.content.parts[0].text.strip())
+            new_message=types.Content(role="user", parts=[types.Part(text=question)]),
+            run_config=RunConfig(max_llm_calls=5),
+        ):
+            if event.is_final_response() and event.content:
+                final_text = "".join(p.text for p in event.content.parts or [] if p.text)
+        answers.append(final_text.strip())
 
     return Counter(answers).most_common(1)[0][0]
 ```
@@ -257,19 +261,19 @@ from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
 
 branch_a = LlmAgent(
     name="microservices_explorer",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="Explore the microservices approach for the given problem. Analyze pros, cons, complexity, and fit."
 )
 
 branch_b = LlmAgent(
     name="monolith_explorer",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="Explore the modular monolith approach. Analyze pros, cons, complexity, and fit."
 )
 
 branch_c = LlmAgent(
     name="serverless_explorer",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="Explore the serverless approach. Analyze pros, cons, complexity, and fit."
 )
 
@@ -280,7 +284,7 @@ parallel_explorer = ParallelAgent(
 
 synthesizer = LlmAgent(
     name="synthesizer",
-    model="gemini-3.1-pro",  # use Pro for synthesis — more reasoning
+    model=settings.reasoning_model,  # a stronger configured model for synthesis
     instruction="""Review the three architectural explorations from the parallel agents.
 Select the best approach based on the original problem requirements.
 Output: Decision (which approach), Rationale (3 bullet points), Risk Mitigation (top 2 risks)."""

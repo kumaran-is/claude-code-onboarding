@@ -39,7 +39,7 @@ Then identify which reference to load:
 | System prompt design | `reference/system-prompts.md` |
 | Token reduction, A/B testing | `reference/prompt-optimization.md` |
 | Reusable templates | `reference/prompt-templates.md` |
-| Copy-paste starting point | `reference/prompt-template-library.md` |
+| Copy-paste starting point | `reference/prompt-template-library.md` (index) → `prompt-library-structured-output.md`, `prompt-library-code-and-grounding.md`, `prompt-library-writing-and-advisory.md` |
 
 ---
 

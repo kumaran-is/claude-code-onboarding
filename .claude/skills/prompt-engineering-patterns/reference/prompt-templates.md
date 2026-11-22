@@ -72,7 +72,7 @@ def make_specialist_agent(
 
     return LlmAgent(
         name=name,
-        model="gemini-3.1-flash",
+        model=settings.agent_model,
         instruction=instruction
     )
 

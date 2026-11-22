@@ -59,7 +59,7 @@ from google.adk.agents import LlmAgent
 
 classifier_agent = LlmAgent(
     name="classifier",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="""You are a customer support classifier.
 Classify each message into exactly one category: BILLING, TECHNICAL, ACCOUNT, or GENERAL.
 

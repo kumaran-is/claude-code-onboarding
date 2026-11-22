@@ -8,9 +8,9 @@
 1. Establish baseline (accuracy, tokens, latency, success rate)
 2. Identify failure category (format, factual, logic, incomplete, hallucination)
 3. Apply one change at a time
-4. Test on representative sample (min 20 inputs)
+4. Test on the same golden cases for both variants; size the set for the effect you need to detect (`llm-evaluation` skill, `reference/ab-testing.md` — power and sample size)
 5. Measure all metrics (not just accuracy)
-6. Accept change only if improvement is statistically significant
+6. Accept a change only if a paired comparison on the same cases shows an improvement whose confidence interval excludes zero (`llm-evaluation` skill, `reference/ab-testing.md`) and no guarded metric (safety, cost, latency) regresses
 7. Version and document
 ```
 
@@ -27,7 +27,7 @@ Before optimizing, classify what's failing:
 | Logic errors | Wrong reasoning | Add CoT / verification step |
 | Incomplete | Cuts off mid-response | Reduce prompt size or increase max_tokens |
 | Off-topic | Drifts from task | Strengthen role definition + hard constraints |
-| Inconsistent | Different output each run | Add few-shot examples, reduce temperature |
+| Inconsistent | Different output each run | Add few-shot examples, use structured output; lower temperature only on models that document it helps (Gemini 3.x guidance: keep the default) |
 
 ---
 
@@ -74,25 +74,9 @@ def evaluate_prompt(prompt: str, test_cases: list[dict], llm) -> PromptTestResul
         sample_size=len(results)
     )
 
-
-def ab_test(prompt_a: str, prompt_b: str, test_cases: list[dict], llm) -> dict:
-    """Compare two prompt variants."""
-    result_a = evaluate_prompt(prompt_a, test_cases, llm)
-    result_b = evaluate_prompt(prompt_b, test_cases, llm)
-
-    winner = "A" if result_a.accuracy > result_b.accuracy else "B"
-    token_delta = result_b.avg_tokens - result_a.avg_tokens
-    accuracy_delta = result_b.accuracy - result_a.accuracy
-
-    return {
-        "winner": winner,
-        "accuracy_delta": f"{accuracy_delta:+.1%}",
-        "token_delta": f"{token_delta:+.0f} tokens/request",
-        "latency_delta": f"{result_b.avg_latency_ms - result_a.avg_latency_ms:+.0f}ms",
-        "result_a": result_a,
-        "result_b": result_b
-    }
 ```
+
+`evaluate_prompt` gives descriptive numbers for one variant. To compare two variants, keep per-case outcomes for both on the same cases and use the paired procedure in `llm-evaluation/reference/ab-testing.md` (McNemar for pass/fail, paired bootstrap CI for scores, fail-closed regression check). Do not pick a winner from raw accuracy deltas or use independent-samples tests on paired data.
 
 ---
 
@@ -127,66 +111,7 @@ Output: Issues (severity, line, description), Fixes (code diff)"""
 
 ## Prompt Versioning
 
-Treat prompts as code — semantic versioning, changelog, rollback.
-
-```python
-from datetime import datetime
-import json
-from pathlib import Path
-
-
-class PromptVersionControl:
-    def __init__(self, storage_path: str = "prompts/versions"):
-        self.path = Path(storage_path)
-        self.path.mkdir(parents=True, exist_ok=True)
-
-    def save(
-        self,
-        name: str,
-        prompt: str,
-        version: str,
-        metrics: dict,
-        notes: str = ""
-    ) -> None:
-        """Save a prompt version with its performance metrics."""
-        record = {
-            "name": name,
-            "version": version,
-            "prompt": prompt,
-            "metrics": metrics,
-            "notes": notes,
-            "saved_at": datetime.utcnow().isoformat()
-        }
-        file = self.path / f"{name}_v{version}.json"
-        file.write_text(json.dumps(record, indent=2))
-
-    def rollback(self, name: str, version: str) -> str:
-        """Retrieve a previous prompt version."""
-        file = self.path / f"{name}_v{version}.json"
-        return json.loads(file.read_text())["prompt"]
-
-    def compare(self, name: str, version_a: str, version_b: str) -> dict:
-        """Compare metrics between two versions."""
-        a = json.loads((self.path / f"{name}_v{version_a}.json").read_text())
-        b = json.loads((self.path / f"{name}_v{version_b}.json").read_text())
-        return {
-            "accuracy": f"{b['metrics']['accuracy'] - a['metrics']['accuracy']:+.1%}",
-            "tokens": f"{b['metrics']['avg_tokens'] - a['metrics']['avg_tokens']:+.0f}",
-        }
-
-
-# Usage
-pvc = PromptVersionControl()
-pvc.save(
-    name="sql_classifier",
-    prompt=OPTIMIZED_PROMPT,
-    version="1.2.0",
-    metrics={"accuracy": 0.94, "avg_tokens": 320, "latency_ms": 450},
-    notes="Added edge case examples for ambiguous queries"
-)
-```
-
----
+Treat prompts as code: version, changelog, eval before promotion, rollback. The canonical registry pattern (versions, labels, promotion gate, rollback) is `eval-guide/reference/langfuse-prompts.md`; release and rollout rules are in `deployment-ci-cd/reference/llmops-release-and-rollout.md`. Do not build a second file-based registry. Log the prompt version id with every model call so traces and evals can be joined.
 
 ## Production Metrics to Track
 

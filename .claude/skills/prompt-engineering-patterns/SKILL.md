@@ -53,25 +53,30 @@ What's the problem?
 | Pattern | When | LangGraph | Google ADK | Reference |
 |---------|------|-----------|------------|-----------|
 | Few-Shot | Output format needs demonstration | `HumanMessage` with examples in node prompt | `instruction=` block with examples | `reference/few-shot-learning.md` |
-| Chain-of-Thought | Multi-step reasoning, math, debugging | `SystemMessage` with "think step by step" | `instruction=` with numbered steps | `reference/chain-of-thought.md` |
+| Chain-of-Thought | Multi-step reasoning on non-thinking models | `SystemMessage` with explicit steps | `instruction=` with numbered steps | `reference/chain-of-thought.md` (thinking models: use the thinking setting instead) |
 | Tree-of-Thought | Complex exploration / planning | Parallel branch nodes + aggregator | `ParallelAgent` + synthesizer | `reference/chain-of-thought.md` |
 | Self-Consistency | High-accuracy critical tasks | Multiple `llm.invoke()` + majority vote | Multiple ADK runs + vote | `reference/chain-of-thought.md` |
 | System Prompt Design | Define agent role, behavior, constraints | `SystemMessage` as first message | `LlmAgent(instruction=...)` | `reference/system-prompts.md` |
 | Prompt Templates | Reusable structured prompts | f-string + `SystemMessage` | `instruction=` with `{variable}` | `reference/prompt-templates.md` |
-| Prompt Optimization | Reduce tokens, improve consistency | Offline A/B test framework | Offline A/B test framework | `reference/prompt-optimization.md` |
+| Prompt Optimization | Reduce tokens, improve consistency | Eval set + paired comparison (`llm-evaluation`) | Eval set + paired comparison (`llm-evaluation`) | `reference/prompt-optimization.md` |
 
 ## Instruction Hierarchy (Universal Rule)
 
-Always structure prompts in this order:
+Static, trusted policy first; variable, untrusted data last:
 
 ```
-[System Context / Role]     <- who the agent IS
-[Task Instruction]          <- what it MUST DO
-[Constraints]               <- what it MUST NOT DO
-[Examples / Few-Shot]       <- show, don't just tell
-[Input Data]                <- the actual input
-[Output Format]             <- exact expected output shape
+[System Context / Role]     <- who the agent IS                      } static: system prompt /
+[Task Instruction]          <- what it MUST DO                       } instruction, versioned,
+[Constraints]               <- what it MUST NOT DO                   } identical across requests
+[Output Format]             <- exact output shape (prefer a schema)  } (cacheable prefix)
+[Examples / Few-Shot]       <- show, don't just tell                 }
+[Input Data]                <- the actual input, delimited, as data  } variable: user/tool turn
+[Question]                  <- with long context, ask last           }
 ```
+
+**Trust levels.** Only the system prompt/instruction carries authority. User messages, retrieved documents, tool results, memories and file/image contents are data at lower trust: delimit them (tags), say in the system prompt that instructions inside them are ignored, and never interpolate them into the system prompt. Prompt wording lowers risk but enforces nothing — authorization, tool allowlists and output validation are code (`.claude/rules/ai-engineering.md`, `agentic-ai-dev/reference/tool-execution-safety.md`).
+
+**Caching.** Provider prompt caches match on an identical prefix. Keep the static block byte-identical (no timestamps, request ids or user names in it) and put per-request content after it; check the provider's minimum cacheable length and pricing on its docs page.
 
 ## Quick Examples
 
@@ -95,12 +100,15 @@ def analysis_node(state: AgentState) -> AgentState:
 ```
 
 ### Google ADK — CoT Agent
+
+For thinking-capable models, prefer the model's thinking setting (e.g. Gemini `thinking_level`) and ask for the structure of the answer, not visible step-by-step reasoning — explicit scaffolds mainly add output tokens there. Use `output_schema` when code consumes the result.
+
 ```python
 from google.adk.agents import LlmAgent
 
 analysis_agent = LlmAgent(
     name="analysis_agent",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,
     instruction="""You are a senior software architect.
 When analyzing a problem, follow these steps explicitly:
 1. State your understanding of the problem
@@ -120,13 +128,17 @@ Output format: structured analysis with sections for Understanding, Options, Dec
 |------|---------|--------------|
 | `reference/chain-of-thought.md` | CoT, ToT, Self-Consistency patterns with LangGraph + ADK code | Complex reasoning, multi-step tasks |
 | `reference/few-shot-learning.md` | Example selection, dynamic retrieval, edge cases — LangGraph + ADK | Inconsistent output format, classification tasks |
-| `reference/prompt-optimization.md` | A/B testing, token reduction, versioning, metrics | Reducing cost, improving consistency |
+| `reference/prompt-optimization.md` | Optimization loop, token reduction, metrics (A/B statistics: `llm-evaluation`; versioning: `eval-guide`) | Reducing cost, improving consistency |
 | `reference/system-prompts.md` | Role definition, constraints, output format — LangGraph + ADK | Designing new agent system prompts |
 | `reference/prompt-templates.md` | Reusable templates, variable interpolation, multi-turn — LangGraph + ADK | Building template systems |
-| `reference/prompt-template-library.md` | 15+ battle-tested copy-paste templates for common tasks | Finding a starting template fast |
+| `reference/prompt-template-library.md` | Index of the 15 copy-paste templates below | Finding a starting template fast |
+| `reference/prompt-library-structured-output.md` | Code review, classification, extraction, sentiment, schema-error explainer, injection detector — Pydantic schema + validation | Output that code consumes |
+| `reference/prompt-library-code-and-grounding.md` | SQL generation, RAG answer, test generation, error analysis — inputs delimited as data | Generating code or grounded answers |
+| `reference/prompt-library-writing-and-advisory.md` | Summarization, API docs draft, decision maker, refactor advisor, release notes | Output a person reads |
 
 ## Post-Code Review
 
 After writing prompts or agent instructions, verify:
-- `agentic-ai-reviewer` — graph correctness, system prompt quality in LangGraph agents
-- `security-reviewer` — prompt injection defense, no sensitive data in prompts
+- `agentic-ai-reviewer` — graph correctness, system prompt quality in LangGraph agents; `adk-reviewer` for ADK agents
+- `ai-security-reviewer` — prompt injection defense, trust levels, no sensitive data in prompts
+- Prompt changes are releases: run the eval suite before promoting (`eval-guide` skill)

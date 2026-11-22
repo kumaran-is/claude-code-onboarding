@@ -11,45 +11,41 @@ version = "0.1.0"
 description = "Production AI agent service"
 requires-python = ">=3.14"
 dependencies = [
-    # LangChain / LangGraph
-    "langchain-core>=1.2.8",
-    "langchain-anthropic>=1.3.0",
-    "langchain-openai>=1.1.0",
-    "langgraph>=1.0.7",
-    "langgraph-checkpoint-postgres>=3.0.0",
+    # Agent stack: exact pins, upgraded together (langgraph and langgraph-prebuilt move in lockstep).
+    # This set was installed and executed together for this toolkit (Python 3.14).
+    "langchain==1.2.8",
+    "langchain-core==1.8.4",
+    "langgraph==1.0.7",
+    "langgraph-prebuilt==1.0.7",
+    "langgraph-checkpoint==4.3.2",
+    "langgraph-checkpoint-postgres==3.2.1",
+    "psycopg[binary,pool]==3.3.9",
+    # Provider integration(s) you use, pinned to the version in uv.lock, e.g. "langchain-anthropic==<x.y.z>"
 
     # API
-    "fastapi>=0.135.2",
-    "uvicorn[standard]>=0.32.0",
-    "gunicorn>=23.0.0",
-
-    # Data validation
-    "pydantic>=2.10.0",
-    "pydantic-settings>=2.7.0",
+    "fastapi==0.135.2",
+    "pydantic==2.14.4",
+    "pydantic-settings==2.16.3",
+    "uvicorn[standard]",          # exact version comes from uv.lock
 
     # Observability
-    "langsmith>=0.2.0",
-    "prometheus-client>=0.21.0",
-    "structlog>=24.4.0",
-
-    # HTTP / DB
-    "httpx>=0.28.0",
-    "asyncpg>=0.30.0",
-
-    # Vector stores (pick one)
-    # "langchain-chroma>=0.2.0",
-    # "langchain-pinecone>=0.2.0",
-    # "langchain-pgvector>=0.2.0",
+    "langsmith==0.16.0",
+    "structlog==26.1.0",
+    "prometheus-client",          # exact version comes from uv.lock
+    "httpx==0.28.1",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.25.0",
-    "httpx>=0.28.0",
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+    "ruff",
+    "mypy",
 ]
+
+# Reproducibility: commit uv.lock; CI and Docker run `uv sync --locked` (fails if the lock is stale).
+# Upgrade deliberately: `uv lock --upgrade-package langgraph --upgrade-package langgraph-prebuilt`,
+# then run the full test suite and the live golden gate before merging.
 
 [tool.ruff]
 target-version = "py314"
@@ -57,19 +53,15 @@ line-length = 120
 src = ["src"]
 
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
-    "SIM", # flake8-simplify
-    "TCH", # flake8-type-checking
-    "RUF", # ruff-specific
-]
-ignore = ["E501"]  # line length handled by formatter
+# The Python backend select (python-dev/reference/fastapi-architecture-and-config.md) plus W and C4.
+# This is the config behind every "ruff clean" claim in agentic-ai-dev references (line-length 120).
+# No TC/TCH: FastAPI, Pydantic and LangChain resolve annotations at runtime, so moving imports into
+# TYPE_CHECKING blocks breaks them.
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "FAST", "S", "BLE", "T20", "DTZ"]
+ignore = ["SIM105"]      # it rewrites try/except/pass into contextlib.suppress, hiding the swallowed error
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["my_agent_service"]
@@ -82,12 +74,9 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
-[[tool.mypy.overrides]]
-module = ["langchain.*", "langgraph.*", "langsmith.*"]
-ignore_missing_imports = true
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
 ```
 
@@ -122,10 +111,11 @@ REDIS_URL=redis://localhost:6379/0
 APP_NAME=my-agent-service
 APP_ENV=development
 LOG_LEVEL=info
-DEFAULT_MODEL=claude-sonnet-4-20250514
-DEFAULT_TEMPERATURE=0
-MAX_ITERATIONS=25
-TOKEN_BUDGET=4096
+CHAT_MODEL=<provider>:<model-id>      # required; probe each environment before changing
+MAX_GRAPH_STEPS=12                    # LangGraph recursion_limit (library default is 10000)
+AGENT_TIMEOUT_S=30
+MAX_MODEL_CALLS=8
+MAX_TOOL_CALLS=20
 ```
 
 ## Configuration Module
@@ -135,9 +125,9 @@ TOKEN_BUDGET=4096
 ```python
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -154,13 +144,13 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # --- LLM Providers ---
-    anthropic_api_key: str
-    openai_api_key: str = ""
-    google_api_key: str = ""
+    # --- LLM Providers (only the ones you use; SecretStr keeps them out of reprs/logs) ---
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+    google_api_key: SecretStr | None = None
 
     # --- LangSmith ---
-    langsmith_api_key: str = ""
+    langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "my-agent-service"
     langsmith_tracing: bool = True
 
@@ -175,17 +165,20 @@ class Settings(BaseSettings):
     app_name: str = "my-agent-service"
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: Literal["debug", "info", "warning", "error"] = "info"
-    default_model: str = "claude-sonnet-4-20250514"
-    default_temperature: float = 0.0
-    max_iterations: int = 25
-    token_budget: int = 4096
+    chat_model: str                              # required, no code default (model ids live in config)
+    chat_model_params: dict[str, Any] = {}       # provider-specific sampling/reasoning; no global temperature
+    max_graph_steps: int = Field(default=12, ge=2, le=200)
+    agent_timeout_s: float = Field(default=30, gt=0)
+    max_model_calls: int = Field(default=8, ge=1)
+    max_tool_calls: int = Field(default=20, ge=1)
 
-    @field_validator("anthropic_api_key")
-    @classmethod
-    def validate_anthropic_key(cls, v: str) -> str:
-        if not v or not v.startswith("sk-ant-"):
-            raise ValueError("ANTHROPIC_API_KEY must be set and start with 'sk-ant-'")
-        return v
+    @model_validator(mode="after")
+    def provider_key_present(self) -> Settings:
+        provider = self.chat_model.split(":", 1)[0]
+        keys = {"anthropic": self.anthropic_api_key, "openai": self.openai_api_key, "google_genai": self.google_api_key}
+        if provider in keys and keys[provider] is None:
+            raise ValueError(f"API key for provider '{provider}' is not configured")
+        return self
 
     @field_validator("database_url")
     @classmethod
@@ -333,7 +326,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock* ./
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-dev --locked
 
 COPY src/ src/
 
@@ -353,8 +346,10 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Use gunicorn with uvicorn workers for production
-CMD ["gunicorn", "my_agent_service.main:app", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
+# uvicorn.workers.UvicornWorker is deprecated: install the `uvicorn-worker` package and use its class
+# (see docker/reference/dockerfiles.md); for a single process per container, run uvicorn --factory instead
+CMD ["gunicorn", "my_agent_service.main:create_app()", \
+     "--worker-class", "uvicorn_worker.UvicornWorker", \
      "--workers", "4", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \

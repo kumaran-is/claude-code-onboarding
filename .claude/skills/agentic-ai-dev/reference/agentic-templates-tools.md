@@ -1,301 +1,115 @@
-# Agentic AI Tool Patterns
+# Agentic AI Tool Patterns (LangChain v1)
 
-Patterns for defining, validating, and managing tools in LangGraph agents.
+How to write tools for `create_agent` / LangGraph. Safety rules (authority tiers, scope injection, allowlists, evidence gate, idempotency, budgets, approvals, durable resume) are canonical in `tool-execution-safety.md`; this file is the implementation template.
 
-## Basic @tool Pattern
+Executed (Python 3.14, langchain 1.2.8, `ruff` + `mypy --strict` clean): scripted fake model, `httpx.MockTransport` backend, 4 tests listed under the template.
 
-**File:** `src/<service>/agents/tools/search.py`
+REMOVED from the previous version: tools returning `f"... failed: {e}"` and logging `error=str(e)` (exception text reached the model and logs), a generic `call_external_api(endpoint, method, payload)` tool (model-chosen URL = SSRF), a `query_database(table, filters, columns)` tool (model-chosen table/columns), and a hand-rolled retry decorator that retried every exception and returned the last error as text.
+
+## Template: typed, scoped, bounded read tool
+
+**File:** `src/<service>/agents/tools/knowledge.py`
 
 ```python
-from __future__ import annotations
-
-import json
-
-from langchain_core.tools import tool
-from pydantic import BaseModel, Field
-
-from ...core.logging import get_logger
-
-logger = get_logger(__name__)
+@dataclass(frozen=True)
+class RequestCtx:
+    org_id: str
+    user_id: str
 
 
-@tool
-def search_web(query: str) -> str:
-    """Search the web for current information.
+DOC_FIELDS = frozenset({"doc_id", "title", "snippet", "updated_at"})
 
-    Args:
-        query: The search query string. Be specific for better results.
 
-    Returns:
-        JSON string of search results with title, url, and snippet.
+class SearchArgs(BaseModel):
+    query: str = Field(min_length=2, max_length=500, description="What to look for")
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+@tool(args_schema=SearchArgs)
+async def search_knowledge_base(query: str, runtime: ToolRuntime[RequestCtx], limit: int = 5) -> ToolResult:
+    """Search the caller's organization knowledge base. Returns up to `limit` documents.
+
+    Fallback: if unavailable, answer INSUFFICIENT_EVIDENCE; do not answer from memory.
     """
+    org_id = runtime.context.org_id                      # verified scope, never a model argument
     try:
-        # Replace with actual search API call
-        results = _call_search_api(query)
-        logger.info("tool_search_web", query=query, result_count=len(results))
-        return json.dumps(results)
-    except Exception as e:
-        logger.error("tool_search_web_failed", query=query, error=str(e))
-        return f"Search failed: {e}"
-
-
-@tool
-def calculator(expression: str) -> str:
-    """Evaluate a mathematical expression safely.
-
-    Args:
-        expression: A mathematical expression (e.g., '2 + 2', 'sqrt(16)').
-
-    Returns:
-        The result as a string.
-    """
-    try:
-        # Use ast.literal_eval or a safe math parser — never eval()
-        import ast
-        result = ast.literal_eval(expression)
-        return str(result)
-    except (ValueError, SyntaxError) as e:
-        logger.error("tool_calculator_failed", expression=expression, error=str(e))
-        return f"Invalid expression: {e}"
+        async with asyncio.timeout(settings.tool_timeout_s):
+            rows = await kb.search(org_id=org_id, query=query, limit=limit)   # service re-authorizes
+    except (TimeoutError, httpx.TransportError, httpx.HTTPStatusError) as exc:
+        log_exception(logger, "tool_search_failed", exc, level="warning", org_id=org_id)
+        return fail("TOOL_UNAVAILABLE")
+    if not rows:
+        return fail("NOT_FOUND")
+    return ok({"documents": [project(r, DOC_FIELDS) for r in rows]})
 ```
 
-## Pydantic-Validated Tool Inputs
+`ToolResult`, `ok`, `fail`, `project`: `tool-execution-safety.md` §1. `log_exception`: `deployment-ci-cd/reference/python-observability.md` §2. Wire with `create_agent(model, tools=[...], context_schema=RequestCtx)` and `ainvoke(..., context=RequestCtx(...))` (`agentic-templates-core.md`).
 
-For complex tool inputs, use Pydantic models for validation.
+Executed assertions:
+- The model-visible schema has only `query` and `limit` (`runtime` is injected).
+- A model-sent `org_id="org-b"` was ignored; the backend received the context's `org-a`.
+- The backend record's `owner_email` was dropped by projection.
+- A backend `ConnectError` whose message contained a hostname and an id produced exactly `{"ok": false, "error_code": "TOOL_UNAVAILABLE", "data": null}`; the log line carried `error_type=ConnectError` and the org id only.
+- Arguments failing `args_schema` came back to the model as an error `ToolMessage` naming the field ("String should have at least 2 characters"), so the model can correct itself. That text goes to the model, not the client.
+
+Catch only the exceptions you can classify. Anything else propagates to the route's boundary handler (typed 503, `agentic-error-handling.md`), which is better than pretending to the model that a programming error is "unavailable".
+
+## Write tools
+
+Write tools follow the authority tiers in `tool-execution-safety.md` §2: a controlled write takes an idempotency key and goes through `run_once` (§6); a high-consequence write is a **propose** tool plus approval (`agentic-streaming-hitl.md`). The scope comes from `runtime.context`, the key from run state, never from model arguments.
+
+## External APIs
+
+- One tool per business operation (`get_shipment_status(shipment_id)`), backed by a typed client with a **fixed base URL** from settings. The model never chooses the host, path, method or headers.
+- Timeouts on every call (`httpx.AsyncClient(timeout=...)` plus the tool's own `asyncio.timeout`), inside the run deadline.
+- Don't return raw response bodies: parse, project, return `ToolResult`.
+- Any URL that originates from content (a link in a document, a user-supplied URL) is fetched only through an allow-listed fetcher (scheme, host allowlist, resolved IP not private, size cap).
+
+## Database access
+
+No generic "query any table" tool. Write one tool per question the agent may ask, implemented with parameterized queries and the org filter applied in code (or row-level security). Text-to-SQL is a separate, high-risk design: read-only role, statement allowlist, row/time limits, and its own security review.
+
+## Retries
+
+Prefer no tool-level retry: the agent can call again, and the model/run layer has its own budget. When a read tool has a known transient failure mode, use `ToolRetryMiddleware` with explicit settings:
 
 ```python
-from langchain_core.tools import tool
-from pydantic import BaseModel, Field
-
-
-class DatabaseQueryInput(BaseModel):
-    """Input schema for database query tool."""
-
-    table: str = Field(..., description="Table name to query")
-    filters: dict[str, str] = Field(default_factory=dict, description="Column-value filter pairs")
-    limit: int = Field(default=10, ge=1, le=100, description="Max rows to return")
-    columns: list[str] = Field(default_factory=list, description="Columns to select (empty = all)")
-
-
-@tool(args_schema=DatabaseQueryInput)
-def query_database(table: str, filters: dict[str, str], limit: int = 10, columns: list[str] | None = None) -> str:
-    """Query the database with filters and return matching rows.
-
-    Use this tool when you need to look up structured data.
-    Always specify filters to avoid returning too many rows.
-    """
-    try:
-        # Build and execute query safely (parameterized)
-        query = build_safe_query(table, filters, limit, columns or [])
-        results = execute_query(query)
-        logger.info("tool_query_database", table=table, result_count=len(results))
-        return json.dumps(results, default=str)
-    except Exception as e:
-        logger.error("tool_query_database_failed", table=table, error=str(e))
-        return f"Database query failed: {e}"
+ToolRetryMiddleware(
+    tools=["search_knowledge_base"],          # read-only / idempotent tools only
+    retry_on=(httpx.TransportError,),         # transient classes, not Exception
+    max_retries=2,
+    on_failure="error",                       # see trap below
+)
 ```
 
-## API Integration Tool
+**Trap (executed):** the default `on_failure="continue"` turns the final exception into the `ToolMessage` text: `"Tool 'flaky' failed after 3 attempts with ConnectionError: db-host-7 password=..."`, which the model can then repeat to the user. Use `"error"` (the exception propagates to your boundary handler), or a callable `on_failure=lambda exc: json.dumps(fail("TOOL_UNAVAILABLE"))` that returns a fixed, typed payload. Also the default `retry_on=(Exception,)` retries programming errors and non-idempotent writes.
+
+Never retry write tools unless they are idempotency-keyed.
+
+## MCP tools
+
+- Building an MCP server: `mcp-builder` skill.
+- Consuming MCP tools in an agent: treat every MCP tool as third-party code. Resolve the agent's allowlist against the server's tool list at startup (fail on unknown names, `tool-execution-safety.md` §4), pin the tool surface hash, inject scope in the gateway/adapter (the MCP server must not trust a model-supplied tenant id), and treat results as untrusted data. Verify the adapter package's current API (e.g. `langchain-mcp-adapters`) with Context7 before use; it is not covered by the executed tests here.
+
+## Tool registration
 
 ```python
-import httpx
-from langchain_core.tools import tool
+TOOL_REGISTRY: dict[str, BaseTool] = {t.name: t for t in (search_knowledge_base, get_shipment_status, propose_refund)}
 
-
-@tool
-async def call_external_api(endpoint: str, method: str = "GET", payload: str = "") -> str:
-    """Call an external API endpoint.
-
-    Args:
-        endpoint: The API endpoint path (e.g., '/users/123').
-        method: HTTP method — GET or POST only.
-        payload: JSON string payload for POST requests.
-
-    Returns:
-        JSON string of the API response.
-    """
-    if method not in ("GET", "POST"):
-        return "Error: Only GET and POST methods are allowed"
-
-    base_url = settings.external_api_base_url
-    url = f"{base_url}{endpoint}"
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if method == "GET":
-                response = await client.get(url)
-            else:
-                response = await client.post(url, json=json.loads(payload) if payload else {})
-
-            response.raise_for_status()
-            logger.info("tool_api_call", endpoint=endpoint, status=response.status_code)
-            return response.text
-
-    except httpx.TimeoutException:
-        logger.error("tool_api_timeout", endpoint=endpoint)
-        return f"API call timed out after 30s: {endpoint}"
-    except httpx.HTTPStatusError as e:
-        logger.error("tool_api_error", endpoint=endpoint, status=e.response.status_code)
-        return f"API returned error {e.response.status_code}: {e.response.text[:200]}"
-    except Exception as e:
-        logger.error("tool_api_failed", endpoint=endpoint, error=str(e))
-        return f"API call failed: {e}"
-```
-
-## MCP Server Building
-
-Build a Model Context Protocol server in Python using the `mcp` SDK.
-
-**File:** `src/<service>/mcp_server.py`
-
-```python
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
-
-server = Server("my-agent-tools")
-
-
-@server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List available tools for MCP clients."""
-    return [
-        Tool(
-            name="search_knowledge_base",
-            description="Search the internal knowledge base for relevant documents",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "default": 5},
-                },
-                "required": ["query"],
-            },
-        ),
-    ]
-
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    """Execute a tool by name."""
-    if name == "search_knowledge_base":
-        results = await search_kb(arguments["query"], arguments.get("max_results", 5))
-        return [TextContent(type="text", text=json.dumps(results))]
-
-    raise ValueError(f"Unknown tool: {name}")
-
-
-async def main():
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream)
-```
-
-## MCP Client Consumption in LangGraph
-
-```python
-from langchain_core.tools import tool
-
-
-def create_mcp_tools(mcp_client) -> list:
-    """Wrap MCP server tools as LangChain tools for use in graphs."""
-
-    @tool
-    async def mcp_search(query: str) -> str:
-        """Search via MCP server."""
-        result = await mcp_client.call_tool("search_knowledge_base", {"query": query})
-        return result[0].text
-
-    return [mcp_search]
-```
-
-## Tool Retry and Timeout Patterns
-
-```python
-import asyncio
-from functools import wraps
-
-
-def with_retry(max_retries: int = 3, delay: float = 1.0):
-    """Decorator to add retry logic to async tools."""
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_retries):
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    last_error = e
-                    logger.warning(
-                        "tool_retry",
-                        tool=func.__name__,
-                        attempt=attempt + 1,
-                        error=str(e),
-                    )
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(delay * (2 ** attempt))  # Exponential backoff
-            return f"Tool failed after {max_retries} retries: {last_error}"
-        return wrapper
-    return decorator
-
-
-def with_timeout(seconds: float = 30.0):
-    """Decorator to add timeout to async tools."""
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            try:
-                return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
-            except asyncio.TimeoutError:
-                logger.error("tool_timeout", tool=func.__name__, timeout=seconds)
-                return f"Tool timed out after {seconds}s"
-        return wrapper
-    return decorator
-
-
-# Usage
-@tool
-@with_retry(max_retries=3)
-@with_timeout(seconds=30.0)
-async def resilient_search(query: str) -> str:
-    """Search with automatic retry and timeout."""
-    # Implementation
-    ...
-```
-
-## Tool Registration Pattern
-
-Centralize tool registration for maintainability.
-
-**File:** `src/<service>/agents/tools/__init__.py`
-
-```python
-from .api_tools import call_external_api
-from .db_tools import query_database
-from .search_tools import search_web
-
-# All tools available for agent binding
-ALL_TOOLS = [
-    search_web,
-    query_database,
-    call_external_api,
-]
-
-# Tool subsets for different agent types
-RESEARCH_TOOLS = [search_web]
-DATA_TOOLS = [query_database]
-INTEGRATION_TOOLS = [call_external_api]
+# per agent, explicit and validated at construction
+support_tools = resolve_allowlist(TOOL_REGISTRY, settings.support_agent_tools)
 ```
 
 ## Key Rules
 
 | Rule | Standard |
 |------|----------|
-| Docstrings | Every `@tool` MUST have a descriptive docstring — LLMs read these to decide when to use tools |
-| Error handling | Every tool MUST have try/except — return error string, never raise |
-| Return type | Always return `str` — LLMs consume text |
-| Logging | Log every tool invocation and error with context |
-| Validation | Use `args_schema` for complex inputs |
-| Side effects | Tools that modify data MUST require HITL approval |
-| Timeouts | All I/O tools MUST have timeouts |
-| Security | Never pass raw user input to shell commands or SQL |
+| Docstrings | Every tool: when to use it, what it returns, degradation mode |
+| Arguments | `args_schema` with bounds; no scope params; no host/path/table chosen by the model |
+| Scope | `ToolRuntime[Ctx]` (or the gateway's `bind_scope`) |
+| Return type | `ToolResult` (`ok`/`error_code`/`data`), projected fields only |
+| Errors | Catch classified exceptions → typed code; log via `log_exception`; no exception text to the model |
+| Timeouts | Every I/O call, inside the run deadline |
+| Retries | Read-only tools only; transient classes; `on_failure` never `"continue"` |
+| Side effects | Idempotency key; high-consequence = propose + approval |
+| Tests | Schema has no scope params; forged scope ignored; failure payload has no exception text |

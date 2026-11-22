@@ -1,306 +1,201 @@
 # Agentic AI Streaming & Human-in-the-Loop
 
-Patterns for real-time token streaming and human approval workflows in LangGraph agents.
+Patterns for real-time token streaming and durable human approval in LangGraph / LangChain v1 agents.
+Every snippet below was executed on langchain 1.2.8 + langgraph 1.0.7 (+ langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16) with a scripted fake model; live-provider streaming was not exercised.
 
-## Token Streaming
+Transport rules (SSE framing, proxy buffering, reconnection, `Last-Event-ID`) live in the `streaming-protocols` skill. This file covers what an **agent** is allowed to put on that transport.
 
-Stream individual tokens as the LLM generates them.
-
-```python
-from langchain_core.messages import HumanMessage
-
-
-async def stream_tokens(graph, message: str, thread_id: str):
-    """Stream tokens from agent using astream with messages mode."""
-    config = {"configurable": {"thread_id": thread_id}}
-
-    async for chunk in graph.astream(
-        {"messages": [HumanMessage(content=message)]},
-        config=config,
-        stream_mode="messages",
-    ):
-        # chunk is a tuple: (message_chunk, metadata)
-        msg, metadata = chunk
-        if msg.content and metadata.get("langgraph_node") == "agent":
-            print(msg.content, end="", flush=True)
-```
-
-## Event Streaming
-
-Rich event stream with tool start/end, node transitions, and token chunks.
+## Token Streaming (internal use)
 
 ```python
-async def stream_events(graph, message: str, thread_id: str):
-    """Stream all events from agent execution."""
-    config = {"configurable": {"thread_id": thread_id}}
-
-    async for event in graph.astream_events(
-        {"messages": [HumanMessage(content=message)]},
-        config=config,
-        version="v2",
+async def stream_tokens(graph, message: str, config: RunnableConfig):
+    async for chunk, metadata in graph.astream(
+        {"messages": [HumanMessage(content=message)]}, config=config, stream_mode="messages"
     ):
-        kind = event["event"]
-
-        if kind == "on_chat_model_stream":
-            # Token-level streaming
-            content = event["data"]["chunk"].content
-            if content:
-                yield {"type": "token", "content": content}
-
-        elif kind == "on_chat_model_start":
-            yield {"type": "llm_start", "model": event.get("name", "")}
-
-        elif kind == "on_chat_model_end":
-            yield {"type": "llm_end"}
-
-        elif kind == "on_tool_start":
-            yield {"type": "tool_start", "tool": event["name"], "input": event["data"].get("input")}
-
-        elif kind == "on_tool_end":
-            yield {"type": "tool_end", "tool": event["name"], "output": str(event["data"].get("output", ""))[:200]}
-
-        elif kind == "on_chain_start" and event.get("name"):
-            yield {"type": "node_start", "node": event["name"]}
-
-        elif kind == "on_chain_end" and event.get("name"):
-            yield {"type": "node_end", "node": event["name"]}
+        # create_agent names its model node "model"; hand-built graphs use your node name
+        if isinstance(chunk, AIMessage) and metadata.get("langgraph_node") == "model" and chunk.text:
+            yield chunk.text
 ```
+
+`AIMessageChunk` is a subclass of `AIMessage`; a model with `disable_streaming=True` (or most fake test models) emits whole `AIMessage` objects, so filter on `AIMessage`.
+
+## Event Streaming (debug / internal dashboards only)
+
+`astream_events(version="v2")` exposes `on_tool_start` inputs, `on_tool_end` outputs and every model's tokens, including routers and graders. **Never forward it to an end user**: tool arguments and outputs may contain other records, scope ids or unredacted data, and side-effect confirmations would arrive before the canonical write succeeds. Use it in internal tooling, behind authorization, or reduce tool events to an allow-listed status label (`{"type": "status", "step": "searching"}`).
 
 ## State Update Streaming
 
-Stream state updates as each node completes — useful for progress tracking.
-
 ```python
-async def stream_state_updates(graph, message: str, thread_id: str):
-    """Stream state updates after each node execution."""
-    config = {"configurable": {"thread_id": thread_id}}
-
-    async for update in graph.astream(
-        {"messages": [HumanMessage(content=message)]},
-        config=config,
-        stream_mode="updates",
-    ):
-        # update is a dict: {node_name: state_update}
-        for node_name, state_update in update.items():
-            print(f"[{node_name}] updated keys: {list(state_update.keys())}")
+async for update in graph.astream(inputs, config=config, stream_mode="updates"):
+    for node_name, state_update in update.items():   # {node_name: partial_state}
+        logger.debug("node_done", node=node_name, keys=list(state_update))
 ```
 
-## FastAPI SSE Integration
+## FastAPI SSE Endpoint (agent SSE contract)
 
-**File:** `src/<service>/api/routes/stream.py`
+Contract: every `data:` line is JSON (raw text with a newline breaks SSE framing); typed events `content` / `done` / `error`; **exactly one** terminal event; `error` carries an opaque code, never `str(exc)`; only user-facing node text is streamed; scoping and safety decisions are made before the `StreamingResponse` is returned. Route-level dependencies (`PrincipalDep`, `scoped_thread_id`, `RequestCtx`, `_run_config`) are defined in `agentic-templates-core.md`.
 
 ```python
-from __future__ import annotations
+USER_FACING_NODES = frozenset({"model"})  # never tools, routers, graders
 
-import json
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
-
-from ...core.logging import get_logger
-from ...models.schemas import AgentRequest
-
-logger = get_logger(__name__)
-
-router = APIRouter(tags=["streaming"])
+def sse(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.post("/agent/stream")
-async def stream_agent(request: AgentRequest, graph=Depends(get_graph)) -> StreamingResponse:
-    """Stream agent responses as Server-Sent Events (SSE).
+async def stream_agent(
+    body: AgentRequest, principal: PrincipalDep, graph: GraphDep, settings: SettingsDep
+) -> StreamingResponse:
+    # Decide here, not in the generator: it may never run if the client disconnects.
+    thread_id = body.thread_id or uuid.uuid4()
+    thread_key = scoped_thread_id(principal, thread_id)
+    ctx = RequestCtx(org_id=principal.org_id, user_id=principal.user_id)
 
-    Event types:
-    - data: Token content
-    - tool_start: Tool invocation began
-    - tool_end: Tool invocation completed
-    - done: Stream complete
-    - error: Error occurred
-    """
+    frames: asyncio.Queue[str | None] = asyncio.Queue(maxsize=32)   # bounded: backpressure on a slow client
 
-    async def sse_generator():
+    async def run_graph() -> None:
         try:
-            async for event in graph.astream_events(
-                {"messages": [HumanMessage(content=request.message)]},
-                config={
-                    "configurable": {"thread_id": request.thread_id},
-                    "recursion_limit": 25,
-                },
-                version="v2",
-            ):
-                kind = event["event"]
+            async with asyncio.timeout(settings.agent_timeout_s):
+                async for chunk, meta in graph.astream(
+                    {"messages": [HumanMessage(body.message)]},
+                    _run_config(settings, thread_key),
+                    context=ctx,
+                    stream_mode="messages",
+                ):
+                    if (
+                        isinstance(chunk, AIMessage)
+                        and isinstance(meta, dict)
+                        and meta.get("langgraph_node") in USER_FACING_NODES
+                        and chunk.text
+                    ):
+                        await frames.put(sse("content", {"text": chunk.text}))
+            await frames.put(sse("done", {"thread_id": str(thread_id)}))
+        except GraphRecursionError:
+            await frames.put(sse("error", {"code": "ITERATION_LIMIT"}))
+        except TimeoutError:
+            await frames.put(sse("error", {"code": "TIMEOUT"}))
+        except Exception as exc:  # noqa: BLE001 - CancelledError (task.cancel below) is not caught
+            log_exception(logger, "agent_stream_failed", exc, thread_id=str(thread_id))
+            await frames.put(sse("error", {"code": "STREAM_ERROR"}))
+        await frames.put(None)                       # end of stream (not reached when cancelled)
 
-                if kind == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if content:
-                        yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
-
-                elif kind == "on_tool_start":
-                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': event['name']})}\n\n"
-
-                elif kind == "on_tool_end":
-                    output = str(event["data"].get("output", ""))[:200]
-                    yield f"data: {json.dumps({'type': 'tool_end', 'tool': event['name'], 'output': output})}\n\n"
-
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-
-        except Exception as e:
-            logger.error("stream_error", error=str(e), thread_id=request.thread_id)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+    async def events() -> AsyncIterator[str]:
+        run = asyncio.create_task(run_graph())       # owned by this stream (streaming-protocols rule 2)
+        try:
+            while (frame := await frames.get()) is not None:
+                yield frame
+        finally:
+            run.cancel()   # disconnect / stop: cancels the in-flight model call so it does not finish and bill
 
     return StreamingResponse(
-        sse_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        events(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 ```
+
+Executed checks (fake model + PostgreSQL checkpointer): a reply containing `\n` arrives intact in one JSON frame; the tool's output string never appears in the stream; the stream ends with one `done`; a model exception whose message contained an SSN produced exactly `event: error` / `data: {"code": "STREAM_ERROR"}` and the log line carried only `error_type`.
+
+- Client disconnect: do NOT iterate `graph.astream(...)` directly inside the response generator and rely on Starlette to cancel it. Starlette cancels a disconnected stream through an anyio cancel scope, and on langgraph 1.0.7 and 1.2.24 that does not reach LangGraph's in-flight model call: the call ran to completion (and would bill) after the client left; only the next node was skipped. Cancelling the task that runs `astream` with `asyncio.Task.cancel()` does cancel the call. Hence the owned task + queue above, cancelled in `finally`. Executed (uvicorn 0.54, Starlette 1.10, slow fake model, client gone at 0.5 s): owned-task pattern → model call cancelled, never completed; naive direct-`astream` generator → model call completed. Keep a disconnect test like this in your suite.
+- `CancelledError` is a `BaseException`, so `except Exception` in `run_graph` does not swallow the cancel. Do not catch `BaseException` here.
+- Never retry after the first byte was sent: emit `error` and let the client re-request (see `agentic-error-handling.md`).
+- `log_exception` is the Phase 2 helper (`deployment-ci-cd/reference/python-observability.md` section 2).
 
 ## Human-in-the-Loop (HITL)
 
-### Basic Approval Workflow
+Rules:
+1. The decision is a **typed value** passed with `Command(resume=...)`, never a substring of a chat message (`"not approved"` contains `"approved"`).
+2. Pending approvals live in the **checkpointer** (PostgreSQL in production), never in process memory: an in-process `asyncio.Event` is lost on restart, lives on one replica, and holds an HTTP request open.
+3. The approver's identity and authority come from the approver's verified token on a **separate authenticated endpoint**, never from the payload; the approver must hold the authority the action requires.
+4. Bind the decision to what was shown: hash the proposed action + args; execute only if the hash still matches.
+5. On resume the interrupted node **re-runs from its first line** (verified: a counter before `interrupt()` reached 2). Keep side effects out of the code before `interrupt()`; put them in a later node, idempotency-keyed (`tool-execution-safety.md`).
 
-Use `interrupt_before` to pause execution and wait for human approval.
+### Option A — `create_agent` + `HumanInTheLoopMiddleware` (tool-call approval)
 
 ```python
-from langgraph.graph import StateGraph, END
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langgraph.types import Command
 
+agent = create_agent(
+    model, tools=[search_docs, delete_record],
+    middleware=[HumanInTheLoopMiddleware(
+        interrupt_on={"delete_record": {"allowed_decisions": ["approve", "reject"]}},
+    )],
+    checkpointer=checkpointer,           # durable saver from the app lifespan
+)
+out = await agent.ainvoke({"messages": [...]}, cfg)
+pending = out["__interrupt__"][0].value  # {"action_requests": [{"name": "delete_record", "args": {...}}], ...}
+# ... persist an approval record, notify the queue, return 202 to the caller ...
 
-def build_hitl_agent(provider_factory, checkpointer):
-    """Agent that pauses for human approval before executing dangerous tools."""
-
-    tools = [search_tool, delete_tool]  # delete_tool requires approval
-    llm = provider_factory.get_default().bind_tools(tools)
-
-    async def agent_node(state: AgentState) -> dict:
-        response = await llm.ainvoke(state["messages"])
-        return {"messages": [response], "iteration_count": state["iteration_count"] + 1}
-
-    async def approval_node(state: AgentState) -> dict:
-        """This node is interrupted — execution pauses here for human input."""
-        # When resumed, the human's approval/rejection is in the latest message
-        last_message = state["messages"][-1]
-        if hasattr(last_message, 'content') and "approved" in last_message.content.lower():
-            return {}  # Continue to tool execution
-        return {"messages": [AIMessage(content="Action cancelled by user.")]}
-
-    graph = StateGraph(AgentState)
-    graph.add_node("agent", agent_node)
-    graph.add_node("approval", approval_node)
-    graph.add_node("tools", ToolNode(tools))
-
-    graph.set_entry_point("agent")
-    graph.add_conditional_edges("agent", should_continue)
-    graph.add_edge("approval", "tools")
-    graph.add_edge("tools", "agent")
-
-    # Interrupt BEFORE the approval node — graph pauses here
-    return graph.compile(
-        checkpointer=checkpointer,
-        interrupt_before=["approval"],
-    )
+# later, from the approver's authenticated endpoint:
+await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), cfg)   # or {"type": "reject"}
 ```
 
-### Resuming After Approval
+Executed: `approve` runs the tool exactly once; `reject` never runs it.
+
+### Option B — `interrupt()` inside a gated node (custom graphs)
 
 ```python
-# Step 1: Invoke — graph pauses at approval node
-config = {"configurable": {"thread_id": "thread-123"}}
-result = await graph.ainvoke(
-    {"messages": [HumanMessage(content="Delete all old records")]},
-    config=config,
-)
-# result shows the agent wants to use delete_tool
+@dataclass(frozen=True)
+class Decision:
+    approved: bool
+    approver_id: str   # from the approver's verified token
+    args_hash: str     # hash of what the approver saw
 
-# Step 2: Human reviews and approves
-# Resume with approval message
-result = await graph.ainvoke(
-    {"messages": [HumanMessage(content="Approved")]},
-    config=config,
-)
-# Graph continues from where it paused
+
+def request_approval(state: DeleteState) -> Command[str]:
+    args = {"record_id": state["record_id"]}
+    expected = args_hash("delete_record", args)          # sha256 of canonical JSON
+    raw = interrupt({"action": "delete_record", "args": args, "args_hash": expected})
+    decision = Decision(**raw)
+    if decision.approved is True and decision.args_hash == expected:
+        return Command(goto="execute_delete", update={"log": [f"approved_by={decision.approver_id}"]})
+    return Command(goto=END, update={"status": "REJECTED"})
+
+# resume: await graph.ainvoke(Command(resume=asdict(decision)), cfg)
 ```
 
-### Approval with Timeout and Escalation
+Executed against PostgreSQL: the run paused, the saver connection and graph object were discarded ("restart"), a new saver + graph resumed the same `thread_id` with `Command(resume=...)` and the delete ran once; a rejection or a stale `args_hash` ran nothing.
 
-```python
-import asyncio
-from datetime import datetime, timezone
+Static breakpoints (`compile(interrupt_before=[...])`) are for debugging. Resume them with `graph.ainvoke(None, cfg)`. **Invoking again with a new message does not resume**: it starts a new step from `START`, re-runs the model and pauses again before the same node, so the approved action never executes (verified).
 
+### Approval record, expiry and escalation
 
-class ApprovalManager:
-    """Manage human approvals with timeout and escalation."""
+Store one row per pending approval next to the checkpoint:
 
-    def __init__(self, timeout_seconds: int = 300):
-        self._pending: dict[str, asyncio.Event] = {}
-        self._decisions: dict[str, bool] = {}
-        self._timeout = timeout_seconds
+| Field | Purpose |
+|---|---|
+| `thread_key`, `interrupt_id` | which checkpoint to resume |
+| `action`, `args_hash` | what was proposed; resume only if unchanged |
+| `required_authority` | role/permission the approver must hold |
+| `owner_queue`, `due_at` | who must act and by when |
+| `status` | `PENDING` / `APPROVED` / `REJECTED` / `EXPIRED` / `SUPERSEDED` |
+| `requested_by`, `decided_by`, `decided_at` | audit trail (ids only) |
 
-    async def request_approval(self, thread_id: str, action: str, details: str) -> bool:
-        """Request human approval with timeout.
-
-        Returns:
-            True if approved, False if rejected or timed out.
-        """
-        event = asyncio.Event()
-        self._pending[thread_id] = event
-
-        logger.info("approval_requested", thread_id=thread_id, action=action)
-
-        # Notify human (webhook, email, Slack, etc.)
-        await self._notify_human(thread_id, action, details)
-
-        try:
-            await asyncio.wait_for(event.wait(), timeout=self._timeout)
-            approved = self._decisions.get(thread_id, False)
-            logger.info("approval_decision", thread_id=thread_id, approved=approved)
-            return approved
-        except asyncio.TimeoutError:
-            logger.warning("approval_timeout", thread_id=thread_id)
-            await self._escalate(thread_id, action)
-            return False
-        finally:
-            self._pending.pop(thread_id, None)
-            self._decisions.pop(thread_id, None)
-
-    def submit_decision(self, thread_id: str, approved: bool) -> None:
-        """Submit a human decision for a pending approval."""
-        self._decisions[thread_id] = approved
-        event = self._pending.get(thread_id)
-        if event:
-            event.set()
-
-    async def _notify_human(self, thread_id: str, action: str, details: str) -> None:
-        """Send notification to human reviewer."""
-        # Implement: Slack webhook, email, push notification, etc.
-        pass
-
-    async def _escalate(self, thread_id: str, action: str) -> None:
-        """Escalate when approval times out."""
-        logger.warning("approval_escalated", thread_id=thread_id, action=action)
-        # Implement: Notify manager, create ticket, etc.
-```
+- A sweep job marks overdue rows `EXPIRED` and resumes the thread with a rejection, so the run reaches a typed terminal state instead of waiting forever.
+- A later human change to the same record marks pending AI approvals `SUPERSEDED` (version check before write).
+- Notifications (queue, email, chat) carry ids and a link, never the record content.
 
 ## Streaming Mode Selection Guide
 
-| Mode | Use Case | What You Get |
-|------|----------|-------------|
-| `stream_mode="messages"` | Chat UIs | Token-by-token streaming |
-| `stream_mode="updates"` | Progress bars | Node completion updates |
-| `stream_mode="values"` | Debugging | Full state after each step |
-| `astream_events(v2)` | Rich UIs | All events (tokens, tools, nodes) |
+| Mode | Use Case | What You Get | Expose to end users? |
+|------|----------|--------------|----------------------|
+| `stream_mode="messages"` | Chat UIs | `(chunk, metadata)` per token | Yes, filtered by `langgraph_node` |
+| `stream_mode="updates"` | Progress | `{node: partial_state}` | Only allow-listed status labels |
+| `stream_mode="values"` | Debugging | Full state after each step | No |
+| `astream_events(version="v2")` | Internal tooling | All events incl. tool I/O | No |
 
 ## Key Rules
 
 | Rule | Standard |
 |------|----------|
-| SSE format | Always use `data: {json}\n\n` format |
-| Error events | Stream errors as events, don't break the connection |
-| HITL | Use `interrupt_before` for approval, never `interrupt_after` |
-| Checkpointing | HITL requires a checkpointer — state must persist while waiting |
-| Timeouts | Always set approval timeouts — never block indefinitely |
-| Buffering | Disable proxy buffering (`X-Accel-Buffering: no`) |
+| SSE format | `event: <type>` + `data: <json>` + blank line; JSON-encode every payload |
+| Terminal event | Exactly one: `done` OR `error`; never `done` after `error` |
+| Error events | Opaque code; log type + ids server-side; no exception text |
+| Content filter | Only user-facing node text; no tool args/outputs, router or grader tokens |
+| HITL | `interrupt()` / `HumanInTheLoopMiddleware` + `Command(resume=typed)`; never new-message "resume" |
+| Checkpointing | Durable saver (PostgreSQL) for HITL; `InMemorySaver` only in tests |
+| Approvals | Persisted record with owner, authority, due time, args hash; separate authenticated endpoint |
+| Deadline | `asyncio.timeout(settings.agent_timeout_s)` around the run; approval waits are NOT request-bound |
+| Buffering | Disable proxy buffering (`X-Accel-Buffering: no`); see `streaming-protocols` |

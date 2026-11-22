@@ -1,403 +1,112 @@
 # Agentic AI Testing Patterns
 
-Comprehensive testing patterns for LangGraph agents, RAG systems, and FastAPI endpoints.
+Agent-specific tests for LangChain v1 / LangGraph services. Canonical homes, not restated here:
 
-## pytest Configuration
+- Test layers (unit / workflow / contract / live golden / E2E), the `ScriptedModel` base and R1–R4 tiers: `eval-guide/reference/pytest-harness.md`.
+- Retrieval metric formulas (Recall@K, Precision@K, MRR, nDCG): `llm-evaluation/reference/evaluation-metrics.md` §2.
+- Real-PostgreSQL fixtures and pytest-asyncio loop scope: `python-testing-patterns/reference/postgres-integration-testing.md`.
+- RAG eval sets and gates: `rag-evaluator`.
 
-**File:** `pyproject.toml` (testing section)
+Every pattern below was executed (Python 3.14, langchain 1.2.8, langgraph 1.0.7, PostgreSQL 16) with scripted models. Mocked tests prove wiring and control flow; they are never evidence of live-provider behaviour.
+
+REMOVED from the previous version: `AsyncMock` LLMs (they accept any call, so a wrong `bind_tools`/structured-output wiring still passes), a "use `MemorySaver` in tests, never a real DB" rule (checkpointer and store wiring bugs only show against PostgreSQL), state fields `iteration_count`/`thread_id` passed by the test, and a stream test that only checked the content type.
+
+## Scripted model: agent-specific traps
+
+Use `ScriptedModel` from `pytest-harness.md` (subclass of `GenericFakeChatModel` whose `bind_tools` returns `self`). Two traps found while executing these tests:
+
+| Trap | Symptom | Fix |
+|---|---|---|
+| `GenericFakeChatModel` cannot stream messages that carry `tool_calls` | `stream_mode="messages"` raises "No generation chunks were returned" or drops the tool calls | Construct with `disable_streaming=True` in stream tests (whole messages are emitted); real providers stream chunks, so cover chunk handling with a live smoke test |
+| Scripted iterator exhausted | `StopIteration` surfaces as an opaque runtime error mid-graph | Script exactly the calls the test expects; for loop tests use `iter([tool_call() for _ in range(50)])` |
+
+## Workflow tests through the real route
+
+Test through FastAPI with the real lifespan, a real PostgreSQL checkpointer/store, and an overridden principal dependency. This exercises scope injection, thread keys, limits and error mapping in one place.
+
+```python
+def make_app(messages: Iterator[AIMessage], *, steps: int = 12, timeout: float = 5.0, stream: bool = True) -> FastAPI:
+    def build(cp: AsyncPostgresSaver, store: AsyncPostgresStore) -> Any:
+        return create_agent(ScriptedModel(messages=messages, disable_streaming=not stream),
+                            tools=[lookup_order], context_schema=RequestCtx, checkpointer=cp, store=store)
+
+    app = create_app(Settings(_env_file=None, database_url=DB, checkpoint_db_uri=DB, chat_model="fake:scripted",
+                              agent_timeout_s=timeout, max_graph_steps=steps), build)
+    def principal(request: Request) -> Principal:          # typed: FastAPI injects Request by annotation
+        return Principal(org_id=request.headers["x-org"], user_id=request.headers["x-user"])
+
+    app.dependency_overrides[get_principal] = principal
+    return app
+
+
+async def call(app: FastAPI, path: str, body: dict[str, Any], user: str = "u1") -> httpx.Response:
+    async with app.router.lifespan_context(app):                      # runs the async-with checkpointer setup
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+            return await c.post(path, json=body, headers={"x-org": "org-a", "x-user": user})
+```
+
+`create_app`, `Principal`, `RequestCtx`, `get_principal`: `agentic-templates-core.md`; `Settings`: `agentic-config-project.md`. `lookup_order` is a `ToolRuntime[RequestCtx]` tool (`agentic-templates-tools.md`).
+
+| Test | Script | Assert |
+|---|---|---|
+| Scope injection | tool call, then answer | Tool saw the principal's `org_id`; model-visible schema has only business args |
+| Recursion limit | 50 tool calls, `max_graph_steps=5` | `status == "ITERATION_LIMIT"` (not 500, not the last tool-call message) |
+| Principal-bound threads | Alice writes to `thread_id=T`; Bob presents `T` | Checkpoint exists for `org-a:alice:T`, none for Bob's key |
+| SSE framing | tool call, answer with `\n` | Every `data:` is JSON; exactly one `done`; newline survives; tool output absent |
+| No exception text | model raises with a fake SSN in the message | HTTP body `{"detail": {"error_code": "AGENT_UNAVAILABLE"}}`; stream `event: error` with a code; SSN absent from body, stream **and logs**; exception type present in logs (positive control) |
+| Deadline | model sleeps past `agent_timeout_s` | `status == "TIMEOUT"` |
+
+All six passed against PostgreSQL 16.
+
+## Control-flow tests (no HTTP)
+
+| Test | How | Executed result |
+|---|---|---|
+| Model call cap | `ModelCallLimitMiddleware(run_limit=3, exit_behavior="error")`, looping script | `ModelCallLimitExceededError` after 3 calls; with default `"end"` the run ends on a library-text `AIMessage` (assert your route never returns it as an answer) |
+| HITL approve/reject | `HumanInTheLoopMiddleware` or `interrupt()`; resume with `Command(resume=...)` on a **new** saver instance | Approve runs the tool once; reject and stale args hash run nothing (`agentic-streaming-hitl.md`) |
+| Resume re-runs the node | Counter before `interrupt()` | Counter == 2 after one resume: no side effects before `interrupt()` |
+| Idempotent writes | `run_once` with 5 concurrent callers | Effect ran once (`tool-execution-safety.md` §6) |
+| Memory isolation | Two principals write/recall | No cross-principal recall; missing scope raises (`agentic-memory-systems.md`) |
+| Tool retry failure payload | `ToolRetryMiddleware` default `on_failure` | Exception text reached the `ToolMessage` → use `"error"` or a typed callable (`agentic-templates-tools.md`) |
+
+## Contract tests
+
+- **Tool surface lock:** hash of `convert_to_openai_tool(t)` per tool equals the committed lock file; intentional changes update the lock in the same PR (`tool-execution-safety.md` §11).
+- **No scope params** in any model-visible tool schema.
+- **Allowlists resolve** for every agent (import the registry; do not regex the source).
+- **Prompt ↔ tools:** tool names referenced in prompts are registered tools.
+- **Structured output:** the JSON Schema of each response model is committed; a parse failure path exists and returns its typed code.
+
+## Live golden and failure-matrix gate (before release)
+
+Scripted tests cannot tell you whether the model chooses the right tool or grounds its answer. Before a release (and on every model or prompt version change):
+
+1. **Live golden set** (R2/R3): real model, declared trials per case, thresholds per case type, results stored with model id + prompt version (`eval-guide`; ADK services: `adk-eval-guide`).
+2. **Failure matrix replay**: with a live model, inject each dependency failure — tool timeout, tool `TOOL_UNAVAILABLE`, empty retrieval, checkpointer unavailable, provider 429/5xx, schema-invalid output — and assert the user-visible outcome is the documented typed status (`INSUFFICIENT_EVIDENCE`, `TIMEOUT`, ...) and never a fabricated answer.
+3. A suite that skips for missing credentials reports **NOT RUN**, never PASS.
+
+## pytest configuration
 
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks integration tests requiring external services",
+    "integration: needs PostgreSQL",
+    "live: calls a real model provider (R2+); skipped => NOT RUN",
 ]
 ```
 
-**File:** `tests/conftest.py`
-
-```python
-from __future__ import annotations
-
-from unittest.mock import AsyncMock
-
-import pytest
-from langchain_core.messages import AIMessage
-from langgraph.checkpoint.memory import MemorySaver
-
-from my_agent_service.core.config import Settings
-from my_agent_service.llm.providers import LLMProviderFactory
-
-
-@pytest.fixture
-def settings():
-    """Test settings with safe defaults."""
-    return Settings(
-        anthropic_api_key="sk-ant-test-key",
-        database_url="postgresql+asyncpg://test:test@localhost:5432/test",
-        checkpoint_db_uri="postgresql://test:test@localhost:5432/test",
-        app_env="development",
-    )
-
-
-@pytest.fixture
-def mock_llm():
-    """Mock LLM that returns predictable responses."""
-    llm = AsyncMock()
-    llm.ainvoke.return_value = AIMessage(content="Test response")
-    llm.bind_tools.return_value = llm
-    llm.with_structured_output.return_value = llm
-    llm.with_fallbacks.return_value = llm
-    return llm
-
-
-@pytest.fixture
-def mock_provider_factory(mock_llm):
-    """Mock LLM provider factory."""
-    factory = AsyncMock(spec=LLMProviderFactory)
-    factory.get_default.return_value = mock_llm
-    factory.get.return_value = mock_llm
-    factory.get_model.return_value = mock_llm
-    factory.get_fallback_chain.return_value = mock_llm
-    return factory
-
-
-@pytest.fixture
-def memory_checkpointer():
-    """In-memory checkpointer for tests — never use in production."""
-    return MemorySaver()
-
-
-@pytest.fixture
-def thread_id():
-    """Consistent thread ID for test conversations."""
-    return "test-thread-001"
-```
-
-## Basic Agent Tests
-
-**File:** `tests/test_agent_basic.py`
-
-```python
-from __future__ import annotations
-
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage
-
-from my_agent_service.agents.graphs.react_agent import build_react_agent
-
-
-class TestReActAgent:
-    """Basic agent functionality tests."""
-
-    async def test_agent_responds_to_simple_message(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should produce a response for a simple question."""
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="What is 2+2?")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-        assert result["messages"]
-        last_message = result["messages"][-1]
-        assert isinstance(last_message, AIMessage)
-        assert last_message.content  # Non-empty response
-
-    async def test_agent_increments_iteration_count(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should track iteration count."""
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="Hello")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-        assert result["iteration_count"] > 0
-
-    async def test_agent_respects_max_iterations(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should stop at max iteration limit."""
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="Loop forever")],
-                "iteration_count": 24,  # Start near limit
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={
-                "configurable": {"thread_id": thread_id},
-                "recursion_limit": 50,
-            },
-        )
-
-        assert result["iteration_count"] <= 30  # Should have stopped
-```
-
-## Tool Usage Tests
-
-```python
-class TestToolUsage:
-    """Verify agent uses tools correctly."""
-
-    async def test_agent_uses_search_tool(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should use search tool when asked to look something up."""
-        # Configure mock LLM to request tool usage
-        mock_llm = mock_provider_factory.get_default()
-        mock_llm.ainvoke.side_effect = [
-            AIMessage(
-                content="",
-                tool_calls=[{"id": "call_1", "name": "search_web", "args": {"query": "test"}}],
-            ),
-            AIMessage(content="Based on the search results..."),
-        ]
-
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="Search for test info")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-        # Verify tool was called (check intermediate messages)
-        tool_messages = [m for m in result["messages"] if hasattr(m, "name")]
-        assert len(tool_messages) > 0
-```
-
-## Trajectory Tests
-
-Verify the agent's reasoning path, not just the final output.
-
-```python
-class TestAgentTrajectory:
-    """Verify the agent follows expected reasoning paths."""
-
-    async def test_agent_reasoning_path(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Verify agent visits expected nodes in correct order."""
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-
-        visited_nodes = []
-
-        async for update in graph.astream(
-            {
-                "messages": [HumanMessage(content="Analyze this data")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-            stream_mode="updates",
-        ):
-            visited_nodes.extend(update.keys())
-
-        assert "agent" in visited_nodes
-        assert visited_nodes[0] == "agent"  # Always starts with agent
-```
-
-## Resilience Tests
-
-```python
-class TestResilience:
-    """Test error handling and recovery."""
-
-    async def test_agent_handles_llm_error(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should handle LLM provider errors gracefully."""
-        mock_llm = mock_provider_factory.get_default()
-        mock_llm.ainvoke.side_effect = Exception("Provider timeout")
-
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="Test")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-        # Should have error count incremented
-        assert result.get("error_count", 0) > 0
-
-    async def test_agent_handles_tool_error(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Agent should handle tool execution errors."""
-        # Tool returns error string (not exception — tools should catch)
-        mock_llm = mock_provider_factory.get_default()
-        mock_llm.ainvoke.side_effect = [
-            AIMessage(
-                content="",
-                tool_calls=[{"id": "call_1", "name": "search_web", "args": {"query": "fail"}}],
-            ),
-            AIMessage(content="The search failed, but I can try another approach."),
-        ]
-
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="Search something")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config={"configurable": {"thread_id": thread_id}},
-        )
-
-        # Agent should still produce a response
-        assert result["messages"][-1].content
-
-    async def test_conversation_persists_across_invocations(self, mock_provider_factory, memory_checkpointer, thread_id):
-        """Checkpointed state should persist between calls."""
-        graph = build_react_agent(mock_provider_factory, checkpointer=memory_checkpointer)
-        config = {"configurable": {"thread_id": thread_id}}
-
-        # First turn
-        await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content="My name is Alice")],
-                "iteration_count": 0,
-                "error_count": 0,
-                "thread_id": thread_id,
-            },
-            config=config,
-        )
-
-        # Second turn — should see previous messages
-        result = await graph.ainvoke(
-            {"messages": [HumanMessage(content="What is my name?")]},
-            config=config,
-        )
-
-        messages = result["messages"]
-        assert len(messages) > 2  # Should have both turns
-```
-
-## RAG Tests
-
-```python
-class TestRAG:
-    """Test RAG retrieval and generation quality."""
-
-    async def test_retriever_returns_relevant_docs(self, mock_retriever):
-        """Retriever should return documents relevant to query."""
-        docs = await mock_retriever.ainvoke("Python async programming")
-        assert len(docs) > 0
-        assert any("async" in doc.page_content.lower() for doc in docs)
-
-    async def test_rag_answer_is_grounded(self, mock_llm, mock_retriever):
-        """RAG answer should be grounded in retrieved documents."""
-        chain = build_standard_rag(mock_llm, mock_retriever)
-        answer = await chain.ainvoke("What is asyncio?")
-        # Answer should reference content from mock documents
-        assert answer  # Non-empty
-        assert "I don't know" not in answer or len(mock_retriever.docs) == 0
-```
-
-## FastAPI Integration Tests
-
-```python
-import pytest
-from httpx import ASGITransport, AsyncClient
-
-from my_agent_service.main import app
-
-
-class TestAgentAPI:
-    """Integration tests for agent API endpoints."""
-
-    @pytest.fixture
-    async def client(self):
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as client:
-            yield client
-
-    async def test_invoke_endpoint(self, client):
-        """POST /api/v1/agent/invoke should return agent response."""
-        response = await client.post(
-            "/api/v1/agent/invoke",
-            json={"message": "Hello", "thread_id": "test-thread"},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "message" in data
-        assert "thread_id" in data
-
-    async def test_health_endpoint(self, client):
-        """GET /api/v1/health should return health status."""
-        response = await client.get("/api/v1/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-
-    async def test_invoke_validates_input(self, client):
-        """POST /api/v1/agent/invoke should validate request body."""
-        response = await client.post(
-            "/api/v1/agent/invoke",
-            json={"message": ""},  # Empty message
-        )
-        assert response.status_code == 422  # Validation error
-
-    async def test_stream_endpoint(self, client):
-        """POST /api/v1/agent/stream should return SSE stream."""
-        async with client.stream(
-            "POST",
-            "/api/v1/agent/stream",
-            json={"message": "Hello", "thread_id": "test-thread"},
-        ) as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"] == "text/event-stream"
-```
-
-## Mock Patterns
-
-```python
-from unittest.mock import AsyncMock, MagicMock
-from langchain_core.documents import Document
-
-
-def mock_vector_store(documents: list[str] | None = None):
-    """Create a mock vector store with predefined documents."""
-    store = AsyncMock()
-    docs = [Document(page_content=text, metadata={"id": str(i)}) for i, text in enumerate(documents or [])]
-    store.asimilarity_search.return_value = docs
-    store.aadd_documents.return_value = [str(i) for i in range(len(docs))]
-    return store
-
-
-def mock_embeddings():
-    """Create a mock embeddings model."""
-    embeddings = AsyncMock()
-    embeddings.aembed_query.return_value = [0.1] * 1536
-    embeddings.aembed_documents.return_value = [[0.1] * 1536]
-    return embeddings
-```
+Run R1 locally and in CI: `uv run pytest -m "not live"`; live suites in their own job with credentials.
 
 ## Key Testing Rules
 
 | Rule | Standard |
 |------|----------|
-| Checkpointer | Always use `MemorySaver` in tests — never connect to real DB |
-| LLM | Always mock LLM in unit tests — use real LLM only in integration tests |
-| Async | Use `pytest-asyncio` with `asyncio_mode = "auto"` |
-| Coverage | Minimum 80% for agent graphs, 90% for guardrails |
-| Required tests | invoke, tool usage, iteration limit, error recovery |
-| Mock pattern | `AsyncMock` for all async operations |
-| Thread ID | Use consistent, predictable thread IDs in tests |
+| Model | `ScriptedModel` for R1; never `AsyncMock`; live only under the `live` marker |
+| Checkpointer/store | Real PostgreSQL for route/HITL/memory tests; `InMemorySaver` only for pure graph-logic unit tests |
+| Entry point | Route tests through the lifespan with an overridden principal |
+| Required tests | Scope injection, recursion/timeout mapping, principal-bound threads, SSE framing, no exception text, HITL approve/reject, idempotency, contract lock |
+| Evidence | Mocked tests prove control flow only; live golden + failure matrix gate releases |
+| Metrics | Formulas from `llm-evaluation` §2, not reimplemented |

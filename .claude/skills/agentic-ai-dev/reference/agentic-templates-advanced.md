@@ -1,220 +1,110 @@
 # Agentic AI — Advanced Agent Patterns
 
-Advanced LangGraph agent patterns — hierarchical supervision, Command-based routing, and sub-graph composition.
+Supervisor routing, `Command`-based routing and sub-graph composition. Rule for all of them: **the model proposes a route, code validates it** against a closed enum *and* code-owned transition rules before `Command(goto=...)`, with a hop cap and a conservative fallback.
 
-## Pattern 3: Hierarchical Supervisor
+Executed (langgraph 1.0.7, scripted models/deciders, `ruff` + `mypy --strict` clean, 2 tests): supervisor ran researcher → coder → reviewer → FINISH (`OK`); a reviewer route before any code was rejected (`ROUTE_REJECTED`); a supervisor stuck on one worker stopped at 6 hops (`HOP_LIMIT`); an out-of-enum label ended with `ROUTER_INVALID`; triage fell back to `general` on an unknown label and on a timeout. Pattern 6 follows the LangGraph sub-graph docs and was not executed here.
 
-A supervisor delegates to specialists and controls quality.
+REMOVED from the previous version: `goto=parse_category(analysis.content)` (free-text parsing straight into a node name), a supervisor with no hop cap that could loop until the recursion limit, `iteration_count`/`thread_id` passed into sub-graph state, and the final answer written by the supervisor's routing call.
 
-**File:** `src/<service>/agents/graphs/supervisor_agent.py`
+## Pattern 4: Supervisor with validated routes and a hop cap
 
 ```python
-from __future__ import annotations
-
-from typing import Literal
-
-from langchain_core.messages import AIMessage, SystemMessage
-from langgraph.graph import END, StateGraph
-from langgraph.types import Command
-
-from ...core.logging import get_logger
-from ...llm.providers import LLMProviderFactory
-from ..state import MultiAgentState
-
-logger = get_logger(__name__)
-
-SUPERVISOR_PROMPT = """You are a supervisor managing a team of specialists.
-Available specialists: {specialists}
-
-For each user request:
-1. Decide which specialist should handle it
-2. Review the specialist's output
-3. Either approve (respond to user) or request revision
-
-Respond with JSON: {{"route": "specialist_name"}} or {{"route": "FINISH", "response": "final answer"}}
-"""
-
-
-def build_supervisor_agent(
-    provider_factory: LLMProviderFactory,
-    checkpointer=None,
-) -> StateGraph:
-    """Build a hierarchical supervisor agent.
-
-    The supervisor decides which specialist to invoke, reviews output,
-    and iterates until quality is sufficient.
-    """
-    llm = provider_factory.get_default()
-    specialists = ["researcher", "coder", "reviewer"]
-
-    async def supervisor_node(state: MultiAgentState) -> Command:
-        """Supervisor decides next action based on current state."""
-        response = await llm.with_structured_output(SupervisorDecision).ainvoke([
-            SystemMessage(content=SUPERVISOR_PROMPT.format(specialists=specialists)),
-            *state["messages"],
-        ])
-
-        if response.route == "FINISH":
-            return Command(
-                goto=END,
-                update={
-                    "messages": [AIMessage(content=response.response)],
-                    "iteration_count": state["iteration_count"] + 1,
-                },
-            )
-
-        return Command(
-            goto=response.route,
-            update={"iteration_count": state["iteration_count"] + 1},
-        )
-
-    async def researcher_node(state: MultiAgentState) -> Command:
-        """Research specialist — returns to supervisor for review."""
-        response = await llm.ainvoke([
-            SystemMessage(content="You are a research specialist. Provide thorough, factual research."),
-            *state["messages"],
-        ])
-        return Command(
-            goto="supervisor",
-            update={"messages": [response]},
-        )
-
-    async def coder_node(state: MultiAgentState) -> Command:
-        """Coding specialist — returns to supervisor for review."""
-        response = await llm.ainvoke([
-            SystemMessage(content="You are a coding specialist. Write clean, tested, production code."),
-            *state["messages"],
-        ])
-        return Command(
-            goto="supervisor",
-            update={"messages": [response]},
-        )
-
-    async def reviewer_node(state: MultiAgentState) -> Command:
-        """Review specialist — returns to supervisor with feedback."""
-        response = await llm.ainvoke([
-            SystemMessage(content="You are a code reviewer. Review for correctness, security, and style."),
-            *state["messages"],
-        ])
-        return Command(
-            goto="supervisor",
-            update={"messages": [response]},
-        )
-
-    # --- Graph Assembly ---
-
-    graph = StateGraph(MultiAgentState)
-    graph.add_node("supervisor", supervisor_node)
-    graph.add_node("researcher", researcher_node)
-    graph.add_node("coder", coder_node)
-    graph.add_node("reviewer", reviewer_node)
-
-    graph.set_entry_point("supervisor")
-    # Edges are handled by Command returns — no explicit conditional edges needed
-
-    return graph.compile(checkpointer=checkpointer)
-
-
-# Pydantic model for structured supervisor output
-from pydantic import BaseModel, Field
+Worker = Literal["researcher", "coder", "reviewer"]
+MAX_HOPS = 6
 
 
 class SupervisorDecision(BaseModel):
-    """Structured output for supervisor routing decisions."""
+    route: Literal["researcher", "coder", "reviewer", "FINISH"]        # closed enum
 
-    route: Literal["researcher", "coder", "reviewer", "FINISH"]
-    response: str = Field(default="", description="Final response when route is FINISH")
+
+class TeamState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    hops: int
+    visited: list[str]
+    status: str
+
+
+def allowed_next(visited: list[str]) -> set[str]:
+    """Code-owned transition rules: the model's choice must also be permitted here."""
+    allowed = {"researcher", "coder", "FINISH"}
+    if "coder" in visited:
+        allowed.add("reviewer")
+    return allowed
+
+
+def build_supervisor(model: BaseChatModel, decider: Any, checkpointer: Any = None) -> Any:
+    async def supervisor(state: TeamState) -> Command[Literal["researcher", "coder", "reviewer", "__end__"]]:
+        if state["hops"] >= MAX_HOPS:
+            return Command(goto="__end__", update={"status": "HOP_LIMIT"})
+        try:
+            decision: SupervisorDecision = await decider.ainvoke([SystemMessage(SUPERVISOR_PROMPT), *state["messages"]])
+        except ValidationError:
+            logger.warning("supervisor_invalid_route")
+            return Command(goto="__end__", update={"status": "ROUTER_INVALID"})
+        if decision.route not in allowed_next(state["visited"]):
+            logger.warning("supervisor_route_rejected", route=decision.route)
+            return Command(goto="__end__", update={"status": "ROUTE_REJECTED"})
+        if decision.route == "FINISH":
+            return Command(goto="__end__", update={"status": "OK"})
+        return Command(goto=decision.route, update={"hops": state["hops"] + 1})
+
+    def make_worker(name: Worker) -> Any:
+        async def worker(state: TeamState) -> Command[Literal["supervisor"]]:
+            response = await model.ainvoke([SystemMessage(WORKER_PROMPTS[name]), *state["messages"]])
+            return Command(goto="supervisor", update={
+                "messages": [AIMessage(response.text, name=name)], "visited": [*state["visited"], name]})
+        return worker
+
+    g = StateGraph(TeamState)
+    g.add_node("supervisor", supervisor)
+    for w in ("researcher", "coder", "reviewer"):
+        g.add_node(w, make_worker(w))
+    g.add_edge(START, "supervisor")
+    return g.compile(checkpointer=checkpointer)
 ```
 
-## Pattern 4: LangGraph Command Pattern
+- `decider` = `chat_model("fast").with_structured_output(SupervisorDecision)`; out-of-enum output raises at validation.
+- `Command[Literal[...]]` return annotations tell LangGraph the possible destinations (needed for graph rendering and validation without explicit edges).
+- `MAX_HOPS` is a business limit with its own typed status; `recursion_limit` stays the hard backstop. Map every non-`OK` status at the route.
+- Workers that hold different tools or permissions: give each its own allowlist and pass scope through `context`, never through messages (`multi-agent-patterns`).
+- Workers' outputs are model text; another worker reads them as data. A worker never gains authority because the supervisor "approved" its output.
 
-The preferred routing pattern in LangGraph — cleaner than conditional edges for complex flows.
+## Pattern 5: `Command` triage with a deterministic fallback
 
 ```python
-from langgraph.types import Command
+Category = Literal["technical", "billing", "general"]
 
-# Instead of conditional edges, nodes return Command objects
 
-async def triage_node(state: AgentState) -> Command:
-    """Route using Command pattern — cleaner than conditional edges."""
-    analysis = await llm.ainvoke([
-        SystemMessage(content="Classify this request: technical, billing, or general"),
-        *state["messages"],
-    ])
+class Triage(BaseModel):
+    category: Category
 
-    category = parse_category(analysis.content)
 
-    return Command(
-        goto=category,  # Route to the appropriate node
-        update={
-            "messages": [analysis],
-            "iteration_count": state["iteration_count"] + 1,
-        },
-    )
-
-# Graph setup — no conditional edges needed
-graph = StateGraph(AgentState)
-graph.add_node("triage", triage_node)
-graph.add_node("technical", technical_node)
-graph.add_node("billing", billing_node)
-graph.add_node("general", general_node)
-graph.set_entry_point("triage")
-# Command handles all routing — just add edges back to triage if needed
-graph.add_edge("technical", END)
-graph.add_edge("billing", END)
-graph.add_edge("general", END)
+async def triage(state: TriageState) -> Command[Category]:
+    try:
+        async with asyncio.timeout(timeout_s):
+            result: Triage = await classifier.ainvoke(state["messages"])
+        return Command(goto=result.category, update={"category": result.category, "reason_code": "MODEL"})
+    except (TimeoutError, ValidationError) as exc:
+        logger.warning("triage_fallback", error_type=type(exc).__name__)
+        return Command(goto="general", update={"category": "general", "reason_code": "FALLBACK"})
 ```
 
-## Pattern 5: Sub-Graph Composition
+Put deterministic rules before the classifier (`agentic-llm-routing.md` §Complexity router) and choose the fallback destination as the *safest* handler, not the most common one. When the same message could route to several handlers, an embedding router with threshold + margin (`agentic-llm-routing.md` §Intent routing) avoids a generation call.
 
-Reusable sub-graphs composed into a larger workflow.
+## Pattern 6: Sub-graph composition
 
 ```python
-from langgraph.graph import StateGraph, END
+rag_graph = build_rag_subgraph(...)          # compiled, no checkpointer of its own
 
 
-def build_rag_subgraph(provider_factory) -> StateGraph:
-    """Reusable RAG sub-graph that can be embedded in any parent graph."""
-    graph = StateGraph(RAGState)
-    graph.add_node("retrieve", retrieve_node)
-    graph.add_node("grade", grade_documents_node)
-    graph.add_node("generate", generate_node)
-
-    graph.set_entry_point("retrieve")
-    graph.add_edge("retrieve", "grade")
-    graph.add_conditional_edges("grade", grade_router)
-    graph.add_edge("generate", END)
-
-    return graph.compile()
-
-
-def build_parent_agent(provider_factory, checkpointer=None) -> StateGraph:
-    """Parent graph that uses RAG as a sub-graph."""
-    rag_graph = build_rag_subgraph(provider_factory)
-
-    async def rag_node(state: AgentState) -> dict:
-        """Delegate to RAG sub-graph."""
-        result = await rag_graph.ainvoke({
-            "messages": state["messages"],
-            "query": state["messages"][-1].content,
-            "documents": [],
-            "generation": "",
-            "is_grounded": False,
-            "iteration_count": 0,
-            "error_count": 0,
-            "thread_id": state["thread_id"],
-        })
-        return {"messages": result["messages"]}
-
-    graph = StateGraph(AgentState)
-    graph.add_node("agent", agent_node)
-    graph.add_node("rag", rag_node)
-    graph.add_node("tools", tool_node)
-
-    graph.set_entry_point("agent")
-    graph.add_conditional_edges("agent", route_agent)
-    graph.add_edge("rag", "agent")
-    graph.add_edge("tools", "agent")
-
-    return graph.compile(checkpointer=checkpointer)
+async def rag_node(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+    result = await rag_graph.ainvoke({"query": latest_user_text(state)}, config)   # pass config through
+    return {"messages": [AIMessage(result["generation"])]}
 ```
+
+Or add the compiled sub-graph directly as a node when parent and child share state keys: `parent.add_node("rag", rag_graph)`.
+
+- Pass the parent's `config` so callbacks, tracing, `context` and limits propagate.
+- The sub-graph does not get its own checkpointer unless it needs independent persistence; it inherits the parent's.
+- No `thread_id`, `user_id` or counters in sub-graph input state: identity flows through `config`/`context`.
+- A sub-graph's typed failure (e.g. `INSUFFICIENT_EVIDENCE`) is mapped by the parent, not re-interpreted from text.

@@ -15,13 +15,14 @@ FROM python:3.14-slim AS builder
 WORKDIR /app
 
 # Install uv for fast dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Pin uv to an exact release tag or digest (never :latest), same version as CI
+COPY --from=ghcr.io/astral-sh/uv:<pinned-version> /uv /usr/local/bin/uv
 
 # Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock* ./
 
 # Install production dependencies only
-RUN uv sync --no-dev --frozen
+RUN uv sync --no-dev --locked
 
 # Copy source code
 COPY src/ src/
@@ -56,8 +57,10 @@ EXPOSE 8000
 USER agent
 
 # gunicorn + uvicorn workers for production
-CMD ["gunicorn", "my_agent_service.main:app", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
+# uvicorn.workers.UvicornWorker is deprecated: install the `uvicorn-worker` package and use its class
+# (see docker/reference/dockerfiles.md); for a single process per container, run uvicorn --factory instead
+CMD ["gunicorn", "my_agent_service.main:create_app()", \
+     "--worker-class", "uvicorn_worker.UvicornWorker", \
      "--workers", "4", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \
@@ -181,186 +184,33 @@ scrape_configs:
 
 ## Health Checks
 
-**File:** `src/<service>/api/routes/health.py`
+Use the readiness/liveness routes in `agentic-templates-core.md` §Health Check Route (executed): liveness returns without touching dependencies; readiness runs `SELECT 1` on the checkpointer pool and returns `503` with per-dependency status names (no error text) when a dependency fails.
 
-```python
-from __future__ import annotations
-
-import time
-
-from fastapi import APIRouter, Request
-
-from ...core.logging import get_logger
-
-logger = get_logger(__name__)
-
-router = APIRouter(tags=["health"])
-
-
-@router.get("/health")
-async def health_check(request: Request) -> dict:
-    """Comprehensive health check for all dependencies."""
-    checks: dict[str, dict] = {}
-    start = time.monotonic()
-
-    # 1. LLM Provider
-    try:
-        factory = request.app.state.provider_factory
-        llm = factory.get_default()
-        llm_start = time.monotonic()
-        await llm.ainvoke([{"role": "user", "content": "ping"}])
-        checks["llm"] = {"status": "healthy", "latency_ms": round((time.monotonic() - llm_start) * 1000)}
-    except Exception as e:
-        checks["llm"] = {"status": "unhealthy", "error": str(e)[:200]}
-
-    # 2. Checkpoint Database
-    try:
-        checkpointer = request.app.state.checkpointer
-        checks["checkpoint_db"] = {"status": "healthy"}
-    except Exception as e:
-        checks["checkpoint_db"] = {"status": "unhealthy", "error": str(e)[:200]}
-
-    # 3. Redis (if configured)
-    try:
-        redis = getattr(request.app.state, "redis", None)
-        if redis:
-            await redis.ping()
-            checks["redis"] = {"status": "healthy"}
-        else:
-            checks["redis"] = {"status": "not_configured"}
-    except Exception as e:
-        checks["redis"] = {"status": "unhealthy", "error": str(e)[:200]}
-
-    total_latency = round((time.monotonic() - start) * 1000)
-    all_healthy = all(
-        c.get("status") in ("healthy", "not_configured")
-        for c in checks.values()
-    )
-
-    return {
-        "status": "healthy" if all_healthy else "degraded",
-        "checks": checks,
-        "latency_ms": total_latency,
-    }
-
-
-@router.get("/health/ready")
-async def readiness_check() -> dict:
-    """Lightweight readiness probe for Kubernetes."""
-    return {"status": "ready"}
-
-
-@router.get("/health/live")
-async def liveness_check() -> dict:
-    """Lightweight liveness probe for Kubernetes."""
-    return {"status": "alive"}
-```
+- No LLM "ping" in health checks: every probe would bill a model call, and a provider blip would take every replica out of rotation at once. Track provider health with metrics and alerts (`agentic-observability.md`).
+- No exception text in health responses (`"error": str(e)` leaks hostnames and driver messages to anything that can reach the probe). Log with `log_exception`, return a status code.
 
 ## Graceful Shutdown
 
-```python
-import signal
-import asyncio
-
-from ..core.logging import get_logger
-
-logger = get_logger(__name__)
-
-
-async def graceful_shutdown(app):
-    """Handle graceful shutdown — drain connections, flush metrics."""
-    logger.info("shutdown_initiated")
-
-    # 1. Stop accepting new requests (handled by gunicorn)
-
-    # 2. Wait for in-flight requests to complete (timeout)
-    await asyncio.sleep(5)
-
-    # 3. Close checkpointer connection pool
-    if hasattr(app.state, "checkpointer"):
-        logger.info("closing_checkpointer")
-        # Close checkpointer connections
-
-    # 4. Close Redis connection
-    if hasattr(app.state, "redis"):
-        logger.info("closing_redis")
-        await app.state.redis.close()
-
-    # 5. Flush Prometheus metrics
-    logger.info("shutdown_complete")
-```
+The FastAPI lifespan owns shutdown: the `async with` block that opened the checkpointer/store pools closes them when the server stops, after uvicorn/gunicorn stop accepting requests and drain in-flight ones within their graceful timeout. Set the server's graceful timeout above `AGENT_TIMEOUT_S` so a run in progress can finish or hit its own deadline. Don't add `asyncio.sleep(...)` "drain" steps or a second shutdown hook that closes the same pools.
 
 ## Rate Limiting for LLM Endpoints
 
-```python
-from collections import defaultdict
-import time
-
-
-class SimpleRateLimiter:
-    """Token bucket rate limiter for LLM endpoints.
-
-    Prevents abuse and controls LLM API costs.
-    """
-
-    def __init__(self, requests_per_minute: int = 60):
-        self._rpm = requests_per_minute
-        self._buckets: dict[str, list[float]] = defaultdict(list)
-
-    def is_allowed(self, client_id: str) -> bool:
-        """Check if request is allowed under rate limit."""
-        now = time.time()
-        window_start = now - 60.0
-
-        # Clean old entries
-        self._buckets[client_id] = [
-            t for t in self._buckets[client_id] if t > window_start
-        ]
-
-        if len(self._buckets[client_id]) >= self._rpm:
-            return False
-
-        self._buckets[client_id].append(now)
-        return True
-```
+Limit per **verified principal and org** (not IP alone), in shared storage or at the API gateway: an in-process dictionary counts per replica, resets on restart and grows without bound. Pair request-rate limits with the cost/token budgets in `agentic-cost-optimization.md` §Budgets; a few long requests can cost more than many short ones. Return a typed `429` with `Retry-After`.
 
 ## Secret Management
 
-```python
-# NEVER do this
-# logger.info("Using API key: %s", settings.anthropic_api_key)  # EXPOSED!
-# print(f"Key: {api_key}")  # EXPOSED!
-
-# Always do this
-logger.info("llm_configured", provider="anthropic", key_prefix=settings.anthropic_api_key[:10] + "...")
-
-
-# API key rotation pattern
-class SecretManager:
-    """Manage API key rotation without downtime."""
-
-    def __init__(self, primary_key: str, secondary_key: str = ""):
-        self._primary = primary_key
-        self._secondary = secondary_key
-
-    def get_active_key(self) -> str:
-        return self._primary
-
-    def rotate(self, new_key: str) -> None:
-        """Rotate to new key — old key becomes secondary."""
-        self._secondary = self._primary
-        self._primary = new_key
-        logger.info("api_key_rotated", key_prefix=new_key[:10] + "...")
-```
+- Keys come from the platform secret manager as env vars, typed `SecretStr` in settings (`agentic-config-project.md`); never logged, not even as a prefix. Log `key_configured=True` at startup.
+- Rotation: the secret manager holds versions; deploy a new revision (or reload on a signal) to pick up the new version, then revoke the old one after traffic drains. No in-process key-rotation classes.
 
 ## Deployment Checklist
 
 | Check | Command | Expected |
 |-------|---------|----------|
 | Build | `docker build -t agent-service .` | Exit 0 |
-| Health | `curl localhost:8000/api/v1/health` | `{"status": "healthy"}` |
+| Readiness | `curl -fsS localhost:8000/api/v1/health/ready` | Exit 0 |
 | Metrics | `curl localhost:8000/metrics` | Prometheus format |
 | Lint | `ruff check src/` | No errors |
 | Types | `mypy src/` | No errors |
-| Tests | `pytest -v` | All pass |
+| Tests | `uv run pytest -m "not live"` | All pass |
+| Live gate | Live golden + failure matrix (`agentic-testing.md`) | PASS, or NOT RUN stated |
 | Security | No secrets in code or logs | Verified |

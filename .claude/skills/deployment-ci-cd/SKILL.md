@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: implementation
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-22"
 ---
 
 **Iron Law:** Never design a deployment pipeline without knowing the rollback strategy — every deploy step must be reversible or have an explicit break-glass procedure.
@@ -56,12 +56,22 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 5. Define rollback strategy for each stage
 6. Output GitHub Actions workflow YAML + deployment configuration
 
+## Reference Files
+
+| File | Load when |
+|------|-----------|
+| `reference/python-ci-supply-chain.md` | Python CI gate design, SHA/digest pins, `--locked` installs, dependency audit commands, path filters, uv Dockerfile, deploy hygiene |
+| `reference/python-observability.md` | JSON logs, PII-safe exception logging, OpenTelemetry wiring and span test, request ids, metrics, probes, readiness checklist |
+| `reference/health-endpoints.md` | Liveness/readiness endpoints per stack; Cloud Run probe flags |
+| `reference/env-config-validation.md` | Fail-fast configuration |
+
 ## Production Readiness Checklist
 
 Before any production deploy, verify ALL of the following. If any item is NO → do not deploy.
 
 ### Application
-- [ ] `/health` endpoint responds 200 with DB connectivity check (see `reference/health-endpoints.md`)
+- [ ] Liveness endpoint (process only) AND, for services with dependencies, a startup/readiness endpoint that checks them with a per-check timeout; a liveness probe must not call dependencies (see `reference/health-endpoints.md`)
+- [ ] Python: JSON logs, PII-safe exception logging, request-id/trace-id join, spans proven emitted (`reference/python-observability.md`)
 - [ ] All required env vars validated at startup — app fails fast if missing (see `reference/env-config-validation.md`)
 - [ ] No secrets hardcoded in source code or committed config files
 - [ ] `.env.example` committed with all keys, placeholder values only
@@ -70,17 +80,22 @@ Before any production deploy, verify ALL of the following. If any item is NO →
 ### Container / Docker
 - [ ] Multi-stage Dockerfile — dev deps not in production image
 - [ ] Non-root user in Dockerfile (`USER appuser`)
-- [ ] Specific image tags pinned — no `:latest`
+- [ ] Base image pinned `tag@sha256:<index digest>`; no `:latest`; no `COPY --from=<image-ref>`; Python installs `uv sync --locked`
+- [ ] Config is not baked into the image (no `ENV` for env-varying values); required settings fail loudly at startup
 - [ ] HEALTHCHECK instruction in Dockerfile
 - [ ] `.dockerignore` excludes: `node_modules`, `.git`, `.env`, `dist`, `coverage`
 - [ ] `docker scout` or `trivy image` scan — zero CRITICAL CVEs
 
 ### CI/CD Pipeline
-- [ ] Tests pass (all: unit + integration)
+- [ ] Tests pass (all: unit + integration) AND executed count > 0 (an all-skipped run exits 0); infra-dependent tests FAIL, not skip, in CI (`REQUIRE_<X>=1`)
 - [ ] Linting + type-check pass (zero errors)
-- [ ] Container image pushed to Artifact Registry with commit SHA tag
-- [ ] Health check gate passes before any traffic shift
-- [ ] Rollback strategy defined and tested for this deploy
+- [ ] Container image pushed to Artifact Registry with commit SHA tag; deploy by digest and record the running digest/revision
+- [ ] Every `uses:` pinned to a 40-hex SHA (`# vX.Y.Z` comment); runner image and tool versions pinned; `actionlint` green
+- [ ] Path filters list every file the test run loads (`conftest.py`, `pyproject.toml`, lock, `.python-version`); required checks do not rely on trigger-level path filters
+- [ ] Dependency audit gated on the tool's EXIT CODE (`pip-audit` prints no severity; `pip audit` is not a command): `reference/python-ci-supply-chain.md`
+- [ ] Health check gate passes before any traffic shift (startup probe: `gcloud run deploy --startup-probe 'httpGet.path=...'`; the `--*-probe-path` flags do not exist)
+- [ ] Migration job runs first and aborts the whole release on failure; order: migration -> APIs -> workers -> edge
+- [ ] Rollback strategy defined and tested for this deploy (Cloud Run: traffic pin to the previous revision; "redeploy the old SHA" is unproven until rehearsed)
 
 ### Cloud Run (GCP Stack)
 - [ ] Workload Identity Federation configured — no service account key files

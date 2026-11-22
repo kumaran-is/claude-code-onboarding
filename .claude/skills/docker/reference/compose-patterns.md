@@ -281,4 +281,13 @@ services:
 | Redis | `redis-cli ping` | 5s |
 | NestJS / Fastify | `wget --spider http://localhost:3000/health/live` | 5s |
 | Spring Boot | `wget --spider http://localhost:8080/actuator/health` | 40s |
-| Python FastAPI | `python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"` | 10s |
+| Python FastAPI | `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"` (stdlib; no httpx/curl needed in the image) | 15s |
+
+---
+
+## Local / Deployed Parity
+
+- Config keys: compose uses bare `${VAR}` with no `:-default` (a missing value must fail, not silently differ); the key set is identical across local, staging and production templates (check it in CI with a known-bad control).
+- Each cloud resource the service uses maps to a local emulator or an explicit "N/A + reason" row. A missing local topic/subscription silently receives nothing, so an event-driven path "works" locally only if the emulator has the subscription.
+- A scheduled endpoint is not shipped until the scheduler job that calls it exists in the infrastructure code (grep for the endpoint path with a control).
+- Run migrations as a separate one-shot service that the app `depends_on` (`condition: service_completed_successfully`), mirroring the deployed order: migrate, then serve.

@@ -8,8 +8,8 @@ Run this checklist before deploying any Cloud Run Function. Every HIGH or CRITIC
 |-------------|----------|-----|
 | Service account JSON keys in GitHub Secrets or env vars | CRITICAL | Use Workload Identity Federation — no long-lived keys |
 | `cloudbuild.yaml` used instead of GitHub Actions | WORKSPACE RULE | Delete cloudbuild.yaml; use `.github/workflows/*.yml` only |
-| No `GET /health` endpoint | HIGH | Expose `GET /health` returning HTTP 200 — required for Cloud Run readiness |
-| No `SIGTERM` handler | HIGH | Cloud Run sends SIGTERM 10s before SIGKILL. Handle graceful shutdown or in-flight requests are dropped |
+| No health endpoint | HIGH | Expose a liveness endpoint (process only) and, if the service has dependencies, a startup/readiness endpoint that checks them. A liveness probe that calls dependencies can restart healthy instances during a dependency outage. Flags: `--startup-probe`/`--liveness-probe` with `httpGet.path=...` (see `deployment-ci-cd/reference/health-endpoints.md`) |
+| No `SIGTERM` handler | HIGH | Cloud Run sends SIGTERM 10s before SIGKILL. Handle graceful shutdown or in-flight requests are dropped. The server must be PID 1 (exec-form `CMD`, or `sh -c "exec uvicorn ..."`) or the signal never reaches it |
 | Binding to `localhost` instead of `0.0.0.0` | HIGH | Cloud Run's load balancer cannot reach the container — always bind `0.0.0.0` |
 | Hardcoded port (not reading `PORT` env var) | HIGH | Use `process.env.PORT`, `os.environ.get("PORT", 8080)`, or `${PORT:-8080}` |
 | Writing large files to `/tmp` | HIGH | `/tmp` is in-memory (tmpfs) — max 512Mi by default. Use Cloud Storage for large objects |
@@ -18,7 +18,7 @@ Run this checklist before deploying any Cloud Run Function. Every HIGH or CRITIC
 | Returning HTTP 200 on processing errors (Pub/Sub) | HIGH | Pub/Sub will not retry — always return 5xx for transient errors you want retried |
 | Blocking reactive thread (Spring WebFlux) | HIGH | Never call `.block()` in a WebFlux pipeline — use `Mono.fromCallable` for CPU-bound work |
 | Global mutable state across requests (Python) | MEDIUM | FastAPI is multi-threaded — guard shared state with locks or use immutable module-level singletons |
-| Missing structured logging (plain print/console.log) | MEDIUM | Use structured JSON logging — Cloud Logging parses structured logs for filtering and alerting |
+| Missing structured logging (plain print/console.log) | MEDIUM | One JSON object per line on stdout with `severity`, `message`, `event` — Cloud Logging parses single-line JSON; alerts filter on the event name. Never log `str(exc)` (PII). See `deployment-ci-cd/reference/python-observability.md` |
 | No max-instances set | MEDIUM | Unbounded scaling can exhaust Pub/Sub quota or DB connections — always set `--max-instances` |
 | node:20 or python:3.11 base images | MEDIUM | Use `node:24-alpine` and `python:3.14-slim` — workspace mandates current runtime versions |
 | Running as root in container | MEDIUM | Add non-root user in Dockerfile — see `docker` skill `reference/dockerfiles.md` |
@@ -29,16 +29,16 @@ Run this checklist before deploying any Cloud Run Function. Every HIGH or CRITIC
 
 ## SIGTERM Handler Examples
 
-**Python:**
+**Python (FastAPI under uvicorn): do NOT install your own handler.** uvicorn already traps SIGTERM, stops accepting requests and runs the `lifespan` shutdown (executed: `kill -TERM` on `exec uvicorn app:app` ran the `finally:` block of the lifespan and the process exited). Put cleanup there:
 ```python
-import signal, sys
-
-def handle_sigterm(*_):
-    # flush buffers, close DB connections
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, handle_sigterm)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        await engine.dispose()      # flush buffers, close pools; log failures, never crash shutdown
 ```
+Use `signal.signal(signal.SIGTERM, ...)` only for non-uvicorn processes (workers, scripts); replacing uvicorn's handler can skip lifespan cleanup.
 
 **Node.js (NestJS / Fastify):**
 ```typescript

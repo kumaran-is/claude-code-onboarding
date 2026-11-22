@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 ```dockerfile
 # Cache uv download cache across builds
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev --frozen
+    uv sync --locked --no-dev
 ```
 
 **Impact:** Maven cold build ~3 min -> cached ~15 sec. npm cold ~90 sec -> cached ~5 sec.
@@ -75,10 +75,10 @@ docker buildx build \
 **In GitHub Actions:**
 ```yaml
 - name: Set up Docker Buildx
-  uses: docker/setup-buildx-action@v3
+  uses: docker/setup-buildx-action@<40-hex-sha> # v3.x.y (pin by SHA)
 
 - name: Build and push
-  uses: docker/build-push-action@v5
+  uses: docker/build-push-action@<40-hex-sha> # v5.x.y (pin by SHA)
   with:
     platforms: linux/amd64,linux/arm64
     push: true

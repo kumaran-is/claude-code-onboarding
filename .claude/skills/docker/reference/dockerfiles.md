@@ -160,56 +160,42 @@ docs/
 
 ## Python FastAPI 3.14 (uv — multi-stage)
 
+Executed pieces: `uv sync --locked` on a deps-only layer then the project (non-editable), stale lock fails `--locked` but not `--frozen`, `exec` keeps the server as PID 1, stdlib healthcheck exits 0/1. The `docker build` itself was not run here: build and `docker run` once before trusting it. Pinning rules and resolve commands: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
+
 ```dockerfile
 # my-service — Multi-Stage Production Dockerfile (Python FastAPI 3.14 / uv)
-
-# ============================================
-# Stage 1: Builder — install production dependencies
-# ============================================
-FROM python:3.14-slim AS builder
-
+FROM ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> AS uv
+FROM python:3.14-slim@sha256:<index-digest> AS builder
+COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
-# Install uv for fast, reproducible dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Dependencies layer: cached until the lock changes; --locked fails on a stale lock
+RUN --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-dev --no-install-project
 
-# Copy dependency files first — layer cache preserved on code-only changes
-COPY pyproject.toml uv.lock* ./
-
-# Install production dependencies only into .venv
-RUN uv sync --no-dev --frozen
-
-# Copy application source
+COPY pyproject.toml uv.lock ./
 COPY src/ src/
+RUN uv sync --locked --no-dev --no-editable      # project layer; only .venv is copied to runtime
 
-# ============================================
-# Stage 2: Runtime — minimal Python slim, no build tools
-# ============================================
-FROM python:3.14-slim AS runtime
-
-# Security: non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
+FROM python:3.14-slim@sha256:<index-digest> AS runtime
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --no-create-home app
 WORKDIR /app
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+USER app
+EXPOSE 8080
 
-# Copy virtual env and source from builder
-COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
-COPY --from=builder --chown=appuser:appuser /app/src /app/src
+# stdlib only: the runtime image needs neither curl nor httpx; LIVENESS path (no dependency calls)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"]
 
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/src"
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
-
-EXPOSE 8000
-
-USER appuser
-
-CMD ["uvicorn", "my_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# `exec` makes uvicorn PID 1 so SIGTERM reaches it (Cloud Run: SIGKILL follows after 10 s); $PORT expanded by the shell
+CMD ["sh", "-c", "exec uvicorn my_service.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]
 ```
+
+Mutable `:latest` and `COPY --from=<image>:<tag>` are tag pins; a tag can be re-pointed after review. Non-root UID is numeric so Kubernetes `runAsNonRoot` can verify it.
 
 **.dockerignore (Python):**
 ```
@@ -254,12 +240,13 @@ FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/   # pinned; see python-ci-supply-chain.md
 
-COPY pyproject.toml uv.lock* ./
-RUN uv sync --no-dev --frozen
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project       # deps layer; fails on a stale lock
 
 COPY src/ src/
+RUN uv sync --locked --no-dev --no-editable
 
 # ============================================
 # Stage 2: Runtime — gunicorn + uvicorn workers
@@ -278,16 +265,19 @@ ENV PYTHONPATH="/app/src"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import httpx; httpx.get('http://localhost:8000/api/v1/health').raise_for_status()"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"]
 
 EXPOSE 8000
 
 USER agent
 
 # gunicorn + uvicorn workers: 4 workers, 120s timeout, graceful shutdown 30s
-CMD ["gunicorn", "my_agent_service.main:app", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
+# `uvicorn.workers.UvicornWorker` is deprecated (DeprecationWarning, uvicorn 0.54): add the `uvicorn-worker` package;
+# `from uvicorn_worker import UvicornWorker` imports cleanly (executed)
+# app factory, no module-level `app`: gunicorn calls `create_app()` (executed with uvicorn_worker)
+CMD ["gunicorn", "my_agent_service.main:create_app()", \
+     "--worker-class", "uvicorn_worker.UvicornWorker", \
      "--workers", "4", \
      "--bind", "0.0.0.0:8000", \
      "--timeout", "120", \

@@ -146,6 +146,11 @@ settings = Settings()
 □ .env.example committed with all keys present, values as placeholders
 □ Different environments use same code, different env injection (CI/CD sets vars)
 □ Secrets injected via CI/CD secrets (GitHub Actions secrets → env vars), never in compose files
+□ Config is not baked into the image: no ENV for env-varying values (use ARG at build time only), compose uses bare ${VAR} with no :-default
+□ The key set is identical across local / staging / production templates (parity check in CI, with a known-bad control)
+□ Every var the code reads that is present in a deploy template is ALSO wired in the infrastructure code of each deployed service
+  (a grep gate cannot see BaseSettings fields or computed names: verify by hand with a control grep, known-present var count = 1)
+□ Required settings have NO code default, so a missing one fails startup loudly
 ```
 
 ---

@@ -23,11 +23,14 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] `USER` directive set before `EXPOSE` and `CMD`
 - [ ] `COPY --chown=user:group` used when copying files to non-root-owned directories
 - [ ] No secrets, API keys, or passwords in `ENV`, `ARG`, or `RUN` commands
-- [ ] Base images pinned to specific minor version (e.g., `node:24-alpine`, not `node:latest`)
+- [ ] Base images pinned to a minor version AND a multi-arch index digest (`image:tag@sha256:...`); no `:latest`; no `COPY --from=<image-ref>` (use a pinned `FROM ... AS stage`); `# syntax=` pinned
 - [ ] `HEALTHCHECK` configured with appropriate interval, timeout, start-period, and retries
   - NestJS/Fastify: `wget --spider http://localhost:3000/health/live`
   - Spring Boot: `wget --spider http://localhost:8080/actuator/health`
-  - Python: `python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"`
+  - Python: stdlib only, on the LIVENESS path: `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"` (a slim image has no curl, and httpx may not be a runtime dependency)
+- [ ] Configuration is not baked into the image: no `ENV` for env-varying values, no secrets in `ARG`; required settings have no code default
+- [ ] `.dockerignore` is an ALLOW-list (`*` then `!src`, `!pyproject.toml`, `!uv.lock`) and the build-context size is checked; image file list compared before/after the change
+- [ ] `CMD` is exec form, or a shell form that `exec`s the server, so PID 1 receives SIGTERM
 
 ## Docker Compose
 
@@ -78,10 +81,11 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] `start-period` in HEALTHCHECK is at least 40s (Spring Boot startup time)
 
 ### Python FastAPI 3.14
-- [ ] Uses `uv` (not pip) — copied from `ghcr.io/astral-sh/uv:latest`
-- [ ] `uv sync --no-dev --frozen` for production (reproducible installs)
+- [ ] Uses `uv` (not pip) — from a pinned stage `FROM ghcr.io/astral-sh/uv:<x.y.z>@sha256:... AS uv`, never `:latest`, never `pip install uv`
+- [ ] `uv sync --locked --no-dev` (fails on a stale lock; `--frozen` installs it silently); deps layer uses `--no-install-project`, project layer `--no-editable`
+- [ ] `UV_PYTHON_DOWNLOADS=0` so the venv uses the image's Python, which exists in the runtime stage
+- [ ] Framework (and any instrumentation library) pinned `==` in `pyproject.toml`; a test asserts spans are emitted
 - [ ] `PYTHONUNBUFFERED=1` and `PYTHONDONTWRITEBYTECODE=1` set
-- [ ] `PYTHONPATH` set to `/app/src`
 
 ### TypeScript/Fastify / Node 24
 - [ ] Uses `npm ci --only=production` for production deps stage

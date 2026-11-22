@@ -121,10 +121,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<40-hex-sha> # v4.x.y (pin by SHA; see deployment-ci-cd/reference/python-ci-supply-chain.md)
 
       - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@<40-hex-sha> # v2.x.y
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}

@@ -1,541 +1,182 @@
-# Gemini Live API — Real-time Voice Streaming
+# Gemini Live API — Real-time Voice (optional provider extension)
 
-> Model: `gemini-live-2.5-flash-native-audio`
-> Protocol: WebSocket (bidirectional audio bytes)
-> SDK: `google-genai` (Python) — NEVER `google-generativeai` (deprecated)
-
-## Overview
-
-The Gemini Live API enables sub-second latency (~600ms) real-time voice conversations via WebSocket streaming. Key features:
-- **Barge-in**: user can interrupt while the model is speaking
-- **Affective dialogue**: emotion-aware responses
-- **Multimodal**: simultaneous audio + camera/video input
-- **Raw audio bytes**: PCM 16-bit, 16kHz, mono input; PCM output
+> OPTIONAL. Use only when a live speech-to-speech session is required (see the architecture choice in `../SKILL.md`). Verified against `google-genai` 3.6.1 (Python) by executing the code in sections 3-5 against a real `AsyncSession` wired to a scripted fake websocket (no network, no provider call). Re-check signatures for your pinned SDK version.
+>
+> Model id and voice name come from settings (`LIVE_MODEL`, `LIVE_VOICE`), never from code or this file. Pick them from the provider's models page and prebuilt-voice list, then probe the id on every backend you deploy to (`gemini-api-dev` skill).
 
 ---
 
-## 1. WebSocket Connection Setup
+## 1. Facts to design around
 
-```python
-import asyncio
-import logging
-from google import genai
-from google.genai import types
+| Fact | Value | Source |
+|------|-------|--------|
+| Input audio | raw 16-bit PCM, 16 kHz, little-endian, mime `audio/pcm;rate=16000` | Live API docs |
+| Output audio | raw 16-bit PCM, 24 kHz, little-endian | Live API docs |
+| Session length without compression | audio-only 15 min; audio + video 2 min | Live API session-management docs |
+| Connection lifetime | around 10 min; the server sends `go_away` before it ends | same page |
+| Longer sessions | `context_window_compression` (sliding window) | same page |
+| Resume after a dropped connection | `session_resumption`; tokens valid 2 h after the last session ends | same page |
+| Browser → provider directly | use ephemeral tokens, not a standard API key | Live API docs |
 
-logger = logging.getLogger(__name__)
-
-client = genai.Client()  # reads GOOGLE_API_KEY from env
-
-LIVE_CONFIG = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Aoede"  # Options: Aoede, Lyra, Orion
-            )
-        )
-    ),
-    system_instruction=types.Content(
-        parts=[types.Part(text="You are a helpful voice assistant. Be concise.")]
-    ),
-)
-
-
-async def connect_live_session():
-    """Open a Live API session. Caller must use as async context manager."""
-    return client.aio.live.connect(
-        model="gemini-live-2.5-flash-native-audio",
-        config=LIVE_CONFIG,
-    )
-```
+Limits change: re-read the session-management page before relying on a number (fetched 2026-11-22).
 
 ---
 
-## 2. Real-time Audio Streaming — Send and Receive
+## 2. API correctness (WRONG → RIGHT)
+
+| ❌ Wrong | ✅ Right | Evidence |
+|---------|---------|----------|
+| `await session.send(input=..., end_of_turn=True)` | `send_client_content(turns=..., turn_complete=True)` for text turns; `send_realtime_input(...)` for media | SDK marks `session.send` deprecated |
+| `send_realtime_input(types.Blob(...))` (positional) | `send_realtime_input(audio=types.Blob(...))` | keyword-only: positional raises `TypeError` (executed) |
+| `send_realtime_input(text=..., audio_stream_end=True)` | one field per call | raises `ValueError: Only one argument can be set` (executed) |
+| `types.AudioChunk(...)` as realtime input | `types.Blob(data=..., mime_type=...)` | `audio=`/`video=`/`media=` accept `Blob` |
+| `session = await client.aio.live.connect(...)` | `async with client.aio.live.connect(model=..., config=...) as session:` | `connect` returns an async context manager, not an awaitable |
+| `async for msg in session:` | `async for msg in session.receive():` | `AsyncSession` is not iterable |
+| One `async for msg in session.receive()` relay loop | wrap it in `while True:` | `receive()` yields ONE model turn then stops (executed: second turn never read) |
+| `google.api_core.exceptions.ResourceExhausted` | `google.genai.errors.APIError` (`ClientError`/`ServerError`), branch on `exc.code` | `google-api-core` is not a dependency of `google-genai` |
+| `"SESSION_EXPIRED" in str(exc)` | handle `msg.go_away` + reconnect with the resumption handle | string-matching exception text is fragile and leaks it into code paths |
+| End of user turn = in-band `b"END"` audio sentinel | client sends a text control frame; server calls `send_realtime_input(audio_stream_end=True)` (or `activity_end` when automatic VAD is disabled) | control and audio are different channels |
+
+---
+
+## 3. Config and send helpers (executed)
 
 ```python
-import asyncio
-import logging
-from google import genai
-from google.genai import types
-
-logger = logging.getLogger(__name__)
-client = genai.Client()
+from google.genai import live, types
 
 
-async def voice_session(audio_input_queue: asyncio.Queue, audio_output_queue: asyncio.Queue) -> None:
-    """
-    Bidirectional audio streaming session.
-
-    Args:
-        audio_input_queue: Queue of raw PCM bytes from the user microphone.
-        audio_output_queue: Queue where synthesized PCM bytes are placed for playback.
-    """
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
+def live_config(voice_name: str, resume_handle: str | None) -> types.LiveConnectConfig:
+    return types.LiveConnectConfig(
+        response_modalities=[types.Modality.AUDIO],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
             )
+        ),
+        input_audio_transcription=types.AudioTranscriptionConfig(),   # user speech → text events
+        session_resumption=types.SessionResumptionConfig(handle=resume_handle),
+        context_window_compression=types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow()
         ),
     )
 
-    try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            send_task = asyncio.create_task(_send_audio(session, audio_input_queue))
-            receive_task = asyncio.create_task(_receive_audio(session, audio_output_queue))
-            await asyncio.gather(send_task, receive_task)
 
-    except Exception as exc:
-        logger.error(
-            "Live API session failed",
-            exc_info=exc,
-            extra={"model": "gemini-live-2.5-flash-native-audio"},
-        )
-        raise
+async def send_user_audio(session: live.AsyncSession, pcm16_16khz: bytes) -> None:
+    await session.send_realtime_input(
+        audio=types.Blob(data=pcm16_16khz, mime_type="audio/pcm;rate=16000")
+    )
 
 
-async def _send_audio(session, audio_input_queue: asyncio.Queue) -> None:
-    """Send raw PCM chunks to the Live API session."""
-    try:
-        while True:
-            chunk: bytes = await audio_input_queue.get()
-            if chunk is None:
-                # None is the sentinel to end the session
-                await session.send(input=types.AudioChunk(data=b""), end_of_turn=True)
-                break
-            await session.send(
-                input=types.AudioChunk(
-                    data=chunk,
-                    mime_type="audio/pcm;rate=16000",
+async def end_user_audio(session: live.AsyncSession) -> None:
+    await session.send_realtime_input(audio_stream_end=True)
+
+
+async def send_user_text(session: live.AsyncSession, text: str) -> None:
+    await session.send_client_content(
+        turns=types.Content(role="user", parts=[types.Part(text=text)]), turn_complete=True
+    )
+```
+
+Executed wire shapes: `{"realtime_input": {"audio": {...}}}`, `{"realtime_input": {"audioStreamEnd": true}}`, `{"client_content": {..., "turnComplete": true}}`.
+
+Camera frames (multimodal, optional): `send_realtime_input(video=types.Blob(data=jpeg, mime_type="image/jpeg"))` at a low frame rate; audio + video sessions have the much shorter limit in section 1.
+
+---
+
+## 4. Relay model output across turns (executed)
+
+```python
+class ClientChannel(Protocol):
+    async def send_audio(self, pcm: bytes) -> None: ...
+    async def send_event(self, kind: str, **fields: Any) -> None: ...
+
+
+async def relay_model_to_client(session: live.AsyncSession, client: ClientChannel) -> str | None:
+    """Returns the latest resumption handle when the server announces go_away."""
+    handle: str | None = None
+    while True:                                   # receive() yields ONE model turn, then stops
+        async for msg in session.receive():
+            update = msg.session_resumption_update
+            if update and update.resumable and update.new_handle:
+                handle = update.new_handle
+            if msg.go_away is not None:
+                return handle                     # caller reconnects with this handle
+            content = msg.server_content
+            if content is None:
+                continue
+            if content.interrupted:               # barge-in: client drops unplayed audio
+                await client.send_event("interrupted")
+                continue
+            if msg.data:
+                await client.send_audio(msg.data)
+            if content.input_transcription and content.input_transcription.text:
+                # interim text is replaceable; only finished=True is authoritative
+                await client.send_event(
+                    "final" if content.input_transcription.finished else "interim",
+                    text=content.input_transcription.text,
                 )
-            )
-    except Exception as exc:
-        logger.error("Audio send failed", exc_info=exc)
-        raise
-
-
-async def _receive_audio(session, audio_output_queue: asyncio.Queue) -> None:
-    """Receive synthesized audio bytes from the Live API session."""
-    try:
-        async for response in session.receive():
-            if response.data:
-                await audio_output_queue.put(response.data)
-            if response.server_content and response.server_content.turn_complete:
-                logger.info("Model turn complete")
-                await audio_output_queue.put(None)  # signal end of response
-    except Exception as exc:
-        logger.error("Audio receive failed", exc_info=exc)
-        raise
+            if content.turn_complete:
+                await client.send_event("turn_complete")
 ```
+
+Executed scenario: resumption update `h1` → interim + final transcription → audio → turn complete → audio → interrupted → turn complete → resumption update `h2` → `go_away`. Result: both turns' audio relayed, events `interim, final, turn_complete, interrupted, turn_complete`, handle `h2` returned. `ruff` and `mypy --strict` clean.
+
+Transcript text travels to the client in messages only. It is never logged, put in a span attribute or stored outside the conversation record (see `../SKILL.md` privacy rules).
 
 ---
 
-## 3. Barge-in Handling (Interrupt Detection)
-
-The Live API natively supports barge-in — when the user starts speaking while the model is outputting audio, the model stops. Your client must:
-1. Detect that the model was interrupted (`interrupted=True` in server content)
-2. Discard buffered audio that was not played
-3. Resume listening immediately
+## 5. Reconnect on go_away (sketch — compose from the executed pieces)
 
 ```python
-async def _receive_audio_with_barge_in(session, audio_output_queue: asyncio.Queue) -> None:
-    """Receive audio and handle barge-in interruption."""
-    pending_chunks: list[bytes] = []
-
-    try:
-        async for response in session.receive():
-            if response.server_content:
-                sc = response.server_content
-
-                if sc.interrupted:
-                    # Model was interrupted — discard unplayed audio
-                    logger.info("Barge-in detected — discarding %d buffered chunks", len(pending_chunks))
-                    pending_chunks.clear()
-                    # Signal downstream to stop playback
-                    await audio_output_queue.put({"type": "interrupt"})
-                    continue
-
-                if response.data:
-                    pending_chunks.append(response.data)
-                    await audio_output_queue.put({"type": "audio", "data": response.data})
-
-                if sc.turn_complete:
-                    logger.info("Turn complete — %d chunks delivered", len(pending_chunks))
-                    pending_chunks.clear()
-                    await audio_output_queue.put({"type": "turn_complete"})
-
-    except Exception as exc:
-        logger.error("Barge-in receive loop failed", exc_info=exc)
-        raise
+async def run_live(settings: Settings, client: genai.Client, channel: ClientChannel,
+                   audio_in: asyncio.Queue[bytes]) -> None:
+    handle: str | None = None
+    for attempt in range(settings.LIVE_MAX_RECONNECTS):
+        config = live_config(settings.LIVE_VOICE, resume_handle=handle)
+        async with client.aio.live.connect(model=settings.LIVE_MODEL, config=config) as session:
+            async with asyncio.TaskGroup() as tg:
+                sender = tg.create_task(pump_audio(session, audio_in))   # send_user_audio loop
+                handle = await relay_model_to_client(session, channel)
+                sender.cancel()
+        if handle is None:
+            await channel.send_event("error", code="LIVE_SESSION_ENDED")  # client → text input
+            return
+    await channel.send_event("error", code="LIVE_RECONNECT_LIMIT")
 ```
+
+Not executed end to end (it needs a live session). The pieces it calls are executed above. A connection or protocol failure surfaces from `receive()` as `google.genai.errors.APIError` carrying the websocket close code; map it to a fixed client code, log `error_type` and `code` only, and let the caller decide whether to reconnect.
 
 ---
 
-## 4. Multimodal Input — Audio + Camera
+## 6. Serving it to a browser or app
 
-```python
-import base64
-import asyncio
-import logging
-from google import genai
-from google.genai import types
+Never expose the paid session through an open WebSocket. The server-side proxy MUST follow `streaming-protocols/reference/server-stream-lifecycle.md` section 3: subprotocol and authentication BEFORE `accept()`, one stream per actor, frame/byte/time/idle caps, bounded queue ending in `BACKPRESSURE`, audio as binary frames and control as text frames, attempt id + monotonic `seq` on every server message, upstream session closed in `finally`.
 
-logger = logging.getLogger(__name__)
-client = genai.Client()
-
-
-async def multimodal_session(
-    audio_queue: asyncio.Queue,
-    video_frame_queue: asyncio.Queue,
-    output_queue: asyncio.Queue,
-) -> None:
-    """
-    Send audio + video frames simultaneously to Live API.
-
-    Video frames must be JPEG bytes captured from camera at ~1fps.
-    Audio must be PCM 16-bit 16kHz mono.
-    """
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Lyra")
-            )
-        ),
-    )
-
-    try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            await asyncio.gather(
-                _send_audio_stream(session, audio_queue),
-                _send_video_frames(session, video_frame_queue),
-                _receive_audio(session, output_queue),
-            )
-    except Exception as exc:
-        logger.error("Multimodal session failed", exc_info=exc)
-        raise
-
-
-async def _send_video_frames(session, video_frame_queue: asyncio.Queue) -> None:
-    """Send JPEG frames from camera to Live API."""
-    try:
-        while True:
-            frame_bytes: bytes | None = await video_frame_queue.get()
-            if frame_bytes is None:
-                break
-            await session.send(
-                input=types.Blob(
-                    data=frame_bytes,
-                    mime_type="image/jpeg",
-                )
-            )
-    except Exception as exc:
-        logger.error("Video frame send failed", exc_info=exc)
-        raise
-
-
-async def _send_audio_stream(session, audio_queue: asyncio.Queue) -> None:
-    """Send PCM audio chunks to Live API."""
-    try:
-        while True:
-            chunk: bytes | None = await audio_queue.get()
-            if chunk is None:
-                break
-            await session.send(
-                input=types.AudioChunk(data=chunk, mime_type="audio/pcm;rate=16000")
-            )
-    except Exception as exc:
-        logger.error("Audio stream send failed", exc_info=exc)
-        raise
 ```
+browser/app ──WS (auth before accept, caps)──► your proxy ──Live session──► provider
+          ◄── binary PCM 24 kHz + JSON events {type, attempt, seq} ◄──────────┘
+```
+
+Direct client-to-provider connections are an alternative only with provider ephemeral tokens minted by your authenticated backend; you then lose server-side caps, so apply quota per user on token minting.
 
 ---
 
-## 5. FastAPI WebSocket Endpoint — Browser-to-Gemini Proxy
+## 7. Errors (google-genai)
 
-```python
-import asyncio
-import logging
-from contextlib import asynccontextmanager
+| Signal | Meaning | Handling |
+|--------|---------|----------|
+| `APIError.code == 429` / status `RESOURCE_EXHAUSTED` | quota | back off with jitter (bounded attempts), then fixed client code `RATE_LIMITED`; never auto-retry a live audio turn the user already spoke without telling them |
+| `APIError.code == 400` | bad input (format, size, empty or header-only audio) | do not retry; `AUDIO_INVALID` |
+| `APIError.code in (401, 403)` | credentials / permission | do not retry; alert; `UNAVAILABLE` to client |
+| `APIError` with a websocket close code from `receive()` | connection ended | reconnect with the resumption handle if you have one, else end with a fixed code |
+| `asyncio.CancelledError` | your own shutdown / client left | re-raise; close the session via the `async with` |
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from google import genai
-from google.genai import types
-
-logger = logging.getLogger(__name__)
-client = genai.Client()
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Voice API server starting")
-    yield
-    logger.info("Voice API server shutting down")
-
-
-app = FastAPI(lifespan=lifespan)
-
-
-@app.websocket("/ws/voice")
-async def websocket_voice_endpoint(websocket: WebSocket) -> None:
-    """
-    WebSocket proxy: browser audio bytes <-> Gemini Live API.
-
-    Client sends: raw PCM bytes (16-bit, 16kHz, mono)
-    Client receives: raw PCM bytes for playback
-    Special message: b"END" signals end of user turn
-    """
-    await websocket.accept()
-    logger.info("WebSocket voice connection opened")
-
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
-            )
-        ),
-    )
-
-    try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            receive_task = asyncio.create_task(
-                _relay_gemini_to_client(session, websocket)
-            )
-
-            # Forward browser audio to Gemini
-            while True:
-                try:
-                    data = await websocket.receive_bytes()
-                except WebSocketDisconnect:
-                    logger.info("WebSocket client disconnected")
-                    break
-
-                if data == b"END":
-                    await session.send(end_of_turn=True)
-                    logger.info("End of user turn signaled to Gemini")
-                else:
-                    await session.send(
-                        input=types.AudioChunk(data=data, mime_type="audio/pcm;rate=16000")
-                    )
-
-            receive_task.cancel()
-            try:
-                await receive_task
-            except asyncio.CancelledError:
-                pass
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected during session setup")
-    except Exception as exc:
-        logger.error("Voice WebSocket session error", exc_info=exc)
-        try:
-            await websocket.close(code=1011)
-        except Exception:
-            pass
-        raise
-
-
-async def _relay_gemini_to_client(session, websocket: WebSocket) -> None:
-    """Forward synthesized audio from Gemini back to the browser client."""
-    try:
-        async for response in session.receive():
-            if response.data:
-                await websocket.send_bytes(response.data)
-            if response.server_content and response.server_content.turn_complete:
-                # Send a sentinel so client knows response is done
-                await websocket.send_text("TURN_COMPLETE")
-    except asyncio.CancelledError:
-        pass
-    except WebSocketDisconnect:
-        logger.info("Client disconnected during relay")
-    except Exception as exc:
-        logger.error("Gemini-to-client relay failed", exc_info=exc)
-        raise
-```
+Log fields: `error_type`, `code`, `status`, mime type, byte count, duration, attempt id. Never the exception message, provider error text, transcript or audio (`deployment-ci-cd/reference/python-observability.md` section 2, `log_exception`).
 
 ---
 
-## 6. LangGraph StateGraph Node — Voice I/O
+## 8. Voices and style
 
-```python
-import asyncio
-import logging
-from typing import TypedDict
+Voice names come from the provider's prebuilt-voice list (the docs list about 30; their examples use names such as `Kore` and `Puck`). Do not hard-code a list here: it changes. Steer style through the system instruction ("speak calmly and briefly"). Custom voices, if your provider offers them, have their own consent and licensing requirements: check the provider's voices API docs before using one.
 
-from langgraph.graph import StateGraph, END
-from google import genai
-from google.genai import types
-
-logger = logging.getLogger(__name__)
-client = genai.Client()
-
-
-class VoiceState(TypedDict):
-    audio_input: bytes          # raw PCM from user
-    transcript: str             # transcribed text (from Live API)
-    response_text: str          # LLM-generated response
-    audio_output: bytes         # synthesized audio bytes
-    error: str | None
-
-
-async def voice_input_node(state: VoiceState) -> VoiceState:
-    """
-    LangGraph node: stream user audio through Live API to get transcript.
-    Live API performs transcription as part of real-time processing.
-    """
-    audio_input = state.get("audio_input", b"")
-    if not audio_input:
-        logger.error("voice_input_node received empty audio_input")
-        raise ValueError("audio_input is required and must not be empty")
-
-    transcript_parts: list[str] = []
-
-    config = types.LiveConnectConfig(
-        response_modalities=["TEXT"],  # Text mode for transcription node
-        system_instruction=types.Content(
-            parts=[types.Part(text="Transcribe the user's speech exactly. Output only the transcript.")]
-        ),
-    )
-
-    try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            await session.send(
-                input=types.AudioChunk(data=audio_input, mime_type="audio/pcm;rate=16000"),
-            )
-            await session.send(end_of_turn=True)
-
-            async for response in session.receive():
-                if response.text:
-                    transcript_parts.append(response.text)
-                if response.server_content and response.server_content.turn_complete:
-                    break
-
-        transcript = "".join(transcript_parts).strip()
-        logger.info("Transcribed audio", extra={"transcript_length": len(transcript)})
-        return {**state, "transcript": transcript, "error": None}
-
-    except Exception as exc:
-        logger.error("voice_input_node failed", exc_info=exc)
-        raise
-
-
-async def voice_output_node(state: VoiceState) -> VoiceState:
-    """
-    LangGraph node: synthesize response_text to audio via Live API.
-    """
-    response_text = state.get("response_text", "")
-    if not response_text:
-        logger.error("voice_output_node received empty response_text")
-        raise ValueError("response_text is required and must not be empty")
-
-    audio_chunks: list[bytes] = []
-
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
-            )
-        ),
-    )
-
-    try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            await session.send(input=response_text, end_of_turn=True)
-
-            async for response in session.receive():
-                if response.data:
-                    audio_chunks.append(response.data)
-                if response.server_content and response.server_content.turn_complete:
-                    break
-
-        audio_output = b"".join(audio_chunks)
-        logger.info("Voice output synthesized", extra={"audio_bytes": len(audio_output)})
-        return {**state, "audio_output": audio_output, "error": None}
-
-    except Exception as exc:
-        logger.error("voice_output_node failed", exc_info=exc)
-        raise
-
-
-def build_voice_graph() -> StateGraph:
-    """Assemble a minimal voice I/O StateGraph (transcription + synthesis nodes)."""
-    graph = StateGraph(VoiceState)
-    graph.add_node("voice_input", voice_input_node)
-    graph.add_node("voice_output", voice_output_node)
-    graph.set_entry_point("voice_input")
-    graph.add_edge("voice_input", "voice_output")
-    graph.add_edge("voice_output", END)
-    return graph.compile()
-```
-
----
-
-## 7. Error Handling Reference
-
-| Error | Cause | Handling |
-|-------|-------|----------|
-| `asyncio.CancelledError` | Session cancelled (barge-in, shutdown) | Let propagate — do NOT suppress |
-| `websockets.ConnectionClosed` | Network drop | Log + raise; let caller decide retry |
-| `google.api_core.exceptions.ResourceExhausted` | Rate limit (429) | Exponential backoff, max 3 retries |
-| `google.api_core.exceptions.Unauthenticated` | Bad API key | Log "API key invalid", raise immediately |
-| Audio format mismatch | Non-PCM or wrong rate sent | Validate before send: 16-bit, 16kHz, mono |
-| Empty audio input | Silent microphone or buffer issue | Raise `ValueError` — never send empty bytes |
-
-```python
-from google.api_core import exceptions as google_exceptions
-import asyncio
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-async def with_rate_limit_retry(coro, max_retries: int = 3):
-    """Retry a coroutine on rate limit with exponential backoff."""
-    delay = 1.0
-    for attempt in range(max_retries):
-        try:
-            return await coro
-        except google_exceptions.ResourceExhausted as exc:
-            if attempt == max_retries - 1:
-                logger.error("Rate limit exceeded after %d retries", max_retries, exc_info=exc)
-                raise
-            logger.warning("Rate limited — retrying in %.1fs (attempt %d)", delay, attempt + 1)
-            await asyncio.sleep(delay)
-            delay *= 2
-        except google_exceptions.Unauthenticated as exc:
-            logger.error("Gemini API authentication failed — check GOOGLE_API_KEY", exc_info=exc)
-            raise  # No retry for auth failures
-```
-
----
-
-## 8. Voice Selection Guide
-
-| Voice | Characteristics | Best For |
-|-------|----------------|----------|
-| Aoede | Warm, conversational | General assistant, customer support |
-| Lyra | Clear, neutral | Information delivery, e-learning |
-| Orion | Confident, energetic | Interactive characters, gaming |
-
-Style can be influenced via system instruction:
-```python
-system_instruction="Speak in a calm, empathetic tone suitable for mental wellness conversations."
-```
+Framework wiring: LangGraph → `voice-langgraph-integration.md`; ADK → `voice-adk-integration.md`; worker pipeline with interrupts → `worker-pipeline.md`, `interrupt-handling.md`.

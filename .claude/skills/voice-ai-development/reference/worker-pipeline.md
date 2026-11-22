@@ -1,6 +1,6 @@
 # Worker Pipeline — BaseWorker Pattern + Gemini Implementations
 
-Full implementation of the async worker pipeline: abstract base classes, concrete Gemini workers, and FastAPI wiring.
+Async worker pipeline (optional voice extension): base classes, Gemini workers, FastAPI wiring. Executed: `GeminiTranscriberWorker` against a real `google-genai` 3.6.1 `AsyncSession` on a scripted websocket (interim + final transcripts across two turns, `go_away`). The rest is illustrative wiring, not executed; `admit` = `streaming-protocols/reference/server-stream-lifecycle.md` §3, `make_genai_client` = `gemini-provider-setup.md`.
 
 ---
 
@@ -16,6 +16,10 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 log = structlog.get_logger()
+
+
+class WorkerFailedError(Exception):
+    """A worker hit MAX_CONSECUTIVE_FAILURES; the session must end with an error state."""
 
 
 class BaseWorker(ABC):
@@ -37,17 +41,29 @@ class BaseWorker(ABC):
         self._task = asyncio.create_task(self._run_loop())
         self._log.info("worker_started")
 
+    MAX_CONSECUTIVE_FAILURES = 3
+
     async def _run_loop(self) -> None:
-        """Main processing loop — runs until terminate() is called."""
+        """Main processing loop — runs until terminate() is called.
+
+        One failed item is logged and skipped; N failures in a row end the worker with
+        WorkerFailedError. The orchestrator watches worker tasks and turns that into ONE
+        client error frame (fixed code, e.g. VOICE_UNAVAILABLE) so the client switches to
+        text input. Never loop forever on a broken provider.
+        """
+        failures = 0
         while self.active:
+            item = await self.input_queue.get()
             try:
-                item = await self.input_queue.get()
                 await self.process(item)
+                failures = 0
             except asyncio.CancelledError:
                 raise  # Never swallow CancelledError
             except Exception as exc:
-                self._log.error("worker_error", error=str(exc), exc_info=True)
-                # Continue loop — worker recovers from transient errors
+                failures += 1
+                self._log.error("worker_error", error_type=type(exc).__name__, consecutive=failures)
+                if failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    raise WorkerFailedError(self.__class__.__name__) from exc
 
     @abstractmethod
     async def process(self, item: Any) -> None:
@@ -202,7 +218,7 @@ class BaseAgent(BaseWorker):
         except asyncio.CancelledError:
             self._log.info("agent_generation_cancelled")
         except Exception as exc:
-            self._log.error("agent_generation_failed", error=str(exc), exc_info=True)
+            self._log.error("agent_generation_failed", error_type=type(exc).__name__)
             raise
 
     @abstractmethod
@@ -249,7 +265,7 @@ class BaseSynthesizer(BaseWorker):
             result = await self.create_speech(response)
             await self.output_queue.put(result)
         except Exception as exc:
-            self._log.error("synthesizer_failed", error=str(exc), exc_info=True)
+            self._log.error("synthesizer_failed", error_type=type(exc).__name__)
             raise
 
     @abstractmethod
@@ -266,9 +282,10 @@ class BaseSynthesizer(BaseWorker):
 ```python
 # src/workers/gemini_transcriber.py
 import asyncio
+import contextlib
 import structlog
 from google import genai
-from google.genai import types
+from google.genai import live, types
 from .transcriber_base import BaseTranscriber, Transcription
 
 log = structlog.get_logger()
@@ -276,77 +293,74 @@ log = structlog.get_logger()
 
 class GeminiTranscriberWorker(BaseTranscriber):
     """
-    Streams raw PCM audio to Gemini Live API via WebSocket.
-    Produces Transcription objects for the agent worker.
-    Uses gemini-live-2.5-flash-native-audio with native barge-in.
+    Streams raw PCM audio to a Gemini Live session and emits the INPUT transcription
+    (what the user said) as Transcription objects. Model id comes from settings.
+    API shapes: gemini-live-api.md (verified against google-genai 3.6.1).
     """
 
-    def __init__(
-        self,
-        output_queue: asyncio.Queue,
-        client: genai.Client,
-        model: str = "gemini-live-2.5-flash-native-audio",
-        system_instruction: str = "You are a helpful voice assistant.",
-    ) -> None:
+    def __init__(self, output_queue: asyncio.Queue, client: genai.Client, *, model: str) -> None:
         super().__init__(output_queue=output_queue)
         self._client = client
         self._model = model
-        self._system_instruction = system_instruction
-        self._session: genai.live.AsyncSession | None = None
+        self._stack = contextlib.AsyncExitStack()
+        self._session: live.AsyncSession | None = None
         self._receiver_task: asyncio.Task | None = None
         self._log = log.bind(worker="GeminiTranscriberWorker")
 
     async def connect(self) -> None:
-        """Open Gemini Live API WebSocket session. Call before start()."""
+        """Open the Live session (an async context manager). Call before start()."""
         config = types.LiveConnectConfig(
-            response_modalities=["TEXT"],  # TEXT for transcript; AUDIO for S2S
-            system_instruction=self._system_instruction,
+            response_modalities=[types.Modality.TEXT],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
         )
-        self._session = await self._client.aio.live.connect(
-            model=self._model, config=config
+        self._session = await self._stack.enter_async_context(
+            self._client.aio.live.connect(model=self._model, config=config)
         )
         self._log.info("gemini_live_connected", model=self._model)
-        # Start receiver coroutine alongside sender loop
         self._receiver_task = asyncio.create_task(self._receive_loop())
 
     async def _receive_loop(self) -> None:
-        """Receive transcription responses from Gemini Live API."""
+        assert self._session is not None
         try:
-            async for response in self._session:
-                if response.server_content and response.server_content.model_turn:
-                    for part in response.server_content.model_turn.parts:
-                        if part.text and part.text.strip():
-                            transcription = Transcription(
-                                message=part.text.strip(),
-                                is_final=True,
-                                confidence=1.0,
-                            )
-                            await self.output_queue.put(transcription)
-                            self._log.info("transcribed", text=part.text.strip())
+            while True:  # receive() yields ONE model turn, then stops
+                async for msg in self._session.receive():
+                    content = msg.server_content
+                    heard = content.input_transcription if content else None
+                    if heard and heard.text and heard.text.strip():
+                        await self.output_queue.put(
+                            Transcription(message=heard.text.strip(), is_final=bool(heard.finished))
+                        )
+                        self._log.info("transcribed", chars=len(heard.text), final=bool(heard.finished))
+                    if msg.go_away is not None:
+                        self._log.warning("gemini_live_go_away")   # orchestrator reconnects
+                        return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._log.error("receiver_loop_failed", error=str(exc), exc_info=True)
+            self._log.error("receiver_loop_failed", error_type=type(exc).__name__)
             raise
 
     async def process(self, chunk: bytes) -> None:
-        """Send one audio chunk to Gemini Live API."""
+        """Send one audio chunk (keyword-only, one field per call)."""
         if self._session is None:
             self._log.error("gemini_live_not_connected")
             raise RuntimeError("GeminiTranscriberWorker: session not connected. Call connect() first.")
         try:
             await self._session.send_realtime_input(
-                types.Blob(data=chunk, mime_type="audio/pcm;rate=16000")
+                audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000")
             )
         except Exception as exc:
-            self._log.error("send_audio_failed", error=str(exc), exc_info=True)
+            self._log.error("send_audio_failed", error_type=type(exc).__name__, audio_bytes=len(chunk))
             raise
 
-    def terminate(self) -> None:
-        super().terminate()
+    async def close(self) -> None:
+        self.terminate()
         if self._receiver_task and not self._receiver_task.done():
             self._receiver_task.cancel()
+        await self._stack.aclose()   # closes the Live session
 ```
+
+Only `is_final=True` transcriptions may drive the agent; interim ones are display-only and replaced by the next.
 
 ### GeminiSynthesizerWorker
 
@@ -379,8 +393,9 @@ class GeminiSynthesizerWorker(BaseSynthesizer):
         input_queue: asyncio.Queue,
         output_queue: asyncio.Queue,
         client: genai.Client,
-        model: str = "gemini-2.5-flash-tts-preview",
-        voice: str = "Aoede",
+        *,
+        model: str,   # settings.TTS_MODEL_FAST — never a literal
+        voice: str,   # settings.LIVE_VOICE / TTS voice from the configured allowlist
     ) -> None:
         super().__init__(input_queue=input_queue, output_queue=output_queue)
         self._client = client
@@ -409,10 +424,15 @@ class GeminiSynthesizerWorker(BaseSynthesizer):
                 ),
             )
         except Exception as exc:
-            self._log.error("tts_api_failed", text_preview=text[:50], error=str(exc), exc_info=True)
+            self._log.error("tts_api_failed", text_chars=len(text), error_type=type(exc).__name__)
             raise
 
-        audio_bytes: bytes = api_response.candidates[0].content.parts[0].inline_data.data
+        candidate = api_response.candidates[0] if api_response.candidates else None
+        parts = candidate.content.parts if candidate and candidate.content else None
+        if not parts or not parts[0].inline_data or not parts[0].inline_data.data:
+            self._log.error("tts_no_audio", text_chars=len(text))   # blocked or empty: an error, not silence
+            raise RuntimeError("TTS returned no audio")
+        audio_bytes: bytes = parts[0].inline_data.data
         self._log.info("tts_synthesized", bytes=len(audio_bytes))
 
         # Build message-up-to function for interrupt handling
@@ -487,8 +507,9 @@ class LangGraphAgentWorker(BaseAgent):
         input_queue: asyncio.Queue,
         output_queue: asyncio.Queue,
         system_prompt: str = "You are a helpful voice assistant. Keep responses concise and conversational.",
-        gemini_model: str = "gemini-2.5-flash",
-        google_api_key: str | None = None,
+        *,
+        gemini_model: str,                  # settings value — never a literal
+        google_api_key: str | None = None,  # local dev only; deployed envs are keyless
     ) -> None:
         super().__init__(input_queue=input_queue, output_queue=output_queue)
         self._system_prompt = system_prompt
@@ -523,7 +544,7 @@ class LangGraphAgentWorker(BaseAgent):
             self._log.info("langgraph_response_generated", chars=len(response_text))
             yield response_text
         except Exception as exc:
-            self._log.error("langgraph_generation_failed", error=str(exc), exc_info=True)
+            self._log.error("langgraph_generation_failed", error_type=type(exc).__name__)
             raise
 ```
 
@@ -555,7 +576,8 @@ class ADKAgentWorker(BaseAgent):
         output_queue: asyncio.Queue,
         app_name: str = "voice-agent",
         system_prompt: str = "You are a helpful voice assistant. Keep responses concise.",
-        gemini_model: str = "gemini-2.5-flash",
+        *,
+        gemini_model: str,                  # settings value — never a literal
     ) -> None:
         super().__init__(input_queue=input_queue, output_queue=output_queue)
         self._app_name = app_name
@@ -620,7 +642,7 @@ class ADKAgentWorker(BaseAgent):
             self._log.info("adk_response_generated", chars=len(full_response))
             yield full_response
         except Exception as exc:
-            self._log.error("adk_generation_failed", error=str(exc), exc_info=True)
+            self._log.error("adk_generation_failed", error_type=type(exc).__name__)
             raise
 ```
 
@@ -651,7 +673,7 @@ config = VoiceEngineConfig()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    app.state.gemini_client = genai.Client(api_key=config.gemini_api_key)
+    app.state.gemini_client = make_genai_client(config)   # auth matrix: gemini-provider-setup.md
     log.info("voice_engine_started")
     yield
     # Shutdown
@@ -663,13 +685,18 @@ app = FastAPI(title="Voice AI Engine", lifespan=lifespan)
 
 @app.websocket("/conversation")
 async def conversation_endpoint(websocket: WebSocket) -> None:
-    await websocket.accept()
-    log.info("client_connected", client=websocket.client)
+    # Subprotocol + authentication + one-stream-per-actor BEFORE accept(); admit() closes
+    # with 1008 and returns None on refusal. Pattern and tests:
+    # streaming-protocols/reference/server-stream-lifecycle.md section 3.
+    principal = await admit(websocket)
+    if principal is None:
+        return
+    log.info("client_connected", attempt_id=principal.attempt_id)   # ids only, never IP or transcript
 
-    # Build queues
-    transcription_queue: asyncio.Queue = asyncio.Queue()
-    agent_queue: asyncio.Queue = asyncio.Queue()
-    synthesis_queue: asyncio.Queue = asyncio.Queue()
+    # Bounded queues: a slow stage ends the session with BACKPRESSURE instead of growing memory
+    transcription_queue: asyncio.Queue = asyncio.Queue(maxsize=32)
+    agent_queue: asyncio.Queue = asyncio.Queue(maxsize=8)
+    synthesis_queue: asyncio.Queue = asyncio.Queue(maxsize=8)
 
     client: genai.Client = websocket.app.state.gemini_client
 
@@ -677,20 +704,19 @@ async def conversation_endpoint(websocket: WebSocket) -> None:
     transcriber = GeminiTranscriberWorker(
         output_queue=transcription_queue,
         client=client,
-        model=config.gemini_live_model,
-        system_instruction="You are a helpful voice assistant.",
+        model=config.LIVE_MODEL,
     )
     agent = LangGraphAgentWorker(
         input_queue=transcription_queue,
         output_queue=agent_queue,
-        google_api_key=config.gemini_api_key,
+        gemini_model=config.AGENT_MODEL,
     )
     synthesizer = GeminiSynthesizerWorker(
         input_queue=agent_queue,
         output_queue=synthesis_queue,
         client=client,
-        model=config.gemini_tts_model,
-        voice=config.gemini_tts_voice,
+        model=config.TTS_MODEL_FAST,
+        voice=config.LIVE_VOICE,
     )
 
     # Create conversation orchestrator
@@ -705,16 +731,18 @@ async def conversation_endpoint(websocket: WebSocket) -> None:
     try:
         await conversation.start()
 
+        # Enforce frame/byte/time/idle caps here (run_attempt in server-stream-lifecycle.md)
         async for message in websocket.iter_bytes():
             conversation.receive_audio(message)
 
     except WebSocketDisconnect:
         log.info("client_disconnected")
     except Exception as exc:
-        log.error("conversation_error", error=str(exc), exc_info=True)
+        log.error("conversation_error", error_type=type(exc).__name__)
         raise
     finally:
         await conversation.terminate()
+        await transcriber.close()        # closes the Live session
 
 
 @app.get("/health")
@@ -783,7 +811,9 @@ class StreamingConversation:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                self._log.error("output_loop_error", error=str(exc), exc_info=True)
+                self._log.error("output_loop_error", error_type=type(exc).__name__)
+                await self._ws.send_text('{"type":"error","code":"VOICE_UNAVAILABLE"}')  # client → text input
+                raise
 
     async def _send_speech(self, result: SynthesisResult) -> None:
         """Rate-limited audio delivery with interrupt check. See interrupt-handling.md."""
@@ -822,58 +852,6 @@ class StreamingConversation:
 
 ---
 
-## Provider Factory
+## Provider Selection
 
-```python
-# src/factory.py
-import asyncio
-from google import genai
-from .config import VoiceEngineConfig
-from .workers.gemini_transcriber import GeminiTranscriberWorker
-from .workers.gemini_synthesizer import GeminiSynthesizerWorker
-from .workers.langgraph_agent import LangGraphAgentWorker
-from .workers.adk_agent import ADKAgentWorker
-
-
-class VoiceComponentFactory:
-    """Creates voice pipeline components from config."""
-
-    def __init__(self, config: VoiceEngineConfig, client: genai.Client) -> None:
-        self._config = config
-        self._client = client
-
-    def create_transcriber(self, output_queue: asyncio.Queue) -> GeminiTranscriberWorker:
-        return GeminiTranscriberWorker(
-            output_queue=output_queue,
-            client=self._client,
-            model=self._config.gemini_live_model,
-        )
-
-    def create_agent_langgraph(
-        self, input_queue: asyncio.Queue, output_queue: asyncio.Queue
-    ) -> LangGraphAgentWorker:
-        return LangGraphAgentWorker(
-            input_queue=input_queue,
-            output_queue=output_queue,
-            google_api_key=self._config.gemini_api_key,
-        )
-
-    def create_agent_adk(
-        self, input_queue: asyncio.Queue, output_queue: asyncio.Queue
-    ) -> ADKAgentWorker:
-        return ADKAgentWorker(
-            input_queue=input_queue,
-            output_queue=output_queue,
-        )
-
-    def create_synthesizer(
-        self, input_queue: asyncio.Queue, output_queue: asyncio.Queue
-    ) -> GeminiSynthesizerWorker:
-        return GeminiSynthesizerWorker(
-            input_queue=input_queue,
-            output_queue=output_queue,
-            client=self._client,
-            model=self._config.gemini_tts_model,
-            voice=self._config.gemini_tts_voice,
-        )
-```
+The wiring above (`src/main.py`) constructs each worker from settings. A `VoiceComponentFactory` was removed here: it duplicated that wiring for one provider per role. Add a factory only when 3+ interchangeable providers exist (`.claude/rules/core-behaviors.md` §4); provider trade-offs: `provider-comparison.md`.

@@ -233,7 +233,7 @@ class TranscriptionsWorker(BaseWorker):
             interrupted = self._conversation.broadcast_interrupt()
             if interrupted:
                 transcription.is_interrupt = True
-                self._log.info("user_interrupted_bot", text=transcription.message)
+                self._log.info("user_interrupted_bot", chars=len(transcription.message))
 
         await self.output_queue.put(transcription)
 ```
@@ -256,59 +256,13 @@ if cut_off:
 
 ## Error Recovery
 
-### Gemini Live Session Timeout
+### Gemini Live Session End (go_away) and Reconnect
 
-Sessions expire. The transcriber must reconnect transparently.
-
-```python
-# src/workers/gemini_transcriber.py (enhanced with reconnect)
-async def _receive_loop(self) -> None:
-    while self.active:
-        try:
-            async for response in self._session:
-                # ... process responses
-                pass
-        except Exception as exc:
-            if "SESSION_EXPIRED" in str(exc) or "session" in str(exc).lower():
-                self._log.warning("gemini_live_session_expired_reconnecting")
-                await self._reconnect()
-            else:
-                self._log.error("receive_loop_fatal", error=str(exc), exc_info=True)
-                raise
-
-async def _reconnect(self) -> None:
-    backoff = 1.0
-    for attempt in range(5):
-        try:
-            config = types.LiveConnectConfig(response_modalities=["TEXT"])
-            self._session = await self._client.aio.live.connect(
-                model=self._model, config=config
-            )
-            self._log.info("gemini_live_reconnected", attempt=attempt)
-            return
-        except Exception as exc:
-            self._log.error("reconnect_failed", attempt=attempt, error=str(exc))
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30.0)
-    raise RuntimeError("GeminiTranscriberWorker: failed to reconnect after 5 attempts")
-```
+Connections end (around 10 min; the server sends `go_away` first). Do NOT detect this by searching exception text (`"SESSION_EXPIRED" in str(exc)` is fragile and pulls exception text into control flow). Track the resumption handle and reconnect with it: `gemini-live-api.md` sections 4-5 (executed relay + reconnect sketch). In the worker, `_receive_loop` returns on `go_away` (see `worker-pipeline.md`); the orchestrator then closes the old session and calls `connect()` again (give it a `resume_handle` parameter that sets `SessionResumptionConfig(handle=...)`), with a bounded number of attempts and backoff. When attempts run out, send one client error frame (`LIVE_RECONNECT_LIMIT`) so the client switches to text input.
 
 ### Worker-Level Error Recovery
 
-Workers recover from transient errors and continue processing:
-
-```python
-async def _run_loop(self) -> None:
-    while self.active:
-        try:
-            item = await self.input_queue.get()
-            await self.process(item)
-        except asyncio.CancelledError:
-            raise  # Always propagate cancellation
-        except Exception as exc:
-            self._log.error("worker_error_recovering", error=str(exc), exc_info=True)
-            # Worker continues — transient errors do not crash the pipeline
-```
+One failed item is logged and skipped; `MAX_CONSECUTIVE_FAILURES` in a row end the worker with `WorkerFailedError` and the session with an error state (`worker-pipeline.md` BaseWorker). Never loop forever logging the same provider failure while the user hears silence.
 
 ---
 

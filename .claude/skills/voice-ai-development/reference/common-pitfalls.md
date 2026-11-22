@@ -20,10 +20,10 @@ import google.generativeai as genai
 # CORRECT — current SDK with Live API support
 from google import genai
 from google.genai import types
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+client = make_genai_client(settings)   # auth matrix: gemini-provider-setup.md
 ```
 
-**Fix:** `uv add "google-genai>=1.0.0"`. Uninstall `google-generativeai` if present.
+**Fix:** `uv add "google-genai==<verified version>"` (exact pin + lockfile). Uninstall `google-generativeai` if present.
 
 ---
 
@@ -36,14 +36,16 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 ```python
 # WRONG — polling does not work for real-time audio
 response = await client.aio.models.generate_content(
-    model="gemini-live-2.5-flash-native-audio",
+    model=settings.LIVE_MODEL,
     contents=audio_bytes  # Not how Live API works
 )
 
-# CORRECT — WebSocket session for real-time
-session = await client.aio.live.connect(model="gemini-live-2.5-flash-native-audio", config=config)
-await session.send_realtime_input(types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
+# CORRECT — Live session (async context manager), keyword-only realtime input
+async with client.aio.live.connect(model=settings.LIVE_MODEL, config=config) as session:
+    await session.send_realtime_input(audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000"))
 ```
+
+`await client.aio.live.connect(...)` (no `async with`) and positional `send_realtime_input(types.Blob(...))` both fail: the first returns a context manager, the second raises `TypeError` (verified on google-genai 3.6.1).
 
 **Rule:** Gemini Live API is WebSocket-only. Any code that treats it like a regular `generate_content` call will fail.
 
@@ -63,12 +65,12 @@ await session.send_realtime_input(types.Blob(data=chunk, mime_type="audio/pcm;ra
 | MIME type | `audio/pcm;rate=16000` |
 
 ```python
-# WRONG — missing rate, wrong format
+# WRONG — missing rate, wrong format (and positional: TypeError)
 await session.send_realtime_input(types.Blob(data=chunk, mime_type="audio/raw"))
 
 # CORRECT
 await session.send_realtime_input(
-    types.Blob(data=chunk, mime_type="audio/pcm;rate=16000")
+    audio=types.Blob(data=chunk, mime_type="audio/pcm;rate=16000")
 )
 ```
 
@@ -128,22 +130,15 @@ def send_audio(self, chunk: bytes) -> None:
 
 ---
 
-### 6. Gemini Live Session Timeout
+### 6. Gemini Live Session / Connection End
 
-**Problem:** After 10–30 minutes, the session drops silently. Transcriptions stop but no error is raised.
+**Problem:** Transcriptions or audio stop after the first turn, or after several minutes.
 
-**Cause:** Gemini Live sessions have a maximum lifetime (~10 min inactivity, ~30 min total). Expired sessions do not always raise a clear exception immediately.
+**Causes (verified):**
+- `session.receive()` yields ONE model turn and then stops: a single `async for` relay goes quiet after turn one. Wrap it in `while True:`.
+- Connections last around 10 minutes (the server sends `go_away` first); sessions without context compression are limited (audio-only 15 min, audio + video 2 min).
 
-**Fix:** Implement session reconnect with exponential backoff. Watch for `SESSION_EXPIRED` in error messages. See `gemini-provider-setup.md` § Session Timeout and Reconnect.
-
-```python
-# Monitor for session expiry in the receive loop
-async for response in self._session:
-    ...
-# If the loop exits without explicit termination, reconnect
-if self.active:
-    await self._reconnect()
-```
+**Fix:** handle `go_away`, keep the latest `session_resumption_update.new_handle`, reconnect with `SessionResumptionConfig(handle=...)`, enable `context_window_compression` for long sessions. Never detect expiry by searching exception text. Code: `gemini-live-api.md` sections 4-5.
 
 ---
 
@@ -223,7 +218,7 @@ async def conversation_endpoint(websocket):
     except WebSocketDisconnect:
         log.info("client_disconnected")
     except Exception as exc:
-        log.error("conversation_error", error=str(exc), exc_info=True)
+        log.error("conversation_error", error_type=type(exc).__name__)
         raise
     finally:
         if conversation:
@@ -273,7 +268,7 @@ async def _run_loop(self):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._log.error("worker_error", error=str(exc), exc_info=True)
+            self._log.error("worker_error", error_type=type(exc).__name__)
             # Continue for transient errors; raise for fatal
 ```
 
@@ -293,8 +288,9 @@ async def heartbeat(websocket: WebSocket) -> None:
         try:
             await websocket.send_json({"type": "ping"})
             await asyncio.sleep(25)  # Ping every 25 seconds
-        except Exception:
-            break
+        except Exception as exc:   # socket gone: log and stop; the receive loop ends the session
+            log.info("heartbeat_stopped", error_type=type(exc).__name__)
+            return
 ```
 
 ---
@@ -304,11 +300,11 @@ async def heartbeat(websocket: WebSocket) -> None:
 | Pitfall | Root Cause | Fix |
 |---------|-----------|-----|
 | Wrong SDK | `google-generativeai` instead of `google-genai` | Use `google-genai` only |
-| Live API polling | HTTP instead of WebSocket | Use `client.aio.live.connect()` |
+| Live API polling | HTTP instead of WebSocket | `async with client.aio.live.connect(...)`; `send_realtime_input(audio=...)` |
 | Wrong audio format | Wrong sample rate or MIME type | 16kHz PCM, `audio/pcm;rate=16000` |
 | Barge-in not handled | No interrupt check in delivery loop | `InterruptibleEvent` + stop check |
 | Echo feedback | Transcriber active during bot speech | `transcriber.mute()` before delivery |
-| Session timeout | Live sessions expire ~30 min | Reconnect with exponential backoff |
+| Relay stops / session ends | `receive()` is one turn; connection ~10 min | `while True` around `receive()`; `go_away` + resumption handle |
 | Audio jumping | Multiple TTS calls | Buffer full response before TTS |
 | Interrupts broken | All chunks sent immediately | Rate-limit to real-time speed |
 | Memory leaks | No cleanup on disconnect | Always terminate in `finally` |

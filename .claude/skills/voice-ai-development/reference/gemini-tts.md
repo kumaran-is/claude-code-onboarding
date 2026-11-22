@@ -1,29 +1,29 @@
 # Gemini TTS — Text-to-Speech Models
 
-> Models: `gemini-2.5-pro-tts-preview` (high fidelity), `gemini-2.5-flash-tts-preview` (fast/cheap)
-> SDK: `google-genai` (Python) — NEVER `google-generativeai` (deprecated)
+> OPTIONAL provider extension. Model ids and voice names come from settings (`TTS_MODEL_QUALITY`, `TTS_MODEL_FAST`, `TTS_VOICE`), never literals in code: pick them from the provider's models page and prebuilt-voice list, probe each id on every backend you deploy to (`gemini-api-dev`). SDK: `google-genai` — NEVER `google-generativeai` (deprecated). Signatures checked against `google-genai` 3.6.1; the snippets below were not executed against the live API.
+>
+> Logging in these snippets uses stdlib `logging` with an `error_type` field; in a service use the toolkit's structlog `log_exception` (`deployment-ci-cd/reference/python-observability.md` section 2). Never log the text being synthesized, audio, file names or exception messages.
 
 ## Overview
 
 Gemini TTS converts text to high-quality speech with natural language style control. Features:
 - **Style via natural language**: "whispered mysterious tone", "enthusiastic Australian accent"
 - **Multi-speaker**: named speakers for podcast/dialogue generation
-- **70+ languages**: mid-sentence language switching supported
+- **Many languages**: mid-sentence language switching (check the docs' supported-language list for yours)
 - **Output**: raw PCM bytes (convertible to WAV/MP3)
 
 ---
 
 ## 1. Model Selection Guide
 
-| Scenario | Model | Reason |
-|----------|-------|--------|
-| Production audiobook | `gemini-2.5-pro-tts-preview` | Highest naturalness, prosody fidelity |
-| Podcast / interview dialogue | `gemini-2.5-pro-tts-preview` | Multi-speaker quality critical |
-| Real-time assistant reply | `gemini-2.5-flash-tts-preview` | Lower latency, cost-efficient |
-| E-learning narration | `gemini-2.5-flash-tts-preview` | Good quality at scale |
-| Video voiceover (draft) | `gemini-2.5-flash-tts-preview` | Fast iteration |
-| Video voiceover (final) | `gemini-2.5-pro-tts-preview` | Production quality |
-| Notification / short text | `gemini-2.5-flash-tts-preview` | Overkill to use pro for short phrases |
+| Scenario | Setting | Reason |
+|----------|---------|--------|
+| Production audiobook / final voiceover | `TTS_MODEL_QUALITY` | Highest naturalness, prosody fidelity |
+| Podcast / interview dialogue | `TTS_MODEL_QUALITY` | Multi-speaker quality critical |
+| Real-time assistant reply | `TTS_MODEL_FAST` | Lower latency and cost |
+| E-learning narration, drafts, notifications | `TTS_MODEL_FAST` | Good quality at scale |
+
+Which provider model fills each tier is a configuration decision recorded with an eval run, not a code change (`deployment-ci-cd/reference/llmops-release-and-rollout.md`).
 
 ---
 
@@ -44,8 +44,8 @@ def synthesize_speech(
     text: str,
     *,
     style_prompt: str = "",
-    model: str = "gemini-2.5-flash-tts-preview",
-    voice_name: str = "Aoede",
+    model: str,
+    voice_name: str,
 ) -> bytes:
     """
     Synthesize speech from text.
@@ -59,14 +59,14 @@ def synthesize_speech(
                         "enthusiastic Australian accent"
                         "slow and deliberate, as if explaining to a child"
         model: TTS model ID.
-        voice_name: Preset voice (Aoede, Lyra, Orion).
+        voice_name: Prebuilt voice name from settings (provider's voice list).
 
     Returns:
         Raw PCM audio bytes (16-bit, 24kHz, mono).
 
     Raises:
         ValueError: If text is empty.
-        google.api_core.exceptions.GoogleAPIError: On API failure.
+        google.genai.errors.APIError: On API failure (branch on exc.code).
     """
     if not text or not text.strip():
         logger.error("synthesize_speech called with empty text")
@@ -96,10 +96,13 @@ def synthesize_speech(
             ),
         )
     except Exception as exc:
-        logger.error("TTS synthesis failed", exc_info=exc, extra={"model": model})
+        logger.error("TTS synthesis failed", extra={"error_type": type(exc).__name__, "model": model})
         raise
 
-    audio_data = response.candidates[0].content.parts[0].inline_data.data
+    # A blocked or empty response has no candidate/part: treat it as an error, not silence
+    candidate = response.candidates[0] if response.candidates else None
+    parts = candidate.content.parts if candidate and candidate.content else None
+    audio_data = parts[0].inline_data.data if parts and parts[0].inline_data else None
     if not audio_data:
         logger.error("TTS returned empty audio data", extra={"model": model})
         raise RuntimeError("TTS API returned empty audio — content may have been blocked")
@@ -123,7 +126,9 @@ client = genai.Client()
 
 def synthesize_dialogue(
     turns: list[dict[str, str]],
-    model: str = "gemini-2.5-pro-tts-preview",
+    *,
+    model: str,
+    voices: tuple[str, str],
 ) -> bytes:
     """
     Synthesize a multi-speaker dialogue.
@@ -132,7 +137,8 @@ def synthesize_dialogue(
         turns: List of {"speaker": "Host", "text": "Welcome to the show!"}.
                Each unique speaker name gets a consistent voice.
                Maximum 2 named speakers per request.
-        model: TTS model (pro recommended for podcasts).
+        model: settings.TTS_MODEL_QUALITY recommended for podcasts.
+        voices: two prebuilt voice names from settings.
 
     Returns:
         Raw PCM bytes of the complete dialogue.
@@ -157,11 +163,8 @@ def synthesize_dialogue(
         f'{turn["speaker"]}: {turn["text"]}' for turn in turns
     )
 
-    # Assign voices: first speaker gets Aoede, second gets Orion
-    voice_assignments = {
-        unique_speakers[0]: "Aoede",
-        unique_speakers[1]: "Orion" if len(unique_speakers) > 1 else "Aoede",
-    }
+    # Assign voices from configuration, one per speaker
+    voice_assignments = dict(zip(unique_speakers, voices, strict=False))
     multi_speaker_config = types.MultiSpeakerVoiceConfig(
         speaker_voice_configs=[
             types.SpeakerVoiceConfig(
@@ -191,10 +194,13 @@ def synthesize_dialogue(
             ),
         )
     except Exception as exc:
-        logger.error("Multi-speaker TTS failed", exc_info=exc)
+        logger.error("Multi-speaker TTS failed", extra={"error_type": type(exc).__name__})
         raise
 
-    audio_data = response.candidates[0].content.parts[0].inline_data.data
+    # A blocked or empty response has no candidate/part: treat it as an error, not silence
+    candidate = response.candidates[0] if response.candidates else None
+    parts = candidate.content.parts if candidate and candidate.content else None
+    audio_data = parts[0].inline_data.data if parts and parts[0].inline_data else None
     if not audio_data:
         logger.error("Multi-speaker TTS returned empty audio")
         raise RuntimeError("Multi-speaker TTS returned empty audio — content may have been blocked")
@@ -218,14 +224,15 @@ client = genai.Client()
 
 def synthesize_multilingual(
     text: str,
-    model: str = "gemini-2.5-flash-tts-preview",
-    voice_name: str = "Lyra",
+    *,
+    model: str,
+    voice_name: str,
 ) -> bytes:
     """
     Synthesize text that switches languages mid-sentence.
 
     Gemini TTS auto-detects language switches — no explicit markup needed.
-    Supports 70+ languages. Simply write the text naturally.
+    Check the supported-language list in the docs. Write the text naturally.
 
     Example text:
         "Welcome to our service. Bienvenido a nuestro servicio.
@@ -255,10 +262,13 @@ def synthesize_multilingual(
             ),
         )
     except Exception as exc:
-        logger.error("Multilingual TTS failed", exc_info=exc)
+        logger.error("Multilingual TTS failed", extra={"error_type": type(exc).__name__})
         raise
 
-    audio_data = response.candidates[0].content.parts[0].inline_data.data
+    # A blocked or empty response has no candidate/part: treat it as an error, not silence
+    candidate = response.candidates[0] if response.candidates else None
+    parts = candidate.content.parts if candidate and candidate.content else None
+    audio_data = parts[0].inline_data.data if parts and parts[0].inline_data else None
     if not audio_data:
         raise RuntimeError("Multilingual TTS returned empty audio")
 
@@ -306,10 +316,10 @@ def save_as_wav(audio_bytes: bytes, output_path: str | Path) -> Path:
             wav_file.setframerate(SAMPLE_RATE)
             wav_file.writeframes(audio_bytes)
     except Exception as exc:
-        logger.error("Failed to save WAV file", exc_info=exc, extra={"path": str(output_path)})
+        logger.error("Failed to save WAV file", extra={"error_type": type(exc).__name__})
         raise
 
-    logger.info("WAV file saved", extra={"path": str(output_path), "bytes": len(audio_bytes)})
+    logger.info("WAV file saved", extra={"bytes": len(audio_bytes)})
     return output_path
 
 
@@ -322,7 +332,7 @@ def save_as_mp3(audio_bytes: bytes, output_path: str | Path) -> Path:
     try:
         from pydub import AudioSegment
     except ImportError as exc:
-        logger.error("pydub not installed — run: uv add pydub", exc_info=exc)
+        logger.error("pydub not installed — run: uv add pydub", extra={"error_type": type(exc).__name__})
         raise ImportError("pydub required for MP3 export. Run: uv add pydub") from exc
 
     output_path = Path(output_path)
@@ -336,10 +346,10 @@ def save_as_mp3(audio_bytes: bytes, output_path: str | Path) -> Path:
         )
         audio_segment.export(str(output_path), format="mp3")
     except Exception as exc:
-        logger.error("Failed to save MP3 file", exc_info=exc, extra={"path": str(output_path)})
+        logger.error("Failed to save MP3 file", extra={"error_type": type(exc).__name__})
         raise
 
-    logger.info("MP3 file saved", extra={"path": str(output_path)})
+    logger.info("MP3 file saved")
     return output_path
 ```
 
@@ -354,38 +364,27 @@ from io import BytesIO
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+from .settings import settings  # TTS_MODEL_FAST, TTS_MODEL_QUALITY, TTS_ALLOWED_VOICES
 
 logger = logging.getLogger(__name__)
 
 
 class TTSRequest(BaseModel):
-    text: str
-    model: str = "gemini-2.5-flash-tts-preview"
-    voice: str = "Aoede"
-    style: str = ""
-
-    @field_validator("text")
-    @classmethod
-    def text_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("text must not be empty")
-        return v
-
-    @field_validator("model")
-    @classmethod
-    def valid_model(cls, v: str) -> str:
-        allowed = {"gemini-2.5-pro-tts-preview", "gemini-2.5-flash-tts-preview"}
-        if v not in allowed:
-            raise ValueError(f"model must be one of {allowed}")
-        return v
+    # Callers pick a TIER and a voice from the configured allowlist; never a raw model id.
+    text: str = Field(min_length=1, max_length=5_000)   # bounds cost per request
+    tier: Literal["fast", "quality"] = "fast"
+    voice: str
+    style: str = Field(default="", max_length=200)
 
     @field_validator("voice")
     @classmethod
     def valid_voice(cls, v: str) -> str:
-        allowed = {"Aoede", "Lyra", "Orion"}
-        if v not in allowed:
-            raise ValueError(f"voice must be one of {allowed}")
+        if v not in settings.TTS_ALLOWED_VOICES:        # configured list, not hard-coded names
+            raise ValueError("voice is not allowed")
         return v
 
 
@@ -404,31 +403,32 @@ async def text_to_speech(request: TTSRequest) -> StreamingResponse:
     """
     Synthesize speech from text.
 
-    Returns WAV audio bytes as a streaming response.
+    Returns WAV audio (the model returns raw PCM; wrap it in a WAV header).
+    Authenticate and rate-limit this route: every call is billed.
     """
     import asyncio
-    from .synthesize import synthesize_speech  # import your synthesis function
+    from .synthesize import pcm_to_wav, synthesize_speech  # your synthesis helpers
 
+    model = settings.TTS_MODEL_QUALITY if request.tier == "quality" else settings.TTS_MODEL_FAST
     try:
-        # Run blocking synthesis in thread pool to avoid blocking event loop
-        audio_bytes = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: synthesize_speech(
-                request.text,
-                style_prompt=request.style,
-                model=request.model,
-                voice_name=request.voice,
-            ),
+        # synthesize_speech is blocking: run it off the event loop
+        pcm = await asyncio.to_thread(
+            synthesize_speech,
+            request.text,
+            style_prompt=request.style,
+            model=model,
+            voice_name=request.voice,
         )
+        audio_bytes = pcm_to_wav(pcm)   # same wave-module logic as save_as_wav, into BytesIO
     except ValueError as exc:
-        logger.warning("TTS validation error", extra={"error": str(exc)})
-        raise HTTPException(status_code=422, detail=str(exc))
+        logger.warning("TTS validation error", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=422, detail="Invalid speech request") from exc
     except RuntimeError as exc:
-        logger.error("TTS synthesis error", exc_info=exc)
-        raise HTTPException(status_code=502, detail="Speech synthesis failed")
+        logger.error("TTS synthesis error", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=502, detail="Speech synthesis failed") from exc
     except Exception as exc:
-        logger.error("Unexpected TTS error", exc_info=exc)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error("Unexpected TTS error", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
     return StreamingResponse(
         BytesIO(audio_bytes),
@@ -441,7 +441,7 @@ async def text_to_speech(request: TTSRequest) -> StreamingResponse:
 
 ## 7. Streaming TTS for Lower Latency
 
-For long texts, stream chunks as they arrive rather than waiting for full synthesis:
+For long texts, stream chunks as they arrive rather than waiting for full synthesis. Confirm on the models page that your TTS model supports streamed output before relying on this (not verified here):
 
 ```python
 import logging
@@ -455,8 +455,9 @@ client = genai.Client()
 
 async def stream_tts(
     text: str,
-    model: str = "gemini-2.5-flash-tts-preview",
-    voice_name: str = "Aoede",
+    *,
+    model: str,
+    voice_name: str,
 ) -> AsyncIterator[bytes]:
     """
     Stream TTS audio chunks as they arrive for lower time-to-first-audio.
@@ -490,7 +491,7 @@ async def stream_tts(
                     yield part.inline_data.data
 
     except Exception as exc:
-        logger.error("Streaming TTS failed", exc_info=exc, extra={"model": model})
+        logger.error("Streaming TTS failed", extra={"error_type": type(exc).__name__, "model": model})
         raise
 ```
 
@@ -501,16 +502,19 @@ async def stream_tts(
 | Error | Cause | Handling |
 |-------|-------|----------|
 | `ValueError: text must not be empty` | Empty input | Validate before calling API |
-| `google.api_core.exceptions.ResourceExhausted` | Rate limit (429) | Exponential backoff, max 3 retries |
-| `google.api_core.exceptions.InvalidArgument` | Unsupported language or malformed request | Log + raise HTTPException 422 |
-| `google.api_core.exceptions.PermissionDenied` | Content policy block | Log blocked category (never log content), raise 422 |
+| `google.genai.errors.ClientError`, `exc.code == 429` | Quota / rate limit | Bounded backoff with jitter, then a fixed error to the caller |
+| `ClientError`, `exc.code == 400` | Unsupported language or malformed request | Log `error_type` + code, raise HTTPException 422 |
+| `ClientError`, `exc.code in (401, 403)` | Credentials / permission | No retry; alert |
+| Response with no audio part / a block reason | Content policy block | Log the block reason enum (never content), surface to the user |
 | `RuntimeError: empty audio` | API returned no audio bytes | Content likely blocked — surface to user |
 | `ImportError: pydub` | MP3 export without pydub installed | Install pydub + ffmpeg, or export as WAV |
 
 ```python
-from google.api_core import exceptions as google_exceptions
 import asyncio
 import logging
+import random
+
+from google.genai import errors
 
 logger = logging.getLogger(__name__)
 
@@ -525,20 +529,14 @@ async def synthesize_with_retry(text: str, **kwargs) -> bytes:
 
     for attempt in range(max_retries):
         try:
-            return await asyncio.get_event_loop().run_in_executor(
-                None, lambda: synthesize_speech(text, **kwargs)
-            )
-        except google_exceptions.ResourceExhausted as exc:
-            if attempt == max_retries - 1:
-                logger.error("TTS rate limit exceeded after %d retries", max_retries, exc_info=exc)
-                raise
-            logger.warning("TTS rate limited — retrying in %.1fs", delay)
-            await asyncio.sleep(delay)
-            delay *= 2
-        except google_exceptions.PermissionDenied as exc:
-            logger.error("TTS content policy block — content not synthesized", exc_info=exc)
-            raise RuntimeError("Content blocked by policy") from exc
-        except google_exceptions.Unauthenticated as exc:
-            logger.error("TTS auth failed — check GOOGLE_API_KEY", exc_info=exc)
-            raise
+            return await asyncio.to_thread(synthesize_speech, text, **kwargs)
+        except errors.APIError as exc:
+            if exc.code == 429 and attempt < max_retries - 1:
+                logger.warning("tts_rate_limited", extra={"attempt": attempt, "retry_in_s": delay})
+                await asyncio.sleep(delay + random.uniform(0, delay / 2))   # jitter
+                delay *= 2
+                continue
+            logger.error("tts_failed", extra={"error_type": type(exc).__name__, "code": exc.code})
+            raise   # 400/401/403/5xx and the last 429: no further retry
+    raise AssertionError("unreachable")
 ```

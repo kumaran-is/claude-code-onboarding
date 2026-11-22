@@ -1,214 +1,118 @@
 ---
 name: voice-ai-development
-description: "Gemini voice AI development — real-time voice streaming with Gemini Live API (WebSocket), text-to-speech with Gemini TTS models, LangGraph voice agent pipelines, and Google ADK voice agents. Use when building voice assistants, real-time audio streaming, TTS synthesis, or multimodal voice applications."
+description: "Optional voice extension for AI features — choosing batch STT vs streaming STT vs live speech-to-speech, secure WebSocket voice sessions (auth before accept, caps, backpressure), turn detection and barge-in, text fallback, voice privacy and logging, async worker pipelines with interrupts, and provider references for Gemini Live API, Gemini TTS, LangGraph and Google ADK. Use when building voice assistants, real-time audio streaming, speech-to-text or text-to-speech features."
 allowed-tools: Bash, Read, Write, Edit, WebFetch
 metadata:
-  triggers: Gemini Live API, Gemini TTS, voice AI, real-time voice, audio streaming, WebSocket audio, barge-in, text-to-speech, TTS, gemini-live-2.5-flash-native-audio, gemini-2.5-pro-tts-preview, gemini-2.5-flash-tts-preview, voice agent, speech synthesis, voice assistant, multimodal voice
-  related-skills: gemini-api-dev, google-adk, agentic-ai-dev, python-dev
+  triggers: voice AI, real-time voice, voice assistant, voice bot, voice agent, speech to text, STT, text-to-speech, TTS, speech synthesis, audio streaming, WebSocket audio, barge-in, interrupt handling, Gemini Live API, Gemini TTS, voice pipeline, conversational voice, async worker pipeline
+  related-skills: streaming-protocols, gemini-api-dev, google-adk, agentic-ai-dev, ai-chat, eval-guide
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
+
+# Voice AI Development
+
+> **OPTIONAL extension.** Voice is never required for an AI feature. Build and evaluate the text path first; add voice only when the product needs it. Lifecycle router: `ai-playbook/SKILL.md`. This skill is the single home for voice (it absorbed the former voice engine skill: worker pipeline, interrupts, provider setup).
 
 ## Iron Law
 
-**ALWAYS USE WEBSOCKETS FOR LIVE API — NEVER POLLING; ALWAYS USE gemini-live-2.5-flash-native-audio FOR REAL-TIME, gemini-2.5-pro-tts-preview OR gemini-2.5-flash-tts-preview FOR TTS**
+**Choose the simplest voice architecture that meets the latency target, put authentication and hard caps in front of every paid audio session, and take model ids from configuration — never from this skill.**
 
-# Voice AI Development — Gemini Live API + TTS
+Before using a model id, confirm it on the provider's models page and probe it on every backend you deploy to (`gemini-api-dev`). Every voice failure ends in a fixed code that the client turns into text input.
 
-## When to Use This Skill
+## 1. Choose the architecture
 
-| Use Case | This Skill | gemini-api-dev skill |
-|----------|-----------|---------------------|
-| Real-time voice streaming | ✅ | ❌ |
-| Barge-in / interrupt detection | ✅ | ❌ |
-| Sub-second voice latency (<600ms) | ✅ | ❌ |
-| Text-to-speech synthesis | ✅ | ❌ |
-| Multi-speaker podcast/dialogue TTS | ✅ | ❌ |
-| Voice + camera multimodal | ✅ | ❌ |
-| LangGraph voice agent pipeline | ✅ | ❌ |
-| ADK voice agent | ✅ | ❌ |
-| Standard text/multimodal calls | ❌ | ✅ |
+| Option | Use when | Cost / complexity |
+|--------|----------|-------------------|
+| Batch: record → upload → STT → text agent → optional TTS | Turn-taking is acceptable (latency budget in seconds) | Lowest; easiest to evaluate and to fall back to text |
+| Streaming STT → text agent → streaming TTS | Replies must start soon after the user stops; you keep a text agent you already evaluate | You own barge-in and echo handling (`reference/interrupt-handling.md`) |
+| Live speech-to-speech session | Sub-second conversational turn-taking is the requirement | Highest: session limits, reconnects, per-minute cost, harder evals |
 
-## Models
+Keep the provider choice in one server module; clients speak your protocol, never a provider's. Provider selection by measurement: `reference/provider-comparison.md`.
 
-### Live API (Real-time Voice)
-- **`gemini-live-2.5-flash-native-audio`** — Primary model for real-time voice. Sub-second latency (~600ms). Barge-in, affective dialogue, multimodal (audio + camera). **Always use this for real-time.**
+## 2. Session lifecycle (any provider)
 
-### TTS Models
-- **`gemini-2.5-pro-tts-preview`** — Highest fidelity. Use for audiobooks, podcasts, production voiceovers.
-- **`gemini-2.5-flash-tts-preview`** — Faster and cheaper. Use for real-time TTS responses, e-learning, notifications.
+| Rule | Detail |
+|------|--------|
+| Admission | Subprotocol + authentication BEFORE `accept()`; refuse with 1008. Browsers cannot set WebSocket headers: use a short-lived single-use connect token. One open stream per actor (shared claim with TTL when multi-instance). Rate-limit opens. |
+| Caps | Max frame bytes, max stream bytes and seconds, idle timeout, bounded queue → `BACKPRESSURE`. |
+| Channels | Audio = binary frames; control (`end_turn`, `stop`) = JSON text frames. No in-band sentinels such as `b"END"`. |
+| Ordering | Every server message carries attempt id + monotonic `seq`; the client drops stale or out-of-order messages. |
+| Interim vs final | Interim transcripts are replaceable display text; only `final` is stored or drives the agent. |
+| Re-authorize | At finalize/stop; end the stream when the token expires mid-stream. |
+| Cleanup | The upstream provider session closes in `finally` on every exit path. |
 
-### TTS Model Selection Guide
+Executed pattern and tests (7 cases): `streaming-protocols/reference/server-stream-lifecycle.md` §3.
 
-| Scenario | Model |
-|----------|-------|
-| Production audiobook / podcast | `gemini-2.5-pro-tts-preview` |
-| Real-time assistant reply | `gemini-2.5-flash-tts-preview` |
-| Multi-speaker dialogue | Either (flash cheaper at scale) |
-| Voice quality is demo-critical | `gemini-2.5-pro-tts-preview` |
+## 3. Turn detection and barge-in
 
-## Preset Voices (Live API)
+- Provider VAD (e.g. Gemini Live) stops generation when the user speaks; you still discard unplayed audio and tell the client (`interrupted` event).
+- Truncate assistant history to what was actually spoken (`update_last_bot_on_cutoff`).
+- Mute the transcriber (send silence, not nothing) while your own TTS plays, to avoid echo.
+- Deliver audio at real-time pace so an interrupt can stop it: `reference/interrupt-handling.md`.
 
-Available: **Aoede**, **Lyra**, **Orion** (5–8 distinct steerable voices total)
+## 4. Failure → text fallback
 
-- Style transfer: can mimic speaking patterns and emotions
-- Cannot clone custom/external voices
+| Failure | Client code | Server action |
+|---------|-------------|---------------|
+| STT error / timeout / empty or header-only audio | `AUDIO_INVALID` / `AUDIO_EMPTY` | no retry of the same audio |
+| Provider quota (429) | `RATE_LIMITED` | bounded backoff with jitter, then stop |
+| Caps exceeded / backpressure | `LIMIT_EXCEEDED` / `BACKPRESSURE` | close the stream |
+| Auth failure / expiry | `UNAUTHORIZED` | close 1008 |
+| Worker failed N times in a row | `VOICE_UNAVAILABLE` | end the session (`reference/worker-pipeline.md` BaseWorker) |
+| Translation failure | pass original text through, flagged | — |
 
-## SDK
+The client switches to text input on every error code. Never return silence as success; never auto-reconnect silently.
 
-```bash
-# Python — ALWAYS use google-genai, NEVER google-generativeai (deprecated)
-uv add google-genai
+## 5. Uploads (batch path)
 
-# Verify
-python -c "import google.genai; print(google.genai.__version__)"
-```
+Reject by `Content-Length` before buffering, then enforce the exact byte cap while reading (413); reject payloads below a minimum size or without the expected container header (a misconfigured recorder uploads a header-only file that only fails at the provider as a 400); per-call STT timeout. Delete temp files after the call.
 
-## Quick Scaffold
+## 6. Privacy and logging
 
-### Live API — Real-time Voice (FastAPI WebSocket)
-```python
-# See reference/gemini-live-api.md for full implementation
-from google import genai
-from google.genai import types
-import asyncio
+- Allowed log fields: session/attempt id, error code (enum), HTTP/provider status, mime type, byte count, duration ms, language code.
+- Forbidden in logs, spans and metrics: transcript or synthesized text (even a preview), audio, file names, provider error text, `str(exc)`, `exc_info`. Use `log_exception` (`deployment-ci-cd/reference/python-observability.md` §2).
+- Consent before capture; retention TTL for stored audio and transcripts; deletion propagates to traces, caches and eval sets; trace access is role-based and tenant-isolated.
+- Make provider failures diagnosable without content: status, mime, payload bytes, duration (quota = 429, bad input = 400, auth = 401/403).
 
-client = genai.Client()
+## 7. Model ids, auth and dependencies
 
-async def stream_voice():
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Aoede")
-            )
-        ),
-    )
-    async with client.aio.live.connect(
-        model="gemini-live-2.5-flash-native-audio",
-        config=config
-    ) as session:
-        await session.send(input="Hello, how can I help?", end_of_turn=True)
-        async for response in session.receive():
-            if response.data:
-                yield response.data  # raw PCM bytes
-```
+- Model ids and voice names: settings only, no defaults (`reference/gemini-provider-setup.md` — executed settings class). Voice names come from the provider's current prebuilt-voice list.
+- Deployed environments authenticate keyless (workload identity); a developer API key exists only locally; browsers use provider ephemeral tokens or your proxy — never the API key.
+- Pin dependencies exactly with a lockfile (`uv add "google-genai==<verified>"`, `uv sync --locked`); never `>=` ranges in a scaffold. SDK: `google-genai`, never `google-generativeai`.
 
-### TTS — Single Speaker
-```python
-# See reference/gemini-tts.md for full implementation
-from google import genai
+## 8. Gemini Live essentials (verified on google-genai 3.6.1)
 
-client = genai.Client()
-response = client.models.generate_content(
-    model="gemini-2.5-flash-tts-preview",
-    contents="Say this in a warm, friendly tone: Hello and welcome!",
-    config={"response_modalities": ["AUDIO"]},
-)
-audio_bytes = response.candidates[0].content.parts[0].inline_data.data
-```
+| ❌ Wrong | ✅ Right |
+|---------|---------|
+| `session.send(input=..., end_of_turn=True)` (deprecated) | `send_client_content(turns=..., turn_complete=True)`; `send_realtime_input(audio=...)` |
+| `send_realtime_input(types.Blob(...))` | keyword-only, ONE field per call: `send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))` |
+| `await client.aio.live.connect(...)` / `async for m in session` | `async with client.aio.live.connect(model=settings.LIVE_MODEL, config=cfg) as session:` / `session.receive()` |
+| one `async for` over `receive()` | `while True:` around it — `receive()` yields one model turn |
+| detect expiry from exception text | `go_away` + `session_resumption` handle; `context_window_compression` for long sessions |
 
-## Process
+Limits from the provider docs (2026-11-22): audio-only sessions 15 min without compression, audio + video 2 min, connections ~10 min, resumption tokens valid 2 h. Code: `reference/gemini-live-api.md`.
 
-1. **Choose modality** — real-time streaming (Live API) vs batch TTS (TTS models)
-2. **Load reference files** — `gemini-live-api.md` for streaming; `gemini-tts.md` for TTS
-3. **Pick framework** — LangGraph (`voice-langgraph-integration.md`) or ADK (`voice-adk-integration.md`)
-4. **Implement WebSocket transport** — FastAPI WebSocket endpoint proxies audio bytes bidirectionally
-5. **Add error handling** — connection drops, rate limits, audio format validation (no silent failures)
-6. **Test audio pipeline** — verify raw PCM bytes received and playable before adding agent logic
-7. **Dispatch reviewers** — `security-reviewer` (API key handling), `code-reviewer` (error path coverage)
-
-## Key Patterns
-
-| Pattern | When | Reference |
-|---------|------|-----------|
-| WebSocket proxy to Live API | Real-time browser-to-Gemini audio | `gemini-live-api.md` |
-| Barge-in handling | User interrupts assistant mid-speech | `gemini-live-api.md` |
-| Multi-speaker TTS | Podcast/dialogue with named speakers | `gemini-tts.md` |
-| LangGraph voice StateGraph | Transcribe → LLM → Synthesize pipeline | `voice-langgraph-integration.md` |
-| ADK SequentialAgent voice | ADK-based transcription/response/synthesis agents | `voice-adk-integration.md` |
-| Style control via natural language | "whispered mysterious tone", "enthusiastic Australian accent" | `gemini-tts.md` |
-| Mid-sentence language switch | Multilingual TTS (70+ languages) | `gemini-tts.md` |
-| Multimodal voice + camera | Live API audio + video frames | `gemini-live-api.md` |
-
-## Documentation Sources
-
-| Source | URL | Purpose |
-|--------|-----|---------|
-| Live API overview | `https://ai.google.dev/gemini-api/docs/live.md.txt` | WebSocket protocol, connection lifecycle |
-| TTS overview | `https://ai.google.dev/gemini-api/docs/speech.md.txt` | TTS models, voice config, multi-speaker |
-| Audio understanding | `https://ai.google.dev/gemini-api/docs/audio.md.txt` | Sending audio to Gemini |
-| Models reference | `https://ai.google.dev/gemini-api/docs/models.md.txt` | Current model IDs and capabilities |
-| Doc index | `https://ai.google.dev/gemini-api/docs/llms.txt` | Discover all doc pages |
-| google-genai Python SDK | `https://googleapis.github.io/python-genai/` | SDK API reference |
-
-## Reference Files
+## Reference files
 
 | File | Contents |
 |------|----------|
-| `reference/gemini-live-api.md` | WebSocket setup, audio streaming, barge-in, multimodal, FastAPI proxy, LangGraph node |
-| `reference/gemini-tts.md` | Single/multi-speaker TTS, style control, language switching, streaming TTS, FastAPI endpoint |
-| `reference/voice-langgraph-integration.md` | LangGraph StateGraph: transcribe → LLM → synthesize, FastAPI streaming endpoint |
-| `reference/voice-adk-integration.md` | ADK LlmAgent + SequentialAgent voice pipeline, FunctionTool audio processing, FastAPI runner |
+| `reference/gemini-live-api.md` | Verified Live API usage, relay across turns, resumption/go_away, proxy rules, errors |
+| `reference/gemini-provider-setup.md` | Auth matrix, settings with no model defaults (executed), audio formats, quotas |
+| `reference/gemini-tts.md` | Single/multi-speaker TTS, style control, WAV export, TTS endpoint, retries |
+| `reference/worker-pipeline.md` | Async worker pipeline: base classes, Gemini transcriber (executed), synthesizer, agents, wiring |
+| `reference/interrupt-handling.md` | State machine, InterruptibleEvent, rate-limited playback, cutoff history, reconnect |
+| `reference/voice-langgraph-integration.md` | LangGraph STT → LLM → TTS graph, endpoint, executed transcription test |
+| `reference/voice-adk-integration.md` | ADK: STT/TTS in code, text-only agent (executed), `run_live` pointer |
+| `reference/provider-comparison.md` | Provider-neutral selection criteria and decision record |
+| `reference/common-pitfalls.md` | Echo, barge-in, audio format, session end, silent failures |
 
-## Common Commands
+## Evaluation
 
-```bash
-# Install SDK
-uv add google-genai
-
-# Set API key (get from aistudio.google.com)
-export GOOGLE_API_KEY=your_key_here
-
-# Run FastAPI voice server
-uvicorn main:app --reload --port 8000
-
-# Test WebSocket connection (requires wscat: npm install -g wscat)
-wscat -c ws://localhost:8000/ws/voice
-
-# Test TTS endpoint
-curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello world", "model": "gemini-2.5-flash-tts-preview"}' \
-  --output output.wav
-
-# Check SDK version
-python -c "import google.genai; print(google.genai.__version__)"
-```
-
-## Error Handling
-
-```
-Connection drop (Live API WebSocket):
-  → Catch asyncio.CancelledError and websockets.exceptions.ConnectionClosed
-  → Log error with session context
-  → Re-raise — do NOT silently reconnect without user awareness
-
-Rate limit (429):
-  → Log warning with retry-after header value
-  → Implement exponential backoff (1s, 2s, 4s, max 32s)
-  → Raise RateLimitError after max retries
-
-Audio format error:
-  → Validate input: PCM 16-bit, 16kHz, mono for Live API
-  → Log format mismatch with received vs expected
-  → Raise AudioFormatError — do NOT attempt to play malformed audio
-
-Content policy block:
-  → Log blocked content category (never log the content itself)
-  → Return error state to caller — do NOT return silence as if successful
-
-API key / auth (401):
-  → Check GOOGLE_API_KEY env var is set
-  → Log "API key missing or invalid" — never log the key value
-  → Raise AuthenticationError immediately — no retry
-```
+Evaluate the text agent on transcripts with the normal golden set; evaluate STT/TTS separately on hash-pinned audio fixtures in the delivered language; a gated live tier replays fixtures through the real STT path (`eval-guide`). Test the protocol: no auth → refused before accept; caps → fixed codes; disconnect → upstream closed.
 
 ## Post-Code Review
 
-After writing Gemini voice integration code, dispatch:
-- `security-reviewer` — API key handling, no keys in code, audio data sanitization
-- `code-reviewer` — WebSocket lifecycle, error path coverage, no silent failures
+Dispatch `ai-security-reviewer` (session admission, caps, privacy, prompt/tool safety), `security-reviewer` (auth, secrets), and `code-reviewer` (async lifecycle, error paths). Use `agentic-ai-reviewer` / `adk-reviewer` for the agent part.

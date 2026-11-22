@@ -1,7 +1,8 @@
 # LangGraph + Gemini Voice Agent
 
 > Framework: LangGraph v1.0.7 + LangChain v1.2.8 + FastAPI 0.135.2
-> Models: `gemini-live-2.5-flash-native-audio` (Live), `gemini-2.5-flash-tts-preview` (TTS)
+> Optional voice extension. Model ids and voices come from settings (`LIVE_MODEL`, `AGENT_MODEL`, `TTS_MODEL_FAST`, `LIVE_VOICE`), never literals. Executed: `voice_input_node` and its test (section 8) against a real `google-genai` 3.6.1 `AsyncSession` on a scripted websocket. Other snippets: illustrative.
+> Logging: stdlib `logging` with `error_type` only; in a service use `log_exception` (`deployment-ci-cd/reference/python-observability.md` §2). Never log transcripts, response text or audio.
 > Python: 3.14 + asyncio
 
 ## Architecture
@@ -63,10 +64,10 @@ client = genai.Client()
 
 async def voice_input_node(state: VoiceAgentState) -> VoiceAgentState:
     """
-    Transcribe user audio using Gemini Live API in TEXT response mode.
+    Transcribe one recorded user turn with Live API INPUT transcription.
 
-    The Live API performs speech recognition as part of its processing.
-    TEXT response mode returns the transcript rather than synthesized audio.
+    `input_audio_transcription` returns what the user said. Asking the model to
+    "transcribe" in TEXT mode returns the model's reply, not a transcript.
     """
     audio_input = state.get("audio_input", b"")
     session_id = state.get("session_id", "unknown")
@@ -79,38 +80,28 @@ async def voice_input_node(state: VoiceAgentState) -> VoiceAgentState:
         raise ValueError("audio_input must not be empty")
 
     config = types.LiveConnectConfig(
-        response_modalities=["TEXT"],
-        system_instruction=types.Content(
-            parts=[types.Part(
-                text="Transcribe the user's audio input exactly as spoken. "
-                     "Output only the transcript — no commentary, no corrections."
-            )]
-        ),
+        response_modalities=[types.Modality.TEXT],
+        input_audio_transcription=types.AudioTranscriptionConfig(),  # what the USER said
     )
 
     transcript_parts: list[str] = []
 
     try:
-        async with client.aio.live.connect(
-            model="gemini-live-2.5-flash-native-audio",
-            config=config,
-        ) as session:
-            await session.send(
-                input=types.AudioChunk(data=audio_input, mime_type="audio/pcm;rate=16000"),
+        async with client.aio.live.connect(model=settings.LIVE_MODEL, config=config) as session:
+            await session.send_realtime_input(
+                audio=types.Blob(data=audio_input, mime_type="audio/pcm;rate=16000")
             )
-            await session.send(end_of_turn=True)
+            await session.send_realtime_input(audio_stream_end=True)
 
-            async for response in session.receive():
-                if response.text:
-                    transcript_parts.append(response.text)
-                if response.server_content and response.server_content.turn_complete:
-                    break
+            async for msg in session.receive():  # one turn; ends on turn_complete
+                content = msg.server_content
+                if content and content.input_transcription and content.input_transcription.text:
+                    transcript_parts.append(content.input_transcription.text)
 
     except Exception as exc:
         logger.error(
             "voice_input_node: Live API transcription failed",
-            exc_info=exc,
-            extra={"session_id": session_id},
+            extra={"error_type": type(exc).__name__, "session_id": session_id},
         )
         raise
 
@@ -145,7 +136,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 logger = logging.getLogger(__name__)
 
 
-def build_llm(model: str = "gemini-2.5-flash") -> ChatGoogleGenerativeAI:
+def build_llm(model: str) -> ChatGoogleGenerativeAI:   # model = settings.AGENT_MODEL
     """Build LangChain LLM wrapper for Gemini."""
     return ChatGoogleGenerativeAI(
         model=model,
@@ -197,8 +188,7 @@ async def llm_response_node(state: VoiceAgentState) -> VoiceAgentState:
     except Exception as exc:
         logger.error(
             "llm_response_node: LLM invocation failed",
-            exc_info=exc,
-            extra={"session_id": session_id},
+            extra={"error_type": type(exc).__name__, "session_id": session_id},
         )
         raise
 
@@ -233,8 +223,8 @@ async def voice_output_node(state: VoiceAgentState) -> VoiceAgentState:
     """
     Synthesize response_text to audio using Gemini TTS.
 
-    Uses gemini-2.5-flash-tts-preview for real-time response speed.
-    Switch to gemini-2.5-pro-tts-preview for higher fidelity requirements.
+    Uses settings.TTS_MODEL_FAST for real-time response speed
+    (settings.TTS_MODEL_QUALITY for higher fidelity).
     """
     response_text = state.get("response_text", "")
     session_id = state.get("session_id", "unknown")
@@ -258,14 +248,14 @@ async def voice_output_node(state: VoiceAgentState) -> VoiceAgentState:
         def _synthesize() -> bytes:
             _client = genai.Client()
             response = _client.models.generate_content(
-                model="gemini-2.5-flash-tts-preview",
+                model=settings.TTS_MODEL_FAST,
                 contents=response_text,
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(
                         voice_config=types.VoiceConfig(
                             prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name="Aoede"
+                                voice_name=settings.LIVE_VOICE
                             )
                         )
                     ),
@@ -281,8 +271,7 @@ async def voice_output_node(state: VoiceAgentState) -> VoiceAgentState:
     except Exception as exc:
         logger.error(
             "voice_output_node: TTS synthesis failed",
-            exc_info=exc,
-            extra={"session_id": session_id},
+            extra={"error_type": type(exc).__name__, "session_id": session_id},
         )
         raise
 
@@ -341,15 +330,20 @@ voice_agent = build_voice_agent_graph()
 
 ```python
 import asyncio
+import contextlib
+import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .ws_admission import admit   # streaming-protocols/reference/server-stream-lifecycle.md §3
+
 logger = logging.getLogger(__name__)
+MAX_TURN_BYTES = 960_000          # ~30 s of 16 kHz PCM16 per turn
 
 
 @asynccontextmanager
@@ -383,7 +377,7 @@ async def voice_turn(request: VoiceTurnRequest) -> dict:
     try:
         audio_bytes = base64.b64decode(request.audio_base64)
     except Exception as exc:
-        logger.warning("Invalid base64 audio input", exc_info=exc, extra={"session_id": session_id})
+        logger.warning("Invalid base64 audio input", extra={"error_type": type(exc).__name__, "session_id": session_id})
         raise HTTPException(status_code=422, detail="audio_base64 must be valid base64-encoded PCM bytes")
 
     if not audio_bytes:
@@ -402,7 +396,7 @@ async def voice_turn(request: VoiceTurnRequest) -> dict:
     try:
         result = await voice_agent.ainvoke(initial_state)
     except Exception as exc:
-        logger.error("Voice agent turn failed", exc_info=exc, extra={"session_id": session_id})
+        logger.error("Voice agent turn failed", extra={"error_type": type(exc).__name__, "session_id": session_id})
         raise HTTPException(status_code=502, detail="Voice agent processing failed")
 
     if result.get("error"):
@@ -427,12 +421,15 @@ async def websocket_voice_stream(websocket: WebSocket) -> None:
     WebSocket streaming voice: client sends PCM chunks, receives PCM response.
 
     Protocol:
-      Client -> Server: raw PCM bytes (16-bit, 16kHz, mono)
-      Client -> Server: b"END" to signal end of turn
-      Server -> Client: raw PCM bytes (response audio)
-      Server -> Client: text "TURN_COMPLETE" when done
+      Client -> Server: binary frames = raw PCM (16-bit, 16kHz, mono)
+      Client -> Server: text frame {"type":"end_turn"} (control never shares the audio channel)
+      Server -> Client: binary frames = response PCM; text frames = JSON events
+    Admission (subprotocol + auth BEFORE accept, one stream per actor) and the
+    frame/byte/time/idle caps: streaming-protocols/reference/server-stream-lifecycle.md §3.
     """
-    await websocket.accept()
+    principal = await admit(websocket)   # closes 1008 and returns None on refusal
+    if principal is None:
+        return
     session_id = str(uuid.uuid4())
     logger.info("WebSocket voice stream opened", extra={"session_id": session_id})
 
@@ -440,15 +437,21 @@ async def websocket_voice_stream(websocket: WebSocket) -> None:
 
     try:
         while True:
-            try:
-                data = await websocket.receive_bytes()
-            except WebSocketDisconnect:
+            msg = await websocket.receive()
+            if msg["type"] == "websocket.disconnect":
                 logger.info("WebSocket disconnected", extra={"session_id": session_id})
                 break
+            if (data := msg.get("bytes")) is not None:
+                if sum(map(len, audio_chunks)) + len(data) > MAX_TURN_BYTES:
+                    await websocket.send_text('{"type":"error","code":"LIMIT_EXCEEDED"}')
+                    await websocket.close(code=1009)
+                    break
+                audio_chunks.append(data)
+                continue
 
-            if data == b"END":
+            if json.loads(msg.get("text") or "{}").get("type") == "end_turn":
                 if not audio_chunks:
-                    await websocket.send_text("ERROR:empty_audio")
+                    await websocket.send_text('{"type":"error","code":"AUDIO_EMPTY"}')
                     continue
 
                 combined_audio = b"".join(audio_chunks)
@@ -469,29 +472,22 @@ async def websocket_voice_stream(websocket: WebSocket) -> None:
                 except Exception as exc:
                     logger.error(
                         "Voice agent processing failed",
-                        exc_info=exc,
-                        extra={"session_id": session_id},
+                        extra={"error_type": type(exc).__name__, "session_id": session_id},
                     )
-                    await websocket.send_text("ERROR:processing_failed")
+                    await websocket.send_text('{"type":"error","code":"VOICE_UNAVAILABLE"}')  # client → text input
                     continue
 
                 if result.get("audio_output"):
                     await websocket.send_bytes(result["audio_output"])
-                await websocket.send_text("TURN_COMPLETE")
-
-            else:
-                audio_chunks.append(data)
+                await websocket.send_text('{"type":"turn_complete"}')
 
     except Exception as exc:
         logger.error(
             "WebSocket voice stream error",
-            exc_info=exc,
-            extra={"session_id": session_id},
+            extra={"error_type": type(exc).__name__, "session_id": session_id},
         )
-        try:
+        with contextlib.suppress(RuntimeError):   # socket may already be closed
             await websocket.close(code=1011)
-        except Exception:
-            pass
         raise
 ```
 
@@ -502,7 +498,7 @@ async def websocket_voice_stream(websocket: WebSocket) -> None:
 ```
 1. User presses microphone button in browser
 2. Browser captures PCM audio, sends bytes via WebSocket to /ws/voice/stream
-3. User releases button -> browser sends b"END"
+3. User releases button -> browser sends text frame {"type":"end_turn"}
 4. voice_input_node: PCM bytes -> Gemini Live API -> transcript text
 5. llm_response_node: transcript -> LangChain + Gemini -> response text
 6. voice_output_node: response text -> Gemini TTS -> PCM audio bytes
@@ -516,49 +512,45 @@ async def websocket_voice_stream(websocket: WebSocket) -> None:
 
 ## 8. Testing the Graph
 
+Executed (pytest-asyncio, `google-genai` 3.6.1): a REAL `AsyncSession` on a scripted websocket. Patch the module's client object, not `google.genai.Client` (the module-level client already exists when the test runs), and never mock `receive` as an `AsyncMock` (it returns a coroutine, not an async iterator).
+
 ```python
-import asyncio
+import contextlib
+from collections.abc import AsyncIterator
+from typing import Any
+
 import pytest
-from unittest.mock import AsyncMock, patch
+from google.genai import live
+
+import voice_nodes                      # module holding `client` and voice_input_node
+from tests.fakes import FakeWS          # recv() pops scripted server JSON; send() records client JSON
 
 
-@pytest.mark.asyncio
-async def test_voice_input_node_happy_path():
-    """Verify voice_input_node transcribes audio and updates state."""
-    fake_pcm = b"\x00\x01" * 1000  # 2000 bytes of fake PCM
+async def test_voice_input_node_transcribes(monkeypatch: pytest.MonkeyPatch) -> None:
+    ws = FakeWS([
+        {"serverContent": {"inputTranscription": {"text": "Hello, "}}},
+        {"serverContent": {"inputTranscription": {"text": "how are you?", "finished": True}}},
+        {"serverContent": {"turnComplete": True}},
+    ])
 
-    mock_response = AsyncMock()
-    mock_response.text = "Hello, how are you?"
-    mock_response.server_content = AsyncMock()
-    mock_response.server_content.turn_complete = True
+    @contextlib.asynccontextmanager
+    async def fake_connect(*, model: str, config: Any) -> AsyncIterator[live.AsyncSession]:
+        assert config.input_audio_transcription is not None
+        yield live.AsyncSession(api_client=voice_nodes.client._api_client, websocket=ws)
 
-    mock_session = AsyncMock()
-    mock_session.receive = AsyncMock(return_value=aiter([mock_response]))
-
-    with patch("google.genai.Client") as mock_client:
-        mock_client.return_value.aio.live.connect.return_value.__aenter__ = AsyncMock(
-            return_value=mock_session
-        )
-        mock_client.return_value.aio.live.connect.return_value.__aexit__ = AsyncMock(
-            return_value=None
-        )
-
-        state: VoiceAgentState = {
-            "audio_input": fake_pcm,
-            "transcript": "",
-            "response_text": "",
-            "audio_output": b"",
-            "error": None,
-            "session_id": "test-session",
-            "turn_count": 0,
-        }
-
-        result = await voice_input_node(state)
-        assert result["transcript"] == "Hello, how are you?"
-        assert result["error"] is None
+    monkeypatch.setattr(voice_nodes.client.aio.live, "connect", fake_connect)
+    state = {"audio_input": b"\x00\x01" * 1000, "transcript": "", "response_text": "",
+             "audio_output": b"", "error": None, "session_id": "s1", "turn_count": 0}
+    result = await voice_nodes.voice_input_node(state)
+    assert result["transcript"] == "Hello, how are you?"
+    assert [list(m["realtime_input"]) for m in ws.sent] == [["audio"], ["audioStreamEnd"]]
 
 
-async def aiter(items):
-    for item in items:
-        yield item
+async def test_empty_audio_rejected() -> None:
+    state = {"audio_input": b"", "transcript": "", "response_text": "", "audio_output": b"",
+             "error": None, "session_id": "s1", "turn_count": 0}
+    with pytest.raises(ValueError):
+        await voice_nodes.voice_input_node(state)
 ```
+
+`FakeWS`: `recv(decode=False)` returns `json.dumps(next_message).encode()`; `send(raw)` appends `json.loads(raw)`. Result: 2 passed. This is a scripted fake, not proof of live-provider behaviour.

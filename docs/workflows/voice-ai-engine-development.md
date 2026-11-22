@@ -2,7 +2,7 @@
 
 Build a production-ready real-time conversational voice AI engine using Gemini Live API (STT), Gemini TTS (synthesis), and a LangGraph or ADK agent — all wired together via an async worker pipeline with full interrupt support.
 
-**Skill:** `.claude/skills/voice-ai-engine-development/SKILL.md`
+**Skill:** `.claude/skills/voice-ai-development/SKILL.md` (optional voice extension; references under `.claude/skills/voice-ai-development/reference/`)
 
 **Iron Law:** Every component runs in its own `asyncio.Queue`-based worker. No direct method calls between workers. Interrupt handling is wired before any other feature.
 
@@ -23,10 +23,13 @@ uv add --dev pytest pytest-asyncio httpx ruff mypy
 
 **Create `.env`:**
 ```bash
-GEMINI_API_KEY=your-api-key-here
-GEMINI_LIVE_MODEL=gemini-live-2.5-flash-native-audio
-GEMINI_TTS_MODEL=gemini-2.5-flash-tts-preview
-GEMINI_TTS_VOICE=Aoede
+# local only, never committed; pick model ids and voices from the provider's models page and voice list
+GEMINI_API_KEY=
+LIVE_MODEL=
+LIVE_VOICE=
+TTS_MODEL_FAST=
+TTS_MODEL_QUALITY=
+TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 ```
 
 **Create `src/config.py`** — pydantic-settings, load from `.env`, fail fast on missing vars.
@@ -62,13 +65,13 @@ GEMINI_TTS_VOICE=Aoede
 **File:** `src/workers/gemini_transcriber.py`
 
 **Key decisions:**
-- Model: `gemini-live-2.5-flash-native-audio`
+- Model: from settings (`LIVE_MODEL`), never hard-coded — see `gemini-live-api.md` §1
 - Protocol: WebSocket (`client.aio.live.connect()`) — never HTTP polling
 - Audio MIME type: `audio/pcm;rate=16000`
 - Concurrent sender + receiver tasks via `asyncio.create_task()`
-- Reconnect on session timeout (see `reference/gemini-provider-setup.md` § Session Timeout)
+- Reconnect on session timeout (see `reference/gemini-provider-setup.md` § Session limits and reconnect, `reference/gemini-live-api.md` §5)
 
-**Reference:** `reference/worker-pipeline.md` § GeminiTranscriberWorker, `reference/gemini-provider-setup.md` § Live API WebSocket Setup
+**Reference:** `reference/worker-pipeline.md` § GeminiTranscriberWorker, `reference/gemini-live-api.md` §2–§3
 
 **Unit test:** Mock the Gemini Live session. Send a fake audio chunk. Verify a `Transcription` appears in the output queue.
 
@@ -83,12 +86,12 @@ GEMINI_TTS_VOICE=Aoede
 **File:** `src/workers/gemini_synthesizer.py`
 
 **Key decisions:**
-- Model: `gemini-2.5-flash-tts-preview` (default) or `gemini-2.5-pro-tts-preview` (high fidelity)
-- Voice: `Aoede` (default) — see `reference/gemini-provider-setup.md` for full list
+- Model: from settings (`TTS_MODEL_FAST` default, `TTS_MODEL_QUALITY` for high fidelity) — never hard-coded
+- Voice: from settings, validated against `TTS_ALLOWED_VOICES` — see `reference/gemini-tts.md` and the provider's voice list
 - Output: 24kHz mono 16-bit PCM, chunked at 4096 bytes (~85ms per chunk)
 - `get_message_up_to(seconds)` function built from character-to-time mapping — required for interrupt partial message tracking
 
-**Reference:** `reference/worker-pipeline.md` § GeminiSynthesizerWorker, `reference/gemini-provider-setup.md` § Basic TTS Request
+**Reference:** `reference/worker-pipeline.md` § GeminiSynthesizerWorker, `reference/gemini-tts.md` §2
 
 **Unit test:** Mock `client.aio.models.generate_content`. Verify `SynthesisResult` contains a valid `chunk_generator` and `get_message_up_to`.
 

@@ -6,7 +6,8 @@ description: Runtime error investigation specialist. Analyzes logs, stack traces
   cause from runtime data. NOT for code review (use silent-failure-hunter to catch
   swallowed exceptions at write time — error-detective investigates after errors happen).
 model: sonnet
-allowed-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash
+disallowedTools: Write, Edit
 vibe: "Follows the stack trace wherever it goes — no assumption, only evidence"
 color: yellow
 emoji: "🐛"
@@ -77,6 +78,20 @@ Traceback (most recent call last):
   ...
 ```
 Search: `Grep pattern: '^ERROR:'`
+
+Python-specific signatures (search the literal text):
+
+| Signature in logs | Usual cause | First check |
+|---|---|---|
+| `MissingGreenlet: greenlet_spawn has not been called` | Lazy load or expired attribute read in async code (e.g. a server-side `onupdate` column after commit) | The attribute named in the traceback; eager-load it or `await session.refresh(obj, [...])` |
+| `QueuePool limit of size N overflow M reached` | Sessions/connections not released, long transactions, or a per-request session held across slow external calls | Request spans holding a session during an HTTP call; pool size vs concurrency |
+| `Task exception was never retrieved` | Fire-and-forget `asyncio.create_task` with no reference/callback | The task creation site; a failure was lost, look for the missing side effect |
+| `coroutine '...' was never awaited` (RuntimeWarning) | Missing `await` | The call site named in the warning |
+| `Exception Group Traceback` / `ExceptionGroup` | `TaskGroup` or `asyncio.gather` children failed | Read every sub-exception, not only the first |
+| Client got 200 but the row is missing | A commit inside a `yield` dependency failed after the response was sent (default dependency scope) | Error logged after the access-log line for the same request id |
+| `During handling of the above exception, another exception occurred` | A new error raised inside `except`, hiding the original | Read the FIRST traceback; the second is a symptom |
+
+Treat Python logs as sensitive: a Pydantic `ValidationError` string embeds `input_value` (request data). Report only error type, location and ids in reports.
 
 ### Flutter (Dart crash reports)
 ```

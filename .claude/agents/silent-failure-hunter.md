@@ -98,9 +98,14 @@ Forbidden patterns to grep for:
 - Empty catch or catch with only `console.log` → forbidden
 
 **Python / FastAPI:**
-- `except Exception: pass` → forbidden
-- `except Exception as e: return []` → forbidden
-- Missing `logger.error(str(e), exc_info=True)` before raise
+- `except Exception: pass`, `except: pass`, `contextlib.suppress(Exception)` → forbidden (ruff `S110`, `BLE001`; note `SIM105` rewrites a flagged `except: pass` into a silent `suppress`)
+- `except Exception as e: return []` / `return None` / default value → forbidden
+- Missing log before re-raise: log the exception TYPE, a stable event name and non-sensitive ids (`logger.error("order_sync_failed", extra={"order_id": order_id, "error_type": type(e).__name__})`) — then `raise`
+- **PII leak:** `logger.error(str(e))`, `repr(e)`, f-string or `%s` of the exception, `exc_info=True` / `logger.exception()` on exceptions derived from request input → flag. A Pydantic `ValidationError` string embeds `input_value`; use `e.errors(include_input=False)` if details are needed. Tracebacks only where policy allows
+- `asyncio.gather(..., return_exceptions=True)` whose results are never inspected for `BaseException` instances → failures vanish
+- `asyncio.create_task(...)` with no stored reference or no done-callback that logs `task.exception()` → task can be garbage-collected mid-run and its failure is never retrieved (ruff `RUF006`)
+- `except BaseException` / bare `except:` that also catches `asyncio.CancelledError` without re-raising → breaks cancellation and shutdown
+- Commit/rollback inside a `yield` dependency without `Depends(..., scope="function")` → client gets 200 after a failed commit (see `.claude/rules/python-backend.md`)
 
 **Flutter / Dart:**
 - `catch (e) { /* nothing */ }` → forbidden

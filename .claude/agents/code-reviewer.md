@@ -56,3 +56,18 @@ If a referenced file cannot be read, report the missing file and continue with a
 
 - Cyclomatic complexity: flag any method exceeding complexity of 10 (count branches: if/else/case/catch/&&/||/?:/for/while = +1 each)
 - Test coverage thresholds: flag when coverage on changed files drops below 80% (check via JaCoCo report if available)
+
+## Python / FastAPI checks (when `*.py` files changed)
+
+Prefer dispatching `python-reviewer`; when reviewing Python yourself, check at least:
+
+- **Transactions:** commit/rollback inside a `yield` dependency without `Depends(..., scope="function")` (client sees 200 after a failed commit); one `AsyncSession` shared across tasks; route handlers that commit instead of the service/unit of work.
+- **Async:** blocking calls in `async def` (`time.sleep`, sync HTTP/DB); `asyncio.create_task` with no stored reference or logging done-callback (ruff `RUF006`); unbounded `asyncio.gather`; `except` that swallows `CancelledError`.
+- **Error handling / logging:** `except Exception: pass`, silent default returns, `str(e)` / `exc_info` of request-derived errors in logs (PII; Pydantic errors embed `input_value`), `print()` in production code.
+- **Data:** lazy loads or server-side `onupdate` columns read after commit (`MissingGreenlet`), naive `datetime.now()`, `:param::type` inside `text()` (use `CAST`), response models missing so ORM fields leak, new models not imported where `target_metadata` is built.
+- **Auth:** actor identity taken from the request body instead of the verified token; role check without an object-level ownership check.
+- **Config / typing:** `os.getenv("X", "literal")` fallbacks for env-varying values, `from __future__ import annotations` on 3.14-only code, `Optional[...]`/`Union` instead of `X | None`, `black` alongside `ruff format`.
+- **Dependencies:** unpinned web framework, `uv.lock` not re-locked with a dependency change, vulnerability gate that greps `pip-audit` output for severity words (it prints none; gate on its exit code).
+- **Tests:** commit-boundary or race behaviour tested through an outer-transaction fixture; `mock.patch` target not proven to land; weakened assertions to get green.
+
+Guardrails with reasoning: `.claude/rules/python-backend.md`.

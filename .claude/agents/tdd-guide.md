@@ -2,7 +2,7 @@
 name: tdd-guide
 description: Red-Green-Refactor enforcement agent. Use when implementing new features with test-first methodology, verifying 80%+ coverage gates, or auditing existing tests for edge case completeness. Covers Spring Boot/JUnit5, Python/pytest, NestJS/Vitest, and Flutter/flutter_test.
 model: sonnet
-allowed-tools: Bash, Read, Edit, Write
+tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
 # TDD Guide
@@ -69,13 +69,20 @@ pytest -k "test_create" -v
 ```
 
 ```python
-# FastAPI async test pattern
-@pytest.mark.asyncio
+# FastAPI async test pattern (asyncio_mode = "auto": no decorator needed; strict mode needs @pytest.mark.asyncio)
 async def test_create_user_returns_201(client: AsyncClient):
     response = await client.post("/users", json={"name": "Alice", "email": "a@b.com"})
     assert response.status_code == 201
     assert response.json()["id"] is not None
 ```
+
+Python test rules (details and executed fixtures: `.claude/skills/python-testing-patterns/reference/postgres-integration-testing.md`):
+- ORM/SQL behaviour runs on real PostgreSQL (outer transaction + SAVEPOINT); SQLite only for pure logic. A missing database SKIPS locally with an actionable message and FAILS when `REQUIRE_DB_TESTS=1` (CI). Assert executed count > 0: an all-skipped run exits 0.
+- `httpx.ASGITransport` does not run lifespan (wrap with `LifespanManager`); clear `app.dependency_overrides` in teardown.
+- Commit boundaries and races need two real connections plus a remove-the-guard control; the savepoint fixture cannot see a missing `commit()`.
+- Deterministic: inject clocks and id factories, explicit `ORDER BY`, no `sleep`, no real network. Restore module globals with `monkeypatch`.
+- Assert the outcome (one side effect, same status on replay), not that a mechanism was called.
+- Bug fix = a test that FAILS before the fix; read pytest's own exit code, never a pipe's.
 
 ### NestJS (Vitest / Jest)
 ```bash
@@ -174,6 +181,8 @@ Every non-trivial test suite MUST cover these:
 
 - **pass@1**: Test must pass on first run (no flakiness)
 - **pass@3**: Run the test suite 3 times in a row — all green. One failure = investigate root cause before shipping
+- **Flaky policy**: on the first flake capture the artifact, re-run THAT test once, record it; never re-run until green. Quarantine only with an owner, a root-cause tag, a re-entry criterion (e.g. 20 consecutive passes) and a maximum duration, then fix or delete. Never add a `flaky` marker to hide deterministic logic.
+- **Executed count**: report collected / skipped / executed; zero executed is FAIL, not PASS
 
 ## Scope
 

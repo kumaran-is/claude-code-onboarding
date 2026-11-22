@@ -45,6 +45,28 @@ If a referenced file cannot be read, report the missing file and continue with a
 
 ## Additional Security Controls
 
-- Secrets management: HashiCorp Vault or Google Secret Manager — never environment variables for production secrets in multi-tenant environments
-- Zero-trust networking: service-to-service calls must use mTLS or service mesh (Istio/Cloud Run IAM) — no implicit trust within cluster
-- SIEM integration: security events (auth failures, rate limit hits, privilege escalation) must be forwarded to SIEM (Splunk/Datadog/GCP Security Command Center)
+Principles first, products are examples (the architecture may use any provider):
+
+- **Secrets:** come from a managed secret store or the platform's secret injection, injected at runtime (environment variables are an acceptable injection channel), never committed or baked into images; short-lived where the platform allows; rotated; masked in logs and `repr` (`SecretStr`). Examples: Google Secret Manager, HashiCorp Vault, a cloud KMS.
+- **Service-to-service trust:** no implicit trust inside the network. Authenticate callers with signed platform identity tokens, mTLS or a service mesh, and fail startup when the expected identity is unset in a deployed environment.
+- **Security events:** auth failures (401/403), rate-limit hits (429) and privilege changes are logged as structured events with actor key and route template, and forwarded to whatever alerting/SIEM you operate.
+
+## API Authorization Review (Python/FastAPI and any HTTP API)
+
+Authenticated is not authorised. Check each of these explicitly; a green pattern gate or a clean linter does not prove them. Details and executed examples: `.claude/skills/python-dev/reference/fastapi-authorization-boundaries.md`, `fastapi-auth-security.md`, `fastapi-rate-limiting.md`.
+
+| Check | Fail = |
+|-------|--------|
+| **Actor vs subject:** the caller's own id comes from the verified token, never the body; request models forbid unknown keys | HIGH |
+| **Object scope:** fetch-by-id carries the caller's scope in the query; missing and foreign both answer 404; create verifies the caller's link to every referenced parent | HIGH |
+| **Side-effect endpoints** (send, charge, metered call) require a service credential; recipient resolved server-side; consent gate on every path | CRITICAL if an end-user JWT suffices |
+| **Eligibility:** granting a privilege to a third party checks the grantor's approval status, fail closed, re-checked at use | HIGH |
+| **Existence oracles:** register/login/reset/fetch answer identically for known and unknown accounts | MEDIUM |
+| **JWT:** `algorithms` pinned, `exp`/`sub`/`iat` required, `aud`/`iss` checked; PyJWT + pwdlib (no `python-jose`/`passlib`); hashing off the event loop | HIGH (no `require`) |
+| **Secret guards:** empty expected secret refused at construction; `hmac.compare_digest` on encoded bytes | CRITICAL (admit-all) |
+| **New identities** start role-less; roles are sets from the database; dependency results are copied before narrowing | MEDIUM |
+| **Rate limits:** `shared_limit(scope=...)` on routes with path parameters; enumeration/spend keyed on user id, per-IP only as an outer layer with explicit trusted proxies; shared storage wired in deployment | HIGH |
+| **Logging:** no `str(exc)`, `exc_info=True` or connection URLs on request paths (validation/DB errors contain submitted values); 422 bodies do not echo `input` | HIGH |
+| **Settings:** secrets have no defaults, are `SecretStr`, and the service fails at startup when missing | HIGH |
+
+Route auth, rate-limit and approval changes here regardless of CI status. Allowlists for pattern gates may only shrink, and each entry argues in writing why the case is safe.

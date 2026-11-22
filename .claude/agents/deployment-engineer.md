@@ -53,11 +53,12 @@ QA signs off → merge develop to main
 - Reusable workflows (`workflow_call`) for DRY pipeline definitions across services
 - Matrix builds for multi-version or multi-environment testing
 - Caching strategies:
-  - npm: `actions/setup-node@v4` with `cache: 'npm'` — NestJS/Angular
-  - Python uv: `astral-sh/setup-uv@v3` with `enable-cache: true` — Python/FastAPI/Agentic AI
-  - Flutter SDK: `subosito/flutter-action@v2` with `cache: true`
+  - npm: `actions/setup-node` with `cache: 'npm'` — NestJS/Angular
+  - Python uv: `astral-sh/setup-uv` with `enable-cache: true` — Python/FastAPI/Agentic AI
+  - Flutter SDK: `subosito/flutter-action` with `cache: true`
+  - EVERY `uses:` pinned to a 40-hex commit SHA with a `# vX.Y.Z` comment (a tag can be re-pointed); resolve with `git ls-remote <repo> 'refs/tags/<tag>' 'refs/tags/<tag>^{}'`; add Dependabot/Renovate for each pinned file type; `actionlint` as a gate
   - Docker layers: `cache-from: type=gha, cache-to: type=gha,mode=max`
-  - Maven: `actions/cache@v4` with `~/.m2/repository`
+  - Maven: `actions/cache` with `~/.m2/repository`
 - Self-hosted runners for cost optimization on heavy builds (iOS, Java)
 - Workflow triggers: push to `develop`/`main`, PR, `workflow_dispatch` for manual releases
 
@@ -76,13 +77,15 @@ QA signs off → merge develop to main
 - Zero-downtime deploys via Cloud Run revision model
 - Traffic splitting for progressive delivery: `--no-traffic` deploy → canary 10% → 100%
 - Min/max instance configuration for cost vs cold-start tradeoffs
-- Health check verification post-deploy (`curl -f $URL/health || exit 1`)
+- Health check verification post-deploy (`curl -f $URL/health/ready || exit 1`); probes via `--startup-probe`/`--liveness-probe` `httpGet.path=...` (the `--*-probe-path` flags do not exist); liveness = process only, readiness/startup = dependencies
+- Deploy by immutable digest/SHA tag; record the running digest and revision; migration job first (non-zero aborts the release), then APIs, workers, edge; record a PARTIAL state on mid-rollout failure
+- Python CI/supply-chain gates (positive controls, path filters, `uv sync --locked`, `pip-audit` exit-code gating — it has no severity): `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`
 - Cloud Run environment variables and Secret Manager integration
 - `--cpu-boost` for startup acceleration on JVM services (Spring Boot)
 - Workload Identity Federation — keyless GCP auth, no JSON service account keys in secrets
 
 ### Flutter CI/CD
-- Flutter SDK caching with `subosito/flutter-action@v2`
+- Flutter SDK caching with `subosito/flutter-action` (SHA-pinned)
 - `flutter analyze` + `flutter test` + `flutter test --coverage` in CI
 - Android APK/AAB build (`flutter build apk --release`, `flutter build appbundle`)
 - iOS IPA build on `macos-latest` runners (`flutter build ios --no-codesign`)
@@ -104,7 +107,7 @@ QA signs off → merge develop to main
   - `--timeout=300` — LangGraph agent chains can run longer than the default 60s
   - `--concurrency=1` — stateful graph execution often cannot parallelize safely
   - `--cpu=2` — parallel tool execution in LangGraph benefits from multiple CPUs
-- `uv sync --frozen` for reproducible dependency installs in Docker builds
+- `uv sync --locked` for reproducible dependency installs in Docker builds (fails on a stale lock; `--frozen` installs it silently)
 - Model API keys (OpenAI, Anthropic) injected via Cloud Run `--set-secrets` from Secret Manager — never in image or env vars in YAML
 - Staged rollout especially important: always canary 10% first — LLM behavior changes are hard to detect in smoke tests
 

@@ -96,11 +96,12 @@ INFO: N — [backlog]
 
 | Pattern | Estimated Impact | Detection |
 |---------|-----------------|-----------|
-| Sync I/O in async endpoint (requests, `open()`, `time.sleep()`) | Blocks event loop thread | `def` route handler in async FastAPI app; `requests.get` in async function |
+| Blocking call inside `async def` (requests, `open()`, `time.sleep()`, sync DB driver) | Blocks the whole event loop: every in-flight request stalls | `requests.get`/`time.sleep` inside an `async def` handler. A plain `def` route is NOT this finding: FastAPI runs it in the threadpool (capped: anyio default limiter is 40 tokens, executed) |
 | SQLAlchemy N+1 (lazy loading in loop) | ~5–15ms × N per request | Relationship access inside loop without `selectinload`/`joinedload` |
 | Missing `asyncio.gather` for parallel independent awaits | Sequential latency = sum of all calls | Multiple `await` on independent coroutines in sequence |
 | Synchronous SQLAlchemy session in async context | Blocking DB calls on async thread | `Session` (not `AsyncSession`) in async route |
 | Missing query result limit | Full table scan returned to client | `session.execute(select(Model))` without `.limit()` |
+| Engine / HTTP client / pool created per request | Connection setup (~ms to tens of ms) on every call; pool exhaustion under load | `create_async_engine(` or `httpx.AsyncClient(` inside a handler or dependency; create once in `lifespan` |
 
 ### Angular
 
@@ -156,4 +157,5 @@ Interpret output:
 - Does not run profiling tools directly (suggests commands for the human to run)
 - Does not fix the issues (produces a report; human or implementer applies fixes)
 - Does not audit security or correctness (scope: performance only)
+- Does not recommend an optimisation without a measurement or an explicit LOW-confidence label; proposes per-feature latency/size budgets as CI regression thresholds, and says which performance/fuzz checks are NOT automated in this repo
 - Does not produce findings below LOW confidence without explicit labeling

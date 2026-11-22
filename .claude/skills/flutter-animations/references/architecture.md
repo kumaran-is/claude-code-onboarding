@@ -216,7 +216,7 @@ class _ShimmerBoxState extends State<_ShimmerBox>
 
 ## 5. Accessibility — Reduce Motion {#accessibility}
 
-Every animation widget must check `MediaQuery.of(context).disableAnimations`.
+Every animation widget must check `MediaQuery.disableAnimationsOf(context)`.
 
 ### Reduce-motion behaviour by type:
 
@@ -231,7 +231,7 @@ Every animation widget must check `MediaQuery.of(context).disableAnimations`.
 ### Helper mixin:
 ```dart
 mixin ReducedMotionMixin<T extends StatefulWidget> on State<T> {
-  bool get reduceMotion => MediaQuery.of(context).disableAnimations;
+  bool get reduceMotion => MediaQuery.disableAnimationsOf(context);
 
   Widget buildWithMotionCheck({
     required Widget animated,
@@ -274,8 +274,8 @@ abstract final class AnimationAssets {
 dependencies:
   flutter:
     sdk: flutter
-  rive: ^0.14.4
-  lottie: ^3.3.2
+  rive: 0.14.11
+  lottie: 3.8.2
 
 flutter:
   assets:

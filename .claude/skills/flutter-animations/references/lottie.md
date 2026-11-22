@@ -111,7 +111,7 @@ class _LoopingLottieState extends State<LoopingLottie>
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Semantics(
       label: widget.semanticLabel,
       child: Lottie.asset(

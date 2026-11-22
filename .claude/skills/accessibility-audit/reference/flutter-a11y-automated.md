@@ -122,6 +122,34 @@ void main() {
 }
 ```
 
+> **Limit of the RenderBox check above:** it measures the widget's render box, not the semantics node. When a child owns the node (e.g. a `TextField`), wrapping it in a bigger box passes this test and the node stays small. Prefer the guideline matchers in 2b.
+
+## 2b. Guideline Matchers (`meetsGuideline`)
+
+`flutter_test` ships four accessibility guidelines (verified against the Flutter API docs): `androidTapTargetGuideline` (48x48), `iOSTapTargetGuideline` (44x44), `labeledTapTargetGuideline` (tap/long-press nodes need a label) and `textContrastGuideline` (WCAG minimum text contrast, measured from rendered pixels). Add them to each screen's own test file, reusing its harness:
+
+```dart
+testWidgets('meets accessibility guidelines', (tester) async {
+  final handle = tester.ensureSemantics();
+  await tester.pumpWidget(buildScreenHarness());
+  await tester.pumpAndSettle();
+  await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+  await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+  await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+  await expectLater(tester, meetsGuideline(textContrastGuideline));
+  handle.dispose(); // in the test body: addTearDown can fire too late
+});
+```
+
+Rules:
+
+- **Assert both tap-target guidelines.** A 44dp control passes iOS and fails Android.
+- **Validate the probe before trusting a pass.** Run the same four guidelines on a deliberately bad tree (a 12x12 unlabeled `GestureDetector`, light-grey text on white) and confirm they fail. A probe that matches nothing looks exactly like a clean screen.
+- **A probe that does not compile or run is UNMEASURED, not clean.** Report it separately.
+- **Contrast is theme-dependent: run light AND dark.** Assert the theme swap took effect, or the "dark" run silently re-measures light.
+- **Never nest `MergeSemantics` inside a tappable** (`InkWell`, a card with `onTap`, `ListTile`). The tappable already merges its descendants; a nested merge moves the text to a child node and `labeledTapTargetGuideline` fails with "expected tappable node to have semantic label". Hoisting the wrapper outside turns the check green but leaves a redundant widget. When two candidate fixes both go green, try the combinations (outer only, inner only, both, neither) to find which one matters.
+- **These matchers are a floor.** They cannot see focus order, heading placement, double announcements or a load-bearing `ExcludeSemantics`; review those separately.
+
 ## 3. Focus Order Testing
 
 ```dart

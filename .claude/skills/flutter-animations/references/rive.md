@@ -46,7 +46,7 @@ File Rive issues at github.com/rive-app/rive-flutter.
 
 ---
 
-## 2. State Machines — Modern API (rive ^0.14.4) {#state-machines}
+## 2. State Machines — Modern API (rive 0.14.x) {#state-machines}
 
 > **The `RiveAnimation` widget + `StateMachineController.fromArtboard` is the legacy API.**
 > All new enterprise code must use `FileLoader` + `RiveWidgetController` + `RiveWidgetBuilder`.
@@ -314,7 +314,7 @@ Always use `RiveWidgetBuilder` with explicit `RiveFailed` state — never let fa
 
 ## 8. RiveNative.init() {#rivenative-init}
 
-Required for `rive ^0.14.x`. Must be called before `runApp`.
+Required for `rive 0.14.x`. Must be called before `runApp`.
 
 ```dart
 void main() async {

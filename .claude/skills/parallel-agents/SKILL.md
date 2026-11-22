@@ -80,7 +80,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `frontend-design` | Design | Landing pages, dashboards, visual identity |
 | `a2ui-angular` | A2UI | Agent-to-User Interface Angular renderers |
 | `mobile-developer` | React Native | React Native, native iOS/Android, Fastlane |
-| `browser-testing` | Testing | Chrome DevTools, E2E flows, performance |
+| `browser-testing` | Testing | Web targets only: Chrome DevTools, E2E flows, performance (Flutter mobile E2E = Maestro via `flutter-mobile`) |
 | `error-detective` | Debugging | Log analysis, stack traces, root cause |
 | `comment-analyzer` | Documentation | Comment accuracy vs implementation |
 | `code-simplifier` | Refactoring | Complexity reduction, over-engineering |

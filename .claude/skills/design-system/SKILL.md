@@ -61,6 +61,20 @@ What are you working on?
             → Read: .claude/skills/frontend-design/reference/frontend-design-principles.md
 ```
 
+## Before Writing UI — Pre-Flight
+
+Answer before writing; a "no" means fix the plan first.
+
+1. Does a shared component or screen already solve this? (Reuse before create.)
+2. Are all values tokens, with no parallel one-off style?
+3. Is every state designed? See the async-state contract in [interaction-contracts.md](reference/interaction-contracts.md) §6b (loading class, empty, error, offline, pending).
+4. Does it show only truthful state (nothing reads as confirmed before the server confirms)?
+5. Does it reflow at 200% text scale and with the keyboard open and system insets applied?
+6. Does it look right in light and dark?
+7. Any added chrome, duplicate CTA for a destination already in persistent navigation, or a card nested in a card?
+8. Does motion earn its place? See the "Before you animate" gates in `.claude/skills/flutter-animations/SKILL.md`.
+9. Would this only create churn? If the screen already meets the standard, say so; do not redesign for its own sake.
+
 ## Design Rules — Hard Policy (Both Stacks)
 
 These are non-negotiable. Violations are caught by hookify rules at write-time.
@@ -68,7 +82,7 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 ### Colors
 - **NEVER** hardcode hex values (`#3b82f6`, `Color(0xFF...)`)
 - **NEVER** use `rgb()`, `rgba()`, `hsl()`, `hsla()` literals
-- **Flutter:** Use `Theme.of(context).colorScheme.*`
+- **Flutter:** Use `Theme.of(context).colorScheme.*`; `Color.withOpacity` is deprecated — use `withValues(alpha: ...)`
 - **Angular:** Use daisyUI semantic tokens (`bg-primary`, `text-base-content`)
 
 ### Spacing

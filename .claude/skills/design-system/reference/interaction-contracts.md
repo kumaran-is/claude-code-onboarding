@@ -48,7 +48,7 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 | Requirement | Flutter | Angular |
 |-------------|---------|---------|
 | Empty state — message when no data | Dedicated empty state widget with icon + message + optional CTA | `@if (items().length === 0)` with illustration + message |
-| Loading state — skeleton or spinner | `Shimmer` placeholder or `CircularProgressIndicator` | daisyUI `loading loading-spinner` or skeleton divs |
+| Loading state — cold read only (see §6b) | `Shimmer` placeholder mirroring the loaded layout, or `CircularProgressIndicator` | daisyUI `loading loading-spinner` or skeleton divs |
 | Error state — retry action | Error widget with "Retry" button calling reload | `@if (error())` with `alert alert-error` + retry button |
 | Pagination or virtual scroll for 50+ items | `ListView.builder` (virtual by default) | Virtual scroll (`@for` with `trackBy`) or paginated API |
 | Row actions (edit, delete) | `Dismissible` or trailing icon buttons | Icon buttons in last column or dropdown menu |
@@ -57,7 +57,8 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 | Responsive — table → card on mobile | `LayoutBuilder` switching between `DataTable` and `Card` list | `hidden lg:table` for table, `lg:hidden` for card layout |
 
 **NEVER:**
-- Show a blank page when data is loading — always show loading state
+- Show a blank page when data is loading — always show a loading state for a cold read
+- Replace usable (cached/partial) content with a loader — see §6b
 - Show a blank page when data fails to load — always show error + retry
 - Render 100+ items without virtual scrolling or pagination
 - Delete without confirmation on destructive actions
@@ -109,6 +110,41 @@ Consistent across both stacks:
 - **Mobile-first:** Default styles target mobile, use breakpoint prefixes to add desktop behavior
 - **Flutter:** Use `LayoutBuilder` or `MediaQuery` with `AppBreakpoints` constants
 - **Angular:** Use Tailwind responsive prefixes (`sm:`, `md:`, `lg:`)
+
+---
+
+## 6b. Async-State Contract (loading / empty / error / refresh)
+
+Applies to every screen or section that reads remote data.
+
+**Classify before building any loading UI:**
+
+| Class | Meaning | Treatment |
+|---|---|---|
+| A | Cold read, nothing usable to show yet | Skeleton mirroring the loaded layout |
+| B | Existing loading UX already meets this contract | Leave unchanged |
+| C | Action/mutation (submit, save, pay) | Inline progress on the control; never a page skeleton |
+| D | Local, static or already hydrated content | No loader |
+
+**Loading and refresh**
+- Never replace usable (cached/partial) content with a loader on refresh, refresh failure, next-page load or reconnect. Pull-to-refresh keeps content visible and never renders a skeleton.
+- Show the skeleton only after a short delay (~150 ms) and, once shown, hold it briefly (~400 ms) so it never flashes. Every loading state needs a terminal exit: content, empty, cached-offline or explicit error.
+- Streamed/generated text is not class A; show an "analyzing → streaming" state, and keep partial text visible if the stream fails mid-answer.
+- Choose a refresh strategy per remote-read screen (background, automatic, realtime, pull-to-refresh, explicit action or none); pull-to-refresh is not a default wrapper.
+
+**Empty vs error**
+- A successful zero result is the empty state; a failure is the error state. Never let `[]`, `null` or an unchanged loading state stand for both, and never render the error string on the empty path (assert it is absent in a test).
+- Every runtime-sized collection (`ListView.builder`/`separated`, `SliverList`, `GridView.builder`) renders a purposeful empty state at zero: icon + title naming what is absent; subtitle only if it adds information; a CTA only if the action is not already one tap away in persistent navigation. A muted one-line `Text` is not an empty state. Collections that cannot be empty (fixed chips, wizard steps) carry `// empty-state-na: <reason>`.
+- A filtered-empty state names the active filter and offers to clear it.
+- Never gate the empty state on `data.isEmpty` alone when data may still be loading; use a "has ever loaded/synced" discriminator.
+- A widget test that overrides the provider with `[]` proves only that the widget renders an empty state. It says nothing about whether the real data path can produce one.
+
+**Retry**
+- Retry is a fresh read (new fetch/re-subscription), single-flight (repeated taps → one request; the guard clears on success, empty, failure and cancel).
+- A slow retry keeps the error on screen with its action disabled and compact progress; it does not re-enter the skeleton.
+- Copy is contextual and non-technical; exception text and stack traces are debug-only. Say "offline" only when offline is actually known.
+
+**State coverage to design per screen:** loaded · cold loading · cached refresh · empty · filtered-empty · pending · syncing · stale · offline · degraded network (slow ≠ offline, timeout ≠ failure) · permission denied (offer the system settings path) · partial (names what did not load) · error · success. No false success: nothing reads as paid/sent/complete before authoritative confirmation; optimistic UI only for reversible low-risk actions.
 
 ---
 

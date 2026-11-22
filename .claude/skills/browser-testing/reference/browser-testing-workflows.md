@@ -312,6 +312,8 @@ playwright-cli -s=monitor screenshot --output payment-error.png
 
 ## Flutter Web Testing Notes
 
+> Applies only to the Flutter **web** build. It never validates the Android/iOS app; that uses Maestro (`.claude/rules/testing-tool-selection.md`).
+
 ### DDC Bootstrap (Development Mode)
 
 Flutter web in DDC mode does NOT auto-start. You must trigger it:

@@ -2,7 +2,7 @@
 
 Flutter-specific testing strategy: when to use each testing approach and why. Mobile testing is NOT web testing — different constraints, different strategies.
 
-**Tools in this workspace:** `flutter_test` (unit + widget), `integration_test` (integration), Maestro MCP (E2E cross-platform), xcodebuild MCP (iOS build and launch). See the `flutter-mobile` skill for detailed tool setup.
+**Tools in this workspace:** `flutter_test` (unit + widget), `integration_test` (integration), Maestro MCP (E2E cross-platform), xcodebuild MCP (iOS build and launch). See the `flutter-mobile` skill for detailed tool setup. Mobile UI/E2E automation never uses browser tools (Playwright, Chrome DevTools); missing Maestro/device = BLOCKED/NOT RUN (`.claude/rules/testing-tool-selection.md`).
 
 ---
 
@@ -221,6 +221,10 @@ DO NOT TEST:
 5. Save generated YAML to test/e2e/<flow-name>.yaml for reuse
 ```
 
+> Flow conventions (tags, helpers, regex matching, iOS/Android differences, evidence), the `integration_test` vs Maestro split,
+> and simulator push/deep-link testing: `flutter-mobile/reference/flutter-e2e-maestro.md`.
+> Flaky-test protocol and false-red triage: `flutter-mobile/reference/flutter-testing-traps.md` §9.
+
 **Flow file conventions:**
 - Save to `test/e2e/` at project root
 - Name by user journey: `login-flow.yaml`, `create-item-flow.yaml`
@@ -342,8 +346,12 @@ flutter run --profile
 ```
 AUTOMATED (in widget tests):
 await tester.pumpWidget(myWidget);
-final semantics = tester.getSemantics(find.byType(MyButton));
-expect(semantics.label, 'Save button');
+// getSemantics(finder) returns the nearest ANCESTOR semantics node, which can be a merged node.
+// Locate by label (also detects duplicate nodes) and read flags via flagsCollection:
+final node = find.bySemanticsLabel('Save button');
+expect(node, findsOneWidget);
+expect(tester.getSemantics(node).flagsCollection.isButton, isTrue);
+// hasFlag is deprecated (after Flutter 3.32). Details: flutter-mobile/reference/flutter-testing-traps.md §4
 
 MANUAL:
 +-- Enable VoiceOver (iOS): Settings -> Accessibility -> VoiceOver

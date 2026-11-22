@@ -361,8 +361,8 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
                 icon: Icon(
                   Icons.attach_file,
                   color: widget.isStreaming
-                    ? colorScheme.onSurface.withOpacity(0.3)
-                    : colorScheme.onSurface.withOpacity(0.6),
+                    ? colorScheme.onSurface.withValues(alpha: 0.3)
+                    : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 tooltip: 'Attach image',
                 onPressed: widget.isStreaming ? null : _pickImage,
@@ -407,13 +407,13 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
                     style: IconButton.styleFrom(
                       backgroundColor: _canSend
                         ? colorScheme.primary
-                        : colorScheme.onSurface.withOpacity(0.12),
+                        : colorScheme.onSurface.withValues(alpha: 0.12),
                     ),
                     icon: Icon(
                       Icons.send,
                       color: _canSend
                         ? colorScheme.onPrimary
-                        : colorScheme.onSurface.withOpacity(0.38),
+                        : colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
                     tooltip: 'Send message',
                     onPressed: _canSend ? _send : null,
@@ -453,7 +453,7 @@ class _AttachmentChip extends StatelessWidget {
           ),
           child: !attachment.isImage
             ? Icon(Icons.insert_drive_file_outlined,
-                color: colorScheme.onSurface.withOpacity(0.6))
+                color: colorScheme.onSurface.withValues(alpha: 0.6))
             : null,
         ),
         Positioned(

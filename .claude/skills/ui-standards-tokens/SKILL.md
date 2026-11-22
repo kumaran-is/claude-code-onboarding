@@ -68,6 +68,12 @@ When a design rule must be violated intentionally, use:
 ```
 Exceptions are reviewed like code debt. Periodically audit and remove stale exceptions.
 
+**Hatch contract (enforced by the hookify design rules):**
+- The marker exempts only the line it is on or the line directly below it. A marker elsewhere in a file never exempts the file.
+- A reason is required. A bare `// ignore-design` or a placeholder ("n/a", "todo") is a violation, not an exemption.
+- Valid reasons: an approved design-mock pixel override, a platform-generic font family, a one-off widget with no shared peer.
+- Count markers per PR. A rising count means the shared component or token is missing something: say so in the PR.
+
 ## Scope and Exception Policy
 
 ### Enforcement Scope
@@ -99,3 +105,13 @@ When a design rule must be violated intentionally:
 | Component TypeScript (`.ts`) | Configuration files |
 
 Angular exception marker: `<!-- ignore-design: [reason] -->` in templates, `// ignore-design: [reason]` in TS/SCSS.
+
+## Writing or Changing a Design Gate (grep/CI check)
+
+1. **Positive control:** feed the pattern a known-bad line (e.g. `Color(0xFF112233)`) and assert it matches.
+2. **Negative control:** feed a known-good line (a tokenised value, an interpolated string) and assert it does not match.
+3. If either control fails, abort with a distinct exit code; never print "clean". A scanner's zero is not evidence until it has caught a known violation.
+4. Report probes that did not compile or run as UNMEASURED, never as passed.
+5. Gate scope must equal rule scope. If the rule says "every user-facing string", a gate that only sees `label:`/`hint:` is a weaker rule; name that limit in the gate header.
+6. **Adopting a gate on an existing codebase:** if it cannot reach zero on day one, record a per-category budget that may only decrease. An over-generous budget also fails, so the fix lowers it in the same change.
+7. Exemption filter: honour the same-line or preceding-line marker only (see Hatch contract) and self-test the filter (it must drop a justified hit and keep an unjustified one).

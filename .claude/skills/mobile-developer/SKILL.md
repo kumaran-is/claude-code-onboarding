@@ -30,7 +30,7 @@ last-reviewed: "2026-03-15"
 | EAS Update / CodePush OTA | YES | No |
 | Flutter CI/CD (GitHub Actions, build) | No — use deployment-engineer agent | No |
 | Detox E2E (React Native) | YES | No |
-| Maestro E2E (Flutter) | No | YES (via flutter-mobile) |
+| Maestro E2E (Flutter; never a browser tool, see `.claude/rules/testing-tool-selection.md`) | No | YES (via flutter-mobile) |
 | App Store signing (any) | No | No — use asc-signing-setup skill |
 
 ## Capabilities

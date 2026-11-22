@@ -131,6 +131,23 @@ await tester.pump(Duration.zero); // process timers without advancing real time
 await tester.pumpAndSettle();     // run until no pending frames — use for animations/async
 ```
 
+## Timers and clocks: use `fakeAsync`
+
+```dart
+// dev_dependencies: fake_async: 1.3.3
+test('retries after the backoff elapses', () {
+  fakeAsync((async) {
+    final calls = <int>[];
+    startRetrying(onAttempt: calls.add, backoff: const Duration(seconds: 5));
+    async.elapse(const Duration(seconds: 5));
+    expect(calls, [1, 2]); // virtual time: no real waiting, no CPU-load flake
+  });
+});
+```
+
+Injecting a clock while still waiting on a real `Timer`/`Future.delayed` makes the test pass idle and fail under load.
+More traps (vacuous assertions, controls, goldens): `flutter-mobile/reference/flutter-testing-traps.md`.
+
 ## RED-GREEN Example
 
 ```bash

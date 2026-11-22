@@ -18,6 +18,8 @@ last-reviewed: "2026-03-29"
 
 # Browser Automation & Testing Skill
 
+> **Scope:** web targets only. Flutter Android/iOS UI/E2E uses Maestro CLI/MCP (`.claude/rules/testing-tool-selection.md`); never route a Flutter mobile app here, and never substitute a browser when Maestro or a device is unavailable (report BLOCKED/NOT RUN).
+
 This skill combines **two tools** for complete browser automation:
 
 - **playwright-cli** — stateful Bash CLI for deterministic scripted tests (navigation, snapshots, screenshots, network/console inspection, tracing)
@@ -108,7 +110,7 @@ python scripts/with_server.py --help
 | **NestJS** | `python scripts/with_server.py --server "npm run start:dev" --port 3000 -- playwright-cli goto http://localhost:3000` |
 | **FastAPI** | `python scripts/with_server.py --server "uvicorn main:app --port 8000" --port 8000 -- playwright-cli goto http://localhost:8000` |
 | **Spring Boot** | `python scripts/with_server.py --server "mvn spring-boot:run" --port 8080 -- playwright-cli goto http://localhost:8080` |
-| **Flutter Web** | `python scripts/with_server.py --server "flutter run -d web-server --web-port 8080" --port 8080 -- playwright-cli goto http://localhost:8080` |
+| **Flutter Web** (web build only: says nothing about Android/iOS) | `python scripts/with_server.py --server "flutter run -d web-server --web-port 8080" --port 8080 -- playwright-cli goto http://localhost:8080` |
 
 ### Multi-server (backend + frontend together)
 

@@ -241,7 +241,7 @@ class _FeedbackBarState extends State<FeedbackBar> {
                 _copied ? Icons.check : Icons.copy_outlined,
                 color: _copied
                   ? colorScheme.primary
-                  : colorScheme.onSurface.withOpacity(0.6),
+                  : colorScheme.onSurface.withValues(alpha: 0.6),
                 size: AppSpacing.iconSm,
               ),
               onPressed: _onCopy,
@@ -257,8 +257,8 @@ class _FeedbackBarState extends State<FeedbackBar> {
                 icon: Icon(
                   Icons.refresh,
                   color: widget.isStreaming
-                    ? colorScheme.onSurface.withOpacity(0.3)
-                    : colorScheme.onSurface.withOpacity(0.6),
+                    ? colorScheme.onSurface.withValues(alpha: 0.3)
+                    : colorScheme.onSurface.withValues(alpha: 0.6),
                   size: AppSpacing.iconSm,
                 ),
                 onPressed: widget.isStreaming ? null : _onRegenerate,
@@ -298,7 +298,7 @@ class _FeedbackButton extends StatelessWidget {
           isActive ? activeIcon : icon,
           color: isActive
             ? activeColor
-            : colorScheme.onSurface.withOpacity(0.6),
+            : colorScheme.onSurface.withValues(alpha: 0.6),
           size: AppSpacing.iconSm,
         ),
         onPressed: onTap,

@@ -91,7 +91,7 @@ Last verified: 2026-03-15
 | Agent | Role | Use For |
 |-------|------|---------|
 | `error-detective` | Runtime error investigator | Log analysis, stack traces, root cause from runtime data |
-| `browser-testing` | Browser automation | E2E flows, Chrome DevTools, performance testing |
+| `browser-testing` | Browser automation (web targets only) | E2E flows, Chrome DevTools, performance testing; Flutter mobile E2E is Maestro via `flutter-mobile` |
 | `tutorial-engineer` | Content creator | Onboarding guides, feature tutorials |
 | `dx-optimizer` | Dev experience | Setup automation, git hooks, IDE config, README |
 | `skill-reviewer` | Skills auditor | Checks .claude/skills/ compliance |

@@ -17,9 +17,36 @@ last-reviewed: "2026-03-15"
 
 ## Iron Law
 
-**RESOLVE ENGINE CHOICE FIRST (Rive vs Lottie) before writing a single line of animation code — use the decision table below. Then read the relevant reference file. Never hardcode asset paths.**
+**BEFORE the engine choice, pass the "Before you animate" gates below. Then resolve engine choice (Rive vs Lottie) before writing a single line of animation code — use the decision table. Then read the relevant reference file. Never hardcode asset paths.**
 
 # Flutter Animations — Rive + Lottie Dual-Engine
+
+## Before you animate — decide in this order
+
+1. **Should it move at all?** Only if motion measurably improves feedback, comprehension, continuity, state clarity or progress. "No animation" is a valid, reportable decision.
+2. **What real event drives it?** Animate semantic changes (a status transition, a genuinely new item). Never animate framework mechanics: rebuilds, state invalidation, cache/local-DB hydration, background refresh, pagination, sort/filter, navigation restoration. Test: if equal data arriving again would re-animate, the trigger is wrong.
+3. **List stability.** Existing rows stay put on load, refresh, sort, filter and return. Only a real insertion, removal or user-triggered row transition may move. Staggered entrances are for a first, deliberate reveal only.
+4. **Engine.** Flutter native by default (implicit animations, `AnimatedSwitcher`, transitions); designer-owned decorative sequence → Lottie; data/input-driven multi-state → Rive. When unsure, default down that list. Use shared duration/curve tokens, not literals, if the project defines them.
+5. **Reduced motion** (`MediaQuery.disableAnimationsOf(context)`): replace movement, never information or function.
+
+| Normal | Reduced motion |
+|---|---|
+| Slide / scale | Instant state change, or a minimal opacity change |
+| Shimmer | Static placeholder |
+| Lottie / Rive | Static frame or icon + text |
+| `Hero` | Standard route transition |
+| Animated insertion | Immediate insertion, or a static highlight |
+| Looping decoration / pulse | Static frame |
+
+   Never pass a zero `Duration` to `AnimatedSize`/implicit animations that restart a controller during layout as a "reduced motion" shortcut — return the child unwrapped instead.
+6. **Additive only.** Motion is never the sole signal of success, failure, progress, offline or sync state; pair it with text, an icon, or `Semantics`. Announce on the semantic event, not on animation completion; keep touch targets >= 48dp mid-transition.
+7. **Lifecycle proportional to cost.** Scrutinise loops, motion inside scrolling rows, custom controllers, complex `Hero`. A press ripple or `AnimatedOpacity` needs no lifecycle machinery. Dispose every controller/listener you create; profile before optimising.
+8. **`Hero` only if** the element is unique, visually stable, present in both screens, the same object, and genuinely improved by continuity. Tags must be unique across a list.
+9. **No casual new animation dependency.** Adding a package is an explicit architecture decision, not a side effect of building a screen.
+
+### Testing motion
+
+Assert *state → visible result*, not millisecond timings. Cover: reduced-motion fallback renders and keeps the meaning readable (wrap the widget in `MediaQuery(data: const MediaQueryData(disableAnimations: true), child: ...)`); two fast taps do not double-trigger; equal data re-delivered causes no animation; cache-restored content appears without entrance motion; controllers dispose with no "ticker active when disposed"; asset-load failure shows the fallback. Use `pump(duration)` on infinite loops — `pumpAndSettle` never settles. Positive-control each test: break the behaviour on purpose and confirm it fails for the stated reason (see [flutter-testing-traps.md](../flutter-mobile/reference/flutter-testing-traps.md)).
 
 ## Engine Decision (Always resolve first)
 
@@ -44,8 +71,8 @@ last-reviewed: "2026-03-15"
 
 ```yaml
 dependencies:
-  rive: ^0.14.4          # rive.app verified publisher
-  lottie: ^3.3.2         # xaha.dev verified publisher
+  rive: 0.14.11          # rive.app verified publisher (pub.dev, checked)
+  lottie: 3.8.2          # xaha.dev verified publisher (pub.dev, checked)
 ```
 
 ---
@@ -86,7 +113,7 @@ lib/
 6. **Never hardcode asset paths** — use typed `AnimationAssets` constants class
 7. **Wrap in error boundary** — `RiveWidgetBuilder` loading/failed states for Rive; try/catch for Lottie
 8. **Semantic labels on all animations** — `Semantics(label: '...', child: ...)`
-9. **Reduce motion** — check `MediaQuery.of(context).disableAnimations` and skip/pause
+9. **Reduce motion** — check `MediaQuery.disableAnimationsOf(context)` and skip/pause the motion (never the function)
 10. **Test with `flutter_test`** — pump and verify state transitions; mock asset loading
 11. **Size budget** — `.riv` < 500 KB; `.json` < 300 KB; prefer `.lottie` (dotLottie zip) over raw JSON
 12. **Multiple Rive widgets on screen** — wrap in `RivePanel(useSharedTexture: true)` for GPU performance
@@ -95,7 +122,7 @@ lib/
 
 ## Minimal Working Examples
 
-### Rive — Interactive Toggle (modern API, rive ^0.14.4)
+### Rive — Interactive Toggle (modern API, rive 0.14.x)
 
 > NOTE: `RiveAnimation.asset` + `StateMachineController.fromArtboard` is the LEGACY API.
 > Use `FileLoader` + `RiveWidgetController` + `RiveWidgetBuilder` for all new code.
@@ -150,12 +177,12 @@ class _AnimatedToggleState extends State<AnimatedToggle> {
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Semantics(
       label: 'Toggle button',
       button: true,
       child: GestureDetector(
-        onTap: reduceMotion ? null : _toggle,
+        onTap: _toggle, // reduced motion removes movement, never the control
         child: reduceMotion
             ? _StaticToggleFallback(isOn: _isOn)
             : SizedBox(
@@ -217,7 +244,7 @@ class _EmptyStateAnimationState extends State<EmptyStateAnimation>
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [

@@ -347,9 +347,9 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
         ),
         padding: EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-          color: config.color.withOpacity(0.12),
+          color: config.color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(color: config.color.withOpacity(0.4)),
+          border: Border.all(color: config.color.withValues(alpha: 0.4)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +369,7 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
               SizedBox(height: AppSpacing.xs),
               Text(config.suggestion!,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.7),
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
                 )),
             ],
             SizedBox(height: AppSpacing.sm),
@@ -397,7 +397,7 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
                   icon: const Icon(Icons.flag_outlined, size: 16),
                   label: const Text('Flag as inaccurate'),
                   style: TextButton.styleFrom(
-                    foregroundColor: colorScheme.onSurface.withOpacity(0.6),
+                    foregroundColor: colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
             ]),

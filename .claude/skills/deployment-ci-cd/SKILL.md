@@ -70,6 +70,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | `reference/health-endpoints.md` | Liveness/readiness endpoints per stack; Cloud Run probe flags |
 | `reference/env-config-validation.md` | Fail-fast configuration |
 | `reference/web-frontend-delivery.md` | Browser apps on static hosting: `npm ci` + Node pin, runtime `config.json` validated at boot (fail closed), hashed-immutable vs `no-cache` caching, previews, promote/rollback, private source maps, post-deploy header check script, error monitoring, OTel browser (experimental) + `traceparent` CORS |
+| `reference/genui-contract-ci.md` | GenUI A2UI v0.9 contract CI (GitHub Actions example): path-filtered catalog schema + fixtures, action payload compatibility, protocol version, declared-platform parity, tsc/analyze/unit, security negative controls, Playwright + axe (web), hook selftest, link check |
 
 ## Production Readiness Checklist
 

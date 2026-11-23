@@ -1,6 +1,6 @@
 ---
 name: rag-eval-runner
-description: Use to run the RAG eval suite and produce a regression report. Best invoked after pipeline changes or before a release. Returns retrieval metrics, answer metrics, comparison to a matching baseline, per-query flips with a paired test, and a list of regressed queries. Runs in a separate context to keep the main session clean. Never edits code, golden sets or baselines.
+description: Use to run the RAG eval suite and produce a regression report. Best invoked after pipeline changes or before a release. Returns retrieval metrics, answer metrics, comparison to a matching baseline, per-query flips with a paired test, and a list of regressed queries. Runs in a separate context to keep the main session clean. Never edits code, golden sets or baselines. Not for reviewing eval code (eval-reviewer) or RAG implementation code (rag-implementation-reviewer).
 tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit
 model: sonnet

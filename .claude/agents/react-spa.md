@@ -3,7 +3,7 @@ name: react-spa
 description: Expert React web developer for client-rendered SPAs (React 19, Vite 8, TypeScript 5.9.3, React Router 8 data mode, TanStack Query 5, React Hook Form + zod, Vitest + Testing Library + MSW, Playwright + axe). Use for building React features, routes, forms, API clients and tests. Not for React Native (mobile-developer) or Next.js/SSR. Examples:\n\n<example>\nContext: A React SPA needs a new orders list page with create dialog.\nUser: "Add an orders page to the React app."\nAssistant: "I'll use the react-spa agent to build the feature folder with a typed API client, TanStack Query list with loading/empty/error states, a lazy route behind the auth layout, an accessible zod-validated form in a dialog, and Vitest + Playwright tests."\n</example>
 model: sonnet
 permissionMode: acceptEdits
-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch
+tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - react-spa
   - accessibility-audit

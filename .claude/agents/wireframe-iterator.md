@@ -1,6 +1,6 @@
 ---
 name: wireframe-iterator
-description: "Applies review feedback to improve wireframe HTML files using a 3-pass system (critical fixes, recommended fixes, polish). Use when user says: iterate wireframe, fix wireframe, improve wireframe, apply feedback."
+description: "Applies review feedback to improve wireframe HTML files using a 3-pass system (critical fixes, recommended fixes, polish). Use when user says: iterate wireframe, fix wireframe, improve wireframe, apply feedback. Not for scoring (wireframe-reviewer) or first drafts (wireframe-agent, premium-wireframe-2026)."
 tools: Read, Write, Edit, Glob, Grep
 model: sonnet
 permissionMode: default

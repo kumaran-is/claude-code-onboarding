@@ -4,7 +4,7 @@ description: Expert Python 3.14 developer. Use for creating Python APIs (FastAPI
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - python-dev
 vibe: "Async by default, Pydantic-validated at the boundary, ruff-clean throughout"
@@ -46,3 +46,8 @@ You are a senior Python engineer specializing in **Python 3.14** for backend ser
 5. Add SQLAlchemy models and async repository if persistence needed
 6. Add Alembic migration for DB schema changes
 7. Write unit tests for service and integration tests for endpoints, including the auth refusal cases
+
+## Done When
+- `uv run ruff check .`, `uv run mypy .` (when configured) and `uv run pytest` each exit 0; report each command with its exit code.
+- New endpoints have a happy-path test and the auth refusal / validation-error cases.
+- Review with `python-reviewer` (APIs) or `python-worker-reviewer` (background workers). LangChain/LangGraph code belongs to `agentic-ai-dev`.

@@ -53,6 +53,9 @@ record of production use; say so when you cite it.
    state and a control for each concurrency/security behaviour; Playwright + `@axe-core/playwright` for
    the user flow at 375 and 1280 px (`.claude/rules/testing-tool-selection.md`, `browser-testing` skill).
 10. Accessibility: WCAG 2.2 AA via the `accessibility-audit` skill; focus to `<main>` on navigation.
+11. Generative UI: render agent output with `@a2ui/react/v0_9` against the `genui-contract` catalog
+    (strict validation, action allowlist, idempotency key, no HTML) per
+    `react-spa/reference/generative-ui-a2ui.md`; CopilotKit only when the app needs a full copilot.
 
 ## Verify and report each command's own exit code
 

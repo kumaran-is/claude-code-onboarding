@@ -245,6 +245,16 @@ otherwise mark it NOT RUN. Positive controls that were run for this skill: a con
 ESLint (`react-hooks/rules-of-hooks`), an `<img>` without `alt` fails ESLint (`jsx-a11y-x/alt-text`), a
 failing test fails Vitest, and low-contrast text fails the axe scan (`color-contrast`).
 
+## Generative UI (A2UI v0.9)
+
+Agent-generated UI uses the official renderer `@a2ui/react@0.15.0` (`/v0_9` entry, never the v0.8
+root export) with `@a2ui/web_core@0.15.0` `MessageProcessor` + `STRICT_VALIDATION`; CopilotKit is
+optional. The wire contract (catalog IDs, action allowlist, golden payloads) belongs to the
+`genui-contract` skill; React maps IDs to components, guards size/version/strings inbound, allowlists
+actions outbound with an `Idempotency-Key` header, and never renders model text as HTML. Note the A2UI
+packages pull zod 3 and currently carry `npm audit` findings. Details, tested code and status:
+`reference/generative-ui-a2ui.md`.
+
 ## Optional: SSR / RSC
 
 This skill assumes a client-rendered SPA. Do not add `hydrateRoot`, Server Components or
@@ -266,3 +276,4 @@ env-var guidance does not transfer unchanged. **UNVERIFIED — no SSR setup was 
 | `reference/accessibility-and-i18n.md` | focus, dialog, forms, axe, i18n basics |
 | `reference/testing.md` | Vitest/RTL/MSW setup, Playwright + axe spec |
 | `reference/tooling.md` | scaffold pins, tsconfig, Vite config, ESLint flat config |
+| `reference/generative-ui-a2ui.md` | A2UI v0.9 renderer, catalog mapping, guards, stream host, topologies, CopilotKit option |

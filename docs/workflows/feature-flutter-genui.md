@@ -133,6 +133,19 @@ If the stream fails, a payload is rejected or the feature is off, show an app-ow
 
 ---
 
+### Phase 9b — Canonical Catalog (cross-platform features only)
+
+When web and mobile render the same agent output, use the framework-neutral catalog from the `genui-contract` skill and `skills/flutter-genui/reference/genui-canonical-catalog-adapter.md`:
+
+- One adapter folder owns every `a2ui_core` / `a2ui_flutter` import; the contract guard and graph checks run before `processMessages`.
+- Component schemas are built from the contract JSON; each canonical id maps to a themed Flutter widget.
+- Actions leave as the canonical `{"version":"v0.9","action":{…}}` payload; side-effecting ones carry an `Idempotency-Key` header.
+- `shared-backend` and `standalone-backend` differ only in the transport's base URL. Flutter consumes AG-UI only through an adapter you build and test.
+
+**Gate:** every contract fixture (valid, invalid, streams) and action golden passes in `flutter test`; the emitted payloads are written for `/audit-a2ui-parity`; live tests pass against both topologies; each check has a negative control.
+
+---
+
 ### Phase 10 — Device Verification
 
 `flutter test` for widget and unit tests. Android/iOS UI and E2E: Maestro only (`flutter-mobile` → `reference/flutter-e2e-maestro.md`). Target fields by their exact label, icon-only controls by tooltip, and wait for the first frame with `extendedWaitUntil` in debug builds. If no emulator, simulator or device is available, report BLOCKED; never substitute a browser.
@@ -182,6 +195,7 @@ If the stream fails, a payload is rejected or the feature is off, show an app-ow
 ## Related Workflows
 
 - [`feature-a2ui-renderer.md`](feature-a2ui-renderer.md) — Angular equivalent (A2UI renderer)
+- [`genui-contract` skill](../../.claude/skills/genui-contract/SKILL.md) — canonical cross-platform catalog and fixtures
 - [`feature-flutter-mobile.md`](feature-flutter-mobile.md) — base Flutter patterns
 - [`feature-google-adk.md`](feature-google-adk.md) — backend agent generating A2UI payloads
 - [`security-audit.md`](security-audit.md) — security review of the agent-UI boundary

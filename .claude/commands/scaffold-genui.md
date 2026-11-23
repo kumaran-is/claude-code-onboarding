@@ -17,7 +17,8 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
 1. Read the `flutter-genui` skill (`SKILL.md` and the `reference/*.md` files). Every code template below comes from those references, where it compiles and is tested.
 2. Read the `flutter-mobile` skill's `reference/flutter-architecture-patterns.md` (structure) and `reference/flutter-testing-traps.md` (tests).
 3. Confirm the project's Flutter is ≥ 3.38 and Dart ≥ 3.10 (`flutter --version`); `a2ui_flutter` 0.4.0 requires them.
-4. Ask which topology applies if the request does not say: an agent server streams A2UI (default), or the app calls a model itself (adds `a2ui_agent`).
+4. Ask which topology applies if the request does not say: an agent server streams A2UI (default; `shared-backend` or `standalone-backend`), or the app calls a model itself (adds `a2ui_agent`).
+5. Ask whether the feature renders the cross-platform canonical catalog (`genui-contract` skill). If yes, follow `reference/genui-canonical-catalog-adapter.md` for steps 2–9: one `genui/` adapter folder (contract guard, catalog built from the contract JSON, theme tokens, session, transport), the conventional fallback, and the fixture, golden and live tests listed there.
 
 ## Steps
 

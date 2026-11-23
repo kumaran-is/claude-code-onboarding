@@ -4,7 +4,7 @@ description: "Flutter generative UI with the A2UI protocol v0.9 — a2ui_flutter
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__dart-mcp-server__dart
 metadata:
   triggers: A2UI Flutter, a2ui_flutter, a2ui_core, a2ui_agent, MessageProcessor, A2uiSurface, CatalogImplementation, ComponentImplementation, BasicComponents, basicCatalog, A2uiGenerator, ResponseStream, GenUI, genui, Flutter GenUI, generative UI Flutter, agent-driven UI Flutter, conversational UI Flutter, createSurface, updateComponents, updateDataModel
-  related-skills: flutter-mobile, a2ui-angular, google-adk, streaming-protocols, accessibility-audit
+  related-skills: genui-contract, flutter-mobile, a2ui-angular, google-adk, streaming-protocols, accessibility-audit
   domain: frontend
   role: specialist
   scope: implementation
@@ -26,6 +26,21 @@ An agent describes a UI as A2UI JSON messages; the Flutter app validates them ag
 - **New work targets v0.9**, matching the `a2ui-angular` skill. Import the v0.9 catalog from `package:a2ui_flutter/v0_9/basic_catalog.dart` and set `defaultVersion: A2uiProtocolVersion.v0_9`.
 - **v1.0 exists**: `package:a2ui_flutter/basic_catalog.dart` (no `v0_9/`) is the v1.0 catalog, and `VersionAdapterRegistry.standard()` holds the v0.9 and v1.0 adapters. Do not mix versions between agent, renderer and catalog.
 - Older protocol messages have no adapter: `processMessages` throws on them. See [Migrating from genui](#migrating-from-genui).
+- Re-checked 2026-11-23 on pub.dev: `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0 and `a2ui_agent` 0.4.0 are the latest (published 2026-11-17, not discontinued); `genui` 0.10.4 is `isDiscontinued: true`, `replacedBy: a2ui_flutter`. The docs.flutter.dev GenUI page (last updated 2026-08-19) still describes `genui` as alpha: treat pub.dev and the package source as authoritative.
+
+## Canonical catalog and the adapter boundary
+
+When the feature uses the cross-platform canonical catalog (`genui-contract` skill: `ActionCard`, `DataSummaryTable`, `ApprovalForm`, `SelectionList`, `DetailPanel`, `StatusIndicator`, `InputForm`, `ConfirmationDialog`), follow `reference/genui-canonical-catalog-adapter.md`:
+
+- **One adapter folder** is the only code that imports `a2ui_core` / `a2ui_flutter`; screens use `GenUiSession`, `GenUiFailure` and `CanonicalAction`, so an SDK change touches one module.
+- **Contract guard before the SDK.** `a2ui_core` 0.8.0 alone accepted `<script>` / `javascript:` strings and mis-coded 9 of 20 invalid contract fixtures (tested). Check version, single body, unsafe strings, `functionCall`, component and per-component action allowlists, then surface state and graph (duplicate, not found, missing root, cycle, depth 8).
+- **Schemas come from the contract JSON** (`Schema.fromMap` + `$defs` as `definitions`), never a hand copy.
+- **Map ids to your widgets** with theme tokens from `ColorScheme` + a `ThemeExtension`; no hardcoded colours, no agent-chosen colours.
+- **Typed bindings** (`integer` writes an `int`), **canonical action payloads** (`{"version":"v0.9","action":{…}}`), and an `Idempotency-Key` header (UUIDv4 per intent) for side-effecting actions, never in `context`.
+- **Conventional fallback**: on any validation, version, transport or action failure, show the code and an app-owned form; keep valid surfaces.
+- **Topologies** `shared-backend` and `standalone-backend` differ only in the transport's base URL; cancel (`AbortableRequest`), reconnect (`Last-Event-ID`), `resync` and `INCOMPLETE_FRAME` handling are in the reference.
+- **Flutter does not consume CopilotKit or AG-UI streams** without an adapter you build and test. The reference's `AguiA2uiAdapter` (RECOMMENDED PRACTICE, tested against the reference backend) reads only `ACTIVITY_SNAPSHOT` events with `activityType: "a2ui-surface"`.
+- **No secrets in the app**: only the user's session token; model and tool keys stay on the dedicated agent backend.
 
 ## Iron Law
 
@@ -67,7 +82,8 @@ dependencies:
 5. `reference/genui-conversation-orchestration.md` — agent-server and in-app-model topologies, Riverpod, fallback
 6. `reference/genui-functions.md` — the 14 v0.9 basic functions, checks, `openUrl`
 7. `reference/genui-security.md` — threat model, `ValidationConfig`, locked-down catalogs, limits
-8. Verify any API not shown in these files in the package source (`dart-mcp-server` `read_package_uris` / `rip_grep_packages`) before using it
+8. `reference/genui-canonical-catalog-adapter.md` — canonical catalog, adapter boundary, contract guard, fallback, topologies, AG-UI adapter
+9. Verify any API not shown in these files in the package source (`dart-mcp-server` `read_package_uris` / `rip_grep_packages`) before using it
 
 ## Process
 
@@ -166,6 +182,8 @@ The only place older-protocol names belong. Every row was checked against `a2ui_
 | `a2ui_agent` | `https://pub.dev/packages/a2ui_agent` | Prompt snippet, response parsing, streaming |
 | Source | `https://github.com/a2ui-project/a2ui` | Packages, examples, conformance tests |
 | A2UI protocol | `https://a2ui.org/` | Specification |
+| Canonical contract | `../genui-contract/SKILL.md` | Catalog ids, actions, fixtures, golden payloads |
+| AG-UI A2UI mapping | `@ag-ui/a2ui-middleware` 0.0.16 (npm) | `ACTIVITY_SNAPSHOT` / `a2ui-surface` shape the Flutter adapter reads |
 | Shared protocol notes | `../a2ui-angular/reference/a2ui-protocol.md` | v0.9 message reference used by the Angular skill |
 | Dart MCP | `dart-mcp-server` | Read the resolved package source |
 | Context7 | `Context7` MCP | Fallback docs |

@@ -13,9 +13,9 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 - **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
 - **Backend (Python)**: Python 3.14, FastAPI (backend references verified on 0.165.x; the agentic stack pins 0.135.2), Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2
-- **Frontend**: Angular 21.2.x (SPA), TypeScript 5.9.x, RxJS, SCSS
-- **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.x SPA, Vite 8, React Router 8, TanStack Query 5, TypeScript 5.9.3
-- **Mobile**: Flutter 3.41.x (Dart 3.10.9), cross-platform (iOS + Android)
+- **Frontend**: Angular 22.3.x (SPA, CLI-first scaffolding), TypeScript 6.0.x (Angular 22 requires >=6.0 <6.1), Node 26 LTS, RxJS 7.8, Tailwind CSS 4.3.5 + daisyUI 5.8.2
+- **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.3 SPA, Vite 8, React Router 8, TanStack Query 5, TypeScript 6.0.3 (Node 26); full-stack via Next.js 16.4 App Router or React Router 8 framework mode: see `/scaffold-react-app`
+- **Mobile**: Flutter 3.50.x (Dart 3.14.0), cross-platform (iOS + Android)
 - **Database**: PostgreSQL (primary), Firebase Firestore (mobile real-time)
 - **Infrastructure**: Firebase (Auth, Firestore, Cloud Messaging), Docker
 - **Build Tools**: Maven (Java), npm (NestJS/Angular), uv/pip (Python), flutter CLI
@@ -68,8 +68,8 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
-| React (web SPA; not React Native, not Next.js/SSR) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
-| GenUI contract (suitability gate, A2UI v0.9, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
+| React (web SPA; full-stack choice in `/scaffold-react-app`; not React Native) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
+| GenUI contract (suitability gate, A2UI 1.0 target + v0.9.x compatibility, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
 | Angular GenUI (A2UI renderer) | `.claude/skills/a2ui-angular/` | `a2ui-angular` | `/scaffold-a2ui` |
 | Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |
 | Web performance + SEO (public sites only) | `.claude/skills/web-performance-optimization/` | `performance-oracle` | — |

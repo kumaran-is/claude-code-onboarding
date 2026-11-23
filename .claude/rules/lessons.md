@@ -45,3 +45,8 @@ as concise rules to prevent recurrence. It is auto-loaded every session.
 **Mistake:** Told sub-agent to run `/scaffold-flutter-app` as bash; agent fell back to `flutter create`, skipping the full industry-standard structure (design_system/, core/di/, clean arch layers).
 **Rule:** Scaffold slash commands MUST be run by the orchestrator in the main session via Skill tool BEFORE spawning any agents — sub-agents cannot invoke slash commands.
 **Applies:** All multi-agent project creation tasks (Flutter, Angular, NestJS, Python, Spring)
+
+## [2026-11-23] Communication [x2]
+**Mistake:** Kept asking or hinting for yes/no approval (RED-tier edits, "nothing is committed") after the user gave blanket approval.
+**Rule:** In this repo, take the recommended option and report it; no approval prompts or approval-fishing lines, commit/push included once the audit passes.
+**Applies:** All toolkit maintenance tasks in this repo

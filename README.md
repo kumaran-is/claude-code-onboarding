@@ -11,11 +11,11 @@
 ![LangChain](https://img.shields.io/badge/LangChain-1.2.8-1C3C3C?style=flat&logo=langchain&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0.7-1C3C3C?style=flat)
 ![Google ADK](https://img.shields.io/badge/Google%20ADK-1.28.0-4285F4?style=flat&logo=google&logoColor=white)
-![Angular](https://img.shields.io/badge/Angular-21.2.x-DD0031?style=flat&logo=angular&logoColor=white)
-![A2UI](https://img.shields.io/badge/A2UI-v0.9-0F9D58?style=flat&logo=google&logoColor=white)
+![Angular](https://img.shields.io/badge/Angular-22.3.x-DD0031?style=flat&logo=angular&logoColor=white)
+![A2UI](https://img.shields.io/badge/A2UI-1.0-0F9D58?style=flat&logo=google&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.x-3178C6?style=flat&logo=typescript&logoColor=white)
-![Flutter](https://img.shields.io/badge/Flutter-3.41.x-02569B?style=flat&logo=flutter&logoColor=white)
-![Dart](https://img.shields.io/badge/Dart-3.10.9-0175C2?style=flat&logo=dart&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.x-02569B?style=flat&logo=flutter&logoColor=white)
+![Dart](https://img.shields.io/badge/Dart-3.14.0-0175C2?style=flat&logo=dart&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-vector%20search-4169E1?style=flat&logo=postgresql&logoColor=white)
 ![Weaviate](https://img.shields.io/badge/Weaviate-serverless-4AC37E?style=flat&logo=weaviate&logoColor=white)
@@ -39,8 +39,8 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 |---|---|
 | **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.2.x, Python v3.14 |
 | **Agentic AI** | Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, Google ADK, FastAPI 0.135.2 |
-| **Frontend** | Angular 21.2.x, TypeScript 5.9.x, A2UI v0.9 (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
-| **Mobile** | Flutter 3.41.x, Dart 3.10.9, three_dart (3D in Flutter) |
+| **Frontend** | Angular 22.3.x, TypeScript 6.0.x, React 19.3 (optional), A2UI 1.0 with a v0.9.x compatibility path (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
+| **Mobile** | Flutter 3.50.x, Dart 3.14.0, three_dart (3D in Flutter) |
 | **Data & Infra** | PostgreSQL, pgvector (vector search), Weaviate Serverless, Firebase |
 | **AI Tooling** | Claude Code, MCP servers |
 
@@ -1979,13 +1979,13 @@ claude-code-onboarding/
         │                                 # session management, memory, artifacts, FastAPI integration (8 reference files)
         │
         │  # — Frontend & mobile skills —
-        ├── angular-spa/                  # Angular 21.x: standalone components, signals, control flow,
-        │                                 # TailwindCSS 4.x + daisyUI 5.x setup, zoneless testing,
+        ├── angular-spa/                  # Angular 22.x: standalone components, signals, control flow,
+        │                                 # Tailwind CSS 4.3.5 + daisyUI 5.8.2 setup, zoneless testing,
         │                                 # accessibility checklist, troubleshooting (12 reference files)
         ├── a2ui-angular/                 # A2UI (Agent-to-User Interface): recursive renderer,
         │                                 # component catalog allowlist, agent service (REST/SSE),
         │                                 # security validation, streaming support (5 reference files)
-        ├── flutter-mobile/               # Flutter 3.41.x: clean architecture layers, Riverpod 3.x,
+        ├── flutter-mobile/               # Flutter 3.50.x: clean architecture layers, Riverpod 3.x,
         │                                 # Freezed models, GoRouter, Firebase integration (2 reference files)
         ├── riverpod-patterns/            # Riverpod: AsyncNotifier, AsyncValue.when, ref.watch vs ref.read,
         │                                 # family providers, lifecycle management (1 reference file)
@@ -2629,7 +2629,7 @@ This is the real-world workflow — a single command that triggers scaffolding, 
 
 **Components used:** Slash Command + Agent + Skill + MCP
 
-A2UI is Google's declarative protocol (v0.9) that lets AI agents describe rich, interactive UIs as structured JSON instead of generating executable code. The agent sends four message types (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`); your app validates each component against an approved catalog and renders it with native components. One framework-neutral catalog (`genui-contract` skill) serves Angular, React and Flutter, from one shared backend or from independent backends. Start a cross-platform feature with `/scaffold-genui-feature`, and gate it with `/audit-a2ui-parity` and `/validate-genui-feature`.
+A2UI is Google's declarative protocol (1.0, with v0.9.x still supported) that lets AI agents describe rich, interactive UIs as structured JSON instead of generating executable code. The agent sends four message types (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`); your app validates each component against an approved catalog and renders it with native components. One framework-neutral catalog (`genui-contract` skill) serves Angular, React and Flutter, from one shared backend or from independent backends. Start a cross-platform feature with `/scaffold-genui-feature`, and gate it with `/audit-a2ui-parity` and `/validate-genui-feature`.
 
 **v0.9 basic catalog:** Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Modal, Divider, Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput.
 
@@ -2656,7 +2656,7 @@ This creates a complete A2UI feature module: models (`SurfaceState`, `A2UIMessag
 ```
 
 ```
-> @a2ui-angular Review our A2UI renderer for security issues — make sure every component is validated against the catalog allowlist, actions are on the action allowlist, and the protocol version is exactly v0.9.
+> @a2ui-angular Review our A2UI renderer for security issues — make sure every component is validated against the catalog allowlist, actions are on the action allowlist, and each stream uses exactly one protocol version (1.0, or v0.9.x for a client that declares only v0.9).
 ```
 
 **Key concept:** A2UI payloads are untrusted. Every component type from the agent is validated against a client-side catalog allowlist before rendering. An unknown component rejects the message and the user sees an error, never a silent skip. Agent-provided code is never executed. An action is a v0.9 client message, `{"version": "v0.9", "action": {"name", "surfaceId", "sourceComponentId", "timestamp", "context": {...}}}`. The server authorizes every action, because the renderer is not a security boundary.

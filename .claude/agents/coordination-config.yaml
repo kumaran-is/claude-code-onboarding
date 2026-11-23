@@ -47,7 +47,7 @@ agent_registry:
       can_write: true
 
     - name: angular-spa
-      domain: Angular 21.x SPA, standalone components, signals, RxJS, TailwindCSS/daisyUI
+      domain: Angular 22.x SPA, standalone components, signals, RxJS, TailwindCSS/daisyUI
       model: sonnet
       can_write: true
 
@@ -57,7 +57,7 @@ agent_registry:
       can_write: true
 
     - name: flutter-mobile
-      domain: Flutter 3.41.x, Dart 3.10.9, Riverpod, Firebase, cross-platform iOS/Android
+      domain: Flutter 3.50.x, Dart 3.14.0, Riverpod, Firebase, cross-platform iOS/Android
       model: sonnet
       can_write: true
 
@@ -75,7 +75,7 @@ agent_registry:
   # Also dispatched directly for their specialty domain.
   p2_specialist:
     - name: a2ui-angular
-      domain: A2UI (Agent-to-User Interface) renderer development in Angular 21.x
+      domain: A2UI (Agent-to-User Interface) renderer development in Angular 22.x
       model: sonnet
       can_write: true
       note: "Specialization of angular-spa for AI-to-UI payload rendering"
@@ -125,7 +125,7 @@ agent_registry:
       can_write: false  # Analysis and reporting only
 
     - name: flutter-genui
-      domain: "Expert Flutter A2UI (generative UI) developer for agent-driven native UIs on protocol v0.9 with..."
+      domain: "Expert Flutter A2UI (generative UI) developer for agent-driven native UIs on A2UI 1.0 (v0.9.x compatibility path) with..."
       model: sonnet
       can_write: true
 
@@ -238,7 +238,7 @@ agent_registry:
       can_write: false
 
     - name: genui-contract-reviewer
-      domain: "Read-only reviewer for cross-platform generative UI on the A2UI v0.9 contract"
+      domain: "Read-only reviewer for cross-platform generative UI on the A2UI contract (1.0 target, v0.9.x compatibility path)"
       model: opus
       can_write: false
 

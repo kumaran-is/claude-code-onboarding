@@ -8,7 +8,7 @@ When any task involves creating a **new project** (trigger words: "create", "bui
 ### Why this matters
 Slash commands (`/scaffold-flutter-app`, `/scaffold-angular-app`, etc.) are processed by the
 interactive Claude Code shell. Sub-agents run headlessly — they **cannot** invoke slash commands.
-If anyone runs a raw `flutter create`, `ng new`, or `nest new`, the `block-raw-scaffold.sh` hook
+If anyone runs a raw `flutter create`, `ng new`, `nest new`, `create-vite`, `create-next-app` or `create-react-router`, the `block-raw-scaffold.sh` hook
 hard-blocks the tool call with exit 2. The scaffold commands themselves run the creator with an inline
 per-command marker (`CC_SCAFFOLD=<scaffold-command-name> <creator> ...`), which the hook allows for that
 one command only and records in `.claude/state/scaffold-audit.log`. Do not add the marker to ad-hoc
@@ -44,7 +44,7 @@ Every agent task file MUST begin with:
 
   ## ⚠️ PROJECT ALREADY SCAFFOLDED
   The project at `<absolute-path>` was created by the orchestrator.
-  DO NOT run flutter create / ng new / nest new / any project-init command.
+  DO NOT run flutter create / ng new / nest new / create-vite / create-next-app / any project-init command.
   Add files to the existing structure — never recreate it.
 ```
 

@@ -95,17 +95,17 @@ Map file patterns to the skill that should be loaded automatically.
 
 | File Pattern | Load Skill |
 |-------------|------------|
-| `*.java`, `pom.xml`, `@RestController`, `@Service` annotations | `java-spring-api` |
+| `*.java`, `pom.xml`, `@RestController`, `@Service` annotations in Java | `java-spring-api` |
 | `*.ts` + `@Module()`, `@Controller()`, `@Injectable()` | `nestjs-api` |
 | `*.dart`, `pubspec.yaml`, `@riverpod`, `ConsumerWidget` | `flutter-mobile` |
-| `*.component.ts`, `*.module.ts`, Angular `standalone: true` | `angular-spa` |
+| `angular.json`, `*.ts` with `@Component()` (v22 file names drop the `.component` suffix), `*.routes.ts`, Angular `@Service()` | `angular-spa` |
 | `*.py` + `FastAPI`, `@app.get`, `APIRouter` | `python-dev` |
 | `*.py` + `LangChain`, `LangGraph`, `StateGraph`, `AgentExecutor` | `agentic-ai-dev` |
 | `*.sql`, `db/migration/V*.sql`, `prisma/migrations/` | `database-schema-designer` |
 | `pgvector`, `CREATE EXTENSION vector`, `weaviate` | `vector-database` |
 | `*.tf`, `*.tfvars`, `terraform {}` blocks | `terraform-skill` |
 | `Dockerfile`, `docker-compose.yml` | `docker` |
-| `*.spec.ts`, `*.test.ts`, Vitest imports | `nestjs-api` (if NestJS) or `angular-spa` (if Angular) |
+| `*.spec.ts`, `*.test.ts`, Vitest imports | `nestjs-api` (if NestJS), `angular-spa` (if Angular) or `react-spa` (if React) |
 | `test/widget_test.dart`, `flutter_test` imports | `flutter-mobile` |
 | `conftest.py`, `pytest`, `*.test.py` | `python-dev` |
 

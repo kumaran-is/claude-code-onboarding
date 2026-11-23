@@ -1,21 +1,20 @@
-# Signal Forms (EXPERIMENTAL in Angular 21.x)
+# Signal Forms (stable in Angular 22)
 
-> **Status:** `@angular/forms/signals` is tagged `@experimental 21.0.0` in the 21.2 `.d.ts` files
-> (`FormSubmitOptions` is `@experimental 21.2.0`). The API can change in any minor release.
-> **Production default on 21.x: typed reactive forms** (`NonNullableFormBuilder`, `FormGroup<T>`) —
-> patterns live in `../../angular-spa/reference/angular-forms-*.md`. Adopting Signal Forms is a
-> team decision: pin `@angular/*` to `~21.2.x` and re-verify this file on every upgrade.
+> **Status:** `@angular/forms/signals` is stable in v22 (`form()` is `@publicApi 22.0` in the 22.3
+> `.d.ts`; `get_best_practices` for v22: "Prefer Signal Forms for new forms"). **New forms use Signal
+> Forms.** Existing typed reactive forms (`NonNullableFormBuilder`, `FormGroup<T>`, patterns in
+> `../../angular-spa/reference/angular-forms-*.md`) stay supported; migrate them deliberately.
 >
-> Every snippet below was compiled and its spec run against `@angular/*@21.2.26`, TypeScript 5.9.3,
+> Every snippet below was compiled and its spec run against `@angular/*@22.3.0`, TypeScript 6.0.3,
 > `strictTemplates`, Vitest via `@angular/build:unit-test`.
 
 ## Decision
 
 | Situation | Use |
 |---|---|
-| Production feature, team wants stable API | Typed reactive forms |
-| Existing app on reactive forms | Stay on reactive forms; no rewrite |
-| Greenfield, team accepts experimental API churn, simple-to-medium forms | Signal Forms is acceptable |
+| New form (any size) | Signal Forms |
+| Existing form on typed reactive forms | Keep it; migrate only as a planned change with tests |
+| Shared custom control used by both | Implement `FormValueControl` for Signal Forms; keep `ControlValueAccessor` while reactive forms still use it |
 | Template-driven `ngModel` | Avoid for new code |
 
 ## The real API (names verified in `node_modules/@angular/forms/types/signals.d.ts`)
@@ -35,7 +34,7 @@
 | Standard Schema (e.g. Zod) | `validateStandardSchema` |
 
 There is **no** `signalForm`, `signalInput`, `@angular/forms/signal`, `[control]` or `[field]` binding
-in 21.2 — those names appear in older blog posts and earlier drafts of this file and do not compile.
+in 22.3 — those names appear in older blog posts and earlier drafts of this file and do not compile.
 
 Field state is read by calling the field: `f.email().value()`, `.valid()`, `.invalid()`,
 `.touched()`, `.dirty()`, `.disabled()`, `.errors()`, `.pending()`; the root adds
@@ -44,7 +43,7 @@ Field state is read by calling the field: `f.email().value()`, `.valid()`, `.inv
 ## Example — registration form with cross-field and server errors
 
 ```typescript
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormField, disabled, email, form, minLength, required, submit, validate } from '@angular/forms/signals';
 import { RegistrationApi } from './registration-api'; // register(body): Promise<'created' | 'email-taken'>
 
@@ -58,7 +57,6 @@ interface Registration {
 @Component({
   selector: 'app-register-form',
   imports: [FormField],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form novalidate (submit)="onSubmit($event)">
       <label for="email">Email</label>

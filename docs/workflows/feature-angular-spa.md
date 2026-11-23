@@ -1,8 +1,8 @@
 # Angular SPA Feature Development
 
-> **When to use**: Building a new Angular 21.x page, component, service, or full feature end-to-end
+> **When to use**: Building a new Angular 22.x page, component, service, or full feature end-to-end
 > **Time estimate**: 2–4 hours per screen; 1–2 days for a full feature with multiple views
-> **Prerequisites**: Angular project scaffolded; daisyUI + TailwindCSS 4.x configured
+> **Prerequisites**: Angular workspace created by `/scaffold-angular-app` (or an existing 22.x workspace); Tailwind CSS 4.3.5 + daisyUI 5.8.2 are the toolkit default (opt-out)
 
 ## Overview
 
@@ -13,7 +13,7 @@ Angular feature development using the `angular-spa` skill, Angular CLI MCP, and 
 ## Iron Law (from `skills/angular-spa/SKILL.md`)
 
 > **QUERY ANGULAR CLI MCP FOR CURRENT API BEFORE WRITING COMPONENT CODE**
-> Angular 21.x has changed significantly from 15.x — `ngModule`, `@NgModule`, zone.js is not used (zoneless is the 21.x default).
+> Angular 22.x: standalone, zoneless and OnPush are the defaults; no `@NgModule`, no zone.js. Scaffolding is CLI-first (`.claude/rules/web-frontend.md`).
 
 ---
 
@@ -22,7 +22,7 @@ Angular feature development using the `angular-spa` skill, Angular CLI MCP, and 
 ### Phase 1 — Load Skill and Query Docs
 
 **Skills to load**:
-- `angular-spa` — workspace conventions, TailwindCSS 4.x, daisyUI 5.5.5 (always load first)
+- `angular-spa` — workspace conventions, Tailwind CSS 4.3.5, daisyUI 5.8.2 (always load first)
 - `angular` — load when working with SSR, hydration, signal testing, or complex DI patterns
 - `angular-best-practices` — load when reviewing code or optimizing performance
 - `angular-ui-patterns` — load when building components with async data (loading/error/empty states)
@@ -30,29 +30,34 @@ Angular feature development using the `angular-spa` skill, Angular CLI MCP, and 
 
 ```
 mcp__angular-cli__list_projects         → find workspace path
-mcp__angular-cli__get_best_practices    → pass workspacePath (the angular.json folder); without it you get v22 guidance
-mcp__angular-cli__search_documentation  → version: 21
+mcp__angular-cli__get_best_practices    → pass workspacePath (the angular.json folder) for version-matched guidance
+mcp__angular-cli__search_documentation  → version: 22
 ```
 
 ---
 
 ### Phase 2 — Scaffold the Feature
 
-New workspace: `/scaffold-angular-app <name>` (pinned Angular 21.2.x, Tailwind 4, daisyUI 5.5.5, angular-eslint).
-Existing workspace — generate into a feature folder (no `--standalone`: it is the default):
+Three cases:
+- **New workspace:** `/scaffold-angular-app <name>` (`ng new` 22.3.0, `ng add` for lint and Tailwind, `ng generate` for the structure).
+- **Existing 22.x workspace:** generate every file with the workspace's local CLI — never hand-write a skeleton. Check the
+  target paths do not exist first (a generation over an existing file fails with "A merge conflicted" and exit 1; never `--force`).
+- **Older major:** do not scaffold; `ng update @angular/core@22 @angular/cli@22`, then `ng generate @angular/core:<migration> --dry-run` (list: `ng generate @angular/core: --help`).
 
 ```bash
-ng generate component features/orders/order-list
-ng generate service features/orders/orders-api
+npm exec --no -- ng generate component features/orders/order-list --defaults --interactive=false;   echo "exit=$?"
+npm exec --no -- ng generate component features/orders/order-detail --defaults --interactive=false; echo "exit=$?"
+npm exec --no -- ng generate service features/orders/orders-api --defaults --interactive=false;     echo "exit=$?"
+npm exec --no -- ng generate interface features/orders/order --defaults --interactive=false;        echo "exit=$?"
 ```
 
 ```
 src/app/features/orders/
-├── order-list.ts / .html / .spec.ts   # page (smart) component
-├── order-detail.ts
-├── orders-api.ts                      # typed HttpClient service
-├── order.ts                           # interfaces / types
-└── orders.routes.ts                   # lazy routes
+├── order-list/order-list.ts / .html / .css / .spec.ts   # page (smart) component, class OrderList
+├── order-detail/order-detail.ts …
+├── orders-api.ts / .spec.ts            # @Service() typed HttpClient service
+├── order.ts                            # interface (fill in; the generated one is empty)
+└── orders.routes.ts                    # lazy routes (hand-written: no schematic)
 ```
 
 ---
@@ -62,8 +67,8 @@ src/app/features/orders/
 Follow `angular-spa/reference/angular-templates.md` §Page component and the canonical load-state
 union in `angular-ui-patterns/reference/loading-control-flow.md`:
 
-- `ChangeDetectionStrategy.OnPush` (still opt-in in 21.x); no `CommonModule`/`NgIf`/`NgFor` imports.
-- Read with `rxResource`/`httpResource` (EXPERIMENTAL in 21.x — label it) or `toSignal`; derive one
+- OnPush is the v22 default (the generated component has no `changeDetection`; keep it that way); no `CommonModule`/`NgIf`/`NgFor` imports.
+- Read with `httpResource`/`rxResource` (stable in v22) or `toSignal`; derive one
   `computed()` state in the order `error()` → `hasValue()` → `value()`.
 - Render loading (`role="status"`), empty (only after a settled load), error (`role="alert"`, 401 →
   sign in again, 403 → not authorised, no retry), success; keep stale data on a failed refresh.
@@ -73,7 +78,7 @@ union in `angular-ui-patterns/reference/loading-control-flow.md`:
 
 ### Phase 4 — HTTP Service
 
-Typed `HttpClient` service that returns observables and lets errors propagate
+Fill the generated `@Service()` class: typed `HttpClient` service that returns observables and lets errors propagate
 (`angular-templates.md` §Service). Encode path segments, build queries with `HttpParams`. Mutations
 use `HttpClient` then `resource.reload()`; guard against double submit
 (`angular-ui-patterns/reference/form-dialog-patterns.md`).
@@ -87,8 +92,8 @@ use `HttpClient` then `resource.reload()`; guard against double submit
 import { Routes } from '@angular/router';
 
 export const ORDER_ROUTES: Routes = [
-  { path: '', title: 'Orders', loadComponent: () => import('./order-list').then((m) => m.OrderList) },
-  { path: ':id', title: 'Order', loadComponent: () => import('./order-detail').then((m) => m.OrderDetail) },
+  { path: '', title: 'Orders', loadComponent: () => import('./order-list/order-list').then((m) => m.OrderList) },
+  { path: ':id', title: 'Order', loadComponent: () => import('./order-detail/order-detail').then((m) => m.OrderDetail) },
 ];
 
 // app.routes.ts
@@ -103,7 +108,7 @@ export const ORDER_ROUTES: Routes = [
 
 ### Phase 6 — Unit Tests (Vitest)
 
-`ng new` 21.2 uses `@angular/build:unit-test` with Vitest — not Karma/Jasmine. Patterns in
+A CLI 22.3 workspace uses `@angular/build:unit-test` with Vitest — not Karma/Jasmine. Patterns in
 `angular-spa/reference/testing-vitest.md`:
 
 - `HttpTestingController`: flush each request **before** `await fixture.whenStable()`.
@@ -111,8 +116,9 @@ export const ORDER_ROUTES: Routes = [
 - Mocks with `vi.fn()`; timers with `vi.useFakeTimers()` — `fakeAsync` fails without zone.js.
 
 ```bash
-ng test --watch=false; echo "test exit=$?"
-ng build; echo "build exit=$?"
+npm exec --no -- ng test --watch=false; echo "test exit=$?"
+npm exec --no -- ng build; echo "build exit=$?"
+npm exec --no -- ng lint; echo "lint exit=$?"
 ```
 
 E2E (optional): Playwright via the `browser-testing` skill.
@@ -158,9 +164,9 @@ E2E (optional): Playwright via the `browser-testing` skill.
 | Phase | Action | Agent / Command | Gate |
 |-------|--------|----------------|------|
 | 1 — Setup | Load skill + query Angular CLI MCP | MCP query | Current API confirmed |
-| 2 — Scaffold | `/scaffold-angular-app` | Angular CLI | Directory structure created |
-| 3 — Component | Standalone + signals | Manual | Component renders |
-| 4 — Service | HTTP service | Manual | API calls work |
+| 2 — Scaffold | `/scaffold-angular-app` or `ng generate` | Angular CLI | Every generate exits 0 |
+| 3 — Component | Fill generated component: signals + states | Manual (logic only) | Component renders |
+| 4 — Service | Fill generated `@Service()` | Manual (logic only) | API calls work |
 | 5 — Routing | Lazy routes | Manual | Navigation works |
 | 6 — Tests | Vitest unit tests | `ng test --watch=false` | All tests pass |
 | 7 — Design | `/lint-design-system` | `ui-standards-expert` + `accessibility-auditor` | Zero violations |
@@ -170,8 +176,10 @@ E2E (optional): Playwright via the `browser-testing` skill.
 
 ## Common Pitfalls
 
-- **Using `NgModule`** — deprecated in Angular 21.x; use standalone components only
-- **Plain fields updated from async callbacks** — zoneless 21.x does not re-render; hold state in signals and set `OnPush`
+- **Hand-writing a component/service skeleton** — use `ng generate`; it applies the 22.3 conventions (file names, `@Service`, OnPush default)
+- **Leaving generated placeholders** — a guard that returns `true` or an empty interface fails `ng lint`; implement them
+- **Using `NgModule`** — use standalone components only
+- **Plain fields updated from async callbacks** — zoneless + OnPush do not re-render them; hold state in signals
 - **Hardcoded colors** — always daisyUI semantic tokens; never `#FF5733` or `text-blue-500`
 - **`async pipe` without loading state** — users see blank screen during load; always show loading indicator
 - **No error state** — errors that produce an empty screen look like empty data; show `role="alert"` with retry (and never fallback data)

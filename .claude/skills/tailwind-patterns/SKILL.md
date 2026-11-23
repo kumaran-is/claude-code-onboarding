@@ -1,8 +1,8 @@
 ---
 name: tailwind-patterns
-description: "Tailwind CSS v4 + daisyUI 5 patterns for Angular 21.x (and other web stacks) — CSS-first @theme tokens, cascade layers, container queries, OKLCH daisyUI 5 themes, dark mode via data-theme, RTL logical utilities, hover/pointer variants, and v3→v4 migration pitfalls. Load alongside angular-spa; setup (PostCSS config) lives in angular-spa/reference/tailwind-v4-config.md."
+description: "Tailwind CSS v4 + daisyUI 5 patterns for Angular 22.x (and other web stacks) — CSS-first @theme tokens, cascade layers, container queries, OKLCH daisyUI 5 themes, dark mode via data-theme, RTL logical utilities, hover/pointer variants, and v3→v4 migration pitfalls. Load alongside angular-spa; setup (PostCSS config) lives in angular-spa/reference/tailwind-v4-config.md."
 risk: low
-source: community (adapted for Angular 21.x)
+source: community (adapted for Angular 22.x)
 date_added: "2026-02-27"
 updated: "2026-11-22"
 last-reviewed: "2026-11-22"
@@ -34,7 +34,7 @@ Load the project's CSS `@theme` configuration and verify daisyUI semantic tokens
 
 ## When to Use
 
-Use this skill when configuring Tailwind v4, using CSS-first theme and design tokens, implementing container queries, or applying modern Tailwind patterns in Angular 21.x templates.
+Use this skill when configuring Tailwind v4, using CSS-first theme and design tokens, implementing container queries, or applying modern Tailwind patterns in Angular 22.x templates.
 
 ---
 
@@ -197,11 +197,11 @@ The workspace standard is **daisyUI semantic colours switched by `data-theme` on
 ```typescript
 // theme.service.ts: set the attribute on <html> via DOCUMENT (SSR-safe; a component
 // template cannot bind attributes on <html> because the root component lives in <body>)
-import { DOCUMENT, Injectable, inject } from '@angular/core';
+import { DOCUMENT, Service, inject } from '@angular/core';
 
 export type Theme = 'light' | 'dark';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ThemeService {
   private readonly doc = inject(DOCUMENT);
 
@@ -385,7 +385,7 @@ Every `--color-X` needs its `--color-X-content` pair, and each pair must reach 4
 
 ## Related Skills
 
-- `angular-spa` — Angular 21.x implementation with full daisyUI v5.5.5 and Tailwind v4 reference files
+- `angular-spa` — Angular 22.x implementation with full daisyUI 5.8.2 and Tailwind v4 reference files
 - `angular-best-practices` — OnPush, Signals, bundle optimization, `@defer`
 - `design-system` — token enforcement (Angular + Flutter)
 - `web-performance-optimization` — bundle size, CSS purging, LCP

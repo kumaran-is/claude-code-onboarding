@@ -2,11 +2,11 @@
 
 > **When to use**: Angular app scoring < 90 on Lighthouse, slow LCP/INP/CLS, large initial bundle, sluggish runtime change detection
 > **Time estimate**: 2–4 hours for targeted fixes; 1–2 days for full Core Web Vitals remediation
-> **Prerequisites**: Angular 21.x SPA running; `ng build --configuration=production` working; Chrome DevTools MCP configured
+> **Prerequisites**: Angular 22.x SPA running; `ng build --configuration=production` working; Chrome DevTools MCP configured
 
 ## Overview
 
-Measure, diagnose, and fix performance issues in Angular 21.x SPAs — Core Web Vitals (LCP, INP, CLS), bundle size reduction, lazy loading, image optimization, and runtime change detection. Uses `browser-testing` agent for Lighthouse baseline, `angular-spa` agent for Angular-native fixes, and `code-reviewer` for correctness verification.
+Measure, diagnose, and fix performance issues in Angular 22.x SPAs — Core Web Vitals (LCP, INP, CLS), bundle size reduction, lazy loading, image optimization, and runtime change detection. Uses `browser-testing` agent for Lighthouse baseline, `angular-spa` agent for Angular-native fixes, and `code-reviewer` for correctness verification.
 
 ---
 
@@ -27,7 +27,7 @@ Measure, diagnose, and fix performance issues in Angular 21.x SPAs — Core Web 
 
 **MCP**:
 ```
-mcp__angular-cli__get_best_practices       → Angular 21.x performance patterns
+mcp__angular-cli__get_best_practices       → Angular 22.x performance patterns
 mcp__angular-cli__onpush_zoneless_migration → migrate to OnPush + zoneless
 mcp__context7__resolve-library-id          → @angular/core, @angular/common
 mcp__context7__query-docs                  → NgOptimizedImage, @defer, signals
@@ -74,7 +74,7 @@ Check Chrome DevTools Performance tab for:
 - Unnecessary re-renders from `Default` change detection
 - Large image payloads without lazy loading or modern formats
 
-Common bottleneck patterns in Angular 21.x:
+Common bottleneck patterns in Angular 22.x:
 
 | Symptom | Likely Cause |
 |---------|-------------|
@@ -158,12 +158,10 @@ export const routes: Routes = [
 
 ```typescript
 // feature.component.ts
-import { Component, ChangeDetectionStrategy, signal, computed, inject } from '@angular/core';
+import { Component, signal, computed, inject } from '@angular/core';
 
 @Component({
   selector: 'app-order-list',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,  // No zone.js re-renders
   templateUrl: './order-list.component.html',
 })
 export class OrderListComponent {

@@ -1,6 +1,6 @@
-# Angular 21.2 SSR and Hydration — Canonical Reference
+# Angular 22.3 SSR and Hydration — Canonical Reference
 
-Snippets compiled against `@angular/*@21.2.26` + `@angular/ssr@21.2.x`, TypeScript 5.9.3,
+Snippets compiled against `@angular/*@22.3.0` + `@angular/ssr@22.3.0`, TypeScript 6.0.3,
 `strictTemplates`.
 
 ## Setup
@@ -12,7 +12,6 @@ ng add @angular/ssr   # adds @angular/ssr, server.ts, app.config.server.ts, app.
 ## Client config
 
 ```typescript
-import { provideHttpClient, withFetch } from '@angular/common/http';
 import { ApplicationConfig } from '@angular/core';
 import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -21,7 +20,8 @@ import { routes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
-    provideHttpClient(withFetch()), // fetch backend: recommended for SSR
+    // No provideHttpClient(): HttpClient is available globally in v22 and FetchBackend is the default
+    // backend (`withFetch()` is deprecated). Add provideHttpClient(...) only to configure features.
     // withEventReplay: replays clicks made before hydration finished.
     // withIncrementalHydration: REQUIRED for any `hydrate on …` trigger below.
     provideClientHydration(withEventReplay(), withIncrementalHydration()),
@@ -55,7 +55,7 @@ export const config = mergeApplicationConfig(appConfig, {
 The SSR engine builds absolute URLs from the request `Host`. Configure the hosts you serve in
 `angular.json` → `projects.<name>.architect.build.options.security.allowedHosts` (or the
 `NG_ALLOWED_HOSTS` env var, or `AngularNodeAppEngine({ allowedHosts })`). Unknown hosts get a
-client-rendered page or a 400 (from the `@angular/ssr` 21.2 `.d.ts` remarks). Never render
+client-rendered page or a 400 (from the `@angular/ssr` 22.3 `.d.ts` remarks). Never render
 per-user data on prerendered routes, and never put secrets in `TransferState` — it is serialized
 into the HTML.
 
@@ -65,7 +65,6 @@ into the HTML.
 @Component({
   selector: 'app-page',
   imports: [ProductList, ChatWidget],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @defer (hydrate on viewport) { <app-product-list /> }
     @defer (on idle; hydrate on interaction) { <app-chat-widget /> }
@@ -100,7 +99,7 @@ content becomes interactive. Without `withIncrementalHydration()` the `hydrate` 
 ```typescript
 const CONFIG_KEY = makeStateKey<{ region: string }>('runtime-config');
 
-@Component({ selector: 'app-browser-only', changeDetection: ChangeDetectionStrategy.OnPush, template: `{{ width() }}` })
+@Component({ selector: 'app-browser-only', template: `{{ width() }}` })
 export class BrowserOnly {
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly state = inject(TransferState);
@@ -123,6 +122,6 @@ export class BrowserOnly {
 | Hydration mismatch (NG0500-series) | Server and client must render the same DOM: no random ids/dates in templates, no DOM manipulation outside Angular, valid HTML nesting |
 | `hydrate on …` has no effect | Add `withIncrementalHydration()` |
 | Request rendered with wrong host / 400 | Add the host to `security.allowedHosts` |
-| Data fetched twice | Use `HttpClient` (the transfer cache is on by default with `provideClientHydration()`; `withFetch()` does not enable it) |
+| Data fetched twice | Use `HttpClient` (the transfer cache is on by default with `provideClientHydration()`; the transfer cache works with the default fetch backend) |
 | `status` on a Prerender route does not compile (TS2353) | Only `RenderMode.Server` routes accept `status`/`headers`; prerendered pages cannot set an HTTP status |
 | Server and browser call the API on different origins | `HTTP_TRANSFER_CACHE_ORIGIN_MAP` — provide it on the **server** only (internal → public origin) |

@@ -1,11 +1,11 @@
 # Screenshot-to-Angular Workflow
 
 > **When to use**: User provides a UI screenshot and asks to replicate, clone, or implement it in Angular
-> **Prerequisites**: Angular project scaffolded; daisyUI + TailwindCSS 4.x configured
+> **Prerequisites**: Angular project scaffolded; daisyUI + Tailwind CSS 4.3.5 configured
 
 ## Overview
 
-Replicate a UI screenshot as a production-ready Angular 21.x standalone component with pixel-perfect visual accuracy, compliant with daisyUI semantic tokens and Tailwind scale. Uses `screenshot-to-angular` skill.
+Replicate a UI screenshot as a production-ready Angular 22.x standalone component with pixel-perfect visual accuracy, compliant with daisyUI semantic tokens and Tailwind scale. Uses `screenshot-to-angular` skill.
 
 ---
 
@@ -62,8 +62,7 @@ mcp__context7__resolve-library-id       → angular, @angular/core
 ```typescript
 @Component({
   selector: 'app-<name>',
-  standalone: true,
-  imports: [CommonModule, RouterLink, /* daisyUI-compatible directives */],
+  imports: [RouterLink], // only what the template uses — no CommonModule
   templateUrl: './<name>.component.html',
 })
 export class <Name>Component {
@@ -113,5 +112,5 @@ Run after implementation:
 | Using `[ngClass]` with raw color strings | Use daisyUI semantic class directly |
 | Hardcoding `style="color: #3b82f6"` | Map to `text-primary` or nearest daisyUI token |
 | Using `px-[18px]` arbitrary values | Round to nearest Tailwind scale (`px-4` = 16px) |
-| Using `NgModule` wrapper | Standalone only — `@Component({ standalone: true })` |
+| Using `NgModule` wrapper | Standalone only — the default; never write `standalone: true` |
 | Pixel-perfect via inline styles | Visual accuracy through tokens — never bypass the design system |

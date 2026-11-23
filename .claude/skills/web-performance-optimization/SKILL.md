@@ -1,8 +1,8 @@
 ---
 name: web-performance-optimization
-description: "Optimize Angular 21.x web application performance including Core Web Vitals (LCP, INP, CLS), field measurement with web-vitals RUM, bundle size, lazy loading with @defer, NgOptimizedImage, OnPush+Signals, SSR/prerender with the HttpClient hydration cache, and SEO for public sites. Use when diagnosing slow Angular apps, preparing for Lighthouse audits, or reducing bundle size — always measure with profiling tools before making changes."
+description: "Optimize Angular 22.x web application performance including Core Web Vitals (LCP, INP, CLS), field measurement with web-vitals RUM, bundle size, lazy loading with @defer, NgOptimizedImage, OnPush+Signals, SSR/prerender with the HttpClient hydration cache, and SEO for public sites. Use when diagnosing slow Angular apps, preparing for Lighthouse audits, or reducing bundle size — always measure with profiling tools before making changes."
 risk: low
-source: community (adapted for Angular 21.x)
+source: community (adapted for Angular 22.x)
 date_added: "2026-02-27"
 updated: "2026-11-22"
 last-reviewed: "2026-11-22"
@@ -18,13 +18,13 @@ metadata:
 
 Profile before optimizing. Every change must have a before/after metric. Do not optimize based on guesswork.
 
-# Web Performance Optimization — Angular 21.x
+# Web Performance Optimization — Angular 22.x
 
 ## Overview
 
-Help developers optimize Angular 21.x SPA performance to improve user experience and Core Web Vitals. This skill provides systematic approaches to measure, analyze, and improve loading speed, runtime performance, and bundle size — grounded in Angular-native patterns (signals, `@defer`, `NgOptimizedImage`, lazy routes, hydration).
+Help developers optimize Angular 22.x SPA performance to improve user experience and Core Web Vitals. This skill provides systematic approaches to measure, analyze, and improve loading speed, runtime performance, and bundle size — grounded in Angular-native patterns (signals, `@defer`, `NgOptimizedImage`, lazy routes, hydration).
 
-**Evidence (2026-11-22, Angular 21.2.26, TypeScript 5.9.3, Chromium via Playwright 1.58.2):** the SSR/hydration,
+**Evidence (2026-11-22, measured on Angular 21.2.26, TypeScript 5.9.3, Chromium via Playwright 1.58.2; not re-measured on 22.3):** the SSR/hydration,
 SEO and RUM snippets below compile with `ngc`; the web-vitals beacon, the image-space claim and the
 critical-CSS/CSP interaction were measured in Chromium. Canonical SSR/hydration setup lives in
 `angular/references/ssr-hydration.md`; this skill covers the performance angle only.
@@ -73,7 +73,7 @@ Focus on highest-impact Angular improvements first:
 
 1. **Critical rendering path** — `NgOptimizedImage` with `priority` on LCP image, `<link rel="preload">` for fonts
 2. **Bundle size** — lazy routes (`loadComponent`/`loadChildren`), `@defer` for below-fold components
-3. **Runtime rendering** — `OnPush` + signals on all components, eliminate `Default` change detection
+3. **Runtime rendering** — OnPush (the Angular 22 default) + signals on all components; remove any explicit override back to eager change detection
 4. **Image pipeline** — convert to AVIF/WebP, serve responsive srcsets via `NgOptimizedImage`
 5. **SSR double-fetch** — `provideClientHydration()` reuses server HttpClient responses; no manual TransferState for HttpClient
 
@@ -106,7 +106,7 @@ Apply improvements in priority order — measure after each step.
 ### Do This
 
 - **Measure First** — always run Lighthouse, check field data and `ng build --stats-json` before any optimization
-- **OnPush Everywhere** — every component must declare `ChangeDetectionStrategy.OnPush`
+- **OnPush Everywhere** — Angular 22 components are OnPush by default: do not declare `changeDetection`, and treat any override back to eager detection as a finding
 - **Signals for State** — use `signal()` and `computed()` instead of `BehaviorSubject` + `async` pipe
 - **Lazy Routes** — use `loadComponent`/`loadChildren` for every feature — nothing should be eagerly imported in `app.routes.ts`
 - **@defer for Below-Fold** — any component not visible on first paint belongs in an `@defer (on viewport)` block
@@ -133,7 +133,7 @@ Apply improvements in priority order — measure after each step.
 **Symptoms:** Lighthouse passes on desktop, fails on mobile throttling
 **Solution:**
 - Test with CPU 4x slowdown + 3G in Chrome DevTools
-- Check INP: Angular Default change detection collapses on slow CPUs — switch all components to OnPush + signals
+- Check INP: Angular Default change detection collapses on slow CPUs — remove eager change-detection overrides so every component keeps the v22 OnPush default, and use signals
 - Remove `@defer` triggers that never fire on mobile (e.g., hover-based triggers on touch devices)
 ```bash
 # Lighthouse 13.6.0 CLI defaults to the mobile form factor (desktop needs --preset=desktop); keep the default for a mobile problem
@@ -168,7 +168,7 @@ img { max-width: 100%; height: auto; }   /* with width="800" height="400" attrib
 - Prerender (`RenderMode.Prerender`) every route whose HTML does not depend on the request
 - Cache slow upstream API responses server-side; cache SSR HTML at the CDN only for anonymous, non-personalised pages
 - Measure the server: time spent awaiting data vs rendering
-- Incremental hydration (`withIncrementalHydration()`, opt-in in v21) reduces **client** JS work after the HTML arrives (helps INP/TBT), not TTFB
+- Incremental hydration (`withIncrementalHydration()`, opt-in) reduces **client** JS work after the HTML arrives (helps INP/TBT), not TTFB
 
 ### Problem: SSR Double HTTP Fetch
 **Symptoms:** Network tab shows the same API call twice (once server, once client)
@@ -185,7 +185,6 @@ fetches, check, in order:
 ```typescript
 // app.config.ts — browser
 import { ApplicationConfig } from '@angular/core';
-import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { provideClientHydration, withIncrementalHydration } from '@angular/platform-browser';
 import { routes } from './app.routes';
@@ -193,7 +192,7 @@ import { routes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
-    provideHttpClient(withFetch()),
+    // HttpClient needs no provider in v22 (FetchBackend is the default; withFetch() is deprecated).
     provideClientHydration(withIncrementalHydration()), // HttpClient transfer cache is on by default
   ],
 };
@@ -216,7 +215,7 @@ export const config = mergeApplicationConfig(appConfig, {
 > See [references/optimization-checklists.md](references/optimization-checklists.md) for the full checklist (Angular Architecture, Bundle Size, Images, CSS, Core Web Vitals targets, SSR).
 
 **Critical items:**
-- [ ] `ChangeDetectionStrategy.OnPush` on ALL components — no exceptions
+- [ ] Every component keeps the v22 OnPush default — no `changeDetection` override back to eager detection
 - [ ] All feature routes use `loadComponent` or `loadChildren`
 - [ ] LCP image has `priority` attribute; all other `ngSrc` images do not
 - [ ] SSR/prerender: `provideClientHydration()` present; no hand-written TransferState around HttpClient
@@ -312,7 +311,7 @@ inject(Meta).updateTag({ name: 'robots', content: 'noindex' });
 
 - `angular-spa` — Angular component scaffolding, lazy routing, and daisyUI styling
 - `angular-best-practices` — OnPush, signals, rendering performance, and SSR hydration patterns
-- `angular` — Angular 21.x core API reference: Signals, `@defer`, TransferState, incremental hydration
+- `angular` — Angular 22.x core API reference: Signals, `@defer`, TransferState, incremental hydration
 - `browser-testing` — Chrome DevTools performance profiling via MCP; record traces, inspect long tasks (web targets; tool choice per `.claude/rules/testing-tool-selection.md`)
 - `security-reviewer/reference/web-frontend-security.md` — CSP vs critical-CSS inlining trade-off
 - `systematic-debugging` — Root-cause methodology for performance regressions

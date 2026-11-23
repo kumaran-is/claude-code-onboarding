@@ -1,12 +1,12 @@
 # Tailwind v4 Patterns & Configuration
 
-> **When to use**: Setting up Tailwind CSS v4 in Angular 21.x, implementing container queries, creating OKLCH daisyUI themes, building Bento layouts, or migrating from v3 patterns
+> **When to use**: Setting up Tailwind CSS v4 in Angular 22.x, implementing container queries, creating OKLCH daisyUI themes, building Bento layouts, or migrating from v3 patterns
 > **Time estimate**: 30–60 min for new setup; 1–2 hours for v3→v4 migration with existing components
 > **Prerequisites**: Angular project scaffolded; `@angular/core` 21.x installed
 
 ## Overview
 
-Configure and use Tailwind CSS v4 in Angular 21.x projects. Covers CSS-first `@theme {}` configuration (no `tailwind.config.js`), container queries for context-responsive components, OKLCH custom daisyUI themes, Bento/asymmetric dashboard grid layouts, and safe migration from v3 patterns. Uses the `tailwind-patterns` skill and `angular-spa` skill in tandem.
+Configure and use Tailwind CSS v4 in Angular 22.x projects. Covers CSS-first `@theme {}` configuration (no `tailwind.config.js`), container queries for context-responsive components, OKLCH custom daisyUI themes, Bento/asymmetric dashboard grid layouts, and safe migration from v3 patterns. Uses the `tailwind-patterns` skill and `angular-spa` skill in tandem.
 
 ---
 
@@ -23,7 +23,7 @@ Configure and use Tailwind CSS v4 in Angular 21.x projects. Covers CSS-first `@t
 
 **Skills to load**:
 - `tailwind-patterns` — v4 CSS-first config, container queries, OKLCH, layout patterns
-- `angular-spa` — Angular-specific implementation, daisyUI v5.5.5 reference files
+- `angular-spa` — Angular-specific implementation, daisyUI 5.8.2 reference files
 
 **Cross-check**: After loading both skills, verify they reference the same Tailwind v4 setup. If there is any conflict, `angular-spa` takes precedence for Angular-specific configuration.
 
@@ -225,6 +225,6 @@ ng build --configuration=production
 
 ## Related Workflows
 
-- [`feature-angular-spa.md`](feature-angular-spa.md) — Angular 21.x feature development end-to-end
+- [`feature-angular-spa.md`](feature-angular-spa.md) — Angular 22.x feature development end-to-end
 - [`web-performance-optimization.md`](web-performance-optimization.md) — Angular Core Web Vitals, bundle size
 - [`design-system-compliance.md`](design-system-compliance.md) — design token enforcement; accessibility (WCAG 2.2 AA) via `accessibility-auditor`

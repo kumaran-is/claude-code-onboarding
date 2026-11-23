@@ -20,7 +20,7 @@ last-reviewed: "2026-04-04"
 
 ## Purpose
 
-Replicate a UI screenshot as a production-ready Angular 21.x standalone component with pixel-perfect visual accuracy, compliant with Angular standards (daisyUI + Tailwind 4.x).
+Replicate a UI screenshot as a production-ready Angular 22.x standalone component with pixel-perfect visual accuracy, compliant with Angular standards (daisyUI + Tailwind 4.x).
 
 > **Scope reminder:** Confirm whether this screenshot is for a marketing/web app or a mobile app feature. If it shows app-level CRUD features (dashboards, forms, ticket management) intended for mobile, consider implementing in Flutter instead of Angular.
 
@@ -106,7 +106,7 @@ src/app/
     <reusable-component>/       ← if used 2+ times
 ```
 
-### Angular 21 Standards (zero tolerance)
+### Angular 22 Standards (zero tolerance)
 
 | Pattern | Required Instead |
 |---|---|
@@ -123,11 +123,10 @@ src/app/
 ### Component Template
 ```typescript
 import { Component, signal, input, output } from '@angular/core';
-import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-[name]',
-  imports: [CommonModule],
+  imports: [], // only the directives/pipes the template uses — never CommonModule
   templateUrl: './[name].component.html',
 })
 export class [Name]Component {
@@ -216,7 +215,7 @@ export class [Name]Component {
 ---
 
 ## Related Skills
-- Load `angular-spa` for full Angular 21 patterns and routing setup
+- Load `angular-spa` for full Angular 22 patterns and routing setup
 - Load `tailwind-patterns` for Tailwind 4.x utility reference
 - Load `ui-standards-tokens` for full daisyUI token reference
 - Load `frontend-design` if creative direction is needed (not pure replication)

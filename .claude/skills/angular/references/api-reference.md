@@ -1,10 +1,10 @@
-# Angular 21.2 API Reference — Routing, DI, Composition, State
+# Angular 22.3 API Reference — Routing, DI, Composition, State
 
 Canonical home for routing/DI/composition APIs. Signals and resources live in
 [signals-core.md](signals-core.md); auth guards and interceptors live in
 `../../angular-spa/reference/web-security.md`; tests live in
-`../../angular-spa/reference/testing-vitest.md`. Every snippet compiled against `@angular/*@21.2.26`,
-TypeScript 5.9.3, `strictTemplates`.
+`../../angular-spa/reference/testing-vitest.md`. Every snippet compiled against `@angular/*@22.3.0`,
+TypeScript 6.0.3, `strictTemplates`.
 
 ---
 
@@ -14,20 +14,20 @@ TypeScript 5.9.3, `strictTemplates`.
 
 ```typescript
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, Injectable, inject, input, signal } from '@angular/core';
+import { Component, Service, inject, input, signal } from '@angular/core';
 import { CanMatchFn, RedirectCommand, ResolveFn, Router, Routes } from '@angular/router';
 import { catchError, of } from 'rxjs';
 
 export interface Product { readonly id: string; readonly name: string }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ProductsApi {
   private readonly http = inject(HttpClient);
   get(id: string) { return this.http.get<Product>(`/api/products/${encodeURIComponent(id)}`); }
   list() { return this.http.get<Product[]>('/api/products'); }
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class FeatureFlags {
   private readonly enabled = signal<ReadonlySet<string>>(new Set());
   isOn(flag: string): boolean { return this.enabled().has(flag); }
@@ -46,7 +46,6 @@ export const productResolver: ResolveFn<Product> = (route) => {
 
 @Component({
   selector: 'app-product-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<h1>{{ product().name }}</h1><p>Tab: {{ tab() ?? 'overview' }}</p>`,
 })
 export class ProductPage {
@@ -97,11 +96,10 @@ export const PAGING_CONFIG = new InjectionToken<PagingConfig>('PAGING_CONFIG', {
 ## Component composition
 
 ```typescript
-import { ChangeDetectionStrategy, Component, Directive, input } from '@angular/core';
+import { Component, Directive, input } from '@angular/core';
 
 @Component({
   selector: 'app-card',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="card bg-base-100 shadow-sm">
       <div class="card-body">
@@ -122,7 +120,6 @@ export class Tooltip {
 // hostDirectives: behaviour composition without inheritance; inputs can be re-mapped.
 @Component({
   selector: 'app-icon-button',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   hostDirectives: [{ directive: Tooltip, inputs: ['tooltip: label'] }],
   template: `<ng-content />`,
 })
@@ -137,7 +134,7 @@ Use `host: {}` in the decorator, not `@HostBinding`/`@HostListener`.
 ## Signal-based state
 
 ```typescript
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, Service, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { ProductsApi } from './products-api';
 
@@ -145,7 +142,7 @@ type Theme = 'light' | 'dark';
 interface Notice { readonly id: string; readonly read: boolean }
 
 // App-wide state: private writable signals, public read-only views.
-@Injectable({ providedIn: 'root' })
+@Service()
 export class UiState {
   private readonly _theme = signal<Theme>('light');
   private readonly _notices = signal<readonly Notice[]>([]);
@@ -157,7 +154,7 @@ export class UiState {
   addNotice(notice: Notice): void { this._notices.update((list) => [...list, notice]); }
 }
 
-// Page-scoped store (provide in the component). Reads use a resource (EXPERIMENTAL API) so the
+// Page-scoped store (provide in the component). Reads use a resource (stable in v22) so the
 // page gets loading/error/value without a hand-rolled subscribe + loading flag.
 @Injectable()
 export class ProductStore {
@@ -183,7 +180,7 @@ empty list.
 | Use case | Signals | RxJS |
 |---|---|---|
 | Local / shared UI state | `signal`, `computed`, `linkedSignal` | Overkill |
-| Read data tied to inputs | resource APIs (experimental) or `toSignal` | `HttpClient` observable |
+| Read data tied to inputs | `httpResource` / `rxResource` / `resource` or `toSignal` | `HttpClient` observable |
 | Debounce, cancel, retry, merge event streams | — | `switchMap`, `debounceTime`, `retry` |
 | Push state to non-reactive code | `effect()` (last resort) | `tap` in a stream you already have |
 
@@ -191,9 +188,9 @@ empty list.
 
 | Area | Do | Don't |
 |---|---|---|
-| Change detection | `OnPush` on every component (still opt-in in 21.x) | Rely on the `Eager` default |
-| Zoneless | Nothing to add — default in 21.x | Add zone.js or `provideZoneChangeDetection()` without a reason |
+| Change detection | OnPush default (v22) — never set it explicitly | Opt into `Eager` without a reason |
+| Zoneless | Nothing to add — default in 22.x | Add zone.js or `provideZoneChangeDetection()` without a reason |
 | Inputs / outputs | `input()`, `output()`, `model()` | `@Input()` / `@Output()` in new code |
 | DI | `inject()` | Constructor parameter lists in new code |
 | Lazy loading | `loadComponent`, `loadChildren`, `@defer` | Eager-load every feature |
-| Forms | Typed reactive forms (Signal Forms only as an explicit experimental choice) | Untyped `FormGroup` / `any` |
+| Forms | Signal Forms for new forms; typed reactive forms in existing code | Untyped `FormGroup` / `any` |

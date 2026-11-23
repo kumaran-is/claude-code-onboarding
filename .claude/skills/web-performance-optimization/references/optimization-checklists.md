@@ -70,15 +70,14 @@ export class ProfileComponent {
 }
 ```
 
-**After** (compiled on Angular 21.2.26):
+**After** (compiled on Angular 22.3.0):
 ```typescript
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 
 export interface User { firstName: string; lastName: string; }
 
 @Component({
   selector: 'app-profile',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div>{{ fullName() }}</div>`,
 })
 export class ProfileComponent {
@@ -88,7 +87,7 @@ export class ProfileComponent {
 }
 ```
 
-**Rule:** Every component declares `ChangeDetectionStrategy.OnPush` and reads state through signals. v21 apps are zoneless by default, so checks are scheduled by signal and event notifications; `Default` components are still re-checked on every pass that reaches them.
+**Rule:** Every component relies on the v22 OnPush default (no explicit `changeDetection`) and reads state through signals. v22 apps are zoneless by default, so checks are scheduled by signal and event notifications; `Default` components are still re-checked on every pass that reaches them.
 
 ### Fix CLS — NgOptimizedImage dimensions + skeleton loaders
 
@@ -258,9 +257,9 @@ Budgets fail the build before a bloated bundle reaches production — only if CI
 
 ```typescript
 // core/telemetry/analytics-loader.ts — load a third-party script after first render, without blocking it
-import { DOCUMENT, Injectable, afterNextRender, inject } from '@angular/core';
+import { DOCUMENT, Service, afterNextRender, inject } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class AnalyticsLoader {
   private readonly document = inject(DOCUMENT);
 
@@ -440,7 +439,7 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 ## Performance Checklist
 
 ### Angular Architecture
-- [ ] `ChangeDetectionStrategy.OnPush` on ALL components — no exceptions
+- [ ] Every component keeps the v22 OnPush default — no `changeDetection` override back to eager detection
 - [ ] Signals (`signal()`, `computed()`) used for all reactive state — no `BehaviorSubject` for component state
 - [ ] No side-effectful or CommonJS barrel imports (check the metafile; side-effect-free ESM barrels tree-shake)
 - [ ] Every `@for` has a stable `track` expression (an id, not `$index` for mutable lists); no legacy `*ngFor`
@@ -475,7 +474,7 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 
 ### SSR (if using @angular/ssr)
 - [ ] `provideClientHydration()` in the browser config — it caches HttpClient GET/HEAD responses from the server render; no manual `TransferState` around HttpClient
-- [ ] `withIncrementalHydration()` (opt-in in v21) with `hydrate on …` triggers for below-fold sections
+- [ ] `withIncrementalHydration()` (opt-in) with `hydrate on …` triggers for below-fold sections
 - [ ] Browser-only work in `afterNextRender`; never branch rendered template content on `isPlatformBrowser` (hydration mismatch, CLS)
 
 ---

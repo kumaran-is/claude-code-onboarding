@@ -1,9 +1,9 @@
 ---
 name: angular
-description: "Angular 21.x core patterns and APIs — Signals, signal inputs/outputs/model, RxJS interop, resource APIs (experimental), Standalone components, Zoneless change detection, render hooks, @defer, SSR/Hydration, Dependency Injection, routing, Signal Forms (experimental). Load when writing Angular code for API reference, testing patterns, or SSR configuration."
+description: "Angular 22.x core patterns and APIs — Signals, signal inputs/outputs/model, RxJS interop, resource APIs (stable), @Service DI, Standalone components, Zoneless change detection, render hooks, @defer, SSR/Hydration, Dependency Injection, routing, Signal Forms (stable). Load when writing Angular code for API reference, testing patterns, or SSR configuration."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation
 metadata:
-  triggers: Angular signals, Angular standalone, Angular zoneless, Angular SSR, Angular hydration, Angular DI, Angular testing, Angular state management, Angular 21
+  triggers: Angular signals, Angular standalone, Angular zoneless, Angular SSR, Angular hydration, Angular DI, Angular testing, Angular state management, Angular 22
   related-skills: angular-spa, angular-best-practices, angular-ui-patterns
   domain: frontend
   role: specialist
@@ -14,25 +14,26 @@ last-reviewed: "2026-11-22"
 
 ## Iron Law
 
-**READ `angular-spa` skill for TailwindCSS 4.x, daisyUI 5.5.5, and workspace conventions BEFORE implementing. This skill is API reference only — no design token or styling patterns here.**
+**READ `angular-spa` skill for Tailwind CSS 4.3.5, daisyUI 5.8.2, and workspace conventions BEFORE implementing. This skill is API reference only — no design token or styling patterns here.**
 
 ## Version and verification
 
-- Target: **Angular 21.2.x**, TypeScript 5.9.x, `strict` + `strictTemplates`. Facts below were checked
-  against the installed `@angular/*@21.2.26` `.d.ts` files and a fresh `ng new` (CLI 21.2.30).
+- Target: **Angular 22.3.x**, TypeScript 6.0.x (`>=6.0 <6.1`), Node `^22.22.3 || ^24.15.0 || ^26.0.0`,
+  `strict` + `strictTemplates`. Facts below were checked against the installed `@angular/*@22.3.0`
+  `.d.ts` files and a CLI 22.3.0 workspace.
 - Angular CLI MCP: call `get_best_practices` **with `workspacePath`** set to the folder holding
   `angular.json` (it must be inside the client's project roots). Without it the tool returns the
-  guide for the newest major (v22), which differs from 21.x. Use `search_documentation` with
-  `version: 21`.
-- Experimental APIs (`resource`, `rxResource`, `httpResource`, Signal Forms) are labelled where taught.
-  They are allowed, never "preferred"; pin `@angular/*` with `~21.2.x` when you use them.
+  CLI's bundled generic guide. Use `search_documentation` with `version: 22`.
+- `resource`, `rxResource`, `httpResource` and Signal Forms are **stable in v22** (`@publicApi 22.0`).
+  APIs still tagged `@experimental` in 22.3 (for example `debounced`, the WebMCP tool APIs) need a
+  written reason before use.
 
 ## Where each topic lives (canonical homes)
 
 | Topic | File |
 |---|---|
 | signal / computed / linkedSignal / effect (when NOT to use it) / toSignal / toObservable / takeUntilDestroyed / resource / rxResource / httpResource / signal queries | [references/signals-core.md](references/signals-core.md) |
-| Signal Forms (EXPERIMENTAL) and the forms decision | [references/signal-forms.md](references/signal-forms.md) |
+| Signal Forms (stable in v22) and the forms decision | [references/signal-forms.md](references/signal-forms.md) |
 | Routing, guards, resolvers, `withComponentInputBinding`, DI, composition, state services | [references/api-reference.md](references/api-reference.md) |
 | SSR, hydration, TransferState | [references/ssr-hydration.md](references/ssr-hydration.md) |
 | Unit tests (Vitest, TestBed, harnesses, HttpTestingController, fake timers) | `angular-spa/reference/testing-vitest.md` |
@@ -46,11 +47,10 @@ last-reviewed: "2026-11-22"
 ## 1. Signal inputs, outputs and model
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
+import { Component, input, model, output } from '@angular/core';
 
 @Component({
   selector: 'app-user-card',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h3>{{ name() }}</h3>
     <span>{{ role() }}</span>
@@ -79,17 +79,17 @@ Use `computed()` for derived read-only values, `linkedSignal()` for writable sta
 source changes, and `effect()` only to push state OUT to non-reactive code (storage, logging, a
 third-party widget). Never set a signal from an effect. `toSignal`/`toObservable` must be created in
 an injection context (field initializer/constructor); creating them in a method throws `NG0203`.
-Resources are **experimental** in 21.x and take `params` (not `request`). Full rules and compiled
+Resources are **stable** in v22 and take `params` (not `request`). Full rules and compiled
 examples: [references/signals-core.md](references/signals-core.md).
 
-## 3. Zoneless change detection (the 21.x default)
+## 3. Zoneless + OnPush change detection (the v22 defaults)
 
-- `ng new` 21.2 produces an app with **no `zone.js`** dependency and **no change-detection provider**:
-  zoneless is the default. `provideZonelessChangeDetection()` (stable since 20.2) is redundant in 21.x;
+- A CLI 22.3 workspace has **no `zone.js`** dependency and **no change-detection provider**:
+  zoneless is the default. `provideZonelessChangeDetection()` (stable since 20.2) is redundant in 22.x;
   `provideZoneChangeDetection()` opts back into zone.js and needs a reason.
-- **`OnPush` is still opt-in in 21.x.** The component default is `ChangeDetectionStrategy.Eager`
-  (`Default` is now a deprecated alias). Set `changeDetection: ChangeDetectionStrategy.OnPush` on every
-  component.
+- **`OnPush` is the default in v22** (`ChangeDetectionStrategy` typings: "OnPush is enabled by
+  default"). Do not write `changeDetection: ChangeDetectionStrategy.OnPush`. Opting a component into
+  `ChangeDetectionStrategy.Eager` needs a recorded reason.
 - What schedules a render without zones: a signal read in a template changes, a template/host
   listener fires, `markForCheck()`, `ComponentRef.setInput()`, `AsyncPipe` emissions.
 - What does **not**: assigning a plain field from a `setTimeout`/promise/subscription, and reactive
@@ -100,11 +100,10 @@ examples: [references/signals-core.md](references/signals-core.md).
 ## 4. Render hooks
 
 ```typescript
-import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, viewChild } from '@angular/core';
+import { Component, ElementRef, afterNextRender, viewChild } from '@angular/core';
 
 @Component({
   selector: 'app-chart',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: '<canvas #canvas aria-label="Revenue chart" role="img"></canvas>',
 })
 export class Chart {
@@ -163,8 +162,8 @@ export class Chart {
 ## 6. Bootstrapping and routing
 
 ```typescript
-// app.config.ts — what a 21.2 app needs (no zone provider)
-import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+// app.config.ts — what a 22.3 app needs (no zone provider)
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
@@ -174,11 +173,16 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding()), // route params → input()
-    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor])),
   ],
 };
 ```
 
+- `HttpClient` is available globally in v22 and `FetchBackend` is the default (`withFetch()` is
+  deprecated). Call `provideHttpClient(...)` only to configure features (interceptors, XSRF).
+- Singleton services: `@Service()` from `@angular/core` (v22) replaces `@Injectable({ providedIn: 'root' })`
+  in new code; it expects `inject()`, not constructor injection. `@Service({ autoProvided: false })`
+  is provided manually like `@Injectable()`. Migration: `ng generate @angular/core:service`.
 - Lazy routes: `loadComponent: () => import('./x').then((m) => m.X)` and `loadChildren` for route arrays.
 - Guards, resolvers and interceptors are functions (`CanActivateFn`, `ResolveFn<T>`,
   `HttpInterceptorFn`) that call `inject()` synchronously **before** any `await`. Examples:
@@ -188,20 +192,20 @@ export const appConfig: ApplicationConfig = {
 
 ## 7. Forms
 
-**Typed reactive forms are the production default on 21.x** (`NonNullableFormBuilder`,
-`FormGroup<T>`, `getRawValue()`). Signal Forms (`@angular/forms/signals`: `form`, `FormField`,
-`submit`, `validate`) is **EXPERIMENTAL** — see [references/signal-forms.md](references/signal-forms.md)
-for the decision table and a compiled example. UI patterns for fields/validation:
+**New forms use Signal Forms** (`@angular/forms/signals`: `form`, `FormField`, `FormRoot`, `submit`,
+validators), stable in v22 — see [references/signal-forms.md](references/signal-forms.md) for the
+decision table and a compiled example. Existing typed reactive forms (`NonNullableFormBuilder`,
+`FormGroup<T>`, `getRawValue()`) stay supported; migrate them deliberately, not as a side effect. UI patterns for fields/validation:
 `angular-spa/reference/angular-forms-*.md`.
 
 ## 8. SSR and hydration
 
 See [references/ssr-hydration.md](references/ssr-hydration.md) (incremental hydration, TransferState,
-`withFetch()`, browser-only code in render hooks).
+the default fetch backend, browser-only code in render hooks).
 
 ## 9. Testing
 
-`ng new` 21.2 configures `@angular/build:unit-test` with **Vitest + jsdom** — there is no
+A CLI 22.3 workspace configures `@angular/build:unit-test` with **Vitest + jsdom** — there is no
 `vitest.config.ts`, no Karma and no zone.js. TestBed runs zoneless when zone.js is absent; adding
 `provideZonelessChangeDetection()` to TestBed is optional. `fakeAsync`/`tick` need zone.js and fail
 under this runner — use `vi.useFakeTimers()` + `await vi.advanceTimersByTimeAsync()` or
@@ -213,14 +217,14 @@ under this runner — use `vi.useFakeTimers()` + `await vi.advanceTimersByTimeAs
 |---|---|
 | View does not update after an async callback | The value is a plain field. Make it a signal (zoneless renders on signal change) |
 | `NG0203: toObservable() can only be used within an injection context` | Move the call to a field initializer/constructor, or pass `{ injector }` |
-| `resource({ request })` does not compile | 21.x uses `params`; `rxResource` uses `stream` |
+| `resource({ request })` does not compile | 22.x uses `params`; `rxResource` uses `stream` |
 | `value()` throws in template | The resource is in `error`; branch on `error()` → `hasValue()` → `value()` |
 | `zone-testing.js is needed for the fakeAsync() test helper` | Replace with Vitest fake timers / `whenStable()` |
-| SSR fetch runs twice | `withFetch()` + HTTP transfer cache (default with hydration); see ssr-hydration.md |
+| SSR fetch runs twice | Read through `HttpClient`/`httpResource` so the HTTP transfer cache (default with hydration) applies; see ssr-hydration.md |
 
 ## Related Skills
 
-- `angular-spa` — workspace conventions, TailwindCSS 4.x, daisyUI 5.5.5, testing, security
+- `angular-spa` — workspace conventions, Tailwind CSS 4.3.5, daisyUI 5.8.2, testing, security
 - `angular-best-practices` — impact-prioritized review checklist
 - `angular-ui-patterns` — loading, error, empty state patterns
 - `accessibility-audit` — WCAG 2.2 AA checklist (canonical)

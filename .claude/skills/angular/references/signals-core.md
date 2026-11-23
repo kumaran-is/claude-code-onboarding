@@ -1,23 +1,24 @@
-# Angular 21.2 Signals, Interop and Resources — Canonical Reference
+# Angular 22.3 Signals, Interop and Resources — Canonical Reference
 
 This file is the single home for `signal`/`computed`/`linkedSignal`/`effect`, RxJS interop and the
 resource APIs. Other Angular skills link here instead of restating it. Every snippet was compiled
-against `@angular/*@21.2.x` + TypeScript 5.9 (`strict`, `strictTemplates`).
+against `@angular/*@22.3.0` + TypeScript 6.0.3 (`strict`, `strictTemplates`).
 
-## API stability in Angular 21.2 (from the `.d.ts` tags)
+## API stability in Angular 22.3 (from the `.d.ts` tags)
 
 | API | Status |
 |---|---|
 | `signal`, `computed`, `effect`, `linkedSignal`, `input`/`output`/`model`, signal queries | Stable |
 | `toSignal`, `toObservable`, `takeUntilDestroyed`, `outputFromObservable` | Stable |
 | `afterNextRender`, `afterEveryRender`, `afterRenderEffect` | Stable (`afterRender` was removed; use `afterEveryRender`) |
-| `resource()` | **EXPERIMENTAL** (`@experimental 19.0`) |
-| `rxResource()` | **EXPERIMENTAL** |
-| `httpResource()` | **EXPERIMENTAL** (`@experimental 19.2`) |
-| Signal Forms (`@angular/forms/signals`) | **EXPERIMENTAL** — see [signal-forms.md](signal-forms.md) |
+| `resource()` | Stable (`@publicApi 22.0`) |
+| `rxResource()` | Stable (`@publicApi 22.0`) |
+| `httpResource()` | Stable (`@publicApi 22.0`); reads only — never use it for mutations |
+| `injectAsync()` | Stable (`@publicApi 22.0`) |
+| Signal Forms (`@angular/forms/signals`) | Stable (`form()` is `@publicApi 22.0`) — see [signal-forms.md](signal-forms.md) |
+| `debounced()` | **EXPERIMENTAL** (`@experimental 22.0`) — needs a written reason; prefer RxJS `debounceTime` via interop |
 
-Experimental APIs may change in a minor release. Using them is a team decision: pin `@angular/*`
-with `~21.2.x` and re-check this table on every upgrade. Never describe them as "preferred".
+Re-check this table on every major upgrade (`grep -B12 "declare function <name>" node_modules/@angular/*/types/*.d.ts`).
 
 ---
 
@@ -28,7 +29,7 @@ with `~21.2.x` and re-check this table on every upgrade. Never describe them as 
 | Local state | `signal()` |
 | Read-only value derived from other signals | `computed()` |
 | Writable value that resets when a source changes (selection, page index) | `linkedSignal()` |
-| Async read tied to signals (GET) | `rxResource()` / `httpResource()` (experimental) or `toSignal(observable)` |
+| Async read tied to signals (GET) | `httpResource()` / `rxResource()` / `resource()` or `toSignal(observable)` |
 | Mutations (POST/PUT/PATCH/DELETE) | `HttpClient` call, then `resource.reload()` |
 | Event streams, debounce, cancellation, retry | RxJS, bridged with `toSignal` / `toObservable` |
 | Push signal state OUT to an imperative API (storage, logging, third-party widget, navigation) | `effect()` |
@@ -40,7 +41,7 @@ with `~21.2.x` and re-check this table on every upgrade. Never describe them as 
 ## Signal queries
 
 ```typescript
-import { ChangeDetectionStrategy, Component, ElementRef, input, viewChild, viewChildren } from '@angular/core';
+import { Component, ElementRef, input, viewChild, viewChildren } from '@angular/core';
 
 @Component({
   selector: 'app-item',
@@ -53,7 +54,6 @@ export class Item {
 @Component({
   selector: 'app-container',
   imports: [Item],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <input #searchInput />
     @for (label of labels(); track label) {
@@ -113,11 +113,11 @@ Never use it to set another signal from a signal. That creates circular updates,
 is `computed()` (read-only) or `linkedSignal()` (writable, resets with its source).
 
 ```typescript
-import { Injectable, effect, signal } from '@angular/core';
+import { Service, effect, signal } from '@angular/core';
 
 type Theme = 'light' | 'dark';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ThemePreference {
   readonly theme = signal<Theme>('light');
 
@@ -150,14 +150,13 @@ an event handler they throw `NG0203`, and every call would create another live p
 really must create one later, pass `{ injector }` (or a `DestroyRef` to `takeUntilDestroyed`).
 
 ```typescript
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { debounceTime, distinctUntilChanged, interval, map, switchMap } from 'rxjs';
 import { UsersApi } from './users-api';
 
 @Component({
   selector: 'app-user-search',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <label for="q">Search</label>
     <input id="q" [value]="term()" (input)="term.set($any($event.target).value)" />
@@ -193,7 +192,7 @@ streams (`interval`, `fromEvent`, `valueChanges`, websockets) need `takeUntilDes
 
 ---
 
-## Resources (EXPERIMENTAL in 21.x)
+## Resources (stable in v22)
 
 Since v20 the option is **`params`** (not `request`). `resource` takes a `loader` that returns a
 **Promise**; `rxResource` takes a `stream` that returns an Observable; `httpResource` takes a
@@ -201,7 +200,7 @@ function returning a URL, an `HttpResourceRequest` object, or `undefined`.
 
 ```typescript
 import { httpResource } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, inject, input, resource } from '@angular/core';
+import { Component, inject, input, resource } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { UsersApi, type User } from './users-api';
 
@@ -211,7 +210,6 @@ function isUser(value: unknown): value is User {
 
 @Component({
   selector: 'app-user-detail',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (user.error()) {
       <p role="alert">The user could not be loaded.</p>

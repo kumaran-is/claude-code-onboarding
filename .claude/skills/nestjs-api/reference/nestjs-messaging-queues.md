@@ -295,6 +295,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RabbitSubscribe, Nack } from '@golevelup/nestjs-rabbitmq';
 import { EXCHANGES, QUEUES, ROUTING_KEYS } from '../rabbitmq.module';
 import { runWithContext, RequestContext } from '../../../../common/context/request-context.service';
+import { EmailService } from '../../../email/email.service';
 
 interface EmailMessage {
   to: string | string[];
@@ -310,6 +311,8 @@ interface EmailMessage {
 @Injectable()
 export class EmailHandler {
   private readonly logger = new Logger(EmailHandler.name);
+
+  constructor(private readonly emailService: EmailService) {}
 
   @RabbitSubscribe({
     exchange: EXCHANGES.TOPIC,
@@ -335,8 +338,7 @@ export class EmailHandler {
       this.logger.log(`Processing email: ${message.subject} to ${message.to}`);
 
       try {
-        // TODO: Implement actual email sending logic
-        // await this.emailService.send(message);
+        await this.emailService.send(message);
 
         const duration = Date.now() - context.startTime;
         this.logger.log(`Email sent successfully in ${duration}ms`);

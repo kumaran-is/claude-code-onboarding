@@ -234,18 +234,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     switch (exception.code) {
       case 'P2002':
-        // Unique constraint violation
+        // Unique constraint violation. Prisma 7 + driver adapter: meta.target is NOT set; the
+        // constraint name is in meta.driverAdapterError.cause.constraint.index — read it with
+        // violatedUniqueConstraint() (nestjs-config-prisma7.md) for logic, never echo it to clients.
         status = HttpStatus.CONFLICT;
         errorCode = 'DUPLICATE_RECORD';
-        const field = (exception.meta?.target as string[])?.join(', ') ?? 'field';
-        detail = `A record with this ${field} already exists`;
+        detail = 'A record with these values already exists';
         break;
 
       case 'P2025':
-        // Record not found
+        // Record not found. Do not forward meta.cause: it describes the query, not the caller's input.
         status = HttpStatus.NOT_FOUND;
         errorCode = 'RECORD_NOT_FOUND';
-        detail = exception.meta?.cause as string ?? 'Record not found';
+        detail = 'Record not found';
         break;
 
       case 'P2003':
@@ -398,7 +399,9 @@ import { APP_PIPE } from '@nestjs/core';
           forbidNonWhitelisted: true, // Throw error on unknown properties
           transform: true, // Auto-transform payloads to DTO instances
           transformOptions: {
-            enableImplicitConversion: true, // Convert primitive types
+            // false: implicit conversion turns "false" into true for booleans (verified).
+            // Convert explicitly with @Type(() => Number) on the DTO property.
+            enableImplicitConversion: false,
           },
           disableErrorMessages: environment === 'production', // Hide details in prod
           forbidUnknownValues: true, // Reject unknown object values

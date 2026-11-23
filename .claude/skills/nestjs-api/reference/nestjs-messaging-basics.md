@@ -347,6 +347,8 @@ export interface JobMeta {
 
 export abstract class BaseProcessor {
   protected abstract readonly logger: Logger;
+  /** e.g. a prom-client Counter with labels ['queue', 'name']; alert on its rate */
+  protected abstract readonly failedJobs: { inc(labels: { queue: string; name: string }): void };
 
   /**
    * Process a job with automatic context propagation and error handling
@@ -401,7 +403,9 @@ export abstract class BaseProcessor {
       error.stack
     );
 
-    // TODO: Send to dead letter queue or alerting system
+    // Terminal failure: record it where an operator will see it (a failed-jobs metric/alert).
+    // BullMQ keeps the job in the failed set (bounded by removeOnFail) for inspection and retry.
+    this.failedJobs.inc({ queue: job.queueName, name: job.name });
   }
 
   /**

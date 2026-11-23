@@ -87,6 +87,15 @@ async login(
 
 ## JWT Security Best Practices
 
+**Verifying tokens from an identity provider (OIDC/JWKS)** — the default for APIs — is covered by the runtime-verified
+`TokenVerifier` + global `JwtAuthGuard` in `nestjs-production-baseline.md` (`jose` 6, pinned algorithms, issuer,
+audience, required `tenant_id`; negative tests for wrong key, audience, issuer, expiry and HS256). Use the
+passport strategy below only when this service issues its own RS256 tokens.
+
+**Fail closed on configuration.** `passport-jwt` passes `audience`/`issuer` to `jsonwebtoken`, which checks them only when
+the option is truthy (`jsonwebtoken` 9 `verify.js`: `if (options.audience)`). `configService.get('JWT_AUDIENCE')` returning
+`undefined` therefore disables the audience check silently. Read every verification input with `getOrThrow`.
+
 ### Installation
 
 ```bash
@@ -123,13 +132,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: readFileSync(
-        configService.get<string>('JWT_PUBLIC_KEY_PATH'),
-        'utf8',
-      ),
-      algorithms: ['RS256'], // Use RS256 instead of HS256
-      audience: configService.get<string>('JWT_AUDIENCE'),
-      issuer: configService.get<string>('JWT_ISSUER'),
+      secretOrKey: readFileSync(configService.getOrThrow<string>('JWT_PUBLIC_KEY_PATH'), 'utf8'),
+      algorithms: ['RS256'], // pinned: never accept HS* with an asymmetric public key
+      // getOrThrow: an undefined audience/issuer would silently skip the check
+      audience: configService.getOrThrow<string>('JWT_AUDIENCE'),
+      issuer: configService.getOrThrow<string>('JWT_ISSUER'),
     });
   }
 
@@ -173,13 +180,13 @@ export class TokenService {
     const payload = {
       sub: userId,
       email,
-      aud: this.configService.get<string>('JWT_AUDIENCE'),
-      iss: this.configService.get<string>('JWT_ISSUER'),
+      aud: this.configService.getOrThrow<string>('JWT_AUDIENCE'),
+      iss: this.configService.getOrThrow<string>('JWT_ISSUER'),
     };
 
     return this.jwtService.sign(payload, {
       privateKey: readFileSync(
-        this.configService.get<string>('JWT_PRIVATE_KEY_PATH'),
+        this.configService.getOrThrow<string>('JWT_PRIVATE_KEY_PATH'),
         'utf8',
       ),
       algorithm: 'RS256',
@@ -192,7 +199,7 @@ export class TokenService {
       { sub: userId },
       {
         privateKey: readFileSync(
-          this.configService.get<string>('JWT_PRIVATE_KEY_PATH'),
+          this.configService.getOrThrow<string>('JWT_PRIVATE_KEY_PATH'),
           'utf8',
         ),
         algorithm: 'RS256',
@@ -265,98 +272,43 @@ export class AuthController {
 npm install @nestjs/throttler
 ```
 
-### Multi-Tier Rate Limiting
+### Multi-Tier Rate Limiting and Custom Tracking
 
-```typescript
-// src/common/throttler/throttler.config.ts
-import { ThrottlerModuleOptions } from '@nestjs/throttler';
-import { ConfigService } from '@nestjs/config';
+Verified configuration (NestJS 11.2.11 + Fastify, `@nestjs/throttler` 6.8.0): see `nestjs-production-baseline.md` §5
+and `nestjs-rate-limiting.md`. Two corrections to older guidance:
 
-export const getThrottlerConfig = (
-  configService: ConfigService,
-): ThrottlerModuleOptions => ({
-  throttlers: [
-    {
-      name: 'short',
-      ttl: 1000, // 1 second
-      limit: 10, // 10 requests per second
-    },
-    {
-      name: 'medium',
-      ttl: 60000, // 1 minute
-      limit: 100, // 100 requests per minute
-    },
-    {
-      name: 'long',
-      ttl: 3600000, // 1 hour
-      limit: 1000, // 1000 requests per hour
-    },
-  ],
-  storage: configService.get('REDIS_URL')
-    ? require('@nestjs/throttler-storage-redis').ThrottlerStorageRedisService
-    : undefined,
-});
-```
-
-### Custom Throttler Guard
-
-```typescript
-// src/common/throttler/custom-throttler.guard.ts
-import { Injectable, ExecutionContext } from '@nestjs/common';
-import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
-import { FastifyRequest } from 'fastify';
-
-@Injectable()
-export class CustomThrottlerGuard extends ThrottlerGuard {
-  // Override to use user ID instead of IP for authenticated routes
-  protected async getTracker(req: FastifyRequest): Promise<string> {
-    const user = req['user'];
-
-    // Use user ID for authenticated requests
-    if (user?.userId) {
-      return `user:${user.userId}`;
-    }
-
-    // Fall back to IP for unauthenticated requests
-    return req.ip || 'unknown';
-  }
-
-  // Custom error message
-  protected throwThrottlingException(context: ExecutionContext): void {
-    throw new ThrottlerException(
-      'Rate limit exceeded. Please try again later.',
-    );
-  }
-}
-```
+- The Redis storage package is `@nest-lab/throttler-storage-redis` (1.2.0). `@nestjs/throttler-storage-redis` does
+  **not exist** on npm (404) — installing an unregistered scoped name invites typosquatting. Pass an **instance**
+  (`new ThrottlerStorageRedisService(new Redis(url))`), not the class.
+- Customise the tracker with the `getTracker` option and the 429 text with `errorMessage`. Overriding
+  `throwThrottlingException(context): void` no longer compiles on v6 (`TS2416`; the base signature is
+  `(context, throttlerLimitDetail) => Promise<void>`).
+- A tracker that reads `req.user` only works if the auth guard ran first. With the throttler registered before
+  authentication (recommended: rejects floods before signature verification), key on a hash of the bearer token
+  and fall back to the IP (`throttleTracker` in the baseline).
 
 ### Per-Endpoint Configuration
 
 ```typescript
-// src/features/auth/controllers/auth.controller.ts
-import { Controller, Post, UseGuards } from '@nestjs/common';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { CustomThrottlerGuard } from '@/common/throttler/custom-throttler.guard';
-
+// Named throttlers come from ThrottlerModule options (e.g. 'burst', 'sustained'); @Throttle overrides by name.
 @Controller('auth')
-@UseGuards(CustomThrottlerGuard)
 export class AuthController {
-  // Very strict: 5 attempts per 15 minutes
-  @Throttle({ short: { limit: 5, ttl: 900000 } })
+  @Throttle({ burst: { limit: 5, ttl: 900_000 } }) // 5 attempts / 15 min
   @Post('login')
-  async login() {}
+  login(@Body() dto: LoginDto): Promise<TokenPair> {
+    return this.auth.login(dto);
+  }
 
-  // Moderate: 3 attempts per hour
-  @Throttle({ medium: { limit: 3, ttl: 3600000 } })
-  @Post('forgot-password')
-  async forgotPassword() {}
-
-  // Skip throttling for health check
   @SkipThrottle()
-  @Post('health')
-  async health() {}
+  @Get('health')
+  health(): { status: 'ok' } {
+    return { status: 'ok' };
+  }
 }
 ```
+
+Throttle credential endpoints per account as well as per IP (key a second throttler on the normalised username) so a
+botnet cannot spread guesses across addresses.
 
 ---
 
@@ -430,15 +382,15 @@ const app = await NestFactory.create<NestFastifyApplication>(
 ### Generic HMAC Verification (Non-Stripe Providers)
 
 ```typescript
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
-function verifyWebhookSignature(
-  payload: Buffer,
-  signature: string,
-  secret: string,
-): boolean {
-  const expected = createHmac('sha256', secret).update(payload).digest('hex');
-  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+/** HMAC-SHA256 over the RAW body. Verified with unit tests (valid, short, non-hex, tampered, empty secret). */
+export function verifyWebhookSignature(rawBody: Buffer, signatureHex: string, secret: string): boolean {
+  if (secret === '') throw new Error('webhook secret must be configured');
+  const expected = createHmac('sha256', secret).update(rawBody).digest();
+  const received = /^[0-9a-f]+$/i.test(signatureHex) ? Buffer.from(signatureHex, 'hex') : Buffer.alloc(0);
+  // timingSafeEqual throws RangeError on unequal lengths: check first, or a malformed header becomes a 500
+  return received.length === expected.length && timingSafeEqual(received, expected);
 }
 ```
 

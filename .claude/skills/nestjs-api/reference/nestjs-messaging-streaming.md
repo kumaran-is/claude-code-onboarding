@@ -444,7 +444,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async sendToDeadLetter(
     originalTopic: string,
-    message: any,
+    message: unknown,
     error: unknown
   ): Promise<void> {
     try {

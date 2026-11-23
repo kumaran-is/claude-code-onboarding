@@ -156,6 +156,7 @@ export class ProductsController {
 ```typescript
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ProductsRepository } from '../repositories/products.repository';
+import type { Product } from '../../../generated/prisma/client';
 import { CreateProductDto } from '../dto/create-product.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { ProductResponseDto } from '../dto/product-response.dto';
@@ -240,7 +241,7 @@ export class ProductsService {
     this.logger.log(`Product ${id} soft-deleted`);
   }
 
-  private toResponseDto(product: any): ProductResponseDto {
+  private toResponseDto(product: Product): ProductResponseDto { // Product from the generated Prisma client
     return {
       id: product.id,
       name: product.name,

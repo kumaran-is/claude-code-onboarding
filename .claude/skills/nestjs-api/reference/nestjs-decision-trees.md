@@ -147,7 +147,7 @@ Use when deciding how to surface errors to API consumers:
 What kind of error occurred?
 |
 +-- Client sent invalid input
-|   -> 422 Unprocessable Entity via ValidationPipe (automatic with class-validator)
+|   -> 400 Bad Request via ValidationPipe (its default errorHttpStatusCode; verified)
 |   -> ProblemDetail body with field-level errors
 |
 +-- Resource not found

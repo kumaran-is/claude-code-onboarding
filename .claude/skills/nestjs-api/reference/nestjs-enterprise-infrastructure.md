@@ -102,7 +102,7 @@ export async function registerSecurityMiddleware(
     // Referrer Policy
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 
-    // X-XSS-Protection (legacy, but still useful for older browsers)
+    // Helmet 8 sets `X-XSS-Protection: 0` (disables the legacy auditor, which itself enabled XSS); keep it on
     xssFilter: true,
   });
 }

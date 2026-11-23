@@ -127,6 +127,8 @@ export class HealthController {
 ### RFC 9457 ProblemDetail Format
 
 ```typescript
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 export class ProblemDetail {
   type: string;
   title: string;
@@ -141,8 +143,8 @@ export class ProblemDetail {
 export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse();
-    const request = ctx.getRequest();
+    const response = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     let problem: ProblemDetail;
 
@@ -157,14 +159,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     response.status(problem.status).send(problem);
   }
 
-  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError, request: any): ProblemDetail {
+  private handlePrismaError(error: Prisma.PrismaClientKnownRequestError, request: FastifyRequest): ProblemDetail {
     switch (error.code) {
       case 'P2002': // Unique constraint violation
+        // Prisma 7 + adapter: meta.target is not set (see violatedUniqueConstraint in nestjs-config-prisma7.md).
         return {
           type: 'about:blank',
           title: 'Conflict',
           status: 409,
-          detail: `Duplicate entry: ${error.meta?.target}`,
+          detail: 'A record with these values already exists',
           instance: request.url,
           timestamp: new Date().toISOString(),
         };

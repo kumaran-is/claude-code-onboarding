@@ -141,8 +141,10 @@ async function bootstrap(): Promise<void> {
       maxAge: configService.get<number>('security.cors.maxAge'),
     });
 
-    // NestJS 11.x: More explicit shutdown hooks with signal array
-    app.enableShutdownHooks(['SIGTERM', 'SIGINT', 'SIGUSR2']);
+    // Single owner of signal handling: runs onModuleDestroy → beforeApplicationShutdown →
+    // onApplicationShutdown, then re-raises the signal (exit 143 on SIGTERM).
+    // Do NOT add process.on('SIGTERM') handlers that call app.close(): hooks then run twice.
+    app.enableShutdownHooks();
 
     // API Versioning
     app.enableVersioning({
@@ -199,32 +201,6 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-async function gracefulShutdown(signal: string): Promise<void> {
-  const logger = new Logger('GracefulShutdown', { timestamp: true });
-  logger.log(`Received ${signal} signal. Starting graceful shutdown...`);
-
-  if (app) {
-    try {
-      const shutdownTimeout = setTimeout(() => {
-        logger.error('Graceful shutdown timeout (10s) - forcing exit');
-        process.exit(1);
-      }, 10000);
-
-      // Flush any pending logs/metrics
-      logger.log('Flushing pending operations...');
-
-      await app.close();
-      clearTimeout(shutdownTimeout);
-      logger.log('Application closed successfully');
-    } catch (error) {
-      logger.error('Error during graceful shutdown', error);
-      process.exit(1);
-    }
-  }
-
-  process.exit(0);
-}
-
 function registerProcessHandlers(): void {
   const logger = new Logger('ProcessHandlers', { timestamp: true });
 
@@ -241,11 +217,8 @@ function registerProcessHandlers(): void {
     setTimeout(() => process.exit(1), 1000);
   });
 
-  // Note: SIGTERM/SIGINT/SIGUSR2 handled by app.enableShutdownHooks()
-  // These are fallbacks if app is not yet initialized
-  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
-  process.on('SIGUSR2', () => void gracefulShutdown('SIGUSR2'));
+  // SIGTERM/SIGINT: owned by app.enableShutdownHooks(). Before bootstrap finishes the default
+  // signal behaviour (terminate) is correct; no extra signal handlers here.
 }
 
 registerProcessHandlers();
@@ -349,7 +322,9 @@ interface IThrottlerConfig {
           forbidNonWhitelisted: true,
           transform: true,
           transformOptions: {
-            enableImplicitConversion: true,
+            // Implicit conversion turns the string "false" into true for boolean properties.
+            // Convert explicitly with @Type(() => Number) / @Transform on the DTO instead.
+            enableImplicitConversion: false,
             enableCircularCheck: true,
           },
           disableErrorMessages: environment === 'production',

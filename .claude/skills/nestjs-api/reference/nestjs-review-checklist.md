@@ -20,24 +20,39 @@
 - Constructor injection (not property injection)
 - `@Injectable()` on all services
 
-**2. Security**
+**2. Authentication, authorization and tenant isolation** (verified patterns: `nestjs-production-baseline.md`)
+- Auth guard is global (`APP_GUARD`); public routes opt out with `@Public()`. A controller without a guard and without `@Public()` is a CRITICAL finding only if the global guard is missing
+- JWT verification pins `algorithms`, checks `issuer` + `audience`, requires `exp` and the tenant claim; issuer/audience read with `getOrThrow` (an `undefined` audience silently disables the check in `jsonwebtoken`/`passport-jwt`)
+- Tenant/owner/role comes from the verified principal only — never from body, query, path or a client header (CRITICAL)
+- Every repository/Prisma query on tenant data filters by `tenantId`; cross-tenant reads answer 404, not 403 or 200
+- Role/permission checks → 403; per-resource ownership checks live in the service, in one shared predicate (no copies)
+- Guard order: throttler → authentication → authorization; a guard reading `request.principal` runs after the one that sets it
+- WebSocket gateways authenticate in `server.use()` (socket.io) / `verifyClient` (`WsAdapter`), not in an async `handleConnection`
+- Guards/secrets built from config refuse empty values at startup (an empty expected secret admits a present-but-empty header)
+
+**2b. Input and transport security**
 - Input validation: `class-validator` decorators on all DTO fields
-- `@UsePipes(ValidationPipe)` or global pipe with `whitelist: true`, `forbidNonWhitelisted: true`
+- Global pipe with `whitelist: true`, `forbidNonWhitelisted: true`; `enableImplicitConversion: false` (implicit conversion turns `"false"` into `true`)
+- Invalid input returns 400 (ValidationPipe default); a doc or test expecting 422 is wrong unless `errorHttpStatusCode` is set
 - No hardcoded secrets, API keys, or passwords
 - Helmet middleware registered with CSP, HSTS, X-Frame-Options
 - CORS properly scoped (not wildcard `*` in production)
-- Rate limiting configured (`@nestjs/throttler`)
+- Rate limiting configured (`@nestjs/throttler`): Redis storage via `@nest-lab/throttler-storage-redis` when >1 instance; tracker hashes credentials
+- Webhooks verified over the raw body with a length check before `timingSafeEqual`
+- Dependencies exist on npm (`npm view`), are pinned, and `npm audit --audit-level=high` is clean (or the override is documented)
 
 **3. Error Handling**
 - Custom exceptions extend `BaseException`
 - Global exception filter produces structured ProblemDetail responses
-- Prisma errors handled (P2002 → 409, P2025 → 404)
+- Prisma errors handled (P2002 → 409, P2025 → 404). Prisma 7 + driver adapter: P2002 has no `meta.target`; code reading it silently never matches. Never echo `meta` to clients
 - No swallowed exceptions (empty catch blocks)
 - All async operations in try-catch or with proper error propagation
 
 **4. Testing**
 - Unit tests for services with mocked dependencies
-- Integration tests for controllers with supertest
+- E2E tests through the production `configureApp()` (`app.inject()` or supertest) with negative cases: no token 401, wrong audience 401, missing role 403, other tenant 404, unknown field 400, throttled 429
+- Test env for `ConfigModule.forRoot({ validate })` set in the Vitest config, not in `beforeAll`
+- No Jest APIs, no `poolOptions` (removed in Vitest 4), no `retry`/`passWithNoTests` hiding failures
 - `@nestjs/testing` Test.createTestingModule for DI setup
 - Circuit breaker tested: happy path + open state + fallback
 - Coverage >= 90% line, 80% branch
@@ -61,12 +76,16 @@
 - No N+1 queries (use `include` or batch queries)
 - Redis caching for frequently accessed data
 - Connection pools configured (Prisma, Redis)
+- Interactive transactions set `isolationLevel`, `maxWait`, `timeout`; no HTTP/queue calls inside; conditional `updateMany` instead of read-then-write
+- `$extends` instead of `$use` (removed in Prisma 5+; absent from the Prisma 7 client)
 
 **8. Observability**
 - Structured logging with correlation IDs
 - Meaningful log messages at appropriate levels
 - Health indicators for critical dependencies (DB, Redis, external APIs)
 - OpenTelemetry configured for distributed tracing
+- `app.enableShutdownHooks()` is the only signal handler (an extra `process.on('SIGTERM')` makes shutdown hooks run twice); `onModuleDestroy` closes Prisma/Redis/workers
+- BullMQ handlers idempotent (job id = business id), bounded attempts with backoff, `UnrecoverableError` for poison payloads
 
 ### P2 — Review Last
 
@@ -129,6 +148,8 @@ After reviewing all files, provide:
 ## Reference
 
 For code patterns and correct implementations, read the `nestjs-api` skill reference files:
+- `nestjs-production-baseline.md` — runtime-verified auth, tenancy, validation, throttling, WebSocket, shutdown and test patterns
+- `nestjs-rate-limiting.md` — throttler order, tracker, Redis storage
 - `nestjs-config-basics.md` — Static config reader, config module aggregation, fail-fast validation
 - `nestjs-config-npm-ts.md` — package.json, tsconfig.json
 - `nestjs-config-prisma7.md` — Prisma 7.x schema, prisma.config.ts, .env template

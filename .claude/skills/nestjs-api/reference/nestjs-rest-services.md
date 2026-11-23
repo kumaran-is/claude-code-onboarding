@@ -33,12 +33,13 @@ export class ProductService {
 ### Complete HTTP Client with Circuit Breaker
 
 ```typescript
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
+import axios from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { ResilienceOrchestratorService } from '@/core/resilience/resilience-orchestrator.service';
-import { ServiceUnavailableException } from '@/common/exceptions/service-unavailable.exception';
+import { mapPaymentError } from '@/common/http/http-errors';
 
 export interface PaymentRequest {
   orderId: string;
@@ -67,8 +68,8 @@ export class PaymentServiceClient {
     private readonly resilienceOrchestrator: ResilienceOrchestratorService,
     private readonly configService: ConfigService,
   ) {
-    this.baseUrl = this.configService.get<string>('paymentService.baseUrl')!;
-    this.apiKey = this.configService.get<string>('paymentService.apiKey')!;
+    this.baseUrl = this.configService.getOrThrow<string>('paymentService.baseUrl');
+    this.apiKey = this.configService.getOrThrow<string>('paymentService.apiKey');
     this.timeout = this.configService.get<number>('paymentService.timeout', 5000);
   }
 
@@ -96,27 +97,8 @@ export class PaymentServiceClient {
       this.logger.log(`Payment processed: ${response.data.transactionId}`);
       return response.data;
 
-    } catch (error: any) {
-      if (error.response) {
-        const status = error.response.status;
-        const data = error.response.data;
-
-        // 4xx = client error (bad request, validation failed)
-        if (status >= 400 && status < 500) {
-          this.logger.error(`Payment client error: ${status}`, data);
-          throw new Error(`Payment validation failed: ${data.message || 'Invalid request'}`);
-        }
-
-        // 5xx = service unavailable (triggers circuit breaker)
-        if (status >= 500) {
-          this.logger.error(`Payment service error: ${status}`, data);
-          throw new ServiceUnavailableException('Payment service is unavailable');
-        }
-      }
-
-      // Network error, timeout, etc.
-      this.logger.error('Payment service network error', error.message);
-      throw new ServiceUnavailableException('Failed to connect to payment service');
+    } catch (error: unknown) {
+      mapPaymentError(error); // typed mapping below; never forward the upstream body
     }
   }
 
@@ -140,11 +122,11 @@ export class PaymentServiceClient {
 
       return response.data;
 
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        throw new Error(`Payment transaction not found: ${transactionId}`);
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        throw new NotFoundException('Payment transaction not found');
       }
-      throw new ServiceUnavailableException('Payment service is unavailable');
+      mapPaymentError(error);
     }
   }
 }
@@ -241,57 +223,43 @@ export class ProductService {
 
 ## 5. Soft Delete Pattern
 
-### Prisma Middleware for Soft Delete
+### Soft Delete with a Prisma Client Extension
+
+Prisma removed `$use` middleware (it does not exist on the Prisma 7 client: `TS2339`). Use a query extension for
+reads and an explicit model method for deletes — rewriting `delete` into `update` inside an extension is not supported.
+Type-checked against a Prisma 7.10.1 generated client (runtime against PostgreSQL NOT RUN):
 
 ```typescript
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { type PrismaClient } from '../generated/prisma/client';
 
-@Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
-  async onModuleInit() {
-    await this.$connect();
-    this.applySoftDeleteMiddleware();
-  }
-
-  private applySoftDeleteMiddleware() {
-    this.$use(async (params, next) => {
-      // Intercept delete and convert to soft delete
-      if (params.action === 'delete') {
-        params.action = 'update';
-        params.args['data'] = { deletedAt: new Date() };
-      }
-
-      if (params.action === 'deleteMany') {
-        params.action = 'updateMany';
-        if (params.args.data !== undefined) {
-          params.args.data['deletedAt'] = new Date();
-        } else {
-          params.args['data'] = { deletedAt: new Date() };
-        }
-      }
-
-      // Exclude soft-deleted records from queries
-      if (params.action === 'findUnique' || params.action === 'findFirst') {
-        params.action = 'findFirst';
-        params.args.where = { ...params.args.where, deletedAt: null };
-      }
-
-      if (params.action === 'findMany') {
-        if (params.args.where) {
-          if (params.args.where.deletedAt === undefined) {
-            params.args.where.deletedAt = null;
-          }
-        } else {
-          params.args.where = { deletedAt: null };
-        }
-      }
-
-      return next(params);
-    });
-  }
+export function withOrderSoftDelete(client: PrismaClient) {
+  return client.$extends({
+    query: {
+      order: {
+        findMany({ args, query }) {
+          return query({ ...args, where: { ...args.where, deletedAt: null } });
+        },
+        findFirst({ args, query }) {
+          return query({ ...args, where: { ...args.where, deletedAt: null } });
+        },
+      },
+    },
+    model: {
+      order: {
+        softDelete(tenantId: string, id: string) {
+          return client.order.updateMany({ where: { id, tenantId, deletedAt: null }, data: { deletedAt: new Date() } });
+        },
+      },
+    },
+  });
 }
+
+export type ExtendedClient = ReturnType<typeof withOrderSoftDelete>;
 ```
+
+- `$extends` returns a new client; inject the extended client (factory provider), not the base one.
+- `findUnique` cannot take a non-unique `deletedAt` filter; route reads that must hide deleted rows through `findFirst`.
+- Unique constraints on soft-deleted tables need a partial unique index (`WHERE deleted_at IS NULL`), written in a SQL migration.
 
 ### Restore and Hard Delete
 
@@ -307,7 +275,7 @@ export class ProductService {
   }
 
   async hardDelete(id: string): Promise<void> {
-    await this.prisma.$executeRaw`DELETE FROM products WHERE id = ${id}`;
+    await this.prisma.product.delete({ where: { id } });
   }
 }
 ```
@@ -392,37 +360,46 @@ export class OrderService {
 
 ### Retry Decorator
 
-```typescript
-export function Retry(options: {
-  maxAttempts: number;
-  delayMs: number;
-  exponentialBackoff?: boolean;
-}) {
-  return function (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-  ) {
-    const originalMethod = descriptor.value;
+Typed error mapping and a `Retry` decorator — strict `tsc`, ESLint and unit tests pass (4xx → 502, 5xx/network → 503,
+retry rethrows the last error). `axios.isAxiosError` via the default import works for CommonJS and ESM builds.
 
-    descriptor.value = async function (...args: any[]) {
-      let lastError: Error;
+```typescript
+// src/common/http/http-errors.ts
+import { BadGatewayException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import axios from 'axios';
+
+const logger = new Logger('PaymentClient');
+
+/** Map an outbound HTTP failure to a typed error. Never forward the upstream body to clients. */
+export function mapPaymentError(error: unknown): never {
+  if (axios.isAxiosError(error) && error.response !== undefined) {
+    const status = error.response.status;
+    logger.error({ event: 'payment_http_error', status });
+    if (status >= 400 && status < 500) throw new BadGatewayException('Payment request rejected');
+    throw new ServiceUnavailableException('Payment service is unavailable');
+  }
+  logger.error({ event: 'payment_network_error' }, error instanceof Error ? error.stack : undefined);
+  throw new ServiceUnavailableException('Failed to connect to payment service');
+}
+
+export function Retry(options: { maxAttempts: number; delayMs: number; exponentialBackoff?: boolean }) {
+  return function (_target: object, _propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+    const original = descriptor.value as (...args: unknown[]) => Promise<unknown>;
+    descriptor.value = async function (this: unknown, ...args: unknown[]): Promise<unknown> {
+      let lastError: unknown;
       for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
         try {
-          return await originalMethod.apply(this, args);
-        } catch (error) {
+          return await original.apply(this, args);
+        } catch (error: unknown) {
           lastError = error;
           if (attempt < options.maxAttempts) {
-            const delay = options.exponentialBackoff
-              ? options.delayMs * Math.pow(2, attempt - 1)
-              : options.delayMs;
-            await new Promise(resolve => setTimeout(resolve, delay));
+            const delay = options.exponentialBackoff ? options.delayMs * 2 ** (attempt - 1) : options.delayMs;
+            await new Promise((resolve) => setTimeout(resolve, delay));
           }
         }
       }
       throw lastError;
     };
-
     return descriptor;
   };
 }

@@ -42,8 +42,8 @@ An effect exists only to synchronise with something outside React (a browser API
 | `@testing-library/react` / `user-event` / `jest-dom` | `16.3.3` / `14.6.13` / `8.0.0` | |
 | `msw` | `3.0.7` | v3 option is `onUnhandledFrame` (v2's `onUnhandledRequest` no longer type-checks) |
 | `@playwright/test` / `@axe-core/playwright` | `1.65.1` / `4.14.0` | |
-| `eslint` / `typescript-eslint` | `9.39.5` / `8.73.0` | ESLint 9 because `eslint-plugin-jsx-a11y@6.10.2` peers ESLint `<=9` |
-| `eslint-plugin-react-hooks` / `eslint-plugin-jsx-a11y` | `7.1.1` / `6.10.2` | |
+| `eslint` / `typescript-eslint` | `10.15.0` / `8.73.0` | |
+| `eslint-plugin-react-hooks` / `eslint-plugin-jsx-a11y-x` | `7.1.1` / `0.2.0` | ESLint 10 fork of `eslint-plugin-jsx-a11y`; `minimatch` override (`reference/tooling.md`) |
 
 Node 24.x (React Router 8 requires Node `>=22.22.0`). Pin exact versions (`npm i -E`); re-check with
 `npm view <pkg> version` before moving any row, and re-run the verification below after a move.
@@ -213,7 +213,7 @@ Canonical checklist: `accessibility-audit` skill (`reference/wcag22-checklist.md
 patterns in `accessibility-audit/reference/angular-a11y-automated.md` apply to React too (axe +
 Playwright are framework-neutral). React specifics: semantic elements, never `div onClick`; labels
 bound with `htmlFor`/`useId`; native `<dialog>` + `showModal()` for modals; move focus to `<main>` after
-client-side navigation; `eslint-plugin-jsx-a11y` in lint. Automated results never prove conformance:
+client-side navigation; `eslint-plugin-jsx-a11y-x` in lint. Automated results never prove conformance:
 report "no automated violations; manual checks required".
 Details and i18n basics (`Intl`, `lang`/`dir`, RTL via logical CSS): `reference/accessibility-and-i18n.md`,
 canonical i18n reference `design-system/reference/i18n-rtl-intl.md`.
@@ -242,7 +242,7 @@ npx playwright test; echo "e2e exit=$?"
 
 Do not claim a check passed unless you ran it in this session and show the command and its output;
 otherwise mark it NOT RUN. Positive controls that were run for this skill: a conditional hook fails
-ESLint (`react-hooks/rules-of-hooks`), an `<img>` without `alt` fails ESLint (`jsx-a11y/alt-text`), a
+ESLint (`react-hooks/rules-of-hooks`), an `<img>` without `alt` fails ESLint (`jsx-a11y-x/alt-text`), a
 failing test fails Vitest, and low-contrast text fails the axe scan (`color-contrast`).
 
 ## Optional: SSR / RSC

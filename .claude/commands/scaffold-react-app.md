@@ -25,8 +25,8 @@ production history). Client-rendered SPA only: no Next.js, no SSR.
 | `react-hook-form`, `@hookform/resolvers`, `zod` | `7.92.0`, `7.0.8`, `4.6.7` |
 | `react-error-boundary`, `dompurify` | `6.1.6`, `3.5.0` |
 | `babel-plugin-react-compiler`, `@rolldown/plugin-babel`, `@babel/core` | `1.0.0`, `0.3.1`, `8.1.3` |
-| `eslint`, `@eslint/js`, `typescript-eslint`, `globals` | `9.39.5`, `9.39.5`, `8.73.0`, `17.14.0` |
-| `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `eslint-plugin-jsx-a11y` | `7.1.1`, `0.5.8`, `6.10.2` (peers ESLint `<=9`) |
+| `eslint`, `@eslint/js`, `typescript-eslint`, `globals` | `10.15.0`, `10.0.1`, `8.73.0`, `17.14.0` |
+| `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `eslint-plugin-jsx-a11y-x` | `7.1.1`, `0.5.8`, `0.2.0` (ESLint 10-compatible fork of `eslint-plugin-jsx-a11y`; `overrides` pins its `minimatch` to `11.0.9`) |
 | `vitest`, `jsdom` | `5.1.1`, `31.0.1` |
 | `@testing-library/react`, `/dom`, `/user-event`, `/jest-dom` | `16.3.3`, `10.4.2`, `14.6.13`, `8.0.0` |
 | `msw` | `3.0.7` |
@@ -51,8 +51,9 @@ sample feature.
 2. **Runtime dependencies** (exact pins):
    `npm i -E react@19.3.1 react-dom@19.3.1 react-router@8.5.2 @tanstack/react-query@5.108.3 react-hook-form@7.92.0 @hookform/resolvers@7.0.8 zod@4.6.7 react-error-boundary@6.1.6 dompurify@3.5.0`
 3. **Dev dependencies**: `npm uninstall oxlint`, then
-   `npm i -DE typescript@5.9.3 vite@8.3.8 @vitejs/plugin-react@6.3.0 @types/react@19.3.0 @types/react-dom@19.3.0 @types/node@24.19.2 babel-plugin-react-compiler@1.0.0 @rolldown/plugin-babel@0.3.1 @babel/core@8.1.3 eslint@9.39.5 @eslint/js@9.39.5 typescript-eslint@8.73.0 globals@17.14.0 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.8 eslint-plugin-jsx-a11y@6.10.2 @tanstack/eslint-plugin-query@5.108.3 vitest@5.1.1 jsdom@31.0.1 @testing-library/react@16.3.3 @testing-library/dom@10.4.2 @testing-library/user-event@14.6.13 @testing-library/jest-dom@8.0.0 msw@3.0.7 @playwright/test@1.65.1 @axe-core/playwright@4.14.0`
-   Then pin the remaining template carets to exact versions in `package.json` and set the scripts from
+   `npm i -DE typescript@5.9.3 vite@8.3.8 @vitejs/plugin-react@6.3.0 @types/react@19.3.0 @types/react-dom@19.3.0 @types/node@24.19.2 babel-plugin-react-compiler@1.0.0 @rolldown/plugin-babel@0.3.1 @babel/core@8.1.3 eslint@10.15.0 @eslint/js@10.0.1 typescript-eslint@8.73.0 globals@17.14.0 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.8 eslint-plugin-jsx-a11y-x@0.2.0 @tanstack/eslint-plugin-query@5.108.3 vitest@5.1.1 jsdom@31.0.1 @testing-library/react@16.3.3 @testing-library/dom@10.4.2 @testing-library/user-event@14.6.13 @testing-library/jest-dom@8.0.0 msw@3.0.7 @playwright/test@1.65.1 @axe-core/playwright@4.14.0`
+   Add the `overrides` block from `reference/tooling.md` (patched `minimatch` for the a11y plugin), run
+   `npm install`, then pin the remaining template carets to exact versions in `package.json` and set the scripts from
    `reference/tooling.md` (`build`: `tsc -b && vite build`, `lint`, `test`, `e2e`).
 4. **Config** (`reference/tooling.md`): `tsconfig.app.json` with `strict`, `noUncheckedIndexedAccess`
    and the `@/*` path; `tsconfig.e2e.json` referenced from the root solution file; `vite.config.ts` with

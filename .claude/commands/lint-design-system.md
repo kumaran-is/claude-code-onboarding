@@ -73,7 +73,7 @@ grep -rnE --include=*.css --include=*.scss -- '--spacing-(xs|sm|md|lg|xl|2xl)[[:
 # Muted text below the contrast floor (warn)
 grep -rnE $INC 'text-base-content/(10|20|30|40|50)\b' "$WEB" | grep -vE "$X"
 ```
-For React projects set `WEB=src`. Form-control labelling is an accessibility check, not a regex check: use `@angular-eslint/template` accessibility rules or `eslint-plugin-jsx-a11y`, and the `accessibility-auditor` agent.
+For React projects set `WEB=src`. Form-control labelling is an accessibility check, not a regex check: use `@angular-eslint/template` accessibility rules or `eslint-plugin-jsx-a11y-x` (React, ESLint 10), and the `accessibility-auditor` agent.
 
 ### 4. Report
 

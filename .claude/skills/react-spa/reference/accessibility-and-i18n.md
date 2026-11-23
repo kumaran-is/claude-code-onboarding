@@ -11,7 +11,7 @@
 - axe (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`) reports no violations on the list, the
   open dialog with validation errors, and the error state.
 - Planted violations are detected: low-contrast text → `color-contrast`; an unnamed icon button →
-  `button-name`; `<img>` without `alt` → ESLint `jsx-a11y/alt-text`.
+  `button-name`; `<img>` without `alt` → ESLint `jsx-a11y-x/alt-text`.
 - Dialog: Escape closes it and focus returns to the opener; the first invalid field receives focus.
 
 ## React specifics
@@ -27,7 +27,7 @@
 | Targets | at least 24×24 CSS px (WCAG 2.2 AA 2.5.8); this toolkit's web baseline is 44 px (`code-standards.md`) |
 | Focus visible | do not remove outlines without a visible replacement; sticky headers must not hide focused elements (2.4.11) |
 | Motion | respect `prefers-reduced-motion` |
-| Lint | `eslint-plugin-jsx-a11y` `flatConfigs.recommended` (6.10.2, ESLint 9) |
+| Lint | `eslint-plugin-jsx-a11y-x` `configs.recommended` (0.2.0, ESLint 10; see `tooling.md`) |
 
 ## i18n basics
 

@@ -41,7 +41,7 @@ Get baseline live screenshot and binary verdict before setting up regression too
 | Angular or React app (default) | Playwright `toHaveScreenshot` (`.claude/skills/browser-testing/reference/playwright-test-suite.md`) |
 | Repo that already runs Storybook | Chromatic (optional) |
 | Hosted cross-browser review | Percy / BackstopJS (optional, only if the team already uses them) |
-| Flutter | `golden_toolkit` (`flutter test --update-goldens`) |
+| Flutter | `flutter_test` `matchesGoldenFile` (`flutter test --update-goldens`); `alchemist` for multi-scenario grids or CI tolerance. `golden_toolkit` is discontinued: do not add it |
 
 ### Phase 3 — Run 13-Item Mandatory Checklist
 
@@ -85,7 +85,7 @@ npx playwright test; echo "E2E EXIT:$?"
 - **Waiting with `networkidle` or fixed sleeps before a screenshot** — wait with a web-first assertion on the content instead
 - **Not testing both light AND dark mode** (daisyUI `data-theme` switch, Flutter `ThemeMode.dark`)
 - **Not establishing baseline on stable main branch** — first run will always fail without reference screenshots
-- **Flutter golden tests fail on CI due to font rendering differences** — use `golden_toolkit` `loadAppFonts()` to fix
+- **Flutter golden tests fail on CI due to font rendering differences** — fix the surface size and pixel ratio, load real fonts or use Ahem, and allow a measured tolerance (`alchemist` `CiGoldensConfig.diffThreshold`); see `.claude/skills/flutter-mobile/reference/flutter-testing-traps.md` §6
 
 ---
 

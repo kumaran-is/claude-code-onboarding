@@ -36,10 +36,11 @@ A2UI messages travel inside AG-UI `ACTIVITY_SNAPSHOT` events:
 ```json
 {
   "type": "ACTIVITY_SNAPSHOT",
-  "messageId": "call_123",
+  "messageId": "a2ui-surface-main",
   "activityType": "a2ui-surface",
+  "replace": true,
   "content": {
-    "operations": [
+    "a2ui_operations": [
       { "version": "v0.9", "createSurface": { "surfaceId": "main", "catalogId": "https://..." } },
       { "version": "v0.9", "updateComponents": { "surfaceId": "main", "components": [...] } }
     ]
@@ -47,7 +48,7 @@ A2UI messages travel inside AG-UI `ACTIVITY_SNAPSHOT` events:
 }
 ```
 
-There is no single required way to embed A2UI in AG-UI — `ACTIVITY_SNAPSHOT` + `activityType: 'a2ui-surface'` is the common convention.
+There is no single required way to embed A2UI in AG-UI — `ACTIVITY_SNAPSHOT` + `activityType: 'a2ui-surface'` is the common convention. The content key is `a2ui_operations`; CopilotKit's Angular renderer (0.3.1, SOURCE-PROVEN) also accepts `operations`. Each snapshot is cumulative for one surface (`replace: true`), so apply only the new tail and re-run the contract guard on every operation. Tested adapter: `canonical-catalog-angular.md` § AG-UI adapter; transport contract: `../../genui-contract/reference/ag-ui-transport.md`.
 
 ## Domain DSL Pattern
 
@@ -112,57 +113,32 @@ export const formatIdImplementation = {
 } as unknown as FunctionImplementation;
 ```
 
-### Extending BasicCatalogBase
+### Registering custom components (v0.9)
+
+`BasicCatalogBase` options `extraComponents` and `functions` are `@deprecated` in `@a2ui/angular@0.14.0`. Build the catalog with the `AngularCatalog` constructor and `createComponentImplementation(api, componentClass)`; the API's zod schema is the per-component contract. Tested code: `canonical-catalog-angular.md`.
 
 ```typescript
-@Injectable({ providedIn: 'root' })
-export class CustomCatalog extends BasicCatalogBase {
-  constructor() {
-    super({
-      id: 'https://example.com/catalogs/my-catalog',
-      extraComponents: [milesProgressEntry],
-      functions: [...BASIC_FUNCTIONS, formatIdImplementation],
-    });
-  }
-}
+import { AngularCatalog, createComponentImplementation } from '@a2ui/angular';
+import { BASIC_FUNCTIONS } from '@a2ui/web_core/v0_9/basic_catalog';
+
+export const createCustomCatalog = () =>
+  new AngularCatalog(
+    'https://catalogs.example.com/my-catalog/v1/catalog.json',
+    '0.9',
+    [createComponentImplementation(MilesProgressApi, MilesProgressComponent)],
+    [...BASIC_FUNCTIONS.filter((fn) => ['required', 'email'].includes(fn.name)), formatIdImplementation],
+  );
 ```
 
-### Using the binding() helper (AG-UI abstraction)
-
-```typescript
-import { createCustomComponent, binding } from '@internal/ag-ui-client';
-
-export const ticketWidgetEntry = createCustomComponent({
-  name: 'TicketWidget',
-  description: 'Boarding-pass-style widget.',
-  component: TicketWidget,
-  schema: z.object({
-    ticketId: binding(z.union([z.string(), z.number()])),
-    from: binding(z.string()),
-    to: binding(z.string()),
-    date: binding(z.string()),
-  }).strict(),
-});
-```
-
-`binding()` marks a field as accepting either a direct value or a `{ path: "/..." }` data-model reference.
+A field that accepts a literal or a `{ "path": "/..." }` binding is declared with the SDK's `Dynamic*` schemas (zod `.describe('REF:#/$defs/DynamicString')`), not with a wrapper helper; the binder resolves it to a reactive `BoundProperty`.
 
 ### Component input types (v0.9)
 
+A catalog component extends `CatalogComponent<typeof Api>` (`@a2ui/angular@0.14.0`), which supplies the `props`, `surfaceId`, `componentId`, `dataContextPath` and `metadata` inputs. Scalar `Dynamic*` props arrive as `BoundProperty` (read with `value()`); `Action` props arrive as ready-to-call closures. Tested example (`ActionCardComponent`): `canonical-catalog-angular.md` § A catalog component.
+
 ```typescript
-// Angular component receives context via typed input
-export interface MilesProgressContext {
-  passenger: BoundProperty<Passenger>; // reactive, resolves path bindings
-}
-
-@Component({ ... })
-export class MilesProgressComponent {
-  readonly props = input<MilesProgressContext>(initialContext);
-  readonly surfaceId = input.required<string>();
-  readonly componentId = input.required<string>();
-  readonly dataContextPath = input('/');
-
-  protected readonly passenger = computed(() => this.props().passenger.value());
+export class MilesProgressComponent extends CatalogComponent<typeof MilesProgressApi> {
+  protected readonly label = computed(() => this.props().label.value()); // DynamicString -> string
 }
 ```
 

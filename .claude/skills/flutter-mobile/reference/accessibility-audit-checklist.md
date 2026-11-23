@@ -1,4 +1,6 @@
-# Accessibility Audit Checklist (WCAG 2.1 — Flutter)
+# Accessibility Audit Checklist (WCAG 2.2 AA — Flutter)
+
+> Canonical cross-stack checklist: `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`. This file holds the Flutter-specific checks.
 
 ## 1. Semantics Widget Usage
 
@@ -8,7 +10,7 @@
 - [ ] Buttons use `Semantics(button: true, ...)`
 - [ ] Live regions for dynamic content updates
 
-## 2. Color Contrast (WCAG 2.1)
+## 2. Color Contrast (WCAG 2.2 AA)
 
 - [ ] Normal text: minimum 4.5:1 ratio
 - [ ] Large text (18pt+): minimum 3:1 ratio

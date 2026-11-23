@@ -65,7 +65,7 @@ Last verified: 2026-03-15
 ### UI/Accessibility
 | Agent | What It Reviews | Output |
 |-------|----------------|--------|
-| `accessibility-auditor` | WCAG 2.1, Semantics, focus management, color contrast | Accessibility violation list |
+| `accessibility-auditor` | WCAG 2.2 AA (web + Flutter), semantics, focus management, color contrast, target size | Accessibility violation list |
 | `ui-standards-expert` | Design tokens, theming, touch targets, responsive layout | Design system compliance report |
 | `reality-checker` | Final validation gate — requires screenshot evidence | APPROVED / NEEDS WORK (binary) |
 

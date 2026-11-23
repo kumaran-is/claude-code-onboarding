@@ -14,7 +14,7 @@
 | [firestore-status-bus.md](firestore-status-bus.md) | Consuming backend-owned Firestore documents in real time (only if the project uses Firestore) | Read-only stream consumer pattern; the backend owns writes |
 | [flutter-design-polish.md](flutter-design-polish.md) | Adding premium visual styling | Glassmorphism, premium cards, dark/light themes, gradients |
 | [flutter-security-hardening.md](flutter-security-hardening.md) | Auth, secure storage, or data protection work (used by `flutter-security-expert`) | Certificate pinning, secure storage, privacy compliance |
-| [accessibility-audit-checklist.md](accessibility-audit-checklist.md) | Adding interactive elements or running accessibility review (used by `accessibility-auditor`) | WCAG 2.1 AA checklist, Semantics widgets, touch targets |
+| [accessibility-audit-checklist.md](accessibility-audit-checklist.md) | Adding interactive elements or running accessibility review (used by `accessibility-auditor`) | Flutter WCAG 2.2 AA checklist (canonical cross-stack list: `accessibility-audit/reference/wcag22-checklist.md`), Semantics widgets, touch targets |
 | [flutter-network-resilience.md](flutter-network-resilience.md) | Any service/repository making HTTP or Firebase calls | Circuit breaker, retry with exponential backoff, timeout budgets, Riverpod integration |
 | [flutter-offline-sync.md](flutter-offline-sync.md) | App must work without internet (create/edit/delete data offline) | Storage-neutral sync queue model and drain loop, tier model, conflict strategies, Riverpod integration |
 | [flutter-testing-patterns.md](flutter-testing-patterns.md) | Writing tests for any feature (unit, widget, golden, integration) | mocktail fakes, ProviderContainer, ProviderScope overrides, golden tests |

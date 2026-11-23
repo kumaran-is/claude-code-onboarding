@@ -461,7 +461,7 @@ _buildConfirmationCatalogItem(),
 
 ## Accessibility Requirements
 
-All triage widgets must meet WCAG 2.1 AA:
+All triage widgets must meet WCAG 2.2 AA:
 
 - Touch targets >= 48dp
 - All form fields have associated labels (Semantics)

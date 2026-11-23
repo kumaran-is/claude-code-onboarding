@@ -76,7 +76,7 @@ After parallel agents complete:
    Check: secure storage (not SharedPreferences for tokens), cert pinning, GDPR data handling."
 
 3. accessibility-auditor
-   "Review [file list] for WCAG 2.1 AA.
+   "Review [file list] for WCAG 2.2 AA.
    Check: Semantics labels, touch targets >=48dp, color contrast."
 
 4. ui-standards-expert

@@ -42,7 +42,7 @@ Where:
 |----------|---------|-------------|---------|
 | **iOS (HIG)** | 44pt x 44pt | 48pt+ | All tappable elements |
 | **Android (Material)** | 48dp x 48dp | 56dp+ | All tappable elements |
-| **WCAG 2.2** | 44px x 44px | - | Accessibility compliance |
+| **WCAG 2.2 AA (2.5.8)** | 24 x 24 CSS px (or 24 px spacing) | 44 x 44 (2.5.5, AAA) | Legal/accessibility floor; platform minimums above are stricter |
 | **Critical Actions** | - | 56-64px | Primary CTAs, destructive actions |
 
 ### Visual Size vs Hit Area
@@ -380,10 +380,10 @@ Design responses:
 
 ### WCAG 2.2 Touch Targets
 
-Touch targets must have:
-- Width >= 44px
-- Height >= 44px
-- Spacing >= 8px from adjacent targets
+- **2.5.8 Target Size (Minimum), AA:** ≥ 24 × 24 CSS px, or spaced so a 24 px circle centred on each target does not overlap another.
+- **2.5.5 Target Size (Enhanced), AAA:** ≥ 44 × 44 CSS px.
+- Platform guidelines are stricter and are what Flutter tests assert: 48 × 48 dp Android (`androidTapTargetGuideline`), 44 × 44 pt iOS (`iOSTapTargetGuideline`).
+- Canonical policy: `.claude/skills/accessibility-audit/reference/wcag22-checklist.md` §1.
 
 ### Accessible Touch Patterns
 
@@ -443,8 +443,8 @@ Emotional touch feedback:
 
 ```
 Touch Target Sizes
-                  iOS        Android     WCAG
-Minimum:        44pt       48dp       44px
+                  iOS        Android     WCAG 2.2 AA (AAA)
+Minimum:        44pt       48dp       24px (44px)
 Recommended:    48pt+      56dp+      -
 Spacing:        8pt+       8dp+       8px+
 

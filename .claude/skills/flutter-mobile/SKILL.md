@@ -104,7 +104,7 @@ For architecture patterns, accessibility, performance, UX, and premium polish gu
 Read [reference/flutter-architecture-patterns.md](reference/flutter-architecture-patterns.md) — Sealed classes, Result types, Riverpod AsyncNotifier
 Read [reference/flutter-performance-ux.md](reference/flutter-performance-ux.md) — Accessibility, performance, haptic feedback, shimmer, animations
 Read [reference/flutter-design-polish.md](reference/flutter-design-polish.md) — Glassmorphism, premium cards, dark/light themes, gradients
-Read [reference/accessibility-audit-checklist.md](reference/accessibility-audit-checklist.md) — WCAG 2.1 audit checklist (used by `accessibility-auditor` agent)
+Read [reference/accessibility-audit-checklist.md](reference/accessibility-audit-checklist.md) — WCAG 2.2 AA Flutter checklist (used by `accessibility-auditor` agent)
 Read [reference/flutter-security-hardening.md](reference/flutter-security-hardening.md) — Security hardening & privacy compliance (used by `flutter-security-expert` agent)
 Read [reference/smart-dumb-widgets.md](reference/smart-dumb-widgets.md) — Smart (ConsumerWidget) vs Dumb (StatelessWidget) pattern, ref.watch/read placement rules, decision tree, Riverpod enforcement gates
 Read [reference/flutter-use-case-layer.md](reference/flutter-use-case-layer.md) — When to add a use case, when not to, file location, example with two repositories, unit testing with fakes
@@ -314,7 +314,7 @@ This workspace's stack uses **Riverpod** — see `.claude/skills/riverpod-patter
 After writing Dart code, dispatch these reviewer agents:
 - `riverpod-reviewer` — state management, provider types, AsyncValue handling
 - `flutter-security-expert` — secure storage, certificate pinning, data protection
-- `accessibility-auditor` — WCAG 2.1 compliance, Semantics widgets, touch targets
+- `accessibility-auditor` — WCAG 2.2 AA, Semantics widgets, touch targets
 
 Pre-submit checks (smart/dumb pattern):
 - [ ] `shared_ui/` widgets extend `StatelessWidget` — zero ref/ConsumerWidget usage

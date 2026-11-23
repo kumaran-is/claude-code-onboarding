@@ -59,7 +59,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `pgvector-schema-reviewer` | pgvector | Vector schema, index alignment, embedding model |
 | `weaviate-schema-reviewer` | Weaviate | Collection definition, vectorizer, multi-tenancy |
 | `rag-implementation-reviewer` | RAG | Chunking, model pinning, reranking, error handling |
-| `accessibility-auditor` | Accessibility | WCAG 2.1, Semantics, focus management |
+| `accessibility-auditor` | Accessibility (web + Flutter) | WCAG 2.2 AA, semantics, focus management |
 | `ui-standards-expert` | UI/UX | Design tokens, theming, touch targets |
 | `flutter-security-expert` | Flutter | Secure storage, certificate pinning, GDPR |
 | `dedup-code-agent` | Tech Debt | Duplication, unused code, dependency bloat |
@@ -128,7 +128,7 @@ Sequential:
 ```
 riverpod-reviewer         → state management
 flutter-security-expert   → secure storage, GDPR
-accessibility-auditor     → WCAG 2.1
+accessibility-auditor     → WCAG 2.2 AA (web + Flutter)
 ui-standards-expert       → design tokens, touch targets
 silent-failure-hunter     → error handling in async code
 ```

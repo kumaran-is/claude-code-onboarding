@@ -84,7 +84,7 @@ When loading the primary skill (left column), also consider loading the companio
 1. {stack skill}              — angular-spa or flutter-mobile
 2. ui-standards-tokens        — tokens, spacing, color, typography
 3. ui-standards-expert        — post-implementation UI review
-4. accessibility-auditor      — WCAG 2.1 AA check
+4. accessibility-auditor      — WCAG 2.2 AA check (web + Flutter)
 ```
 
 ---

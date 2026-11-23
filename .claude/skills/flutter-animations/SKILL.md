@@ -322,4 +322,4 @@ flutter:
 - `mobile-design` — Load BEFORE this skill for touch psychology and MFRI scoring
 - `riverpod-patterns` — Wire animation state to Riverpod providers
 - `ui-standards-tokens` — ThemeData tokens for static fallback widgets
-- `accessibility-audit` — WCAG 2.1 AA audit including reduce-motion compliance
+- `accessibility-audit` — WCAG 2.2 AA audit including reduce-motion compliance

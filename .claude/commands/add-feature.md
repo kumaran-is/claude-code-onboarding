@@ -1,5 +1,5 @@
 ---
-description: Add a new feature end-to-end across backend API, Angular UI, and/or Flutter mobile
+description: Add a new feature end-to-end to an existing project across backend API (Spring, NestJS, FastAPI), web UI (Angular, React) and/or Flutter mobile, with tests routed per target and a /verify gate
 argument-hint: "[feature description]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
@@ -11,11 +11,11 @@ Add a complete feature across the stack:
 **Feature description:** $ARGUMENTS
 
 ## Steps
-1. **Analyze** what layers are needed (backend API? frontend UI? mobile screen? database?)
-2. **Database** — create migration and update ERD if new entities are needed
-3. **Backend API** — create DTO, entity, repository, service, controller, and test
-4. **Angular UI** — create component, service, route, and test
-5. **Flutter Mobile** — create model, provider, screen, and test
-6. Only create the layers that are relevant to the feature request.
+1. **Analyze** which layers the feature needs (database? backend API? web UI? mobile screen?) and which stacks the repo actually contains. Create only the relevant layers. Load each layer's skill before writing code (CLAUDE.md Code Conventions table).
+2. **Database** — migration in the stack's tool (Alembic, Flyway, Prisma) with up and down; `postgresql-database-reviewer` before applying.
+3. **Backend API** — DTO/schema, repository, service, controller/router, authz check and validation, plus unit and integration tests (JUnit / pytest / Vitest), including one error-path test.
+4. **Web UI** — Angular (`angular-spa`) or React (`react-spa`): component, data access, route, loading/empty/error states; unit tests with `ng test` (Vitest) or Vitest + Testing Library; Playwright for the E2E flow.
+5. **Flutter mobile** — model, Riverpod provider, screen, widget tests with `flutter test`; device UI/E2E with Maestro only (missing device → BLOCKED).
+6. **Verify** — `/verify full` for every touched stack; report PASS / FAIL / BLOCKED / NOT RUN per check with its own exit code, then `/review-code`. Do not report the feature done on a FAIL or BLOCKED.
 
-Use the appropriate agents and skills for each layer. Follow all conventions from CLAUDE.md.
+Tool routing: `.claude/rules/testing-tool-selection.md`. Use instead when: `/new-project` — no project exists yet; `/scaffold-genui-feature` — the feature is an agent-rendered (A2UI) surface; `/aidlc` — multi-stage work that needs approval gates.

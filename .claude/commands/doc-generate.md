@@ -16,7 +16,7 @@ Target: `$ARGUMENTS` (default: current directory).
 ## Step 1: Detect project type
 
 ```bash
-TARGET="${ARGUMENTS:-.}"
+TARGET="$ARGUMENTS"; [ -n "$TARGET" ] || TARGET="."   # `${ARGUMENTS:-.}` is never substituted by Claude Code
 HAS_JAVA=false; HAS_NODE=false; HAS_PYTHON=false; HAS_FLUTTER=false
 
 [ -f "$TARGET/pom.xml" ] && HAS_JAVA=true && echo "Java/Spring detected"

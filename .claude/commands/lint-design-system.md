@@ -55,23 +55,24 @@ These mirror the write-time hookify rules (`.claude/hookify.design-no-*-angular.
 
 Commands (POSIX ERE via `grep -E`, portable across BSD and GNU grep; no `\d`). Each excludes lines carrying `ignore-design: <reason>`; a bare `ignore-design` without a reason does not exempt:
 ```bash
-WEB="src/app"; INC='--include=*.html --include=*.ts --include=*.tsx --include=*.jsx --include=*.css --include=*.scss'
+# INC is an array: a string expanded as $INC stays ONE argument in zsh, so grep searches nothing (false PASS).
+WEB="src/app"; INC=(--include='*.html' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.css' --include='*.scss')
 X='ignore-design:[[:space:]]*[^[:space:]]'
 # Literal colours (token/theme stylesheets are where literals belong: exclude them)
-grep -rnE $INC '(bg|text|border|ring|fill|stroke|from|via|to|outline)-\[(#|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\()|(background(-color)?|[^a-z-]color|border(-[a-z]+)?-color|fill|stroke|(background|border|outline)Color)[[:space:]]*:[[:space:]]*['"'"'"]?(#[0-9a-fA-F]{3,8}|(rgba?|hsla?|oklch|oklab|hwb)\()' "$WEB" \
+grep -rnE "${INC[@]}" '(bg|text|border|ring|fill|stroke|from|via|to|outline)-\[(#|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\()|(background(-color)?|[^a-z-]color|border(-[a-z]+)?-color|fill|stroke|(background|border|outline)Color)[[:space:]]*:[[:space:]]*['"'"'"]?(#[0-9a-fA-F]{3,8}|(rgba?|hsla?|oklch|oklab|hwb)\()' "$WEB" \
   | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Arbitrary spacing values and inline px spacing
-grep -rnE $INC '(^|[[:space:]"'"'"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^]v][^]]*\]|style="[^"]*(margin|padding|gap)[a-z-]*[[:space:]]*:[[:space:]]*-?[0-9.]+px|style=\{\{[^}]*(margin|padding|gap)[A-Za-z]*[[:space:]]*:[[:space:]]*['"'"'"]?-?[0-9]' "$WEB" | grep -vE '\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
+grep -rnE "${INC[@]}" '(^|[[:space:]"'"'"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^]v][^]]*\]|style="[^"]*(margin|padding|gap)[a-z-]*[[:space:]]*:[[:space:]]*-?[0-9.]+px|style=\{\{[^}]*(margin|padding|gap)[A-Za-z]*[[:space:]]*:[[:space:]]*['"'"'"]?-?[0-9]' "$WEB" | grep -vE '\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Raw typography
-grep -rnE $INC 'text-\[[0-9.]+(px|rem|em)\]|font-\[[^]v][^]]*\]|font-size[[:space:]]*:[[:space:]]*[0-9]|fontSize[[:space:]]*:[[:space:]]*['"'"'"]?[0-9]' "$WEB" | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
+grep -rnE "${INC[@]}" 'text-\[[0-9.]+(px|rem|em)\]|font-\[[^]v][^]]*\]|font-size[[:space:]]*:[[:space:]]*[0-9]|fontSize[[:space:]]*:[[:space:]]*['"'"'"]?[0-9]' "$WEB" | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Inline styles in templates
-grep -rnE --include=*.html 'style="' "$WEB" | grep -vE "$X"
+grep -rnE --include='*.html' 'style="' "$WEB" | grep -vE "$X"
 # daisyUI 4 class names
-grep -rnE $INC '\b(input|select|textarea|file-input)-bordered\b|\bform-control\b|\blabel-text(-alt)?\b|\bcard-bordered\b|\bbtn-group\b' "$WEB" | grep -vE "$X"
+grep -rnE "${INC[@]}" '\b(input|select|textarea|file-input)-bordered\b|\bform-control\b|\blabel-text(-alt)?\b|\bcard-bordered\b|\bbtn-group\b' "$WEB" | grep -vE "$X"
 # Spacing tokens shadowing max-w-*
-grep -rnE --include=*.css --include=*.scss -- '--spacing-(xs|sm|md|lg|xl|2xl)[[:space:]]*:' src/
+grep -rnE --include='*.css' --include='*.scss' -- '--spacing-(xs|sm|md|lg|xl|2xl)[[:space:]]*:' src/
 # Muted text below the contrast floor (warn)
-grep -rnE $INC 'text-base-content/(10|20|30|40|50)\b' "$WEB" | grep -vE "$X"
+grep -rnE "${INC[@]}" 'text-base-content/(10|20|30|40|50)\b' "$WEB" | grep -vE "$X"
 ```
 For React projects set `WEB=src`. Form-control labelling is an accessibility check, not a regex check: use `@angular-eslint/template` accessibility rules or `eslint-plugin-jsx-a11y-x` (React, ESLint 10), and the `accessibility-auditor` agent.
 

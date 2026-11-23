@@ -28,6 +28,7 @@ specific plan before committing to it.
 ## NOT when to use
 
 - Direction is genuinely unclear (use `/brainstorm` instead)
+- A written multi-step implementation plan needs a phase-by-phase review (use `/plan-review` instead)
 - Task is a trivial bug fix or <50 line change
 - Implementation is already approved and underway
 

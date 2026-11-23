@@ -67,4 +67,6 @@ What resonates? Or should we explore a different direction?
 
 Produces: WebSockets vs SSE vs Firebase vs Polling — with trade-offs on scaling, complexity, mobile support, and a Mermaid diagram of the SSE flow.
 
+Use instead when: `/exploration` — you already picked an option and want it attacked; `/plan-review` — a written implementation plan needs a structured review; `/design-architecture` — the choice is made and needs an ADR.
+
 $ARGUMENTS

@@ -88,3 +88,7 @@ One entry per line, pipe-separated:
 - The log file is append-only (except `/checkpoint clear`)
 - Do NOT use checkpoints as a substitute for git commits — they are session-level state markers only
 - If `.claude/checkpoints.log` does not exist, create it on first write
+
+## Boundaries
+
+`/checkpoint verify` compares git state; it runs no tests and is not evidence that anything works. Use instead when: `/verify` — build/test exit codes; `/status-check` — feature-level status; a git commit — anything you need to roll back to.

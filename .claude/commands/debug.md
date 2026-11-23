@@ -68,6 +68,7 @@ Stop. Do not attempt Fix #4. Per `systematic-debugging` skill Phase 4.5:
 
 - Full 4-phase protocol: `.claude/skills/systematic-debugging/SKILL.md`
 - Supporting techniques in same directory: `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`
-- After fix is confirmed: run `/validate-changes` before committing
+- After the fix is confirmed: the reproducing test passes and `/verify` reports the stack PASS with its own exit code; `/validate-changes` is optional advisory review on top
+- Use instead when: `/rag-debug` — a RAG system returns a wrong, missing or leaked answer; `error-detective` agent — the evidence is production logs or traces rather than a local repro
 
 $ARGUMENTS

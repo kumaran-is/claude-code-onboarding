@@ -164,7 +164,7 @@ Generate only the sections that apply to what changed.
 
 **If dependency files changed:**
 - [ ] New package has active maintenance (check npm/PyPI/pub.dev)
-- [ ] No known CVEs: run `npm audit` / `pip-audit` / `flutter pub audit`
+- [ ] No known CVEs: run `npm audit --audit-level=high` / `pip-audit --strict` / `flutter pub get` advisories (there is no `pub audit` subcommand)
 - [ ] License is compatible with project
 
 **If database migration files changed:**
@@ -210,5 +210,7 @@ Generate only the sections that apply to what changed.
 ---
 Next: run /review-pr for the 6-role qualitative review.
 ```
+
+Use instead when: `/create-pr` — the same score embedded in a PR body with the `gh` command; `/review-pr` or `/review-code` — the actual review. A risk score is not a gate: `/verify pre-pr` is.
 
 $ARGUMENTS

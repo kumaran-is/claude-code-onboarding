@@ -8,6 +8,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 > This workflow is active ONLY when explicitly invoked via `/aidlc`.
 > It does NOT override the project's CLAUDE.md rules — both apply concurrently.
 > Project-specific constraints defined in CLAUDE.md remain non-negotiable.
+> Use instead when: `/brainstorm` (options only), `/plan-review` (review an existing plan), `/add-feature` (a scoped feature in an existing project). AI-DLC is for multi-stage work that needs approval gates and an audit trail.
 
 ## Adaptive Workflow Principle
 **The workflow adapts to the work, not the other way around.**

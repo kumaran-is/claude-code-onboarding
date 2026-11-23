@@ -81,7 +81,14 @@ Today's date: use `currentDate` from context if available, otherwise run `date +
    b. Score all 16 criteria (0/1/2 each)
    c. Sum score, compute percentage, assign grade
 4. Sort results: F first, then D, C, B, A
-5. Output report in format below
+5. **Permissions and automation surface re-audit** (every run, and at least every 30 days): permissions accrete and are never re-examined, so re-check `.claude/settings.json` and `.claude/settings.local.json` against `.claude/skills/security-reviewer/reference/claude-config-security.md` §1 (permissions), §3 (hooks), §4 (MCP servers) and §5 (agents), deriving the current state with its §6 commands:
+   - every `permissions.allow` entry is attributable to a current workflow; unattributable entries are candidates for removal or demotion to `ask`
+   - destructive classes (`rm`, `git reset/clean/restore`, force-push, `sudo`, `eval`, `ssh`) are still in `ask` or `deny`, none silently promoted to `allow`
+   - every allow entry added since the last audit (`git log -p -- .claude/settings.json`) has a stated reason
+   - every registered hook file exists and is executable (an orphaned hook entry is a silent enforcement gap)
+   - every `mcp__*` allow entry maps to a server still in `.mcp.json` and still listed as reviewed in `.claude/rules/skill-triggers.md`
+   Report this as its own section: PASS, or each flagged entry with its reason.
+6. Output report in format below
 
 ---
 

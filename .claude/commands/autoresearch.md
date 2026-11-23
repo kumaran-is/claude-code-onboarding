@@ -13,20 +13,13 @@ Unlike `/ralph-loop` (which runs blind), this loop is **metric-gated**: changes 
 ## Step 1 — Parse arguments and set defaults
 
 ```bash
-METRIC="${METRIC:-all}"
-TARGET_REDUCTION="${TARGET_REDUCTION:-5}"
-MAX_ITERATIONS="${MAX_ITERATIONS:-10}"
+# Arguments: $ARGUMENTS
+# Claude: set these from the arguments above (defaults shown). No `$#`/`shift` loop: a Bash tool call has
+# no positional parameters, so such a loop never runs and every option was silently ignored.
+METRIC="all"              # --metric METRIC
+TARGET_REDUCTION=5        # --target N
+MAX_ITERATIONS=10         # --max-iterations N
 ITERATION=1
-
-# Parse $ARGUMENTS
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --metric)    METRIC="$2";            shift 2 ;;
-    --target)    TARGET_REDUCTION="$2";  shift 2 ;;
-    --max-iterations) MAX_ITERATIONS="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
 
 echo ""
 echo "🔬 Autoresearch loop starting"

@@ -11,10 +11,10 @@ allowed-tools: Bash, Read
 
 ## Iron Law
 
-**NEVER use the naked `firebase` binary — always `npx -y firebase-tools@latest <cmd>`.**
+**NEVER use the naked `firebase` binary — always `npx -y firebase-tools@<pinned> <cmd>`** (toolkit pin: `15.37.0`, shared with `firebase-hosting-basics`; bump it deliberately after `npm view firebase-tools version`, never `@latest`).
 
-This guarantees the latest CLI version is used without polluting global node_modules.
-Every command in this skill prepends `npx -y firebase-tools@latest`.
+This keeps every developer and CI on the same reviewed CLI version without polluting global node_modules.
+Every command in this skill prepends `npx -y firebase-tools@15.37.0`.
 
 ## Project Context
 
@@ -29,27 +29,27 @@ Firebase project ID should be stored in an environment variable (e.g. `FIREBASE_
 
 1. **Local Environment Setup:**
    ```bash
-   npx -y firebase-tools@latest --version
+   npx -y firebase-tools@15.37.0 --version
    ```
    Read [references/local-env-setup.md](references/local-env-setup.md) for full setup.
 
 2. **Authentication:**
    ```bash
-   npx -y firebase-tools@latest login
+   npx -y firebase-tools@15.37.0 login
    # Headless / remote shell:
-   npx -y firebase-tools@latest login --no-localhost
+   npx -y firebase-tools@15.37.0 login --no-localhost
    ```
 
 3. **Active Project:**
    ```bash
-   npx -y firebase-tools@latest use
+   npx -y firebase-tools@15.37.0 use
    # Set project from env var (preferred):
-   npx -y firebase-tools@latest use --add ${FIREBASE_PROJECT_ID}
+   npx -y firebase-tools@15.37.0 use --add ${FIREBASE_PROJECT_ID}
    ```
 
 # Firebase Usage Principles
 
-1. **npx always:** `npx -y firebase-tools@latest <cmd>` — never bare `firebase`
+1. **npx always:** `npx -y firebase-tools@15.37.0 <cmd>` (pinned) — never bare `firebase`, never `@latest`
 2. **Consult Firebase MCP first:** Use `developerknowledge_search_documents` before
    falling back to web search or memory
 3. **Use Firebase MCP tools for remote API calls:** Crashlytics, Firestore queries,

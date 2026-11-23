@@ -1,12 +1,10 @@
 ---
 name: firebase-hosting-basics
-description: >-
-  Firebase Hosting for static SPAs and web apps. Use when configuring
-  firebase.json hosting block, deploying a static site to Firebase Hosting,
-  creating preview channels for PR review, or setting up GitHub Actions CI/CD
-  with Workload Identity Federation. Do NOT use for Firebase App Hosting (SSR).
-  Triggers: firebase hosting, deploy angular spa, firebase hosting deploy,
-  preview channel, static site deploy, firebase ci/cd, hosting rewrite.
+description: "Firebase Hosting for static SPAs and web apps. Use when configuring the firebase.json hosting block (rewrites, security headers, cache rules), deploying a static site, creating preview channels for PR review, promoting or rolling back a release, or setting up GitHub Actions CI/CD with Workload Identity Federation. Do NOT use for Firebase App Hosting (SSR)."
+metadata:
+  triggers: firebase hosting, deploy angular spa, firebase hosting deploy, preview channel, hosting clone, rollback, static site deploy, firebase ci/cd, hosting rewrite, hosting headers
+  related-skills: deployment-ci-cd, firebase-basics, gcp-cloud-run, angular-spa
+last-reviewed: "2026-11-22"
 allowed-tools: Bash, Read, Write, Edit, Glob
 ---
 
@@ -48,6 +46,9 @@ npm run build
 
 # References
 
+Pin the CLI everywhere: `npx -y firebase-tools@15.37.0` (no `@latest`).
+
+
 - **Configuration:** [references/configuration.md](references/configuration.md)
 - **Deploying:** [references/deploying.md](references/deploying.md)
 - **CI/CD (GitHub Actions + WIF):** [references/ci-cd-github-actions.md](references/ci-cd-github-actions.md)
@@ -58,15 +59,19 @@ npm run build
 - `firebase-basics` — Firebase CLI auth, project setup, npx discipline
 - `gcp-cloud-run` — WIF setup patterns reused for Firebase Hosting CI/CD
 - `deployment-engineer` agent — for complex multi-environment pipeline setup
+- `deployment-ci-cd/reference/web-frontend-delivery.md` — runtime config, cache policy, post-deploy header check, rollback
 
 # Local Development
 
-Firebase Hosting has no local emulator equivalent — the project's dev server handles this:
+Two different things — use both:
 ```bash
-# Serve locally (no Firebase needed) — adjust to project's dev command
+# Day-to-day development: the framework dev server (no Firebase involved)
 npm run start
 
-# Or test the production build locally
-npx -y firebase-tools@latest emulators:start --only hosting
-# Serves the build output at http://localhost:5000
+# Production build served by the Hosting emulator: applies firebase.json rewrites and headers
+npx ng build
+npx -y firebase-tools@15.37.0 emulators:start --only hosting
+# Port = emulators.hosting.port in firebase.json (5000 if unset)
 ```
+The emulator proves rewrites, headers and cache rules (verified on 15.37.0); it does not prove CDN caching or the
+custom-domain certificate — check the live URL after deploy.

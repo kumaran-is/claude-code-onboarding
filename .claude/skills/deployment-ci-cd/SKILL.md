@@ -36,7 +36,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | **NestJS** | Docker multi-stage | Vitest | Cloud Run (canary → prod) |
 | **Spring Boot** | Maven + Docker | JUnit | Cloud Run (health check gate) |
 | **Python/FastAPI** | Docker + uv | pytest | Cloud Run Functions |
-| **Angular** | `ng build --prod` | Karma/Jest | Firebase Hosting |
+| **Angular** | `npm ci` + `ng build` (production is the default; `--prod` was removed), Node pinned via `.nvmrc` | `ng test` (Vitest, the v21 default) + Playwright E2E | Static hosting: preview → promote same files → post-deploy header check (`reference/web-frontend-delivery.md`) |
 | **Flutter** | `flutter build apk/ipa` | `flutter test` | Firebase App Distribution / App Store |
 
 ## Key Principles
@@ -66,6 +66,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | `reference/llmops-release-and-rollout.md` | Prompt/model versioning, eval-gated promotion, canary + rollback for prompt/config changes, provider migration, feedback loop |
 | `reference/health-endpoints.md` | Liveness/readiness endpoints per stack; Cloud Run probe flags |
 | `reference/env-config-validation.md` | Fail-fast configuration |
+| `reference/web-frontend-delivery.md` | Browser apps on static hosting: `npm ci` + Node pin, runtime `config.json` validated at boot (fail closed), hashed-immutable vs `no-cache` caching, previews, promote/rollback, private source maps, post-deploy header check script, error monitoring, OTel browser (experimental) + `traceparent` CORS |
 
 ## Production Readiness Checklist
 

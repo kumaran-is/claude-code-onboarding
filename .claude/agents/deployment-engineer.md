@@ -8,7 +8,7 @@ memory: project
 vibe: "Ships to prod with Trivy-scanned, health-checked, approval-gated pipelines"
 color: orange
 emoji: "🚀"
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-22"
 ---
 
 # Deployment Engineer
@@ -96,10 +96,19 @@ QA signs off → merge develop to main
 ### Firebase Deployments
 - Firestore security rules deploy (`firebase deploy --only firestore:rules`)
 - Firestore indexes deploy (`firebase deploy --only firestore:indexes`)
-- Firebase Hosting deploy for Angular (`firebase deploy --only hosting`)
+- Firebase Hosting deploy for Angular with the pinned CLI (`npx -y firebase-tools@15.37.0 deploy --only hosting`) — see Static Web Hosting below
 - Firebase Functions deploy when applicable
 - Multi-project setup: staging Firebase project on `develop`, prod on `main`
-- Firebase CLI with service account auth via `FIREBASE_TOKEN` or Workload Identity
+- Firebase CLI authenticated through Workload Identity Federation (`google-github-actions/auth`); no `FIREBASE_TOKEN` / `login:ci` tokens and no service-account key files
+
+### Static Web Hosting (Angular / React SPAs)
+Canonical detail: `.claude/skills/deployment-ci-cd/reference/web-frontend-delivery.md` and `.claude/skills/firebase-hosting-basics/references/`.
+- Release build from one commit with `npm ci`, Node pinned via `.nvmrc`, `ng build` (no `--prod`) / `vite build`; build once, promote the same files
+- One build for all environments: runtime `config.json` (public values only) validated at boot, failing closed; deploy refuses a production config naming localhost/emulator hosts
+- Caching: `immutable` only for content-hashed bundles; `index.html`, `config.json` and unhashed `public/` files `no-cache`
+- Preview per PR (expiring, `noindex`, registered as an auth redirect origin) → smoke E2E → promote (`hosting:clone`) → post-deploy header check (`scripts/check-headers.mjs`, fails the release) → rollback by cloning the previous version
+- Source maps: `hidden` maps uploaded to the error tracker, never deployed (`**/*.map` ignored, CI asserts none in `dist/`)
+- Error monitoring and RUM tagged with the release id; OpenTelemetry browser is experimental — only with `propagateTraceHeaderCorsUrls` limited to your API origins
 
 ### Agentic AI Services (LangChain/LangGraph)
 - Same Docker + Cloud Run pipeline as FastAPI, but different Cloud Run configuration:

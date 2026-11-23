@@ -1,5 +1,7 @@
 # Environment Configuration & Startup Validation
 
+> Browser apps (Angular, React) cannot read server environment variables at runtime, and anything bundled is public. Use a runtime `config.json` validated at boot (fail closed): `web-frontend-delivery.md` §2.
+
 Following Twelve-Factor App methodology (https://12factor.net/config):
 - Config belongs in environment variables, NOT in code or config files committed to git
 - App MUST fail fast at startup if required env vars are missing or invalid

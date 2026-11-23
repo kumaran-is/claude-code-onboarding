@@ -40,7 +40,7 @@
 - **nestjs-coding-standard**: Activated when reviewing NestJS/TypeScript code or enforcing coding standards in NestJS 11.x services, covering naming conventions, TypeScript strictness, DTO patterns, and module organization.
 - **typescript-advanced-types**: Master TypeScript's advanced type system for Angular 21.x, NestJS 11.x, and MCP Builder — covers generics, conditional types, mapped types, template literal types, and custom utility types (DeepPartial, DeepReadonly, Branded). Load alongside nestjs-api (DTO design), angular-spa (service factories), or mcp-builder (Zod schemas). 717-line implementation playbook in `resources/`.
 - **typescript-expert**: TypeScript infrastructure specialist for monorepo project references (`composite: true`), tsc performance diagnostics (`--extendedDiagnostics`), ESM/CJS interop, strict mode migration, and `.d.ts` authoring. Use for project-level TypeScript decisions; defer to framework-specific skills for implementation patterns. Ships with `tsconfig-strict.json`, `utility-types.ts`, `typescript-cheatsheet.md`, and `ts_diagnostic.py`.
-- **typescript-pro**: TypeScript architecture design for strict type safety, decorator and metadata programming, type-safe configuration hierarchies, and module-level type contracts — use when architecting enterprise-grade shared types for NestJS, Angular, or MCP servers.
+- **typescript-pro**: Pointer only — merged into typescript-advanced-types (type design, shared contracts) and typescript-expert (tsconfig, type-check commands).
 - **python-dev**: Provides patterns and templates for Python 3.14 development with FastAPI and modern tooling, activated when creating Python APIs, scripts, data processing pipelines, or pytest tests. Reference files: `fastapi-templates.md` (project structure, models, routes), `python-advanced-patterns.md` (profiling, benchmarking), `fastapi-rate-limiting.md` (slowapi, Redis), `fastapi-auth-security.md` (JWT, bcrypt, RBAC, PBAC, OAuth2PasswordBearer), `fastapi-error-handling.md` (exception hierarchy, async retry, circuit breaker). Also: `fastapi-architecture-and-config.md`, `fastapi-authorization-boundaries.md`, `sqlalchemy-async-sessions-and-transactions.md` (canonical session/transaction ownership), `alembic-migration-safety.md`, `reliability-idempotency-retries-outbox.md`, `asyncio-concurrency-and-tasks.md`. Auth is PyJWT + pwdlib (not python-jose/passlib).
 - **python-patterns**: Python architecture decision-making for framework selection (FastAPI/Django/Flask), async vs sync patterns, type hint strategy, project structure, and background task selection. Load BEFORE `python-dev` when the approach is unclear or multiple frameworks are viable.
 - **pydantic-models-py**: Pydantic v2 multi-model pattern for clean API contracts — Base, Create, Update, Response variants with camelCase aliases and PATCH support. Use when defining FastAPI request/response schemas or data validation models.
@@ -57,6 +57,7 @@
 - **a2ui-angular**: A2UI (Agent-to-User Interface) renderer development for Angular 21.x — protocol implementation, component catalog, recursive renderer, action handling, streaming A2UI payloads, and security validation. Reference files: `a2ui-protocol.md`, `a2ui-protocol-advanced.md`, `a2ui-security.md`, `a2ui-component-catalog.md`, `a2ui-component-containers.md`, `a2ui-renderer-patterns.md`, `a2ui-renderer-template.md`, `a2ui-chat-template.md`, `a2ui-renderer-services.md`, `a2ui-client-integration.md` (agUiResource service pattern, demo-only vs production action handler warning, rate limits).
 - **streaming-protocols**: Three-layer mental model (Transport/Framing/Message) for AI streaming: SSE vs HTTP streaming vs NDJSON vs WebSocket, wire formats, proxy buffering/compression/reconnection pitfalls, and the server-side stream lifecycle (`reference/server-stream-lifecycle.md`: client disconnect cancels the upstream model call, exactly one terminal done/error frame, never persist or act on partial structured output, WebSocket auth before accept).
 - **ai-chat**: AI chat interface patterns for Angular 21.x and Flutter 3.41.x — streaming markdown rendering, auto-scroll heuristics, memoized computed(), token context indicators, thumbs up/down feedback, multi-modal input, and AI error states.
+- **react-spa**: React 19 web SPA (RECOMMENDED PRACTICE) — Vite 8, TypeScript 5.9.3 pinned, React Router 8 data mode (imports from `react-router`), TanStack Query 5 server state with loading/empty/error states, React Hook Form + zod 4, typed API client with runtime validation, auth plumbing (no tokens in Web Storage, allow-listed credential origins, validated `returnUrl`), React Compiler, Vitest + Testing Library + MSW, Playwright + axe. Agent `react-spa` (builder); command `/scaffold-react-app`. Not React Native (`mobile-developer`), not Next.js/SSR.
 - **angular-spa**: Angular 21.x SPA development skill with TailwindCSS 4.x and daisyUI 5.5.5, covering component scaffolding, UI/UX design, accessibility audits, and design systems.
 - **angular**: Angular 21.x core API reference — Signals (`signal()`, `computed()`, `effect()`), Standalone components, Zoneless change detection, SSR/Hydration with incremental hydration triggers, functional DI (`inject()`), Component composition (content projection, host directives), Signal-based state management, and testing signal components with `setInput()`. Load alongside `angular-spa` when you need deep API reference or testing patterns.
 - **angular-best-practices**: Impact-prioritized Angular 21.x best practices. CRITICAL: OnPush change detection + signals, async waterfall elimination (forkJoin/switchMap), bundle optimization (lazy routes, @defer, no barrel files). HIGH: Rendering performance (virtual scroll CDK, trackBy, pure pipes), SSR hydration (withIncrementalHydration, TransferState). MEDIUM: Template optimization (@if/@for control flow), state colocation. LOW-MEDIUM: Memory management (takeUntilDestroyed). Includes ❌/✅ examples and checklists for new component review and PR review.
@@ -126,7 +127,7 @@
 ### Quality & Testing (13 skills)
 - **browser-testing** (web targets only; Flutter mobile uses Maestro): Browser automation and testing using Chrome DevTools MCP and Browser-Use MCP for debugging, performance analysis, E2E flows, and UI interaction.
 - **ui-visual-validator**: CI/CD visual regression setup and pre-commit 13-item verification checklist. Scoped complement to `reality-checker` agent — adds Chromatic, Percy, Applitools, BackstopJS, and Playwright Visual tooling setup for GitHub Actions. Use alongside `reality-checker`: this skill provides the methodology and CI tooling; `reality-checker` provides the live browser verdict.
-- **accessibility-audit**: WCAG 2.1 AA accessibility audit for Angular 21.x and Flutter 3.41.x. Use when auditing UI for accessibility compliance, adding automated axe-core or flutter_test semantic testing, identifying barriers, or integrating accessibility gates into CI/CD. Reference files: `reference/angular-a11y-automated.md`, `reference/flutter-a11y-automated.md`, `reference/manual-testing-checklist.md`, `reference/cicd-integration.md`. Command: `/fixing-accessibility <file>` for targeted single-file audits.
+- **accessibility-audit**: WCAG 2.2 AA accessibility audit for web (Angular 21.x, React) and Flutter 3.41.x; owns the canonical checklist `reference/wcag22-checklist.md`. Automated results never prove conformance. Use when auditing UI for accessibility compliance, adding automated axe-core or flutter_test semantic testing, identifying barriers, or integrating accessibility gates into CI/CD. Reference files: `reference/wcag22-checklist.md`, `reference/angular-a11y-automated.md` (applies to React too), `reference/flutter-a11y-automated.md`, `reference/manual-testing-checklist.md`, `reference/cicd-integration.md`. Reviewer: `accessibility-auditor` (read-only, web + Flutter). Command: `/fixing-accessibility <file>` for targeted single-file audits.
 - **clean-code**: Language-agnostic code quality skill based on Robert C. Martin's *Clean Code*. Use when writing, reviewing, or refactoring code across any stack — covers naming, functions, comments, formatting, Law of Demeter, error handling, F.I.R.S.T. test principles, classes, and code smells.
 - **code-reviewer**: General-purpose code review skill providing checklists for security, code quality, performance, and best practices when reviewing code changes, PRs, or performing quality audits.
 - **dedup-code-agent**: Code duplication detection and technical debt analysis skill providing methodology for finding duplicate code, dead code, and dependency bloat.
@@ -247,11 +248,10 @@ Loaded from `rules/titan-methodology.md`. Dual-lens scoring for product decision
 8. **database-schema-designer** — Design schema for new entities
 9. **code-reviewer** — Final quality and security review
 
-### TypeScript Type System (NestJS, Angular, or MCP Builder)
+### TypeScript Type System (NestJS, Angular, React, or MCP Builder)
 1. **typescript-advanced-types** — Load for type-level patterns: generics, conditional types, mapped types, utility types
-2. **typescript-pro** — Design type-safe architectures, decorator patterns, module-level contracts
-3. **typescript-expert** — Diagnose build perf, set up monorepo project refs, resolve ESM/CJS interop
-4. **nestjs-coding-standard** or **angular-spa** — Enforce framework-specific TypeScript standards
+2. **typescript-expert** — tsconfig strictness, type-check commands that actually check (Angular/Vite solution configs), build perf, project refs, ESM/CJS interop
+3. **nestjs-coding-standard**, **angular-spa** or **react-spa** — Enforce framework-specific TypeScript standards
 
 ### Flutter Mobile Feature
 1. **mobile-design** — Complete Mobile Checkpoint, MFRI scoring, read touch-psychology + platform files
@@ -449,7 +449,7 @@ Loaded from `rules/titan-methodology.md`. Dual-lens scoring for product decision
 - **Build a Weaviate-based application (chatbot, RAG app)** -> weaviate-cookbooks
 - **TypeScript type-level programming (generics, conditional, mapped types)** -> typescript-advanced-types
 - **TypeScript project infrastructure (monorepo, build perf, ESM/CJS, migration)** -> typescript-expert
-- **TypeScript architecture design (shared types, decorators, strict config)** -> typescript-pro
+- **TypeScript architecture design (shared types, decorators)** -> typescript-advanced-types; **strict config / type-check commands** -> typescript-expert
 
 ### What review do I need?
 - **General code quality** -> code-reviewer
@@ -513,7 +513,7 @@ docker (+ java-spring-api OR nestjs-api OR python-dev — depending on stack)
 nestjs-api + nestjs-coding-standard + openapi-spec-generation + database-schema-designer + code-reviewer
 
 ### TypeScript Type Hardening (NestJS or Angular)
-typescript-advanced-types + typescript-pro + nestjs-coding-standard (or angular-spa)
+typescript-advanced-types + typescript-expert + nestjs-coding-standard (or angular-spa / react-spa)
 
 ### Flutter Mobile App
 mobile-design + flutter-mobile + flutter-animations + riverpod-patterns + ui-standards-tokens + code-reviewer
@@ -632,7 +632,7 @@ a2ui-angular + angular-spa + google-adk + security-reviewer
 - "Build a paywall screen in Flutter" -> revenuecat + flutter-mobile + ui-standards-tokens
 - "Design type-safe generic DTOs for NestJS with DeepPartial" -> typescript-advanced-types + nestjs-api
 - "Set up monorepo TypeScript with shared types between Angular and NestJS" -> typescript-expert + angular-spa + nestjs-api
-- "Design type-safe NestJS decorators and strict config hierarchy" -> typescript-pro + nestjs-coding-standard
+- "Design type-safe NestJS decorators and strict config hierarchy" -> typescript-advanced-types + typescript-expert + nestjs-coding-standard
 - "Debug slow TypeScript compilation in NestJS service" -> typescript-expert
 - "Migrate JavaScript NestJS codebase to strict TypeScript" -> typescript-expert + nestjs-coding-standard
 
@@ -716,7 +716,7 @@ a2ui-angular + angular-spa + google-adk + security-reviewer
 | weaviate-cookbooks | vector-db | specialist | implementation | code |
 | typescript-advanced-types | backend | specialist | implementation | code |
 | typescript-expert | backend | specialist | analysis | report |
-| typescript-pro | backend | specialist | design | code |
+| typescript-pro | backend | pointer | design | — |
 | stripe | payments | specialist | implementation | code |
 | revenuecat | payments | specialist | implementation | code |
 | rules-distill | workflow | analyst | governance | report |

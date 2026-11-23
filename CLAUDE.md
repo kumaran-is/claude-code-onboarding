@@ -14,6 +14,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2
 - **Frontend**: Angular 21.2.x (SPA), TypeScript 5.9.x, RxJS, SCSS
+- **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.x SPA, Vite 8, React Router 8, TanStack Query 5, TypeScript 5.9.3
 - **Mobile**: Flutter 3.41.x (Dart 3.10.9), cross-platform (iOS + Android)
 - **Database**: PostgreSQL (primary), Firebase Firestore (mobile real-time)
 - **Infrastructure**: Firebase (Auth, Firestore, Cloud Messaging), Docker
@@ -44,9 +45,9 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 >
 > **Rule precedence** (when rules conflict): `core-behaviors` > `first-principles` > `code-standards` > `verification-and-reporting` > `leverage-patterns`.
 >
-> **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools. Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
+> **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools (unit: Angular `ng test` on Vitest, React Vitest + Testing Library). Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
 >
-> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 
@@ -67,6 +68,12 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
+| React (web SPA; not React Native, not Next.js/SSR) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
+| Angular GenUI (A2UI renderer) | `.claude/skills/a2ui-angular/` | `a2ui-angular` | `/scaffold-a2ui` |
+| Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |
+| Web performance + SEO (public sites only) | `.claude/skills/web-performance-optimization/` | `performance-oracle` | — |
+| Web delivery (static hosting, runtime config, cache headers, post-deploy checks) | `.claude/skills/deployment-ci-cd/reference/web-frontend-delivery.md` | `deployment-engineer` | — |
+| Accessibility (WCAG 2.2 AA, web + Flutter) | `.claude/skills/accessibility-audit/` | `accessibility-auditor` | `/fixing-accessibility` |
 | Flutter | `.claude/skills/flutter-mobile/` | `flutter-mobile` | `/scaffold-flutter-app` |
 | Flutter GenUI (A2UI) | `.claude/skills/flutter-genui/` | `flutter-genui` | `/scaffold-genui` |
 | Flutter mobile UI/E2E tests | `.claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md` | `flutter-mobile` | Maestro CLI / MCP only |
@@ -121,7 +128,8 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Weaviate schema | `weaviate-schema-reviewer` |
 | RAG code + full system (canonical RAG reviewer) | `rag-implementation-reviewer` |
 | RAG eval execution | `rag-eval-runner` |
-| UI/UX | `ui-standards-expert`, `frontend-design`, `accessibility-auditor` |
+| UI/UX (tokens/theming; shared component library) | `ui-standards-expert`, `design-system-reviewer` |
+| Accessibility (web + Flutter, WCAG 2.2 AA) | `accessibility-auditor` |
 | AI Security + full AI review (autonomy, tools, injection, memory, cost, observability) | `ai-security-reviewer` |
 | AI Evals (design) / eval code review | `ai-eval-designer` / `eval-reviewer` |
 | Tech debt | `dedup-code-agent` |

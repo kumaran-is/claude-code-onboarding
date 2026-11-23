@@ -103,3 +103,7 @@ VERDICT: [PASS|CONDITIONAL PASS|FAIL] — PASS: N | WARN: N | FAIL: N
 
 If the skill directory does not exist, report: "Skill directory not found at `.claude/skills/<name>/`. Verify the path."
 If `SKILL.md` is missing, report FAIL on all body criteria and note the missing file.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

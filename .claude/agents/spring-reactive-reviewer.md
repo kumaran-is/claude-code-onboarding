@@ -42,3 +42,7 @@ VERDICT: [APPROVE|NEEDS_REVIEW|BLOCK] — CRITICAL: N | HIGH: N | MEDIUM: N | LO
 
 If no changes are found, report "No changes detected" and list the files/paths searched.
 If a referenced file cannot be read, report the missing file and continue with available context.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

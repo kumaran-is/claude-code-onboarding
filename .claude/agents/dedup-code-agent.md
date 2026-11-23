@@ -42,3 +42,7 @@ VERDICT: [CLEAN|REVIEW|ACTION REQUIRED]
 
 If the target directory does not exist, report "Target not found" with the path searched.
 If no duplication is found, report "No duplicates detected" with the scan scope and file count.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

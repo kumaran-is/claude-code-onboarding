@@ -143,3 +143,7 @@ ROOT CAUSE HYPOTHESIS (ranked):
 RECOMMENDED ACTION:
 [Specific fix or next investigative step]
 ```
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

@@ -75,3 +75,7 @@ Verdict (final line): `VERDICT: [APPROVE|NEEDS_REVIEW|BLOCK] — CRITICAL: N | H
 
 VERDICT: [APPROVE|NEEDS_REVIEW|BLOCK] — CRITICAL: N | HIGH: N | MEDIUM: N
 ```
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

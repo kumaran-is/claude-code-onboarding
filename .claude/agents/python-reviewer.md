@@ -163,3 +163,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 - Covers: Python 3.14, FastAPI 0.135.x, Pydantic v2, SQLAlchemy async, pytest, httpx
 - Does NOT cover: LangChain/LangGraph (use `agentic-ai-reviewer`), Django, Flask; schema/migration review (use `postgresql-database-reviewer`); deep security audit (use `security-reviewer`)
 - Reference skill: `.claude/skills/python-dev/SKILL.md`
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

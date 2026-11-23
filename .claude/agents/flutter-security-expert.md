@@ -44,3 +44,7 @@ VERDICT: [PASS|CONDITIONAL PASS|BLOCK]
 
 If no target files are specified, scan `lib/` for Flutter source files.
 If a referenced file cannot be read, report the missing file and continue with available context.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

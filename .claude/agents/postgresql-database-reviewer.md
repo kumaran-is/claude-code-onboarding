@@ -47,3 +47,7 @@ VERDICT: [SAFE TO APPLY|REVIEW REQUIRED|BLOCK]
 
 If no target files are specified, scan the entire project directory for SQL and migration files.
 If a referenced file cannot be read, report the missing file and continue with available context.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

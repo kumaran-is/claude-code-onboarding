@@ -99,3 +99,7 @@ VERDICT: [COMPLETE|INCOMPLETE — blocked on: <missing section>]
 
 If target architecture documents or code are not available, report what is missing and what assumptions were made.
 If a system component cannot be analyzed due to insufficient context, flag it as requiring follow-up.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

@@ -5,18 +5,20 @@ allowed-tools: Read, Bash, Grep, Glob
 agent: security-reviewer
 context: fork
 metadata:
-  triggers: security review, vulnerability, OWASP, security audit, injection, XSS, SSRF, secret scan, hardcoded secret
+  triggers: security review, vulnerability, OWASP, security audit, injection, XSS, SSRF, secret scan, hardcoded secret, CSP, Trusted Types, XSRF, CSRF, open redirect, token storage, bypassSecurityTrust, dangerouslySetInnerHTML
   related-skills: sast-configuration, threat-modeling, code-reviewer
   domain: security
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Never approve a security review with unresolved CRITICAL or HIGH findings; always escalate to the human before proceeding past a security gate.
-
 # Security Review Skill
+
+## Iron Law
+
+**Never approve a security review with unresolved CRITICAL or HIGH findings; always escalate to the human before proceeding past a security gate.**
 
 ## Purpose
 
@@ -41,6 +43,7 @@ Read [reference/security-review-checklist.md](reference/security-review-checklis
 | [reference/pci-dss-requirements.md](reference/pci-dss-requirements.md) | PCI DSS 12 requirements, compliance levels (L1-L4), SAQ types, prohibited data, audit log requirements, common violations | Any feature touching payment card data, payment processors, or billing |
 | [reference/owasp-infrastructure-baseline.md](reference/owasp-infrastructure-baseline.md) | 15 OWASP-mapped infrastructure controls — encryption at rest/transit, IAM least-privilege, network hardening, audit logging, secret rotation | Any IaC review (Terraform, GCP, AWS), cloud config review, infrastructure security |
 | [reference/agent-guardrails-checklist.md](reference/agent-guardrails-checklist.md) | 12-layer AI agent guardrail pipeline, prompt injection defense, output validation, async audit logging, Constitutional AI — agent-specific security controls | Any LangGraph agent, agentic AI service, or AI feature with tool use |
+| [reference/web-frontend-security.md](reference/web-frontend-security.md) | Browser-side rules for Angular 21 / React SPAs and static sites: XSS sinks, CSP + critical-CSS trade-off (tested), Trusted Types, token storage and API-origin allowlist (tested), Angular XSRF scope (tested), guards vs authorization, open-redirect-safe `returnUrl` (tested), OAuth PKCE, uploads, iframes/postMessage, public bundles, headers, privacy-aware logging; severity summary | Any change to `*.ts`/`*.tsx`/`*.html` in a web app, `index.html`, `angular.json`, hosting config or auth/session code |
 | [reference/claude-config-security.md](reference/claude-config-security.md) | Manual security audit checklist for `.claude/` config (settings.json, hooks, agents, MCP servers, CLAUDE.md) — workspace-specific allow/deny/ask list review, hook injection surface, MCP supply chain risks | Before committing any `.claude/` directory changes |
 
 ## Error Handling

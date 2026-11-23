@@ -2,24 +2,50 @@
 
 Covers: streaming message rendering, auto-scroll heuristics, stop generation, accessibility.
 
-> Illustrative (not compiled). `incomplete` is a field you add to the message model. Server contract (stop cancels the upstream model call; exactly one terminal `done`/`error` frame; the server stores the answer as `incomplete`): `streaming-protocols` §6a.
+> `StreamingMessageComponent` and `MarkdownService` below are compiled and browser-tested (see the security section). The other snippets are illustrative (not compiled). `incomplete` and `error` are optional fields of the `ChatMessage` model below. Server contract (stop cancels the upstream model call; exactly one terminal `done`/`error` frame; the server stores the answer as `incomplete`): `streaming-protocols` §6a.
 
 ---
 
 ## Angular 21.x
+
+### Rendering model output safely (security, read first)
+
+Model text is untrusted: a prompt-injected document, tool result or user message can make the model emit HTML. `marked` does **not** sanitize (raw HTML, `on*` handlers and `javascript:` links pass through), so:
+
+- **Never** pass rendered model or user markdown to `bypassSecurityTrustHtml` (or any `bypassSecurityTrust*`), `ElementRef.nativeElement.innerHTML =`, `Renderer2.setProperty(el, 'innerHTML', …)` or `insertAdjacentHTML`.
+- **Simplest safe option:** render the text with interpolation (`{{ message().content }}`) and no markdown.
+- **Markdown option (below):** `marked` → `DOMPurify.sanitize` with a strict allowlist → bind the resulting **string** to `[innerHTML]`, so Angular's own sanitizer runs as a second layer.
+- Angular's sanitizer alone is not enough for chat: it keeps `<img src>` (a model-chosen image URL can carry chat data to an attacker in its query string) and keeps blocked links as `href="unsafe:javascript:…"`. The DOMPurify policy drops both.
+- DOMPurify needs a DOM. With SSR, render chat messages only in the browser (or use a server-side DOM shim) — do not skip sanitizing on the server.
+
+Validated 2026-11-22 (Angular 21.2.26, marked 18.2.1, DOMPurify 3.5.0, Playwright 1.58.2, real Chromium): with this code, `<img src=x onerror>`, `[x](javascript:…)`, raw `<a href="javascript:…">`, `<script>` and `<svg onload>` produced no script execution and no `onerror`/`onload`/`javascript:`/`<img>`/`<svg>` in the DOM, while bold, emphasis, lists, fenced code and `https:` links rendered. Negative control: the previous `bypassSecurityTrustHtml(marked.parse(…))` version ran the `<img onerror>` handler on render and a `javascript:` link on click; the `<svg onload>` attribute survived in the DOM (execution not observed in that run), so it is unsafe either way.
+
+### ChatMessage model
+
+```typescript
+// features/chat/models/chat-message.model.ts
+export type ChatRole = 'user' | 'assistant';
+
+export interface ChatMessage {
+  readonly id: string;               // crypto.randomUUID(); stable `track` key
+  readonly role: ChatRole;
+  readonly content: string;          // raw model/user text; rendered via MarkdownService, never trusted HTML
+  readonly isStreaming: boolean;     // true while chunks are still arriving
+  readonly incomplete?: boolean;     // the user stopped generation; the server stored a partial answer
+  readonly error?: 'stream_failed';  // terminal error frame or transport failure
+}
+```
 
 ### StreamingMessageComponent
 
 ```typescript
 // features/chat/components/streaming-message.component.ts
 import { Component, ChangeDetectionStrategy, input, computed, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { MarkdownService } from '../services/markdown.service';
 import { ChatMessage } from '../models/chat-message.model';
 
 @Component({
   selector: 'app-streaming-message',
-  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="chat" [class.chat-start]="message().role === 'assistant'"
@@ -27,48 +53,56 @@ import { ChatMessage } from '../models/chat-message.model';
       <div class="chat-bubble"
            [class.chat-bubble-primary]="message().role === 'user'"
            [attr.aria-label]="message().role + ' message'">
+        <!-- A string bound to [innerHTML] still passes Angular's built-in sanitizer (second layer). -->
+        <div class="chat-markdown" [innerHTML]="renderedContent()"></div>
         @if (message().isStreaming) {
-          <span [innerHTML]="renderedContent()"></span>
           <span class="loading loading-dots loading-xs ml-1" aria-hidden="true"></span>
-        } @else {
-          <span [innerHTML]="renderedContent()"></span>
         }
       </div>
     </div>
-  `
+  `,
 })
 export class StreamingMessageComponent {
   readonly message = input.required<ChatMessage>();
 
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly markdownService = inject(MarkdownService);
 
-  // Memoized: only re-parses when message text actually changes
-  readonly renderedContent = computed<SafeHtml>(() => {
-    const html = this.markdownService.render(this.message().content);
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  });
+  // Memoized: re-parses only when the message text changes. Type is string, NOT SafeHtml.
+  readonly renderedContent = computed(() => this.markdownService.render(this.message().content));
 }
 ```
 
-### MarkdownService (memoized, no re-parse per chunk)
+### MarkdownService (marked → DOMPurify, memoized by the caller's `computed`)
 
 ```typescript
 // features/chat/services/markdown.service.ts
 import { Injectable, ErrorHandler, inject } from '@angular/core';
 import { marked } from 'marked';
+import DOMPurify, { type Config } from 'dompurify';
+
+// Model output is untrusted (prompt injection can make the model emit any HTML).
+// marked does NOT sanitize: raw HTML, on* handlers and javascript: links pass through.
+const CHAT_HTML_POLICY: Config = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote', 'hr',
+    'ul', 'ol', 'li', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+  ], // no img: a model-chosen image URL can exfiltrate chat data in its query string
+  ALLOWED_ATTR: ['href', 'title'],
+  ALLOWED_URI_REGEXP: /^(?:https:|mailto:)/i, // drops javascript:, data:, http: and relative hrefs
+};
 
 @Injectable({ providedIn: 'root' })
 export class MarkdownService {
   private readonly errorHandler = inject(ErrorHandler);
 
-  // Cache last rendered result — computed() handles change detection
+  /** Returns sanitized HTML as a plain string: bind it with [innerHTML], never bypassSecurityTrustHtml. */
   render(markdown: string): string {
     try {
-      return marked.parse(markdown, { async: false }) as string;
+      const html = marked.parse(markdown, { async: false, gfm: true });
+      return DOMPurify.sanitize(html, CHAT_HTML_POLICY);
     } catch (err) {
-      // Log via Angular ErrorHandler — never swallow; return safe fallback
-      this.errorHandler.handleError(err);
+      this.errorHandler.handleError(err); // logged, then degrade to escaped text
       return this.escapeHtml(markdown);
     }
   }
@@ -77,10 +111,16 @@ export class MarkdownService {
     return text
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }
 ```
+
+Dependencies: `npm install -E marked@18.2.1 dompurify@3.5.0` (DOMPurify 3.x ships its own types). Re-check the versions with `npm view marked version` / `npm view dompurify version` before pinning.
+
+Test it the same way: a Playwright spec that renders a fixed payload message and asserts `innerHTML` contains no `onerror|onload|javascript:|<script|<svg|<img` and that no `window` flag set by a payload exists after activating every non-`https:` link. Keep a negative-control case (a component using the bypass) so the test is proven able to fail.
 
 ### Auto-Scroll Service (smart heuristic — 100px threshold)
 

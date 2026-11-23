@@ -1,16 +1,16 @@
 ---
-description: Angular-specific XSS vulnerability scanner. Detects unsafe innerHTML, bypassSecurityTrust* misuse, template injection, DomSanitizer bypasses, and missing sanitization. Produces framework-aware findings with DOMPurify fix patterns.
+description: XSS sink scanner for Angular and React web apps. Detects bypassSecurityTrust* misuse, raw DOM HTML sinks, [innerHTML] bindings, React dangerouslySetInnerHTML, unsafe URLs and string-to-code. Produces framework-aware findings with DOMPurify fix patterns. Rules: security-reviewer/reference/web-frontend-security.md §1.
 allowed-tools: Bash, Read, Glob, Grep
 disable-model-invocation: true
 ---
 
-# Angular XSS Vulnerability Scan
+# Web XSS Vulnerability Scan (Angular, React)
 
 Target path: `$ARGUMENTS` (default: `src/`).
 
 ## Step 1: Scan for dangerous patterns
 
-Run grep searches for each severity category against `*.ts` and `*.html` files in the target path.
+Run grep searches for each severity category against `*.ts`, `*.tsx`, `*.js`, `*.jsx` and `*.html` files in the target path. Keep every `--include` glob quoted (zsh expands an unquoted `*.ts`). A hit is reviewed, not automatically a finding: classify it by whether untrusted (user, API, markdown or model) data can reach it.
 
 ### CRITICAL
 
@@ -19,6 +19,10 @@ Run grep searches for each severity category against `*.ts` and `*.html` files i
 grep -rnE 'bypassSecurityTrustScript\(' $ARGUMENTS --include='*.ts'
 # URL injection bypass (may enable javascript: URIs)
 grep -rnE 'bypassSecurityTrustUrl\(' $ARGUMENTS --include='*.ts'
+# String-to-code
+grep -rnE '\beval\(|new Function\(' $ARGUMENTS --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx'
+# React raw HTML (CRITICAL when the value is untrusted and not DOMPurify output)
+grep -rnE 'dangerouslySetInnerHTML' $ARGUMENTS --include='*.tsx' --include='*.jsx'
 ```
 
 ### HIGH
@@ -30,8 +34,10 @@ grep -rnE 'bypassSecurityTrustHtml\(' $ARGUMENTS --include='*.ts'
 grep -rnE 'ElementRef.*nativeElement.*innerHTML' $ARGUMENTS --include='*.ts'
 # Direct innerHTML assignment in component code
 grep -rnE 'document\..*\.innerHTML\s*=' $ARGUMENTS --include='*.ts'
-# Template innerHTML binding
-grep -rnE '\[innerHTML\]=' $ARGUMENTS --include='*.html'
+# Template innerHTML binding (also inline templates in .ts)
+grep -rnE '\[innerHTML\]=' $ARGUMENTS --include='*.html' --include='*.ts'
+# Raw DOM sinks in any web code
+grep -rnE '\.(inner|outer)HTML\s*=|insertAdjacentHTML\(|document\.write\(' $ARGUMENTS --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx'
 ```
 
 ### MEDIUM
@@ -59,11 +65,12 @@ Fix: [specific Angular-idiomatic fix from the table below]
 
 | Vulnerable Pattern | Fix |
 |--------------------|-----|
-| `bypassSecurityTrustHtml(val)` | Call `DomSanitizer.sanitize(SecurityContext.HTML, val)` first, then bypass only if needed |
-| `[innerHTML]="var"` | Use `[textContent]="var"` for plain text; for HTML, pipe through `DomSanitizer` |
-| `nativeElement.innerHTML = x` | Use `Renderer2.setProperty(el, 'innerHTML', sanitized)` instead |
+| `bypassSecurityTrustHtml(val)` | Remove it. Render as text (`{{ }}`), or `DOMPurify.sanitize(val, strictConfig)` → `[innerHTML]` (Angular still sanitizes). Never bypass on user, API, markdown or model data |
+| `[innerHTML]="var"` | Plain text: `{{ var }}`. HTML from markdown/model output: `marked` → `DOMPurify.sanitize` → `[innerHTML]` (`ai-chat/reference/streaming-patterns.md`) |
+| `nativeElement.innerHTML = x` | Use a template binding. `Renderer2.setProperty(el, 'innerHTML', …)` is NOT sanitized either |
+| `dangerouslySetInnerHTML={{ __html: x }}` (React) | Render as text, or pass only `DOMPurify.sanitize(x, strictConfig)` output |
 | `bypassSecurityTrustScript(x)` | Remove entirely -- load scripts via Angular-approved methods only |
-| `bypassSecurityTrustUrl(x)` | Validate URL scheme is `http:`/`https:` before bypass; reject `javascript:` |
+| `bypassSecurityTrustUrl(x)` | Don't bypass: Angular already sanitizes URL bindings. Only for a URL the code builds from a fixed scheme + origin + validated id |
 | Any HTML rendering | Add `DOMPurify.sanitize(input)` as secondary defense before rendering |
 
 ## Step 3: Prevention checklist
@@ -71,10 +78,11 @@ Fix: [specific Angular-idiomatic fix from the table below]
 Print after findings:
 
 ```
-ANGULAR XSS PREVENTION CHECKLIST:
+WEB XSS PREVENTION CHECKLIST (Angular, React):
 [ ] Template bindings: No [innerHTML] with unsanitized user data
 [ ] TypeScript: No nativeElement.innerHTML assignments
-[ ] Sanitizer: bypassSecurityTrust* called only after DomSanitizer.sanitize()
+[ ] No bypassSecurityTrust* on user, API, markdown or model data
+[ ] React: no dangerouslySetInnerHTML except DOMPurify output; href/src from user data parsed with new URL() and scheme-allowlisted
 [ ] CSP: Content-Security-Policy header prevents inline scripts
 [ ] DOMPurify: Installed and applied before any HTML rendering
 [ ] No user data in template string interpolation that renders HTML tags

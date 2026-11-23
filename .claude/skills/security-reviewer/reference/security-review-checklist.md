@@ -8,6 +8,7 @@
 - No secrets in git history (check with grep/trufflehog if suspicious)
 - **Never paste real API keys, tokens, or credentials into AI chat interfaces** (Cursor, Claude, ChatGPT, Copilot). Use `process.env.VAR_NAME` placeholders in prompts. AI providers may log conversations — treat chat input as a public channel.
 - `.env` files in `.gitignore`
+- **Frontend bundles are public:** `environment*.ts`, `import.meta.env`/`VITE_*`, `define` values and a served `config.json` ship to every visitor. Only publishable identifiers belong there; scan `dist/` (and any `.map`) in CI (`web-frontend-security.md` §9)
 
 ### 2. Injection Prevention (CRITICAL)
 - All SQL queries parameterized (no string concatenation with user input)
@@ -28,7 +29,7 @@
 
 ### 4. Input Validation & Output Encoding (HIGH)
 - All user inputs validated and sanitized server-side
-- XSS prevention: output escaped, Content-Security-Policy header set
+- XSS prevention: output escaped, Content-Security-Policy header set. Browser apps: sinks, CSP, Trusted Types, XSRF scope, token storage, `returnUrl` and `postMessage` rules with severities in `web-frontend-security.md`
 - File uploads validated (type, size, content) and stored outside webroot
 - URL inputs validated against allowlist to prevent SSRF
 

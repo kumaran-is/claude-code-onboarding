@@ -40,7 +40,7 @@ Before writing any component:
 
 1. **Angular**: Read `angular-spa` skill — verify signal/OnPush/daisyUI baseline
 2. **Flutter**: Read `flutter-mobile` skill — verify Riverpod/AppSpacing/colorScheme baseline
-3. **Docs**: Use `Context7` MCP for any library not confirmed in this session (e.g., `marked`, `flutter_markdown`)
+3. **Docs**: Verify any library not confirmed in this session (e.g., `marked`, `dompurify`, `flutter_markdown`) with `npm view <pkg> version` and the package's own README/types, or `Context7` MCP when it has quota
 
 ## Core Component Overview
 
@@ -64,6 +64,7 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 - Use `AbortController` to cancel in-flight SSE streams; a stopped or errored answer is shown and stored as `incomplete` — never parse, persist or act on partial structured output
 - Auto-scroll: scroll only when user is within 100px of bottom
 - `computed()` signal to derive rendered markdown — prevents re-parsing on every chunk
+- Model output is untrusted: `marked` → `DOMPurify.sanitize` (strict allowlist, no `img`, `https:`/`mailto:` links only) → bind the **string** to `[innerHTML]`; or render as plain text. Browser-tested pipeline in `reference/streaming-patterns.md` § Rendering model output safely
 - `aria-live="polite"` wraps the message list
 
 ### Streaming (Flutter)
@@ -93,7 +94,7 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 | File | Contents |
 |------|----------|
 | `reference/quick-start.md` | Entry-point wiring for Angular ChatComponent and Flutter ChatScreen |
-| `reference/streaming-patterns.md` | Streaming UX, auto-scroll, memoization, stop controls |
+| `reference/streaming-patterns.md` | Safe markdown rendering (marked → DOMPurify, browser-tested), streaming UX, auto-scroll, memoization, stop controls |
 | `reference/context-management.md` | Token indicator, threshold logic, summarization trigger |
 | `reference/ai-error-handling.md` | Refusal, rate limit, context exceeded, timeout, hallucination flag |
 | `reference/feedback-loops.md` | Thumbs up/down, copy, regenerate — Angular & Flutter |
@@ -101,6 +102,7 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 
 ## Anti-Patterns — Hard Prohibitions
 
+- **NEVER** call `bypassSecurityTrustHtml` / any `bypassSecurityTrust*` (or set `innerHTML` directly) on model, tool or user content — `marked` does not sanitize; a prompt-injected answer becomes stored XSS
 - **NEVER** re-parse markdown on every streaming chunk — memoize with `computed()` / derived state
 - **NEVER** auto-scroll unconditionally — it steals user scroll position mid-read
 - **NEVER** display raw token counts to end users — use human-readable approximations

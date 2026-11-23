@@ -1,126 +1,97 @@
 #!/usr/bin/env bash
-# PostToolUse (Bash|Read|WebFetch): Scan tool OUTPUT for secrets.
-# Complements post-edit-secrets-scan.sh (which covers Write|Edit).
-# This covers what Claude READS BACK: bash output, file reads, web responses.
-# Always exits 0 — warns but never blocks (blocking mid-read breaks Claude's flow).
+# PostToolUse (Bash|Read|WebFetch): scan what Claude READS BACK (command output, file reads, web
+# responses) for credentials. Advisory: always exit 0. The model is told (additionalContext) not to
+# repeat the value; the user sees a stderr note; an audit line goes to .claude/secrets-detected.log
+# (gitignored). The value itself is never printed or logged.
+#
+# Token shapes come from post-edit-secrets-scan.sh --scan-file (the single pattern table). Extra
+# output-only shapes checked here: JWT, redis/mysql URLs with a password, generic NAME=value secrets.
+# Matching reads from a file or here-string, never `echo "$content" | grep -q` (under pipefail a large
+# output with an early match reported "no match" via SIGPIPE).
+# The audit context never includes the Bash command text or a URL query string: those can hold the
+# secret itself.
+# Test: bash .claude/hooks/output-secrets-scanner.sh --selftest
 set -uo pipefail
 
-input=$(cat)
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCANNER="$HOOK_DIR/post-edit-secrets-scan.sh"
 
-# Extract tool name and output content from the PostToolUse JSON
-tool_name=$(echo "$input" | jq -r '.tool_name // ""' 2>/dev/null) || tool_name=""
-# tool_response may be a string or object — normalise to string
-content=$(echo "$input" | jq -r '
-  if .tool_response | type == "string" then .tool_response
-  elif .tool_response.output? then .tool_response.output
-  elif .tool_response.content? then .tool_response.content
-  else (.tool_response | tostring)
-  end // ""
-' 2>/dev/null) || content=""
+detect() { # $1 file holding the output -> prints a label, returns 0 on a hit
+  local file="$1" label db_re
+  if [ -f "$SCANNER" ] && label=$("$BASH" "$SCANNER" --scan-file "$file"); then printf '%s' "$label"; return 0; fi
+  if grep -qE -e 'eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}' "$file"; then printf 'JWT token (eyJ...)'; return 0; fi
+  db_re='redis''://:[^@[:space:]]{6,}@[a-zA-Z0-9._-]+|mysql''://[^:[:space:]]{1,64}:[^@[:space:]]{6,}@[a-zA-Z0-9._-]+'
+  if grep -qE -e "$db_re" "$file"; then printf 'Database connection string with embedded credentials'; return 0; fi
+  if grep -qiE -e '(PASSWORD|PASSWD|SECRET|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|PRIVATE_KEY)[[:space:]]*[=:][[:space:]]*[a-zA-Z0-9+/_!@#%-]{16,}' "$file"; then
+    printf 'Hardcoded secret in environment variable or config'; return 0
+  fi
+  return 1
+}
 
-[ -z "$content" ] && exit 0
-
-# Skip very short outputs (< 20 chars) — no secret fits in that
-[ "${#content}" -lt 20 ] && exit 0
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Secret pattern detection
-# ─────────────────────────────────────────────────────────────────────────────
-detected=0
-reason=""
-
-# AWS Access Key
-if echo "$content" | grep -qE 'AKIA[0-9A-Z]{16}'; then
-  reason="AWS Access Key (AKIA...)"; detected=1
-fi
-
-# Anthropic API key
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'sk-ant-[a-zA-Z0-9\-_]{20,}'; then
-  reason="Anthropic API key (sk-ant-...)"; detected=1
-fi
-
-# OpenAI API key
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'sk-(proj-)?[a-zA-Z0-9]{40,}'; then
-  reason="OpenAI API key (sk-...)"; detected=1
-fi
-
-# Google API key
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'AIza[0-9A-Za-z\-_]{35}'; then
-  reason="Google API key (AIza...)"; detected=1
-fi
-
-# GitHub tokens
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'gh[ps]_[a-zA-Z0-9]{36,}|github_pat_[a-zA-Z0-9_]{80,}'; then
-  reason="GitHub token (ghp_/ghs_/github_pat_...)"; detected=1
-fi
-
-# Slack tokens
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'xox[pboa]-[0-9]{10,}-[a-zA-Z0-9\-]+'; then
-  reason="Slack token (xox...)"; detected=1
-fi
-
-# JWT tokens (3-segment base64url — common in API responses)
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}'; then
-  reason="JWT token (eyJ...)"; detected=1
-fi
-
-# Private key block
-if [ $detected -eq 0 ] && echo "$content" | grep -qE -e '-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'; then
-  reason="Private key block (-----BEGIN...PRIVATE KEY-----)"; detected=1
-fi
-
-# Database connection strings with embedded credentials
-# Patterns split across vars to avoid triggering pre-commit scanner on this file
-pg_pat='postgres''ql?://[^:]{1,64}:[^@]{6,}@[a-zA-Z0-9._-]+'
-mongo_pat='mongodb''(\+srv)?://[^:]{1,64}:[^@]{6,}@[a-zA-Z0-9._-]+'
-redis_pat='redis''://:[^@]{6,}@[a-zA-Z0-9._-]+'
-mysql_pat='mysql''://[^:]{1,64}:[^@]{6,}@[a-zA-Z0-9._-]+'
-if [ $detected -eq 0 ] && echo "$content" | grep -qE "${pg_pat}|${mongo_pat}|${redis_pat}|${mysql_pat}"; then
-  reason="Database connection string with embedded credentials"; detected=1
-fi
-
-# Generic high-confidence: named secret variable with long value
-if [ $detected -eq 0 ] && echo "$content" | grep -qiE '(PASSWORD|PASSWD|SECRET|API_KEY|ACCESS_TOKEN|AUTH_TOKEN|PRIVATE_KEY)\s*[=:]\s*[a-zA-Z0-9+/\-_!@#$%]{16,}'; then
-  reason="Hardcoded secret in environment variable or config"; detected=1
-fi
-
-# HashiCorp Vault token
-if [ $detected -eq 0 ] && echo "$content" | grep -qE 'hv[sb]\.[A-Za-z0-9_\-]{20,}'; then
-  reason="HashiCorp Vault token (hvs./hvb.)"; detected=1
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Output warning and log (never block — exit 0 always)
-# ─────────────────────────────────────────────────────────────────────────────
-if [ $detected -eq 1 ]; then
-  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  tool_context=$(echo "$input" | jq -r '
-    if .tool_name == "Bash" then "Bash: " + (.tool_input.command // "?")
-    elif .tool_name == "Read" then "Read: " + (.tool_input.file_path // "?")
-    elif .tool_name == "WebFetch" then "WebFetch: " + (.tool_input.url // "?")
-    else .tool_name
-    end
-  ' 2>/dev/null | head -c 120) || tool_context="$tool_name"
-
-  # Warn to stderr — shown to user in Claude Code UI
-  echo "" >&2
-  echo "⚠️  SECRET DETECTED in tool output" >&2
-  echo "   Tool:    $tool_context" >&2
-  echo "   Pattern: $reason" >&2
-  echo "   Action:  Move credentials to .env (gitignored) or a secrets manager." >&2
-  echo "            Do not reference or repeat this value in responses or commits." >&2
-  echo "" >&2
-
-  # stderr of an exit-0 hook never reaches Claude; PostToolUse additionalContext does.
-  command -v jq >/dev/null 2>&1 && jq -n --arg m "A credential-like value (${reason}) appeared in the output of ${tool_context}. Do not repeat, quote, or reference the value in responses, files or commits; refer to it by name only, and suggest moving it to an environment variable or secrets manager." \
-    '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
-
-  # Append to audit log (never fails — errors suppressed)
-  LOGFILE="$CLAUDE_PROJECT_DIR/.claude/secrets-detected.log"
+run_hook() {
+  local input tool_context reason tmp log_dir
+  input=$(cat)
+  command -v jq >/dev/null 2>&1 || return 0
+  tmp=$(mktemp) || return 0
+  # tool_response may be a string or an object; normalise to text in a file (no SIGPIPE, no size limit)
+  printf '%s' "$input" | jq -r '
+    if (.tool_response | type) == "string" then .tool_response
+    elif .tool_response.output? then .tool_response.output
+    elif .tool_response.content? then (.tool_response.content | if type == "string" then . else tostring end)
+    elif .tool_response.stdout? then ((.tool_response.stdout // "") + "\n" + (.tool_response.stderr // ""))
+    else (.tool_response | tostring) end // ""' > "$tmp" 2>/dev/null
+  if [ "$(wc -c < "$tmp" | tr -d ' ')" -lt 20 ] || ! reason=$(detect "$tmp"); then rm -f "$tmp"; return 0; fi
+  rm -f "$tmp"
+  tool_context=$(printf '%s' "$input" | jq -r '
+    if .tool_name == "Bash" then "a Bash command"
+    elif .tool_name == "Read" then "Read " + (.tool_input.file_path // "?")
+    elif .tool_name == "WebFetch" then "WebFetch " + ((.tool_input.url // "?") | sub("[?#].*$"; ""))
+    else (.tool_name // "a tool") end' 2>/dev/null | head -c 160) || tool_context="a tool"
   {
-    printf '[%s] DETECTED: %s | Tool: %s\n' \
-      "$timestamp" "$reason" "$tool_context"
-  } >> "$LOGFILE" 2>/dev/null || true
-fi
+    echo ""
+    echo "SECRET DETECTED in tool output — $reason (from $tool_context)."
+    echo "Move the credential to .env (gitignored) or a secrets manager; do not repeat it."
+  } >&2
+  jq -n --arg m "A credential-like value (${reason}) appeared in the output of ${tool_context}. Do not repeat, quote, or reference the value in responses, files or commits; refer to it by name only, and suggest moving it to an environment variable or secrets manager." \
+    '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
+  log_dir="${CLAUDE_PROJECT_DIR:-}"
+  [ -n "$log_dir" ] && [ -d "$log_dir/.claude" ] &&
+    printf '[%s] DETECTED: %s | Tool: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason" "$tool_context" >> "$log_dir/.claude/secrets-detected.log" 2>/dev/null
+  return 0
+}
 
+selftest() {
+  local self fail=0 tmp out p_aws p_jwt big
+  self="$HOOK_DIR/$(basename "${BASH_SOURCE[0]}")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; return 1; }
+  tmp=$(mktemp -d) || return 1
+  p_aws="AK""IA$(printf '%016d' 0 | tr 0 Q)"
+  # positive: Bash output with an AWS key (shared table); the command text holds the key too
+  out=$(jq -n --arg k "$p_aws" '{tool_name:"Bash",tool_input:{command:("echo " + $k)},tool_response:{stdout:("key=" + $k),stderr:""}}' |
+        CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>/dev/null)
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("AWS Access Key") and contains("a Bash command")' >/dev/null 2>&1; then
+    echo "  ok   positive: AWS key in Bash stdout reported via additionalContext"
+  else echo "  FAIL AWS key in Bash output ($out)"; fail=1; fi
+  if printf '%s' "$out" | grep -qF -- "$p_aws"; then echo "  FAIL secret value echoed to the model"; fail=1; else echo "  ok   value and command text never echoed"; fi
+  # positive: JWT (output-only extra) in a Read response
+  p_jwt="ey""J$(printf '%012d' 0 | tr 0 a).$(printf '%012d' 0 | tr 0 b).$(printf '%012d' 0 | tr 0 c)"
+  out=$(jq -n --arg k "$p_jwt" '{tool_name:"Read",tool_input:{file_path:"/x/a.http"},tool_response:{content:("Authorization: " + $k)}}' | "$BASH" "$self" 2>/dev/null)
+  case "$out" in *"JWT token"*) echo "  ok   positive: JWT in Read output reported" ;; *) echo "  FAIL JWT ($out)"; fail=1 ;; esac
+  # SIGPIPE regression: key on line 1 of a >1 MB output
+  big="$tmp/big.txt"; { printf '%s\n' "$p_aws"; i=0; while [ $i -lt 20000 ]; do printf 'line %s %s\n' "$i" "$(printf '%048d' 0)"; i=$((i + 1)); done; } > "$big"
+  out=$(jq -n --rawfile c "$big" '{tool_name:"Read",tool_input:{file_path:"/x/big"},tool_response:$c}' | "$BASH" "$self" 2>/dev/null)
+  case "$out" in *"AWS Access Key"*) echo "  ok   positive: key on line 1 of a $(wc -c < "$big" | tr -d ' ')-byte output (SIGPIPE regression)" ;; *) echo "  FAIL large output missed"; fail=1 ;; esac
+  # negatives
+  out=$(jq -n '{tool_name:"Bash",tool_input:{command:"ls"},tool_response:{stdout:"README.md\nsrc\nconst k = process.env.API_KEY;",stderr:""}}' | "$BASH" "$self" 2>&1)
+  if [ -z "$out" ]; then echo "  ok   negative: ordinary output silent"; else echo "  FAIL false positive ($out)"; fail=1; fi
+  out=$(jq -n '{tool_name:"WebFetch",tool_input:{url:"https://x.test/?token=abc"},tool_response:"short"}' | "$BASH" "$self" 2>&1)
+  if [ -z "$out" ]; then echo "  ok   negative: short output skipped"; else echo "  FAIL short output ($out)"; fail=1; fi
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
+run_hook
 exit 0

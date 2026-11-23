@@ -1,78 +1,95 @@
-#!/bin/bash
-# Hook: PreToolUse - Detect invisible Unicode characters used for injection
-# Exit 0 = allow, Exit 2 = block
+#!/usr/bin/env bash
+# PreToolUse (Edit|Write): block invisible or control characters that can hide instructions in
+# written content. Exit 2 = block (reason on stderr), exit 0 = allow.
 #
-# Detects: zero-width chars, RTL/LTR overrides, ANSI escapes,
-#          null bytes, tag characters, overlong UTF-8, homoglyphs.
+# Blocks: zero-width chars (U+200B-U+200D, U+FEFF), bidi overrides/isolates (U+202A-U+202E,
+# U+2066-U+2069), NUL, Unicode tag chars (U+E0000-U+E007F), ANSI escape sequences (ESC [ ] or ().
+# Warns (advisory, additionalContext): Cyrillic look-alike letters, or Greek mixed with Latin.
 #
-# References: CVE-2025-53109/53110 (Unicode sandbox escape)
-# Registered in settings.json: PreToolUse matcher "Edit|Write"
+# The checks run on decoded code points inside jq. The previous version used `grep -P`, which BSD
+# grep on macOS rejects (exit 2 inside an `if`), so every Unicode check silently passed there.
+# Overlong UTF-8 is not checked: the hook input is JSON-decoded text, where an overlong sequence
+# cannot survive as bytes.
+# References: CVE-2025-53109/53110 (Unicode sandbox escape).
+# Test: bash .claude/hooks/pre-unicode-injection.sh --selftest
+set -uo pipefail
 
-set -euo pipefail
+# Prints the first finding (category) for the tool input on stdin, or nothing.
+CLASSIFY='
+(.tool_name // "") as $t
+| (if $t == "Write" then (.tool_input.content // "")
+   elif $t == "Edit" then (.tool_input.new_string // "")
+   else "" end) as $c
+| ($c | explode) as $cp
+| if any($cp[]; (. >= 8203 and . <= 8205) or . == 65279) then "zero-width"
+  elif any($cp[]; (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297)) then "bidi"
+  elif any($cp[]; . == 0) then "nul"
+  elif any($cp[]; . >= 917504 and . <= 917631) then "tag"
+  elif any($cp[]; . == 27) and ($c | test("\u001b[\\[\\]()]")) then "ansi"
+  elif any($cp[]; . == 1072 or . == 1077 or . == 1086 or . == 1088 or . == 1089 or . == 1093) then "homoglyph"
+  elif any($cp[]; . >= 913 and . <= 969) and ($c | test("[A-Za-z]")) then "homoglyph"
+  else empty end'
 
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
-TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // empty')
+run_hook() {
+  local input finding marker
+  input=$(cat)
+  if ! command -v jq >/dev/null 2>&1; then
+    marker="${TMPDIR:-/tmp}/claude-unicode-hook-nojq"
+    if [ ! -f "$marker" ]; then
+      : > "$marker" 2>/dev/null
+      echo "pre-unicode-injection: jq not found; Unicode injection checks are DISABLED until jq is installed." >&2
+      return 1 # non-blocking error: shown once, the edit proceeds
+    fi
+    return 0
+  fi
+  finding=$(printf '%s' "$input" | jq -r "$CLASSIFY" 2>/dev/null) || finding=""
+  case "$finding" in
+    zero-width) echo "BLOCKED: zero-width character (U+200B-U+200D or U+FEFF) in the written content. It can hide instructions." >&2; return 2 ;;
+    bidi) echo "BLOCKED: bidirectional override/isolate character (U+202A-U+202E or U+2066-U+2069). It can disguise code or commands." >&2; return 2 ;;
+    nul) echo "BLOCKED: NUL character in the written content. It can truncate strings in downstream tools." >&2; return 2 ;;
+    tag) echo "BLOCKED: Unicode tag character (U+E0000-U+E007F). It can embed invisible data." >&2; return 2 ;;
+    ansi) echo "BLOCKED: ANSI escape sequence (raw ESC byte). It can manipulate terminal display. Write the escape as text (for example \\033[) instead." >&2; return 2 ;;
+    homoglyph)
+      jq -n --arg m "Unicode advisory: the content mixes Cyrillic/Greek look-alike letters with Latin text. Confirm this is intended multilingual text, not an identifier or filter bypass." \
+        '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$m}}'
+      return 0 ;;
+  esac
+  return 0
+}
 
-case "$TOOL_NAME" in
-    Edit|Write) ;;
-    *) exit 0 ;;
-esac
+selftest() {
+  local self fail=0 out rc
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; return 1; }
+  # $1 tool, $2 content (raw bytes, built with printf so this file holds no invisible characters)
+  probe() {
+    jq -n --arg t "$1" --arg c "$2" '{tool_name:$t,tool_input:{file_path:"/x/a.md",content:$c,old_string:"a",new_string:$c}}' | "$BASH" "$self" 2>&1
+  }
+  check() { # $1 label, $2 tool, $3 content, $4 expected rc, $5 expected message fragment ("" = silent)
+    out=$(probe "$2" "$3"); rc=$?
+    local msg_ok=1
+    if [ -z "$5" ]; then [ -z "$out" ] || msg_ok=0
+    else case "$out" in *"$5"*) ;; *) msg_ok=0 ;; esac; fi
+    if [ "$rc" -eq "$4" ] && [ "$msg_ok" -eq 1 ]; then echo "  ok   $1"
+    else echo "  FAIL $1 (exit $rc, expected $4: $out)"; fail=1; fi
+  }
+  check "positive: zero-width space blocked (Write)" Write "$(printf 'safe\342\200\213text')" 2 "zero-width"
+  check "positive: BOM blocked (Edit)" Edit "$(printf 'x\357\273\277y')" 2 "zero-width"
+  check "positive: RLO override blocked" Write "$(printf 'a\342\200\256b')" 2 "bidirectional"
+  check "positive: isolate U+2066 blocked" Edit "$(printf 'a\342\201\246b')" 2 "bidirectional"
+  check "positive: tag character blocked" Write "$(printf 'a\363\240\200\201b')" 2 "tag character"
+  check "positive: ANSI escape blocked" Write "$(printf 'x\033[31mred')" 2 "ANSI escape"
+  out=$(jq -n '{tool_name:"Write",tool_input:{file_path:"/x/a",content:"a\u0000b"}}' | "$BASH" "$self" 2>&1); rc=$?
+  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -qF "NUL character"; then echo "  ok   positive: NUL blocked"; else echo "  FAIL NUL (exit $rc: $out)"; fail=1; fi
+  check "advisory: Cyrillic look-alike warns, exit 0" Write "$(printf 'p\320\260ypal')" 0 "additionalContext"
+  check "negative: plain ASCII and accented Latin pass silently" Write "$(printf 'caf\303\251 r\303\251sum\303\251 \\033[ text')" 0 ""
+  check "negative: CJK and emoji pass silently" Write "$(printf '\346\227\245\346\234\254 \360\237\230\200')" 0 ""
+  check "negative: other tools ignored" Read "$(printf 'a\342\200\213b')" 0 ""
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
 
-CONTENT=""
-case "$TOOL_NAME" in
-    Write) CONTENT=$(echo "$TOOL_INPUT" | jq -r '.content // empty') ;;
-    Edit)  CONTENT=$(echo "$TOOL_INPUT" | jq -r '.new_string // empty') ;;
-esac
-
-[[ -z "$CONTENT" ]] && exit 0
-
-# === ZERO-WIDTH CHARACTERS (U+200B-U+200D, U+FEFF) ===
-if echo "$CONTENT" | grep -qP '[\x{200B}-\x{200D}\x{FEFF}]'; then
-    echo "BLOCKED: Zero-width characters detected (U+200B-U+200D or BOM). Can hide malicious instructions." >&2
-    exit 2
-fi
-
-# === BIDIRECTIONAL TEXT OVERRIDE (U+202A-U+202E, U+2066-U+2069) ===
-if echo "$CONTENT" | grep -qP '[\x{202A}-\x{202E}\x{2066}-\x{2069}]'; then
-    echo "BLOCKED: Bidirectional text override detected. Can disguise malicious commands." >&2
-    exit 2
-fi
-
-# === ANSI ESCAPE SEQUENCES ===
-if echo "$CONTENT" | grep -qE $'\x1b\[|\x1b\]|\x1b\('; then
-    echo "BLOCKED: ANSI escape sequence detected. Can manipulate terminal display." >&2
-    exit 2
-fi
-
-# === NULL BYTES ===
-if echo "$CONTENT" | grep -qP '\x00'; then
-    echo "BLOCKED: Null byte detected. Can cause string truncation attacks." >&2
-    exit 2
-fi
-
-# === TAG CHARACTERS (U+E0000-U+E007F) ===
-if echo "$CONTENT" | grep -qP '[\x{E0000}-\x{E007F}]'; then
-    echo "BLOCKED: Unicode tag characters detected. Can embed invisible data." >&2
-    exit 2
-fi
-
-# === OVERLONG UTF-8 ===
-if echo "$CONTENT" | grep -qP '[\xC0-\xC1][\x80-\xBF]'; then
-    echo "BLOCKED: Overlong UTF-8 sequence detected. Can bypass security filters." >&2
-    exit 2
-fi
-
-# === HOMOGLYPHS (warn only — may be legitimate multilingual content) ===
-HOMOGLYPHS_FOUND=false
-if echo "$CONTENT" | grep -qP '[\x{0430}\x{0435}\x{043E}\x{0440}\x{0441}\x{0445}]'; then
-    HOMOGLYPHS_FOUND=true
-fi
-if echo "$CONTENT" | grep -qP '[\x{0391}-\x{03C9}]' && echo "$CONTENT" | grep -qP '[a-zA-Z]'; then
-    HOMOGLYPHS_FOUND=true
-fi
-if [[ "$HOMOGLYPHS_FOUND" == "true" ]]; then
-    echo '{"systemMessage": "Warning: Potential homoglyph characters detected (Cyrillic/Greek mixed with Latin). Verify this is not a filter bypass attempt."}'
-fi
-
-exit 0
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
+run_hook
+exit $?

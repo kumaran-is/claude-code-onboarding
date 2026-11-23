@@ -1,7 +1,43 @@
 #!/usr/bin/env bash
-# PreToolUse → Write|Edit|MultiEdit: Block modifications to sensitive files.
+# PreToolUse (Write|Edit): block modifications to sensitive files.
 # Exit 0 = allow, Exit 2 = block (reason sent to Claude via stderr).
+# Env templates (.env.example/.sample/.template/.dist) are allowed: scaffold commands write them with
+# placeholder values; post-edit-secrets-scan.sh still flags a real token written into one.
+# Test: bash .claude/hooks/pre-edit-protect-sensitive.sh --selftest
 set -uo pipefail
+
+selftest() {
+  local self fail=0 out rc f
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; return 1; }
+  while IFS='|' read -r f want frag; do
+    [ -n "$f" ] || continue
+    out=$(jq -n --arg f "$f" '{tool_name:"Write",tool_input:{file_path:$f,content:"x"}}' | "$BASH" "$self" 2>&1); rc=$?
+    local ok=0
+    if [ "$want" -eq 0 ]; then [ -z "$out" ] && ok=1; else case "$out" in *"$frag"*) ok=1 ;; esac; fi
+    if [ "$rc" -eq "$want" ] && [ "$ok" -eq 1 ]; then
+      echo "  ok   $f -> exit $want"
+    else echo "  FAIL $f (exit $rc, expected $want: $out)"; fail=1; fi
+  done <<'EOF_CASES'
+/repo/.env|2|.env files
+/repo/apps/api/.env.local|2|.env files
+/repo/.env.production|2|.env files
+/repo/.git/hooks/pre-commit|2|.git/ internals
+/repo/config/secrets.yaml|2|credential/secret
+/repo/keys/server.pem|2|key/certificate
+/repo/infra/prod.tfvars|2|Terraform
+/repo/package-lock.json|2|lock files
+/repo/.env.example|0|
+/repo/apps/api/.env.sample|0|
+/repo/.env.template|0|
+/repo/src/environment.ts|0|
+/repo/docs/keys.md|0|
+EOF_CASES
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 # Read the tool input JSON from stdin
 input=$(cat)
@@ -16,8 +52,8 @@ if echo "$file" | grep -qE '(^|/)\.git/'; then
   exit 2
 fi
 
-# --- Environment and secret files ---
-if echo "$file" | grep -qE '(^|/)\.env($|\..+)'; then
+# --- Environment and secret files (templates with placeholder values are allowed) ---
+if echo "$file" | grep -qE '(^|/)\.env($|\..+)' && ! echo "$file" | grep -qE '(^|/)\.env\.(example|sample|template|dist)$'; then
   echo "BLOCKED: Cannot modify .env files. Edit environment files manually to prevent accidental secret exposure." >&2
   exit 2
 fi

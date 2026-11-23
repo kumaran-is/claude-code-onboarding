@@ -119,7 +119,8 @@ run_hook() {
 
   logfile="${CLAUDE_PROJECT_DIR:-.}/.claude/llm-quota-detected.log"
   ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "?")
-  { printf "[%s] %s | cmd: %s\n" "$ts" "$kind" "$cmd" >> "$logfile"; } 2>/dev/null || true   # redirect errors would leak to stderr otherwise
+  # Log the program name only: the full command text can carry a credential (curl -H, env assignments).
+  { printf "[%s] %s | program: %s\n" "$ts" "$kind" "$(printf '%s' "$cmd" | awk '{ for (i = 1; i <= NF; i++) if ($i !~ /=/) { print $i; exit } }')" >> "$logfile"; } 2>/dev/null || true   # redirect errors would leak to stderr otherwise
 
   jq -n --arg m "$msg" --arg c "$ctx" \
     '{systemMessage:$m, hookSpecificOutput:{hookEventName:"PostToolUse", additionalContext:$c}}'
@@ -205,6 +206,12 @@ it's
 EOF
 python run.py"
   expect_ctx "unbalanced quote (heredoc) fails toward firing" "QUOTA"
+  # audit log keeps the program name only, never the command text (it can carry a credential)
+  mkdir -p "$tmp/.claude"; : > "$tmp/.claude/llm-quota-detected.log"
+  probe "Error code: 429 rate_limit_error" string "API_TOKEN=s3cr3tvalue curl -H x:s3cr3tvalue https://api.x.test"
+  if grep -q "program: curl" "$tmp/.claude/llm-quota-detected.log" && ! grep -q "s3cr3tvalue" "$tmp/.claude/llm-quota-detected.log"; then
+    echo "  ok   audit log records the program, not the command text"
+  else echo "  FAIL audit log content: $(cat "$tmp/.claude/llm-quota-detected.log")"; fail=1; fi
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"

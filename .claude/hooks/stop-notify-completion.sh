@@ -8,7 +8,30 @@
 # Supports: macOS (osascript), Linux (notify-send)
 # Disable: set CLAUDE_NOTIFY_DISABLE=1
 
-set -e
+# Test: bash .claude/hooks/stop-notify-completion.sh --selftest
+set -uo pipefail
+
+if [ "${1:-}" = "--selftest" ]; then
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  bash -n "$self" || { echo "  FAIL does not parse"; exit 1; }
+  echo "  ok   parses (bash -n)"
+  stub=$(mktemp -d) || exit 1
+  printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done > "%s/osa.args"\n' "$stub" > "$stub/osascript"
+  printf '#!/bin/sh\necho Darwin\n' > "$stub/uname"; printf '#!/bin/sh\nexit 0\n' > "$stub/afplay"
+  chmod +x "$stub/osascript" "$stub/uname" "$stub/afplay"
+  echo '{"reason":"done\" & do shell script \"touch /tmp/x\" & \""}' | PATH="$stub:$PATH" "$BASH" "$self"
+  fail=0
+  if grep -qF 'display notification (item 1 of argv)' "$stub/osa.args" && grep -qF 'do shell script' "$stub/osa.args" &&
+     ! grep -F 'display notification' "$stub/osa.args" | grep -qF 'do shell script'; then
+    echo "  ok   positive: message with quotes is passed as argv data, not AppleScript source"
+  else echo "  FAIL osascript args: $(cat "$stub/osa.args" 2>/dev/null)"; fail=1; fi
+  CLAUDE_NOTIFY_DISABLE=1 PATH="$stub:$PATH" "$BASH" "$self" < /dev/null; rm -f "$stub/osa.args"
+  CLAUDE_NOTIFY_DISABLE=1 PATH="$stub:$PATH" "$BASH" "$self" < /dev/null
+  if [ ! -f "$stub/osa.args" ]; then echo "  ok   negative: CLAUDE_NOTIFY_DISABLE=1 sends nothing"; else echo "  FAIL notified while disabled"; fail=1; fi
+  rm -rf "$stub"
+  [ "$fail" -eq 0 ] && echo "selftest PASS" || echo "selftest FAIL"
+  exit "$fail"
+fi
 
 # Skip if disabled
 if [[ "${CLAUDE_NOTIFY_DISABLE:-0}" == "1" ]]; then
@@ -28,7 +51,9 @@ fi
 
 # macOS notification
 if [[ "$(uname)" == "Darwin" ]]; then
-  osascript -e "display notification \"$MESSAGE\" with title \"$TITLE\"" 2>/dev/null || true
+  # Text goes in as argv, never spliced into the AppleScript source (a quote would run as code).
+  osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' \
+    "$MESSAGE" "$TITLE" 2>/dev/null || true
 
   # Play completion sound (non-blocking)
   if [[ -f "/System/Library/Sounds/Hero.aiff" ]]; then

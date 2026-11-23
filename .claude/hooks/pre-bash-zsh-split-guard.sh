@@ -14,11 +14,17 @@
 #   - an unquoted $VAR used as a docker compose service list.
 # WARNS (exit 0 + additionalContext) on `for x in $VAR` and on a bare $VAR passed to a
 # command that takes a list of paths or names.
+# Also WARNS when a command starts with `timeout N` on macOS without a `timeout` binary: zsh prints
+# "command not found" into a pipe that hides it, and the empty output reads like a hang or a clean run.
 # Not affected: scripts run as `bash file.sh` (real bash word-splits), quoted globs, and the
 # explicit zsh list forms ${=VAR}, ${(f)VAR}, "${arr[@]}".
 #
 # Test: bash .claude/hooks/pre-bash-zsh-split-guard.sh --selftest
 set -uo pipefail
+
+# Overridable for the selftest: the real values come from uname and PATH.
+os_name() { printf '%s' "${ZSH_GUARD_UNAME:-$(uname -s 2>/dev/null)}"; }
+has_timeout() { case "${ZSH_GUARD_HAS_TIMEOUT:-}" in 1) return 0 ;; 0) return 1 ;; esac; command -v timeout >/dev/null 2>&1; }
 
 check() { # $1 = command text; prints the advisory JSON, exits 2 to block
   local cmd="$1" warn=""
@@ -52,6 +58,10 @@ check() { # $1 = command text; prints the advisory JSON, exits 2 to block
   # of paths or names. A single-path variable like $D or $ROOT is fine and stays silent.
   if grep -qE '(^|[|;&(]|&&|[[:space:]](do|then|else))[[:space:]]*(grep|ugrep|rg|find|ls|wc|xargs|cat|head|tail|rm|cp|mv|stat|du|git[[:space:]]+(add|diff|log|show|rm))[[:space:]]([^|;&]*[[:space:]])?\$[A-Za-z_][A-Za-z_0-9]+([Ss]|LIST|List|list|ARR|Arr|arr)([[:space:]]|$)' <<<"$cmd"; then
     warn="${warn}- a bare \$VAR passed as a path or name list: in zsh it is ONE argument, so a multi-item list becomes one bogus path and the result can be a silent zero. "
+  fi
+  if grep -qE '(^|[;&|(]|&&)[[:space:]]*(sudo[[:space:]]+)?timeout[[:space:]]+(-[A-Za-z]+[[:space:]]+)*[0-9]' <<<"$cmd" &&
+     [ "$(os_name)" = "Darwin" ] && ! has_timeout; then
+    warn="${warn}- 'timeout' is not installed on macOS: the command fails with 'command not found' and the pipeline prints nothing, which reads like a hang or a clean run. Use the Bash tool's timeout parameter, or gtimeout (coreutils). "
   fi
   if [ -n "$warn" ]; then
     jq -n --arg m "zsh-split advisory: ${warn}Never trust a zero-findings result until a positive control matched in the same session." \
@@ -94,6 +104,15 @@ selftest() {
   probe pass  'ls src/app'
   probe pass  'ls -la $S | head -30'
   probe pass  'cd $ROOT && ls $DIR'
+  export ZSH_GUARD_UNAME=Darwin ZSH_GUARD_HAS_TIMEOUT=0
+  probe warn  'timeout 30 pytest -q'
+  probe warn  'cd app && timeout 120 npm test 2>&1 | tail -5'
+  probe pass  'gtimeout 30 pytest -q'
+  probe pass  'echo timeout'
+  probe pass  'git commit -m "raise timeout 30 to 60"'
+  ZSH_GUARD_HAS_TIMEOUT=1; probe pass 'timeout 30 pytest -q'
+  ZSH_GUARD_UNAME=Linux ZSH_GUARD_HAS_TIMEOUT=0; probe pass 'timeout 30 pytest -q'
+  unset ZSH_GUARD_UNAME ZSH_GUARD_HAS_TIMEOUT
   # The hook entry point reads the PreToolUse JSON from stdin.
   out=$(printf '{"tool_input":{"command":"grep -r a --include=*.md ."}}' | bash "$0" 2>/dev/null); rc=$?
   [ "$rc" -eq 2 ] && echo "  ok   stdin entry point blocks" || { echo "  FAIL stdin entry point (rc=$rc)"; fail=1; }

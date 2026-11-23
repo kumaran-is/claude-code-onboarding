@@ -1,57 +1,55 @@
-#!/bin/bash
-# Hook: Lessons Injector — injects lessons.md into sub-agent context
-# Event: PreToolUse (Agent)
+#!/usr/bin/env bash
+# SubagentStart: inject the entries of .claude/rules/lessons.md into every subagent's context.
+# The built-in Explore/Plan subagents (and agents with omitClaudeMd) start without CLAUDE.md and
+# .claude/rules/, so accumulated corrections would be lost at the agent boundary; for other
+# subagents this is a small, harmless repeat.
 #
-# Problem: the built-in Explore/Plan sub-agents (and any agent whose definition sets omitClaudeMd)
-# start without CLAUDE.md and .claude/rules/, so accumulated corrections are lost across the
-# agent boundary. Other sub-agents already inherit lessons.md; for them this is a harmless repeat.
-# Solution: Intercept Agent tool calls and append lessons.md content
-# to the prompt parameter as additionalContext.
+# Delivery: hookSpecificOutput.additionalContext on SubagentStart goes into the subagent. On
+# PreToolUse (the old wiring) it would reach only the PARENT, so for any other event this hook
+# stays silent. The previous version also printed hand-built JSON with the raw lessons text
+# (quotes, backticks, newlines), which was invalid JSON, so nothing was ever injected.
+# Wire under "SubagentStart" in .claude/settings.json (no matcher).
+# Test: bash .claude/hooks/pre-lessons-injector.sh --selftest
+set -uo pipefail
 
-set -e
-
-# Read hook input from stdin
-INPUT=$(cat)
-
-# Extract tool name
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
-
-# Only intercept Agent tool calls
-if [[ "$TOOL_NAME" != "Agent" ]]; then
-  echo '{"continue": true}'
-  exit 0
-fi
-
-# Locate lessons.md
-LESSONS_FILE="${CLAUDE_PROJECT_DIR:-.}/.claude/rules/lessons.md"
-
-if [[ ! -f "$LESSONS_FILE" ]]; then
-  echo '{"continue": true}'
-  exit 0
-fi
-
-# Check if lessons.md has any actual entries (not just headers/empty)
-ENTRY_COUNT=$(grep -c '^\#\# \[' "$LESSONS_FILE" 2>/dev/null || echo "0")
-
-if [[ "$ENTRY_COUNT" -eq 0 ]]; then
-  echo '{"continue": true}'
-  exit 0
-fi
-
-# Extract lessons content (skip the header/purpose section, get entries only)
-LESSONS_CONTENT=$(sed -n '/^## \[/,$p' "$LESSONS_FILE" | head -60)
-
-if [[ -z "$LESSONS_CONTENT" ]]; then
-  echo '{"continue": true}'
-  exit 0
-fi
-
-# Inject as additionalContext (systemMessage visible to the sub-agent)
-ESCAPED_CONTENT=$(echo "$LESSONS_CONTENT" | jq -Rs .)
-
-cat <<EOF
-{
-  "continue": true,
-  "additionalContext": "TEAM LESSONS (from .claude/rules/lessons.md — corrections accumulated across sessions):\n${LESSONS_CONTENT}\n\nApply these lessons to avoid repeating known mistakes."
+run_hook() {
+  local input event lessons_file lessons
+  input=$(cat)
+  command -v jq >/dev/null 2>&1 || return 0
+  event=$(printf '%s' "$input" | jq -r '.hook_event_name // ""' 2>/dev/null) || event=""
+  [ "$event" = "SubagentStart" ] || return 0
+  lessons_file="${CLAUDE_PROJECT_DIR:-.}/.claude/rules/lessons.md"
+  [ -f "$lessons_file" ] || return 0
+  # entries only (from the first "## [date]" heading), capped so a long log cannot flood the agent
+  lessons=$(sed -n '/^## \[/,$p' "$lessons_file" | head -n 60)
+  [ -n "$lessons" ] || return 0
+  jq -n --arg l "$lessons" '{hookSpecificOutput:{hookEventName:"SubagentStart",
+    additionalContext:("TEAM LESSONS (from .claude/rules/lessons.md: corrections accumulated across sessions). Apply them:\n" + $l)}}'
 }
-EOF
+
+selftest() {
+  local self fail=0 tmp out
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  command -v jq >/dev/null 2>&1 || { echo "  FAIL jq required"; return 1; }
+  tmp=$(mktemp -d) || return 1
+  mkdir -p "$tmp/.claude/rules"
+  printf '# Lessons\n\nHeader text.\n\n## [2026-01-01] Scope [x1]\n**Mistake:** Ran `rm` on "quoted" paths\twith a tab.\n**Rule:** Do not.\n' > "$tmp/.claude/rules/lessons.md"
+  out=$(echo '{"hook_event_name":"SubagentStart","agent_type":"Explore"}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1)
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SubagentStart"
+       and (.hookSpecificOutput.additionalContext | contains("## [2026-01-01] Scope") and contains("\"quoted\"") and (contains("Header text") | not))' >/dev/null 2>&1; then
+    echo "  ok   positive: entries injected on SubagentStart as valid JSON (quotes, backticks, tab survive; header skipped)"
+  else echo "  FAIL SubagentStart injection: $out"; fail=1; fi
+  out=$(echo '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"prompt":"x"}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1)
+  if [ -z "$out" ]; then echo "  ok   negative: PreToolUse (would reach only the parent) is silent"; else echo "  FAIL PreToolUse output: $out"; fail=1; fi
+  printf '# Lessons\n\nNo entries yet.\n' > "$tmp/.claude/rules/lessons.md"
+  out=$(echo '{"hook_event_name":"SubagentStart"}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1)
+  if [ -z "$out" ]; then echo "  ok   negative: no entries, nothing injected"; else echo "  FAIL empty lessons: $out"; fail=1; fi
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
+run_hook
+exit 0

@@ -1,44 +1,30 @@
-#!/bin/bash
-# session-start.sh
-# Fires on: startup, resume, /clear, /compact
-# Injects session resume protocol as context before first model turn.
-# Guarantees core-behaviors.md Rule 9 runs even when conversation context is lost.
-
+#!/usr/bin/env bash
+# SessionStart (startup, resume, /clear, /compact): remind Claude to recover task state before new
+# work (core-behaviors.md §9). Kept short on purpose: CLAUDE.md is loaded at launch and holds the
+# full resume template and skill table, so this only points at them.
+#
+# Delivery: hookSpecificOutput.additionalContext (built with jq). The previous version printed a
+# top-level {"additionalContext": ...}, a shape the hooks reference does not define.
+# Test: bash .claude/hooks/session-start.sh --selftest
 set -uo pipefail
 
-CONTENT='## SESSION RESUME PROTOCOL (injected by hook)
+CONTENT='SESSION RESUME (injected by hook): context may have been reset. Before any other action, run TaskList; if tasks exist, present the "Session Resumed" summary from CLAUDE.md → Resuming Tasks and ask where to continue. Load the matching skill from CLAUDE.md → Code Conventions before writing code.'
 
-Context may have been reset (/clear, /compact, or new session).
-BEFORE any other action — run these steps:
+if [ "${1:-}" = "--selftest" ]; then
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  bash -n "$self" || { echo "  FAIL does not parse"; exit 1; }
+  echo "  ok   parses (bash -n)"
+  out=$(echo '{"hook_event_name":"SessionStart","source":"compact"}' | "$BASH" "$self")
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart" and (.hookSpecificOutput.additionalContext | contains("TaskList")) and (has("additionalContext") | not)' >/dev/null 2>&1; then
+    echo "  ok   positive: documented SessionStart shape, valid JSON"; echo "selftest PASS"; exit 0
+  fi
+  echo "  FAIL output: $out"; echo "selftest FAIL"; exit 1
+fi
 
-1. Run TaskList — check for pending/in_progress tasks
-2. Tasks found → present this summary before starting new work:
-     ## Session Resumed
-     - In-progress: [subject] — last step: [description]
-     - Pending (unblocked): [list]
-     - Pending (blocked): [list + blockers]
-     Continue from [next step]? Or review a previous task first?
-3. No tasks → ready for new work
-
-Skill loading (before writing any code):
-  Java          → java-spring-api skill
-  NestJS        → nestjs-api skill
-  Python/FastAPI → python-dev skill
-  Agentic AI    → agentic-ai-dev skill
-  Angular       → angular-spa skill
-  Flutter       → flutter-mobile skill
-  Debugging     → systematic-debugging skill
-  Completion    → verification-before-completion skill
-  (Full table: CLAUDE.md → Code Conventions)
-
-Rules auto-loaded each session from: .claude/rules/'
-
-# Escape content for JSON string (single-pass, no external tools)
-s="${CONTENT//\\/\\\\}"
-s="${s//\"/\\\"}"
-s="${s//$'\n'/\\n}"
-s="${s//$'\r'/}"
-s="${s//$'\t'/\\t}"
-
-printf '{"additionalContext":"%s"}' "$s"
+cat > /dev/null 2>&1 || true
+if command -v jq >/dev/null 2>&1; then
+  jq -n --arg c "$CONTENT" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}'
+else
+  printf '%s\n' "$CONTENT" # SessionStart plain stdout is also added to context
+fi
 exit 0

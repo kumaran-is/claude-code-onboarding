@@ -5,6 +5,9 @@
 # Matching reads the content from a here-string, never `echo "$content" | grep -q`: under `set -o pipefail`,
 # grep -q exits at the first match, echo dies of SIGPIPE on large files (status 141) and the pipeline reports
 # "no match" -- a 1.2 MB file with a key on line 1 passed the old hook.
+# This PATTERNS table is the single token table: stop-secret-scan.sh and output-secrets-scanner.sh call
+# `post-edit-secrets-scan.sh --scan-file <path>` (prints the label, exit 0 = hit, 1 = clean) or
+# `--scan-files` (paths on stdin, prints "path<TAB>label" per hit) instead of keeping their own copies.
 # Test: bash .claude/hooks/post-edit-secrets-scan.sh --selftest
 set -uo pipefail
 
@@ -48,6 +51,36 @@ EOF_CONTENT
 $PATTERNS
 EOF_PATTERNS
   return 1
+}
+
+# Batch mode for many files (Stop hook): file paths on stdin, prints "path<TAB>label" per hit.
+# One combined grep pass finds candidate files; only those are labelled, so 200 files cost ~2 greps.
+scan_files() {
+  local f label re combined="" icombined="" candidates
+  local -a files=()
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    case "$f" in *.png|*.jpg|*.jpeg|*.gif|*.ico|*.woff|*.woff2|*.ttf|*.eot|*.lock|*.map|*.bin|*.so|*.dylib|*.class|*.jar) continue ;; esac
+    files+=("$f")
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  while IFS="	" read -r label re; do
+    [ -n "$re" ] || continue
+    case "$label" in
+      Hardcoded*) icombined="${icombined:+$icombined|}($re)" ;;
+      *) combined="${combined:+$combined|}($re)" ;;
+    esac
+  done <<EOF_PATTERNS
+$PATTERNS
+EOF_PATTERNS
+  candidates=$( { grep -lE -e "$combined" -- "${files[@]}"; grep -liE -e "$icombined" -- "${files[@]}"; } 2>/dev/null | sort -u )
+  [ -n "$candidates" ] || return 0
+  while IFS= read -r f; do
+    label=$(scan "$f") && printf '%s\t%s\n' "$f" "$label"
+  done <<EOF_CANDIDATES
+$candidates
+EOF_CANDIDATES
+  return 0
 }
 
 run_hook() {
@@ -114,11 +147,24 @@ EOF_POS
   if [ "$rc" -eq 0 ] && [ -z "$out" ]; then echo "  ok   negative: env refs, \${VAR} placeholders and plain code pass"; else echo "  FAIL false positive (exit $rc: $out)"; fail=1; fi
   printf 'binary' > "$tmp/x.png"; out=$(probe "$tmp/x.png"); rc=$?
   [ "$rc" -eq 0 ] && echo "  ok   negative: binary/asset extensions skipped" || { echo "  FAIL asset not skipped"; fail=1; }
+  # --scan-file is the shared entry point for the Stop and tool-output scanners
+  f="$tmp/cli.ts"; printf 'const k = "%s%s";\n' "$p_aws" "$(r 16 Y)" > "$f"
+  out=$("$BASH" "$self" --scan-file "$f"); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$out" = "AWS Access Key (AKIA...)" ]; then echo "  ok   positive: --scan-file prints the label, exit 0"; else echo "  FAIL --scan-file hit (exit $rc: $out)"; fail=1; fi
+  out=$("$BASH" "$self" --scan-file "$tmp/neg.ts"); rc=$?
+  if [ "$rc" -eq 1 ] && [ -z "$out" ]; then echo "  ok   negative: --scan-file on a clean file exits 1 silently"; else echo "  FAIL --scan-file clean (exit $rc: $out)"; fail=1; fi
+  out=$(printf '%s\n' "$tmp/neg.ts" "$tmp/cli.ts" "$tmp/x.png" "$tmp/missing.ts" | "$BASH" "$self" --scan-files); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$out" = "$tmp/cli.ts	AWS Access Key (AKIA...)" ]; then echo "  ok   positive+negative: --scan-files labels only the leaking file"; else echo "  FAIL --scan-files (exit $rc: $out)"; fail=1; fi
+  f="$tmp/hc.py"; printf 'API_KEY = "%s"\n' "$(r 40 m)" > "$f"
+  out=$(printf '%s\n' "$f" | "$BASH" "$self" --scan-files)
+  case "$out" in *"Hardcoded secret"*) echo "  ok   positive: --scan-files case-insensitive rule (upper-case key name)" ;; *) echo "  FAIL --scan-files case-insensitive rule ($out)"; fail=1 ;; esac
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
 }
 
 if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
+if [ "${1:-}" = "--scan-file" ]; then scan "${2:-}"; exit $?; fi
+if [ "${1:-}" = "--scan-files" ]; then scan_files; exit $?; fi
 run_hook
 exit $?

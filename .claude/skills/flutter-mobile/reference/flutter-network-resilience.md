@@ -21,26 +21,41 @@ HALF_OPEN  →  (next call fails)         →  OPEN
 
 ### Implementation
 
+Compiled and tested on Flutter 3.50.1 / Dart 3.14.0 (`resilient_call_test.dart`: retries a transient 503 then succeeds; a 400 is reported and rethrown without retry; an error whose text says "network" is NOT transient; timeouts count toward the breaker and an open circuit rejects without calling). Planting a message-text check in `isTransient` fails the suite.
+
 ```dart
+import 'dart:async';
+
+import 'package:dio/dio.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+import 'api_failure.dart'; // classifyDioException: flutter-api-contract-parity.md §5
+
 enum CircuitState { closed, open, halfOpen }
 
 class CircuitBreaker {
   CircuitBreaker({
     this.failureThreshold = 5,
     this.recoveryTimeout = const Duration(seconds: 30),
-  });
+    DateTime Function()? now, // injectable clock for tests
+  }) : _now = now ?? DateTime.now;
 
   final int failureThreshold;
   final Duration recoveryTimeout;
+  final DateTime Function() _now;
 
   CircuitState _state = CircuitState.closed;
-  int _failureCount = 0;
+  int _failures = 0;
   DateTime? _openedAt;
 
+  CircuitState get state => _state;
+
+  /// True when calls must be rejected without touching the network.
   bool get isOpen {
-    if (_state == CircuitState.open) {
-      if (DateTime.now().difference(_openedAt!) >= recoveryTimeout) {
-        _state = CircuitState.halfOpen;
+    final openedAt = _openedAt;
+    if (_state == CircuitState.open && openedAt != null) {
+      if (_now().difference(openedAt) >= recoveryTimeout) {
+        _state = CircuitState.halfOpen; // allow one probe
         return false;
       }
       return true;
@@ -49,141 +64,89 @@ class CircuitBreaker {
   }
 
   void recordSuccess() {
-    _failureCount = 0;
+    _failures = 0;
     _state = CircuitState.closed;
   }
 
   void recordFailure() {
-    _failureCount++;
-    if (_failureCount >= failureThreshold) {
+    _failures++;
+    if (_state == CircuitState.halfOpen || _failures >= failureThreshold) {
       _state = CircuitState.open;
-      _openedAt = DateTime.now();
+      _openedAt = _now();
+    }
+  }
+}
+
+class CircuitOpenException implements Exception {
+  const CircuitOpenException();
+}
+
+/// Reports a failure (Crashlytics in production, a fake in tests).
+typedef FailureReporter =
+    Future<void> Function(Object error, StackTrace stack, String operation);
+
+/// Transient = the server did not answer, or answered "try later".
+/// Decided from types and status codes, never from message text.
+bool isTransient(Object e) => switch (e) {
+  TimeoutException() => true,
+  DioException() => switch (classifyDioException(e)) {
+    TimeoutFailure() || NetworkFailure() => true,
+    ServerFailure(:final retryable) => retryable,
+    _ => false,
+  },
+  FirebaseException(:final code) =>
+    code == 'unavailable' || code == 'deadline-exceeded',
+  _ => false,
+};
+
+class ResilientCall {
+  ResilientCall({
+    required this._report, // Dart 3.12+ private named parameter
+    CircuitBreaker? breaker,
+    Future<void> Function(Duration)? sleep,
+  }) : _breaker = breaker ?? CircuitBreaker(),
+       _sleep = sleep ?? Future<void>.delayed;
+
+  final FailureReporter _report;
+  final CircuitBreaker _breaker;
+  final Future<void> Function(Duration) _sleep;
+
+  /// [maxRetries] 0 for non-idempotent writes without an idempotency key.
+  Future<T> run<T>(
+    Future<T> Function() operation, {
+    required String operationName,
+    Duration timeout = const Duration(seconds: 15),
+    int maxRetries = 3,
+  }) async {
+    if (_breaker.isOpen) throw const CircuitOpenException();
+    for (var attempt = 0; ; attempt++) {
+      try {
+        final result = await operation().timeout(timeout);
+        _breaker.recordSuccess();
+        return result;
+      } catch (e, st) {
+        final transient = isTransient(e);
+        if (transient) _breaker.recordFailure();
+        await _report(e, st, operationName);
+        if (!transient || attempt >= maxRetries || _breaker.isOpen) rethrow;
+        await _sleep(Duration(seconds: 1 << attempt.clamp(0, 4))); // 1,2,4,8,16s
+      }
     }
   }
 }
 ```
 
----
+Only transient failures open the breaker: a burst of 400s is a client bug, not an outage. Pass the timeout from the budget table above.
 
-## Resilient Network Service
-
-Wraps any async operation with: circuit breaker check → timeout → retry with exponential backoff → Crashlytics error recording.
-
-### Timeout budgets by operation type
-
-| Operation | Timeout |
-|-----------|---------|
-| Quick reads (cache hits, auth checks) | 10s |
-| Standard reads (Firestore queries) | 15s |
-| Writes (create/update/delete) | 20s |
-| File uploads | 60s |
-
-### Implementation
+The production reporter (breadcrumb first, then the error, both awaited, no PII):
 
 ```dart
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
-typedef NetworkOperation<T> = Future<T> Function();
-
-class ResilientNetworkService {
-  ResilientNetworkService({CircuitBreaker? circuitBreaker})
-      : _circuitBreaker = circuitBreaker ?? CircuitBreaker();
-
-  final CircuitBreaker _circuitBreaker;
-
-  static const _timeouts = {
-    OperationType.quickRead: Duration(seconds: 10),
-    OperationType.read: Duration(seconds: 15),
-    OperationType.write: Duration(seconds: 20),
-    OperationType.upload: Duration(seconds: 60),
-  };
-
-  /// Execute [operation] with circuit breaker, timeout, and retry.
-  ///
-  /// [maxRetries] defaults to 3. Pass 0 for fire-and-forget writes where
-  /// retrying could cause duplicates.
-  Future<T> execute<T>(
-    NetworkOperation<T> operation, {
-    OperationType type = OperationType.read,
-    int maxRetries = 3,
-    String? operationName,
-  }) async {
-    if (_circuitBreaker.isOpen) {
-      throw CircuitOpenException(
-        'Circuit open — backend unreachable. Try again later.',
-      );
-    }
-
-    final timeout = _timeouts[type]!;
-    Exception? lastError;
-
-    for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        final result = await operation().timeout(timeout);
-        _circuitBreaker.recordSuccess();
-        return result;
-      } on TimeoutException catch (e, stack) {
-        lastError = e;
-        _circuitBreaker.recordFailure();
-        await _recordToAnalytics(
-          operationName ?? 'unknown',
-          'TimeoutException (attempt ${attempt + 1})',
-          e,
-          stack,
-        );
-      } catch (e, stack) {
-        lastError = e is Exception ? e : Exception(e.toString());
-        _circuitBreaker.recordFailure();
-        await _recordToAnalytics(
-          operationName ?? 'unknown',
-          'Attempt ${attempt + 1} failed',
-          e,
-          stack,
-        );
-        // Don't retry non-transient errors
-        if (e is! TimeoutException && !_isTransient(e)) rethrow;
-      }
-
-      if (attempt < maxRetries) {
-        await Future.delayed(_backoff(attempt));
-      }
-    }
-
-    throw lastError!;
-  }
-
-  /// Exponential backoff: 1s, 2s, 4s, capped at 30s
-  Duration _backoff(int attempt) =>
-      Duration(seconds: (1 << attempt).clamp(1, 30));
-
-  bool _isTransient(Object e) =>
-      e is TimeoutException ||
-      e.toString().contains('network') ||
-      e.toString().contains('unavailable');
-
-  Future<void> _recordToAnalytics(
-    String operation,
-    String context,
-    Object error,
-    StackTrace stack,
-  ) async {
-    FirebaseCrashlytics.instance.log('[$operation] $context: $error');
-    await FirebaseCrashlytics.instance.recordError(
-      error,
-      stack,
-      reason: '[$operation] $context',
-      printDetails: false,
-    );
-  }
-}
-
-enum OperationType { quickRead, read, write, upload }
-
-class CircuitOpenException implements Exception {
-  CircuitOpenException(this.message);
-  final String message;
-  @override
-  String toString() => 'CircuitOpenException: $message';
+Future<void> reportFailure(Object error, StackTrace stack, String operation) async {
+  final crashlytics = FirebaseCrashlytics.instance;
+  await crashlytics.log('[$operation] ${error.runtimeType}');
+  await crashlytics.recordError(error, stack, reason: operation, printDetails: false);
 }
 ```
 
@@ -191,37 +154,23 @@ class CircuitOpenException implements Exception {
 
 ## Riverpod Integration
 
-Register as a singleton provider and inject into repositories.
+One instance app-wide, because the breaker state must be shared (riverpod 3.5.0 / riverpod_generator 4.0.10):
 
 ```dart
-// core/providers/network_providers.dart
 @Riverpod(keepAlive: true)
-ResilientNetworkService resilientNetwork(Ref ref) {
-  return ResilientNetworkService();
-}
+ResilientCall resilientCall(Ref ref) => ResilientCall(report: reportFailure);
 
 // In a repository
-@riverpod
-class OrderRepository extends _$OrderRepository {
-  late final ResilientNetworkService _network;
-
-  @override
-  Future<List<Order>> build() async {
-    _network = ref.read(resilientNetworkProvider);
-    return _fetchOrders();
-  }
-
-  Future<List<Order>> _fetchOrders() =>
-      _network.execute(
-        () => FirebaseFirestore.instance
-            .collection('orders')
-            .get()
-            .then((s) => s.docs.map(Order.fromFirestore).toList()),
-        type: OperationType.read,
-        operationName: 'OrderRepository.fetchOrders',
-      );
-}
+Future<List<Order>> fetchOrders() => _call.run(
+  () => _firestore
+      .collection('orders')
+      .get()
+      .then((s) => s.docs.map(Order.fromFirestore).toList()),
+  operationName: 'OrderRepository.fetchOrders',
+);
 ```
+
+Pick one retry layer: Riverpod 3 also retries a failing provider by default, so set `retry` on providers that sit on top of `ResilientCall` (see `riverpod-patterns`), or the attempts multiply.
 
 ---
 
@@ -229,19 +178,22 @@ class OrderRepository extends _$OrderRepository {
 
 ```yaml
 dependencies:
-  firebase_crashlytics: ^4.1.0
+  dio: 5.11.1
+  firebase_core: 5.2.0
+  firebase_crashlytics: 6.1.0
 ```
 
-No additional packages needed — circuit breaker is pure Dart.
+No additional packages needed — the circuit breaker is pure Dart. Versions resolved together on Flutter 3.50.1.
 
 ---
 
 ## Rules
 
-- **Always pass `operationName`** — makes Crashlytics logs searchable by feature
+- **Always pass `operationName`** — makes Crashlytics logs searchable by feature (it is required by the signature)
+- **Classify by type and status, never by message text** — a substring check such as `e.toString().contains('network')` retries unrelated errors and can mask a needed sign-out
 - **Use `maxRetries: 0`** for writes where idempotency is not guaranteed (e.g., Firestore `add()`)
 - **Do not catch `CircuitOpenException` silently** — surface it to the user as a "service temporarily unavailable" message
-- **One `ResilientNetworkService` instance** — keep it a `keepAlive` Riverpod provider, not recreated per request
+- **One `ResilientCall` instance** — keep it a `keepAlive` Riverpod provider, not recreated per request
 - **Adjust `failureThreshold`** for your SLA: 5 failures before opening is appropriate for consumer apps; tighten to 3 for payment flows
 
 ---

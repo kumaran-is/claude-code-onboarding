@@ -1,6 +1,6 @@
 # A2UI State Binding — Processor, Surfaces and Data Model
 
-Verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0 on protocol v0.9. Every Dart block here compiles in a check app (`flutter analyze` exit 0) and the behaviour described is covered by `flutter test`.
+First verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0 on protocol v0.9. Every Dart block here compiles in a check app (`flutter analyze` exit 0) and the behaviour described is covered by `flutter test`. Re-compiled on 2026-11-23 with `a2ui_flutter` 0.5.0, `a2ui_core` 0.9.0, `a2ui_agent` 0.5.0 and `material_ui` 1.11.1 on Flutter 3.50.1 / Dart 3.14.0 (`flutter analyze` 0 issues across every block in this skill; the widget tests pass). The 1.0 path is in `../SKILL.md` "Versioned adapter boundary".
 
 ## Overview
 
@@ -24,7 +24,9 @@ import 'dart:developer' as developer;
 import 'package:a2ui_core/a2ui_core.dart';
 import 'package:a2ui_flutter/a2ui_flutter.dart';
 import 'package:a2ui_flutter/v0_9/basic_catalog.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
+import 'a2ui_material_bridge.dart'; // ../SKILL.md "Material host"
 
 /// Renders every surface an agent creates, on protocol v0.9, with the basic catalog.
 class AgentSurfaces extends StatefulWidget {
@@ -87,7 +89,7 @@ class AgentSurfacesState extends State<AgentSurfaces> {
             key: ObjectKey(surface),
             container: true,
             explicitChildNodes: true,
-            child: A2uiSurface(surface: surface),
+            child: A2uiMaterialBridge(child: A2uiSurface(surface: surface)),
           ),
       ],
     );
@@ -221,7 +223,8 @@ testWidgets('typed input reaches the action context', (tester) async {
   host.currentState!.receive(signupForm()); // createSurface, updateDataModel, updateComponents
   await tester.pumpAndSettle();
 
-  await tester.enterText(find.byType(TextField), 'ada@example.com');
+  // EditableText: the basic catalog's TextField is flutter/material's class.
+  await tester.enterText(find.byType(EditableText), 'ada@example.com');
   await tester.tap(find.text('Subscribe'));
   await tester.pumpAndSettle();
 

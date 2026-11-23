@@ -40,7 +40,7 @@ If there is no machine-readable contract, write a thin contract test against a s
 ## 3. One source of truth for base URLs
 
 - One config class owns every backend base URL: one getter per service, holding that service's full root including any path prefix; client code uses bare paths (`/orders`). Do not add a generic `API_BASE_URL`, and do not put a prefix in a path string.
-- Build each client through one factory per service so every request gets the same interceptors, timeouts and base URL. A bare `Dio()` has none of them.
+- Build each client through one factory per service so every request gets the same interceptors, timeouts and base URL. A bare `Dio()` has none of them. A tested factory (bounded `BaseOptions`, HTTPS assert, a bare refresh/replay client, the auth interceptor) is in [flutter-security-hardening.md](flutter-security-hardening.md) (Token Refresh).
 - Environment values come from `--dart-define` / `--dart-define-from-file`; deployed builds take explicit HTTPS URLs. In release mode throw at startup if a base URL is not HTTPS, in the provider that builds each credential-carrying client, so a mis-set URL fails fast instead of sending a bearer token in cleartext:
 
 ```dart
@@ -60,7 +60,7 @@ A request with no timeout is a request that can hang a screen forever. Decide th
 
 | Class | Typical bounds (tune per product; values are examples) |
 |---|---|
-| REST calls | connect ≈ 10 s, receive ≈ 30 s |
+| REST calls | connect ≈ 10 s, receive ≈ 30 s, send ≈ 30 s |
 | Signed-URL transfers (upload/download) | same connect/receive; **send** timeout sized per payload (`bytes ÷ minimum throughput`, clamped to the signed URL's lifetime) |
 | Identity-token fetch inside an interceptor | explicit timeout around the SDK call; do not assume the platform SDK bounds it |
 | Streaming answers (SSE) | first-response timeout + idle-gap timeout enforced in Dart, plus a `CancelToken` on timeout **and** on subscriber cancel |
@@ -80,6 +80,49 @@ Facts to design around:
 - Decide retry/auth behaviour from the error **type**, never from message substrings — an unrelated error whose text says "network" must not skip a needed sign-out or trigger a retry.
 - An interceptor that overrides a shared `executeApiCall`-style wrapper must finish by mapping the exception it already caught; delegating back to the wrapper re-runs the request, double-firing a write after a transient failure.
 - When a provider degrades to a fallback on error, disable provider auto-retry (see `riverpod-patterns`) so a later retry cannot swap the UI under the user.
+
+A sealed failure type plus an exhaustive `switch` over `DioExceptionType` (dio 5.11.1) makes every transport case a compile-time decision; adding a case later is a compile error, not a silent `default`. Tested on Flutter 3.50.1 (`network_test.dart`: receive timeout → timeout, not offline; cancel → cancelled; connection refused → network; 503 → retryable server failure):
+
+```dart
+sealed class ApiFailure implements Exception {
+  const ApiFailure();
+}
+final class TimeoutFailure extends ApiFailure { const TimeoutFailure(); }
+final class NetworkFailure extends ApiFailure { const NetworkFailure(); }
+final class CancelledFailure extends ApiFailure { const CancelledFailure(); }
+final class UnauthorizedFailure extends ApiFailure { const UnauthorizedFailure(); }
+final class InsecureConnectionFailure extends ApiFailure { const InsecureConnectionFailure(); }
+final class ServerFailure extends ApiFailure {
+  const ServerFailure(this.statusCode);
+  final int statusCode;
+  bool get retryable => statusCode >= 500 || statusCode == 429;
+}
+final class ClientFailure extends ApiFailure {
+  const ClientFailure(this.statusCode);
+  final int statusCode;
+}
+final class UnexpectedFailure extends ApiFailure {
+  const UnexpectedFailure(this.errorType);
+  final Type errorType; // the type only: an error message can carry user data
+}
+
+ApiFailure classifyDioException(DioException e) => switch (e.type) {
+  DioExceptionType.connectionTimeout ||
+  DioExceptionType.sendTimeout ||
+  DioExceptionType.receiveTimeout ||
+  DioExceptionType.transformTimeout => const TimeoutFailure(),
+  DioExceptionType.connectionError => const NetworkFailure(),
+  DioExceptionType.cancel => const CancelledFailure(),
+  DioExceptionType.badCertificate => const InsecureConnectionFailure(),
+  DioExceptionType.badResponse => switch (e.response?.statusCode) {
+    401 => const UnauthorizedFailure(),
+    final int code when code >= 500 || code == 429 => ServerFailure(code),
+    final int code => ClientFailure(code),
+    null => const UnexpectedFailure(Null),
+  },
+  DioExceptionType.unknown => UnexpectedFailure(e.error.runtimeType),
+};
+```
 
 ## 6. Review checklist
 

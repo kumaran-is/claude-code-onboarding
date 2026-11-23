@@ -46,14 +46,14 @@
 
 ## 6. Screen Reader Support
 
-- [ ] `SemanticsService.announce()` for important updates
+- [ ] `SemanticsService.sendAnnouncement(View.of(context), ...)` for important updates (`announce()` is deprecated since 3.35)
 - [ ] Form fields have `labelText` in `InputDecoration`
 - [ ] Error messages announced to screen readers
 - [ ] `MergeSemantics` groups related *non-interactive* elements. Never inside a tappable (`InkWell`, card with `onTap`, `ListTile`): the tappable already merges its descendants, and a nested merge leaves the button without a label
 - [ ] Self-merging tiles (`ListTile`, `RadioListTile`, `CheckboxListTile`, `SwitchListTile`) own their accessible name: never wrap one in a labelled `Semantics`; put extra meaning in the title via `Text(label, semanticsLabel: ...)`
 - [ ] Upper-cased display text (`toUpperCase()`) passes the original-case string as `semanticsLabel` (screen readers may spell short all-caps runs letter by letter)
 - [ ] Section/group headings use `Semantics(header: true, ...)` (including date headers in grouped lists)
-- [ ] No double announcement: `SnackBar` is already a live region, so do not also call `SemanticsService.announce` with the same text (verify against the current SDK)
+- [ ] No double announcement: `SnackBar` is already a live region, so do not also call `SemanticsService.sendAnnouncement` with the same text (verify against the current SDK)
 - [ ] Custom list rows put one composed `semanticLabel` on the tappable; decorative glyphs use `ExcludeSemantics`
 - [ ] Dump the semantics tree before reaching for `container: true` — it can put the value before its title in reading order
 

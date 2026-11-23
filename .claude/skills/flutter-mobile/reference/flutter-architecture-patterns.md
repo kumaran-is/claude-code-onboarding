@@ -4,8 +4,7 @@ Core architecture patterns for modern Flutter (2025/2026) — sealed classes, Re
 
 ## Freezed Sealed State Classes (Riverpod 3.x standard)
 
-Use `@freezed sealed class` for all state objects. This generates `when()`, `map()`,
-`maybeWhen()`, and `copyWith()` automatically — do NOT use plain `sealed class` for state.
+Use `@freezed sealed class` for all state objects (freezed 4.0.3). Name each variant with a public class (`= AuthInitial`) so it can be matched with an exhaustive Dart `switch`; freezed still generates `when()`/`map()`, but new code should prefer `switch`. Freezed 4 dropped `final` on constructor parameters (Dart 3.13 no longer allows it).
 
 ```dart
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -15,16 +14,16 @@ part 'auth_state.freezed.dart';
 
 @freezed
 sealed class AuthState with _$AuthState {
-  const factory AuthState.initial()                    = _Initial;
-  const factory AuthState.loading()                    = _Loading;
-  const factory AuthState.authenticated(User user)     = _Authenticated;
-  const factory AuthState.unauthenticated()            = _Unauthenticated;
-  const factory AuthState.error(String message)        = _Error;
+  const factory AuthState.initial() = AuthInitial;
+  const factory AuthState.loading() = AuthLoading;
+  const factory AuthState.authenticated(User user) = AuthAuthenticated;
+  const factory AuthState.unauthenticated() = AuthUnauthenticated;
+  const factory AuthState.error(String message) = AuthError;
 }
 ```
 
 Always place in its own file: `presentation/providers/auth_state.dart`
-Always add `part 'auth_state.freezed.dart';` — run `dart run build_runner build --delete-conflicting-outputs` after changes.
+Always add `part 'auth_state.freezed.dart';` — run `dart run build_runner build` after changes.
 
 Usage in notifier:
 ```dart
@@ -34,15 +33,15 @@ state = AuthState.authenticated(user);
 state = AuthState.error(failure.message);
 ```
 
-Usage in widget (exhaustive pattern matching — compile-time safe):
+Usage in widget (exhaustive pattern matching — adding a variant is a compile error until handled):
 ```dart
-ref.watch(authProvider).when(
-  initial:         ()      => const SplashScreen(),
-  loading:         ()      => const CircularProgressIndicator(),
-  authenticated:   (user)  => HomeScreen(user: user),
-  unauthenticated: ()      => const LoginScreen(),
-  error:           (msg)   => ErrorWidget(msg),
-);
+return switch (ref.watch(authProvider)) {
+  AuthInitial() => const SplashScreen(),
+  AuthLoading() => const CircularProgressIndicator(),
+  AuthAuthenticated(:final user) => HomeScreen(user: user),
+  AuthUnauthenticated() => const LoginScreen(),
+  AuthError(:final message) => ErrorView(message: message), // app widget
+};
 ```
 
 **Rule:** Every feature state file MUST be a separate `*_state.dart` file.
@@ -56,26 +55,42 @@ sealed class Result<T> {
   const Result();
 }
 
-class Success<T> extends Result<T> {
-  final T value;
+final class Success<T> extends Result<T> {
   const Success(this.value);
+  final T value;
 }
 
-class Failure<T> extends Result<T> {
-  final AppException error;
+final class Failure<T> extends Result<T> {
   const Failure(this.error);
+  final AppException error;
 }
 
 // Usage in repository
 Future<Result<User>> getUser(String id) async {
   try {
     final doc = await _firestore.collection('users').doc(id).get();
-    if (!doc.exists) return Failure(NotFoundException('User not found'));
+    if (!doc.exists) return const Failure(NotFoundException('User not found'));
     return Success(UserModel.fromFirestore(doc).toEntity());
   } on FirebaseException catch (e) {
     return Failure(NetworkException(e.message ?? 'Firestore error'));
   }
 }
+```
+
+Usage in provider — unwrap at the provider boundary so the UI gets an `AsyncError`:
+```dart
+@riverpod
+class UserDetail extends _$UserDetail {
+  @override
+  Future<User> build(String userId) async {
+    final result = await ref.watch(userRepositoryProvider).getUser(userId);
+    return switch (result) {
+      Success(:final value) => value,
+      Failure(:final error) => throw error,
+    };
+  }
+}
+```
 
 ## DTO → Domain Model Mapper Pattern
 
@@ -129,48 +144,35 @@ Future<Result<Property>> getProperty(String id) async {
 }
 ```
 
-// Usage in provider
-@riverpod
-class UserDetail extends _$UserDetail {
-  @override
-  FutureOr<User> build(String userId) async {
-    final result = await ref.read(userRepositoryProvider).getUser(userId);
-    return switch (result) {
-      Success(:final value) => value,
-      Failure(:final error) => throw error,
-    };
-  }
-}
-```
-
 ## Riverpod 3.x AsyncNotifier Pattern
 
 ```dart
 @riverpod
 class WorkoutList extends _$WorkoutList {
   @override
-  FutureOr<List<Workout>> build() async {
-    final repo = ref.read(workoutRepositoryProvider);
-    return repo.getWorkouts();
-  }
+  Future<List<Workout>> build() =>
+      ref.watch(workoutRepositoryProvider).getWorkouts(); // watch: rebuild if the repo changes
 
   Future<void> addWorkout(CreateWorkoutDto dto) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      await ref.read(workoutRepositoryProvider).create(dto);
-      return ref.read(workoutRepositoryProvider).getWorkouts();
+    final repo = ref.read(workoutRepositoryProvider);
+    state = const AsyncLoading(); // keeps the previous list as `value`
+    final next = await AsyncValue.guard(() async {
+      await repo.create(dto);
+      return repo.getWorkouts();
     });
+    if (!ref.mounted) return;
+    state = next;
   }
 
   Future<void> deleteWorkout(String id) async {
     // Optimistic UI: remove immediately, restore on failure
     final previous = state.value ?? [];
-    state = AsyncValue.data(previous.where((w) => w.id != id).toList());
+    state = AsyncData(previous.where((w) => w.id != id).toList());
 
     final result = await ref.read(workoutRepositoryProvider).delete(id);
     if (result case Failure(:final error)) {
-      state = AsyncValue.data(previous); // Restore on failure
-      throw error;
+      if (ref.mounted) state = AsyncData(previous); // Restore on failure
+      throw error; // the caller shows the failure (snackbar)
     }
   }
 }
@@ -194,7 +196,7 @@ Future<Result<List<Order>>> getOrders(String userId) async {
     await FirebaseCrashlytics.instance.recordError(e, stackTrace,
         reason: 'getOrders failed for user $userId');
     return Failure(e);
-  } catch (e, stackTrace) {
+  } on Object catch (e, stackTrace) {
     _logger.error('getOrders unexpected error', error: e);
     await FirebaseCrashlytics.instance.recordError(e, stackTrace,
         reason: 'getOrders unexpected error');
@@ -251,7 +253,7 @@ Initial build reads from TokenStore to determine initial state.
 
 ### Code Generation After Provider Changes
 
-Run `dart run build_runner build --delete-conflicting-outputs` after ANY
+Run `dart run build_runner build` after ANY
 provider signature or model field change. Generated `.g.dart` files
 reflect the parameter field names used in notifier methods.
 
@@ -261,23 +263,28 @@ Connect `authProvider` state changes to GoRouter redirects using `refreshListena
 ```dart
 @Riverpod(keepAlive: true)
 GoRouter appRouter(Ref ref) {
-  final notifier = _RouterNotifier();
-  ref.listen(authProvider, (_, __) => notifier.notifyListeners());
-  return GoRouter(
-    refreshListenable: notifier,
-    redirect: (context, state) {
-      final authState = ref.read(authProvider).value; // Riverpod 3: `value` (was valueOrNull)
-      final isAuthenticated = authState is AuthAuthenticated;
-      // ... redirect logic
-    },
+  final refresh = ValueNotifier(ref.read(authPhaseProvider));
+  ref.listen(authPhaseProvider, (_, next) => refresh.value = next);
+  ref.onDispose(refresh.dispose);
+
+  final router = GoRouter(
+    refreshListenable: refresh,
+    redirect: (context, state) => authRedirect(
+      ref.read(authPhaseProvider),
+      state.matchedLocation,
+    ), // decides for every phase, including "unresolved"
+    routes: appRoutes,
   );
+  ref.onDispose(router.dispose);
+  return router;
 }
-class _RouterNotifier extends ChangeNotifier {}
 ```
+
+Full compiled version with the redirect body: [flutter-templates.md](flutter-templates.md) → GoRouter Configuration. In tests and bootstrap activate it with `container.listen(appRouterProvider, ...)`: a provider that is only `read` is paused, so its own `ref.listen` never fires and `refreshListenable` never ticks.
 
 Read in `redirect` with `ref.read`, refresh with `ref.listen` → `refreshListenable`; never `ref.watch` in the router provider (it rebuilds and disposes the live router). `return null` in a redirect means "build the requested route", so never return it while a gate is still undecided — see [flutter-navigation-and-auth-boot.md](flutter-navigation-and-auth-boot.md).
 
-### Type-Safe Route Parameters (go_router 15+)
+### Type-Safe Route Parameters (go_router 18 + go_router_builder 4.5)
 
 The default `state.pathParameters['id']!` string lookup is **unsafe** — it crashes at runtime if the parameter is missing or renamed. Use typed route classes instead.
 
@@ -285,9 +292,9 @@ The default `state.pathParameters['id']!` string lookup is **unsafe** — it cra
 // lib/core/router/app_routes.dart
 import 'package:go_router/go_router.dart';
 
-// 1. Define typed route classes — one per route with path parameters
-@TypedGoRoute<ProductDetailRoute>(path: '/products/:productId')
-class ProductDetailRoute extends GoRouteData {
+// 1. Define typed route classes — one per route with path parameters.
+//    Their paths are declared once, in the tree in app_router.dart.
+class ProductDetailRoute extends GoRouteData with $ProductDetailRoute {
   const ProductDetailRoute({required this.productId});
   final String productId;
 
@@ -296,8 +303,7 @@ class ProductDetailRoute extends GoRouteData {
       ProductDetailScreen(productId: productId);
 }
 
-@TypedGoRoute<UserProfileRoute>(path: '/users/:userId')
-class UserProfileRoute extends GoRouteData {
+class UserProfileRoute extends GoRouteData with $UserProfileRoute {
   const UserProfileRoute({required this.userId});
   final String userId;
 
@@ -318,7 +324,9 @@ part 'app_router.g.dart';                    // generated by go_router_builder
     TypedGoRoute<UserProfileRoute>(path: 'users/:userId'),
   ],
 )
-class HomeRoute extends GoRouteData {
+class HomeRoute extends GoRouteData with $HomeRoute {
+  const HomeRoute();
+
   @override
   Widget build(BuildContext context, GoRouterState state) => const HomeScreen();
 }
@@ -336,13 +344,15 @@ context.go('/products/${product.id}');
 Add `go_router_builder` to `pubspec.yaml`:
 ```yaml
 dev_dependencies:
-  go_router_builder: ^4.0.0   # generates app_router.g.dart
-  build_runner: ^2.4.0
+  go_router_builder: 4.5.3    # generates app_router.g.dart (with go_router 18.1.4)
+  build_runner: 2.17.1
 ```
+
+Each route class mixes in its generated `$RouteName` mixin, which supplies `location`, `go`, `push` and `replace`. A route class without the mixin still compiles, but `go_router`'s base `location` getter throws at runtime, so navigation fails only when the route is used. Use either the nested `routes:` form or separate top-level `@TypedGoRoute` annotations for a route, not both.
 
 Run after route changes:
 ```bash
-dart run build_runner build --delete-conflicting-outputs
+dart run build_runner build
 ```
 
 **Rules:**
@@ -351,7 +361,7 @@ dart run build_runner build --delete-conflicting-outputs
 - **Rename safety** — refactor route parameter names in one place; the compiler catches all call sites
 - Place all `@TypedGoRoute` classes in `lib/core/router/app_routes.dart`
 - The generated `app_router.g.dart` sits beside `app_router.dart` — commit it to source control
-- Query parameters use `$extra` field for complex objects; primitive query params are typed fields with `@Default`
+- Query parameters are typed constructor fields (optional or with a default value); use `$extra` only for in-memory objects that never need to survive a deep link or process restart
 
 ### Correct Error State in AsyncNotifier Mutations
 
@@ -513,7 +523,7 @@ Eliminates duplicate try-catch blocks across repository implementations by centr
 // lib/core/data/mixins/remote_data_source_error_handler.dart
 
 /// Mixin providing consistent error handling for remote data sources.
-/// Pair with Result<T> from flutter-architecture-patterns.md §Result type.
+/// Pair with `Result<T>` from flutter-architecture-patterns.md §Result type.
 mixin RemoteDataSourceErrorHandler {
   /// Implementing class must declare its own name — appears in every log line.
   String get dataSourceName;
@@ -521,9 +531,9 @@ mixin RemoteDataSourceErrorHandler {
   /// Execute a remote operation with consistent error handling.
   ///
   /// Handles typed exceptions in order of specificity:
-  ///   FirebaseException → structured Crashlytics log + Failure(e)
-  ///   SocketException   → network error + Failure(e)
-  ///   Exception         → unexpected error + Failure(e)
+  ///   FirebaseException → structured Crashlytics log + Failure(NetworkException)
+  ///   SocketException   → network error + Failure(NetworkException)
+  ///   anything else     → unexpected error + Failure(UnexpectedException)
   ///
   /// [operationName] — included in every log line; make it "[method]" e.g. 'fetchById'
   Future<Result<T>> executeRemoteCall<T>(
@@ -541,7 +551,8 @@ mixin RemoteDataSourceErrorHandler {
         reason: '$dataSourceName.$operationName',
         printDetails: false,
       );
-      return Failure(e);
+      // Failure carries an AppException: map the SDK type at this boundary.
+      return Failure(NetworkException(e.message ?? e.code));
     } on SocketException catch (e, stack) {
       FirebaseCrashlytics.instance.log(
         '[$dataSourceName.$operationName] SocketException: $e',
@@ -552,7 +563,7 @@ mixin RemoteDataSourceErrorHandler {
         printDetails: false,
       );
       return Failure(NetworkException(e.message));
-    } catch (e, stack) {
+    } on Object catch (e, stack) {
       FirebaseCrashlytics.instance.log(
         '[$dataSourceName.$operationName] Unexpected: $e',
       );
@@ -582,8 +593,9 @@ mixin RemoteDataSourceErrorHandler {
         reason: '$dataSourceName.$operationName',
         printDetails: false,
       );
-      return Failure(e);
-    } catch (e, stack) {
+      // Failure carries an AppException: map the SDK type at this boundary.
+      return Failure(NetworkException(e.message ?? e.code));
+    } on Object catch (e, stack) {
       FirebaseCrashlytics.instance.log(
         '[$dataSourceName.$operationName] Unexpected: $e',
       );
@@ -656,9 +668,9 @@ Use `Notifier<T>` (not `AsyncNotifier`) when state is always available synchrono
 // features/products/presentation/providers/filter_provider.dart
 part 'filter_provider.g.dart';
 
-// 1. Define the state with freezed (sealed not required for sync value types)
+// 1. Define the state with freezed (abstract for a single-constructor class, sealed for unions)
 @freezed
-class ProductFilter with _$ProductFilter {
+abstract class ProductFilter with _$ProductFilter {
   const factory ProductFilter({
     @Default('') String query,
     @Default(SortOrder.newest) SortOrder sortOrder,
@@ -668,7 +680,8 @@ class ProductFilter with _$ProductFilter {
 
 enum SortOrder { newest, oldest, priceAsc, priceDesc }
 
-// 2. Sync notifier — extends _$FilterNotifier, returns T (not Future<T>)
+// 2. Sync notifier — extends _$FilterNotifier, returns T (not Future<T>).
+//    Generates `filterProvider`: the trailing `Notifier` is stripped.
 @riverpod
 class FilterNotifier extends _$FilterNotifier {
   @override
@@ -697,18 +710,18 @@ class FilterNotifier extends _$FilterNotifier {
 
 ```dart
 // Read current filter state reactively
-final filter = ref.watch(filterNotifierProvider);
+final filter = ref.watch(filterProvider);
 
 // Call mutations in callbacks (ref.read — not ref.watch)
 ElevatedButton(
-  onPressed: () => ref.read(filterNotifierProvider.notifier).setQuery('shoes'),
+  onPressed: () => ref.read(filterProvider.notifier).setQuery('shoes'),
   child: const Text('Filter: Shoes'),
 );
 
 // Drive a derived provider from sync state
 @riverpod
 Future<List<Product>> filteredProducts(Ref ref) async {
-  final filter = ref.watch(filterNotifierProvider);
+  final filter = ref.watch(filterProvider);
   return ref.watch(productRepositoryProvider).search(filter);
 }
 ```
@@ -764,7 +777,7 @@ final product = ref.watch(productDetailProvider('product-123'));
 product.when(
   data:    (p)     => ProductCard(product: p),
   loading: ()      => const ProductCardSkeleton(),
-  error:   (e, st) => ErrorWidget(e.toString()),
+  error:   (e, st) => ErrorView(error: e), // app widget, not Flutter's ErrorWidget
 );
 ```
 
@@ -797,7 +810,7 @@ When you need multiple parameters, use a `@freezed` data class instead of primit
 ```dart
 // lib/features/product/domain/value_objects/product_filter.dart
 @freezed
-class ProductFilter with _$ProductFilter {
+abstract class ProductFilter with _$ProductFilter {
   const factory ProductFilter({
     required String categoryId,
     @Default('') String searchQuery,
@@ -821,7 +834,7 @@ Future<List<Product>> filteredProducts(Ref ref, ProductFilter filter) async {
 ### Rules
 
 - Always use a typed parameter — never pass `dynamic` or `Map` to a family provider
-- For 2+ parameters: use a `@freezed` data class — Riverpod equality checks require `==` to be correct
+- For 2+ parameters: use a `@freezed` data class or a record — Riverpod equality checks require `==` to be correct (tested: two equal Freezed filters share one provider instance)
 - Family providers are auto-disposed when no widget watches them — this is correct; do NOT add `keepAlive: true` unless you have a specific reason
 - `ref.watch(provider(id))` in build() = reactive and auto-disposes with the widget
 - `ref.read(provider(id).notifier)` in callbacks = imperative action only
@@ -911,7 +924,7 @@ GoRouter appRouter(Ref ref) {
     // iOS: configure in Info.plist (CFBundleURLTypes + associated domains)
     // Android: configure in AndroidManifest.xml (intent-filter with scheme/host)
     routes: $appRoutes,           // generated from @TypedGoRoute classes
-    redirect: _authGuard(ref),
+    redirect: _authGuard(ref),    // plus refreshListenable: see GoRouter + Riverpod Auth Integration
     errorBuilder: (context, state) => const NotFoundScreen(),
   );
 }

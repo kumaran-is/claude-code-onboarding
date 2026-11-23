@@ -6,42 +6,83 @@ Read this when setting up or debugging a multi-package workspace, running the ap
 
 ## 1. Pub Workspaces and Melos 7+
 
-Verified against the Melos migration guide and dart.dev pub workspaces docs. Applies **if the project uses Melos ≥ 7** (Dart SDK 3.9+; the 7.x and 8.x workspace shape is the same). Older Melos used `melos.yaml` and generated `pubspec_overrides.yaml`; that shape is obsolete.
+Verified on Flutter 3.50.1 / Dart 3.14.0 with Melos 8.10.1 (five-member workspace: app, two shared packages, two feature packages; bootstrap, filters, scripts, codegen, analyze, format and tests all exit 0). Applies **if the project uses Melos ≥ 7** (the 7.x and 8.x workspace shape is the same). Older Melos used `melos.yaml` and generated `pubspec_overrides.yaml`; that shape is obsolete.
 
 ```yaml
 # ROOT pubspec.yaml
 name: my_workspace
 publish_to: none
 environment:
-  sdk: ^3.9.0
+  sdk: ^3.14.0
 workspace:
   - apps/my_app
+  - packages/shared_core
   - packages/shared_ui
-  - packages/core
 dev_dependencies:
   melos: 8.10.1     # current stable on pub.dev when written; re-check. Commit the root pubspec.lock
 
 melos:
-  # scripts / command config (what used to be in melos.yaml, minus name + packages)
+  scripts:
+    analyze:
+      exec: dart analyze --fatal-infos .
+    format:check:
+      exec: dart format --output=none --set-exit-if-changed .
+    test:flutter:
+      exec: flutter test
+      packageFilters:
+        dependsOn: flutter_test
+        dirExists: test
+    test:dart:
+      exec: dart test
+      packageFilters:
+        dependsOn: test
+        noDependsOn: flutter_test
+        dirExists: test
+    build_runner:
+      exec: dart run build_runner build
+      packageFilters:
+        dependsOn: build_runner
 ```
 
 ```yaml
 # EVERY member pubspec.yaml
 name: shared_ui
+version: 0.1.0
+publish_to: none
 environment:
-  sdk: ^3.9.0
+  sdk: ^3.14.0
 resolution: workspace
+dependencies:
+  flutter:
+    sdk: flutter
+  material_ui: 1.11.1
+```
+
+Run Melos through the workspace (`dart run melos <command>`), not a globally activated copy: the version is then pinned by the root lockfile, and a broken global install cannot affect CI. In CI pass `--no-select` to `melos run` so a script never waits for an interactive package prompt.
+
+```bash
+dart run melos bootstrap > bootstrap.log 2>&1; echo "BOOTSTRAP EXIT:$?"
+dart run melos run analyze --no-select > analyze.log 2>&1; echo "ANALYZE EXIT:$?"
+dart run melos run format:check --no-select > format.log 2>&1; echo "FORMAT EXIT:$?"
+dart run melos run build_runner --no-select > codegen.log 2>&1; echo "CODEGEN EXIT:$?"
+dart run melos run test:flutter --no-select > test_flutter.log 2>&1; echo "TEST FLUTTER EXIT:$?"
+dart run melos run test:dart --no-select > test_dart.log 2>&1; echo "TEST DART EXIT:$?"
+dart run melos list --depends-on=shared_ui          # members that consume shared_ui
+dart run melos exec --scope=shared_core -- dart analyze .
 ```
 
 | Rule | Why |
 |------|-----|
-| No `melos.yaml`; list members under root `workspace:` | Melos 7 does not read `melos.yaml`; `melos.packages` was removed |
-| Every member has `resolution: workspace` | Without it the member resolves on its own and drifts from the shared lockfile |
-| Run `melos bootstrap` at the root after any workspace change | It runs `pub get` once for the whole workspace |
-| Install from the workspace root | One shared `pubspec.lock` + `.dart_tool/package_config.json` live at the root. `flutter pub get` inside a member resolves the same workspace and also works (verified on Flutter 3.44.2), but CI and scripts should run from the root so every package sees one resolution |
+| No `melos.yaml`; list members under root `workspace:` | Melos 7+ does not read `melos.yaml`; `melos.packages` was removed |
+| Every member has `resolution: workspace` | Without it pub refuses the workspace: "is included in the workspace … but does not have `resolution: workspace`" (tested, exit 1) |
+| Every listed member must exist | A path with no pubspec fails `pub get` with "No workspace packages matching …" (tested, exit 1) |
+| One version of each package across the workspace | Two members pinning different exact versions of the same package fail version solving (tested, exit 1). Align the pin, never paper over it with an override |
+| Run `dart run melos bootstrap` at the root after any workspace change | It runs `pub get` once for the whole workspace |
+| Install from the workspace root | One shared `pubspec.lock` + `.dart_tool/package_config.json` live at the root. `flutter pub get` inside a member resolves the same workspace and also works (verified on Flutter 3.50.1), but CI and scripts should run from the root so every package sees one resolution |
 | Do not hand-write `pubspec_overrides.yaml` to link local packages | The workspace links them: depend on a member by name with a version constraint (e.g. `shared_ui: ^0.1.0`); the local copy is used and must satisfy it. No `path:` needed |
 | Globs in `workspace:` need Dart 3.11+ | On older SDKs list each path explicitly |
 | Keep application code out of the root | Root is the workspace host; use `useRootAsPackage: true` only if the root must be a package |
+| Scripts fail loudly | `analyze` with `--fatal-infos` turns a deprecated import into a failure; a planted unused variable and a planted failing test each made the script exit 1 (tested) |
 
 `dependency_overrides`: pub allows them in any member, but **a package can be overridden only once across the workspace**, so duplicates fail resolution. Keep every override in the root pubspec, with a comment saying why and when to remove it.
 
@@ -169,7 +210,8 @@ Opt in at the application level (verified, Flutter predictive-back docs):
 
 ```
 Workspace
-  □ No melos.yaml; root pubspec has workspace: list and melos config
+  □ No melos.yaml; root pubspec has workspace: list, melos config and melos as a pinned dev_dependency
+  □ Melos invoked as `dart run melos …`; CI uses `melos run <script> --no-select`
   □ Every member pubspec has resolution: workspace
   □ dependency_overrides only in the root pubspec, each with a reason
   □ flutter analyze run for every app after any shared-package change

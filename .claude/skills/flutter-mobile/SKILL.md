@@ -1,6 +1,6 @@
 ---
 name: flutter-mobile
-description: This skill provides patterns and templates for Flutter 3.41.x / Dart 3.10.9 cross-platform mobile development. It should be activated when building Flutter screens, Riverpod providers, Freezed models, or widget tests.
+description: This skill provides patterns and templates for Flutter 3.50.x / Dart 3.14.0 cross-platform mobile development. It should be activated when building Flutter screens, Riverpod providers, Freezed models, or widget tests.
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Flutter, Dart, Riverpod, Flutter widget, Flutter app, mobile development, iOS, Android, cross-platform mobile, Flutter screen
@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -25,30 +25,39 @@ last-reviewed: "2026-03-14"
 - Use `freezed` for immutable models
 - Firebase integration via `firebase_core`, `cloud_firestore`, `firebase_auth`
 
+## SDK Baseline and Material Imports
+
+Verified on Flutter 3.50.1 / Dart 3.14.0. Since Flutter 3.47, `package:flutter/material.dart` and `package:flutter/cupertino.dart` are deprecated: import `package:material_ui/material_ui.dart` (and `package:cupertino_ui/cupertino_ui.dart` when you use Cupertino widgets), pinned exactly (`material_ui: 1.11.1`, `cupertino_ui: 1.1.7`). A legacy import is a `deprecated_member_use` info, so `flutter analyze` is no longer zero-issue.
+
+- Migrate existing code with `dart fix --apply --code=migrate_design_widgets`, then replace the `material_ui: any` it adds with the exact pin. Keep `uses-material-design: true`.
+- `material_ui` holds its own copies of the classes, so a legacy `ThemeData`/`TextField` is a different type. Under a `material_ui` `MaterialApp`, a plugin still built on `flutter/material.dart` sees the default light theme and its text fields throw "No Material widget found". Wrap only that plugin's subtree in one host file: `MaterialUiCompatibilityBridge(child: legacy.Material(type: legacy.MaterialType.transparency, child: …))` with the legacy import prefixed `as legacy` and the `deprecated_member_use` ignores in that file only.
+- Localizations: use `GlobalMaterialLocalizations.delegates` from `material_ui`; importing `flutter_localizations` unprefixed alongside it is an `ambiguous_import` error.
+- go_router 18 needs the `material_ui` `MaterialApp.router`; under a legacy `MaterialApp` it falls back to non-Material page transitions.
+
 ## Quick Scaffold
 
+New apps come from `/scaffold-flutter-app` (raw `flutter create` is blocked by a hook outside the scaffold command). Adding dependencies to an existing app:
+
 ```bash
-flutter create --org com.company --platforms ios,android my_app
-cd my_app
+# Exact pins: look each version up on pub.dev, then resolve them together
+flutter pub add material_ui:1.11.1 flutter_riverpod:3.5.0 riverpod_annotation:4.0.8
+flutter pub add freezed_annotation:3.1.0 json_annotation:4.12.0 go_router:18.1.4 dio:5.11.1
+flutter pub add dev:riverpod_generator:4.0.10 dev:freezed:4.0.3 dev:json_serializable:6.15.2 dev:build_runner:2.17.1 dev:mocktail:1.0.5
 
-# Add core dependencies
-flutter pub add flutter_riverpod riverpod_annotation
-flutter pub add freezed_annotation json_annotation go_router firebase_core cloud_firestore firebase_auth
-flutter pub add dio
-flutter pub add dev:riverpod_generator dev:freezed dev:json_serializable dev:build_runner dev:mocktail
-
-# Run code generation
-dart run build_runner build --delete-conflicting-outputs
+# Run code generation (build_runner 2.16.2+ removed --delete-conflicting-outputs; passing it only prints a warning)
+dart run build_runner build
 ```
+
+Versions were the latest stable on pub.dev in November 2026 and resolve together on Flutter 3.50.1; re-check before pinning. Firebase pins: `flutter-templates.md`. Mockito codegen conflicts with this set: mockito 5.8.1 needs `build <5` while build_runner 2.17.1 needs `build 5.0.x`, so `pub get` fails; a project that generates mocks with mockito pins build_runner 2.16.2 (2.17.0 is retracted). mocktail needs no codegen and has no conflict.
 
 ## Melos Workspace Commands
 
-In a Melos monorepo, use these commands at the workspace root:
-- `melos bootstrap` — installs all Flutter workspace dependencies (run at the root; a member-level `flutter pub get` resolves the same workspace, so root is the convention, not a hard requirement)
-- `melos run test` — runs tests across all packages
-- `melos run build_runner` — runs code generation across all packages
+In a Melos monorepo, run Melos through the workspace (a pinned root dev_dependency) at the workspace root:
+- `dart run melos bootstrap` — installs all workspace dependencies (run at the root; a member-level `flutter pub get` resolves the same workspace, so root is the convention, not a hard requirement)
+- `dart run melos run test:flutter --no-select` / `test:dart` — runs tests across the matching packages
+- `dart run melos run build_runner --no-select` — runs code generation across all packages
 
-Melos 7+ uses Dart pub workspaces (root `workspace:` list, `resolution: workspace` in every member, no `melos.yaml`). Setup, local-backend run targets and Gradle/isolate traps: [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md).
+Melos 7+ uses Dart pub workspaces (root `workspace:` list, `resolution: workspace` in every member, no `melos.yaml`). Setup, scripts, local-backend run targets and Gradle/isolate traps: [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md).
 
 ## Shared Packages (monorepo pattern)
 
@@ -81,7 +90,7 @@ Before creating or modifying any widget, screen, or visual component:
 3. **Define models** - Create Freezed data models in `data/models/` with Firestore serialization
 4. **Build providers** - Create Riverpod notifiers with `@riverpod` annotation in `presentation/providers/`
 5. **Design screens** - Build `ConsumerWidget` screens that watch `AsyncValue<T>` providers
-6. **Run codegen** - Execute `dart run build_runner build --delete-conflicting-outputs`
+6. **Run codegen** - Execute `dart run build_runner build`
 7. **Write tests** - Create widget tests with `ProviderScope` overrides
 
 ## Key Patterns
@@ -120,9 +129,9 @@ Read [reference/flutter-use-case-layer.md](reference/flutter-use-case-layer.md) 
 | A test is green but untrusted, flaky suites, golden determinism, red gates, choosing validations per change type | [reference/flutter-testing-traps.md](reference/flutter-testing-traps.md) |
 | Maestro flows, `integration_test` vs Maestro, device/simulator prep, deep-link and push testing | [reference/flutter-e2e-maestro.md](reference/flutter-e2e-maestro.md) |
 | UI copy, ARB keys, plurals, second language, locale/date/currency formats | [reference/flutter-localization.md](reference/flutter-localization.md) |
-| Workspace setup (Melos 7+), local-backend run targets, Gradle memory, signed upload URLs, `Isolate.run` | [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md) |
+| Workspace setup (Melos 7+, `dart run melos`), local-backend run targets, Gradle memory, signed upload URLs, `Isolate.run` | [reference/flutter-build-and-workspace.md](reference/flutter-build-and-workspace.md) |
 | What may live in the app binary, debug/test gates, local DB encryption, fail-closed security settings | [reference/flutter-security-client-trust.md](reference/flutter-security-client-trust.md) |
-| iOS/Android native config, UIScene, cleartext/local-network, platform traps | [reference/flutter-platform-gotchas.md](reference/flutter-platform-gotchas.md) |
+| iOS/Android native config and toolchain floors (Gradle/AGP/Kotlin, SDK levels, iOS 15, SwiftPM), UIScene, cleartext/local-network, platform traps | [reference/flutter-platform-gotchas.md](reference/flutter-platform-gotchas.md) |
 
 ## Documentation Sources
 
@@ -217,11 +226,11 @@ Conventions, `integration_test` vs Maestro, and iOS/Android divergences: [refere
 ```bash
 flutter run                          # Run on connected device/emulator
 flutter test                         # Run tests
-flutter build apk                    # Build Android APK
-flutter build ios                    # Build iOS (also generates Xcode project)
+flutter build apk --debug            # Build Android APK
+flutter build ios --simulator        # Build iOS for the simulator (also generates the Xcode project)
 flutter pub get                      # Install dependencies
 flutter clean                        # Clean build artifacts
-dart run build_runner build --delete-conflicting-outputs  # Run code generation
+dart run build_runner build          # Run code generation
 flutter analyze                      # Static analysis
 ```
 
@@ -233,7 +242,7 @@ flutter analyze                      # Static analysis
 
 **Provider not found**: Run `dart run build_runner build`, import generated `.g.dart` file
 
-**Firestore Timestamp errors**: Use `(data['createdAt'] as Timestamp).toDate()` in `fromFirestore`
+**Firestore Timestamp errors**: Use `(data['createdAt'] as Timestamp).toDate().toUtc()` (`toDate()` returns local time) in `fromFirestore`
 
 **Hot reload breaks state**: Restart app fully when changing provider signatures
 
@@ -291,7 +300,7 @@ Widget build(BuildContext context) {
 
 Rule: Use sealed classes + `switch` expressions for any state with 3+ mutually exclusive cases. Applies to: UI state, network state, auth state, form state.
 
-Applies to: Flutter 3.41.x / Dart 3.10.9+ (sealed classes require Dart 3.0+)
+Applies to: Flutter 3.50.x / Dart 3.14.0 (sealed classes require Dart 3.0+)
 
 ## State Management Quick Reference
 

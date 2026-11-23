@@ -65,14 +65,50 @@ What to require from the API (agree this in the contract, not in the app):
 | **Permanent** | 4xx validation / conflict / forbidden | `failed`; keep payload and optimistic data; show an actionable message |
 | **Unexpected throw** in a handler | bug | count as server transient — a bug must not loop silently and must not be dropped |
 
+With Dio 5.11.1 (failure classes from [flutter-offline-sync.md](flutter-offline-sync.md) §2; the switch is exhaustive, so a new `DioExceptionType` breaks the build instead of falling through):
+
 ```dart
-FailureClass classify(Object error) => switch (error) {
-  final HttpResponseError e when e.status == 429 || e.status >= 500 => FailureClass.serverTransient,
-  final HttpResponseError _ => FailureClass.permanent,
-  _ when isNoResponseError(error) => FailureClass.transport, // timeouts, socket/DNS drops
-  _ => FailureClass.serverTransient,
-};
+/// The ONE place that turns an HTTP error into a sync failure class.
+SyncFailure classifyDioError(DioException e) {
+  final status = e.response?.statusCode;
+  return switch (e.type) {
+    DioExceptionType.badResponse when status == 409 => ConflictFailure(
+      (e.response?.data as Map?)?.cast<String, Object?>() ?? const {},
+    ),
+    DioExceptionType.badResponse
+        when status != null && (status == 429 || status >= 500) =>
+      ServerTransientFailure(status, 'HTTP $status'),
+    DioExceptionType.badResponse => PermanentFailure(
+      status ?? 0,
+      'HTTP $status',
+    ),
+    // No server answer: keep pending, do not count.
+    DioExceptionType.connectionTimeout ||
+    DioExceptionType.sendTimeout ||
+    DioExceptionType.receiveTimeout ||
+    DioExceptionType.connectionError ||
+    DioExceptionType.cancel => TransportFailure(e.type.name),
+    // A TLS/pinning failure is not the op's fault: keep it pending and alert, never mark it failed.
+    DioExceptionType.badCertificate => TransportFailure('bad certificate'),
+    // dio 5.10+: the server answered but decoding the body timed out. Counted; the
+    // idempotency key makes the replay safe.
+    DioExceptionType.transformTimeout => const ServerTransientFailure(
+      0,
+      'transform timeout',
+    ),
+    // dio wraps some socket drops as `unknown`.
+    DioExceptionType.unknown
+        when e.error is SocketException || e.error is HttpException =>
+      TransportFailure('${e.error.runtimeType}'),
+    DioExceptionType.unknown => ServerTransientFailure(
+      0,
+      'unexpected: ${e.error.runtimeType}',
+    ),
+  };
+}
 ```
+
+Prove the mapping with a real dropped socket (§12): a mocked `DioException` only tests the switch, not how Dio reports the drop.
 
 **Retry window, not retry count.** Measure from the first server-answered failure (e.g. 72 hours — a product decision, make it a parameter). Transport failures never start or advance it.
 
@@ -153,7 +189,61 @@ Wiping local data on "login failed" or "role fetch failed" deletes every queued 
 ## 10. Background execution: foreground drain is the contract
 
 - Foreground sync (app open, connectivity regained, after enqueue) is what you promise users. Background draining is a bonus.
-- Android WorkManager periodic work has a **15-minute minimum interval** (Android docs, "define work"; verified 2026-11-21) and runs when the system allows. `workmanager` 0.10.10 is current on pub.dev (checked 2026-11-21).
+- Android WorkManager periodic work has a **15-minute minimum interval** (Android docs, "define work") and runs when the system allows. With `workmanager` 0.10.10 the background drain opens its own encrypted connection (the lease in §6 makes that safe) and never mints a key:
+
+```dart
+const drainTask = 'offline-queue-drain';
+
+/// Top-level and kept by the AOT compiler: WorkManager starts it in a new engine.
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    final userId = inputData?['userId'];
+    if (task != drainTask || userId is! String) return true;
+    final key = await const DatabaseKeyStore(
+      FlutterSecureStorage(),
+    ).existingKeyFor(userId);
+    if (key == null) return true; // signed out or never opened: nothing to drain
+    final db = openUserDatabase(userId: userId, hexKey: key);
+    try {
+      await SyncManager(
+        DriftQueueStore(db),
+        buildRemoteDataSource(), // app-provided: same client + timeouts as foreground
+        isOnlineHint: () => true, // WorkManager's network constraint already holds
+        ownerUserId: () => userId,
+      ).drain();
+      return true;
+    } finally {
+      await db.close();
+    }
+  });
+}
+
+Future<void> scheduleBackgroundDrain(String userId) async {
+  await Workmanager().initialize(callbackDispatcher);
+  await Workmanager().registerPeriodicTask(
+    'drain-$userId',
+    drainTask,
+    frequency: const Duration(minutes: 15), // Android minimum
+    inputData: {'userId': userId},
+    constraints: Constraints(networkType: NetworkType.connected),
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+  );
+}
+```
+
+  `DatabaseKeyStore`, `openUserDatabase` and `DriftQueueStore` are the app's own (encryption section of [flutter-offline-sync.md](flutter-offline-sync.md)). On Flutter 3.50.1 `flutter build apk` succeeds but warns that `workmanager_android` still applies the Kotlin Gradle plugin and that future Flutter versions will fail such builds; track the plugin's built-in-Kotlin migration before upgrading Flutter.
+- Feed the connectivity hint from `connectivity_plus` 7.3.2, which reports a list of interfaces:
+
+```dart
+/// "none" alone means offline. A hint only: a captive portal or a dead backend still looks online.
+bool isOnlineHint(List<ConnectivityResult> results) =>
+    results.any((r) => r != ConnectivityResult.none);
+
+/// Drain when an interface comes back; feed the same value to SyncManager's isOnlineHint.
+Stream<bool> onlineHints(Connectivity connectivity) =>
+    connectivity.onConnectivityChanged.map(isOnlineHint).distinct();
+```
 - iOS: BGTaskScheduler only runs identifiers declared under `BGTaskSchedulerPermittedIdentifiers` in `Info.plist`, at the system's discretion. If you have not configured it, do not register a task; drain in the foreground only. (Apple docs render with JavaScript and could not be fetched here — verify with the `BGTaskScheduler` documentation before relying on details.)
 - UI copy: "Will sync when you reopen the app" — never "will upload in the background".
 - Web: degrade gracefully behind the same queue/stream contract (no background tasks, possibly no encryption). Wrap each native init step (database, encryption, push token, path provider) in its own `try/catch` so the load-bearing action still runs.
@@ -178,6 +268,14 @@ Wiping local data on "login failed" or "role fetch failed" deletes every queued 
 - Every fix ships with a positive control: revert the fix, watch the named test fail.
 - Do not pump a live database `.watch()` stream inside a widget test (it leaks a pending timer): override the stream provider with a plain stream or a `Completer`-based "loading" and use an in-memory database for one-shot actions. Override the connectivity provider; never touch the real plugin channel.
 - Run tests of a shared package serially if parallel runs contend on the build lock.
+- **Drift + encryption tests run on the host with the real native library** (`flutter test` runs the `sqlite3` build hook): use `NativeDatabase.memory()` for logic and `NativeDatabase.createInBackground(file, setup: ...)` with the cipher setup for file tests. Minimum set, each with a positive control:
+  - CRUD in a transaction; a throwing local write rolls back the queue row too (control: drop the `transaction` wrapper ⇒ test fails).
+  - Idempotency key identical across two failures and a new engine on the same file (control: rebuild the key when reading rows ⇒ fails).
+  - 4xx ⇒ `failed` with payload kept; retry-window exhaustion with an injected clock ⇒ `failed`; 409 ⇒ server row applied and op deleted together; offline hint or signed-out ⇒ no dispatch.
+  - Migration: the generated `SchemaVerifier` test migrates every old version and compares row data (control: delete the `addColumn` step ⇒ fails).
+  - Encryption: `PRAGMA cipher` returns a row; the file header is not `SQLite format 3` and contains no plaintext; wrong key and no key fail with "file is not a database"; an existing plaintext file is refused; `PRAGMA integrity_check` is `ok`; separate file and key per user.
+  - Fail closed without a cipher: in a build without the `sqlite3mc` user-define the cipher test must fail and the open must throw `EncryptionUnavailableException` (control: remove the guard ⇒ plaintext open succeeds and the test fails).
+- On-device proof is Maestro on the iOS simulator / Android emulator (a screen that opens the encrypted database and shows the cipher name); host tests do not prove the mobile binary bundled the cipher build.
 
 ## 13. Offline review checklist
 
@@ -207,5 +305,6 @@ Use for any change touching a cache, queue, upload, sync, connectivity, or offli
 22. Sync UI: per-item state, waiting-to-sync list, stalled state, banner mounted once, honest background copy, localized.
 23. Foreground drain is the contract; background tasks configured or skipped; offline data excluded from OS backup; key in secure storage.
 24. Tests: fake clock, crash-injection rows, real socket drop, positive controls; analyzer and full suite run and reported.
+25. Encrypted store: `hooks.user_defines.sqlite3.source: sqlite3mc` (no `sqlite3_flutter_libs`/`sqlcipher_flutter_libs`); cipher guard fails closed; per-user key and file; key never logged, hardcoded or derived from credentials.
 
 An optional cheap guard (advisory hook, hard-fail in CI): flag direct HTTP-client imports or API-class construction in UI-layer files, and wipe calls inside `catch` blocks. Grep cannot see a client reached through a barrel import or a provider — keep the checklist item 14 as a human review item and allow an inline `// online-only: <reason>` exemption.

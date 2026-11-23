@@ -2,7 +2,7 @@
 
 Read this before adding UI copy, a second language, an ARB key, a plural/gender string, a date/number/currency format, or a language switcher. It covers the string-catalogue layer (`flutter gen-l10n` + ARB). Visual resilience to long text (200% scale, RTL, wrapping) lives in [accessibility-audit-checklist.md](accessibility-audit-checklist.md) and [flutter-design-polish.md](flutter-design-polish.md).
 
-Default choice: the SDK's `flutter_localizations` + `gen-l10n` + ARB files. They generate type-safe accessors from the same `intl` ecosystem used for dates and numbers. Avoid third-party `.tr()`-style string-key packages unless the project already standardises on one (they fragment the formatting story).
+Default choice: the SDK's `gen-l10n` + ARB files, wired through `material_ui`'s localization delegates. Verified on Flutter 3.50.1 with `material_ui` 1.11.1 and `intl` 0.20.3. They generate type-safe accessors from the same `intl` ecosystem used for dates and numbers. Avoid third-party `.tr()`-style string-key packages unless the project already standardises on one (they fragment the formatting story).
 
 ## 1. Setup
 
@@ -10,11 +10,20 @@ Default choice: the SDK's `flutter_localizations` + `gen-l10n` + ARB files. They
 
 ```yaml
 dependencies:
-  flutter_localizations:
+  flutter_localizations:   # still required: the gen-l10n output imports it
     sdk: flutter
-  intl: any   # version is pinned by the Flutter SDK constraint — do not override
+  material_ui: 1.11.1      # provides GlobalMaterialLocalizations for the app
+  intl: 0.20.3             # flutter_localizations requires ^0.20.3; pin the resolved version
 flutter:
   generate: true
+```
+
+`analysis_options.yaml` — the generated file still references the deprecated `flutter_localizations` delegates, which fails a zero-issue `flutter analyze` (2 `deprecated_member_use` infos) unless excluded:
+
+```yaml
+analyzer:
+  exclude:
+    - lib/l10n/app_localizations*.dart   # gen-l10n output
 ```
 
 `l10n.yaml` (next to `pubspec.yaml`; options verified against docs.flutter.dev/ui/internationalization):
@@ -27,15 +36,21 @@ output-class: AppLocalizations
 untranslated-messages-file: build/untranslated_messages.json   # report gaps instead of only printing them
 ```
 
-Wire into the root app widget:
+Wire into the root app widget (`import 'package:material_ui/material_ui.dart';`):
 
 ```dart
 MaterialApp(
-  localizationsDelegates: AppLocalizations.localizationsDelegates,
+  localizationsDelegates: const [
+    AppLocalizations.delegate,
+    ...GlobalMaterialLocalizations.delegates, // material_ui: widgets + material + cupertino
+  ],
   supportedLocales: AppLocalizations.supportedLocales,
   locale: selectedLocale, // null = follow the device locale
 )
 ```
+
+- Do **not** pass `AppLocalizations.localizationsDelegates`: it lists the legacy `flutter_localizations` delegates, which a `material_ui` app does not use. A non-English locale then fails with "A MaterialLocalizations delegate that supports the es locale was not found" (tested).
+- Do not import `package:flutter_localizations/flutter_localizations.dart` in app code next to `material_ui`: both export `GlobalMaterialLocalizations` and the unprefixed name is an `ambiguous_import` error.
 
 Generated files are build output: regenerate with `flutter gen-l10n` (or any build) after editing ARB files, and after merging branches. A stale generated file compiles against old strings.
 
@@ -118,10 +133,17 @@ Set<String> _keys(Map<String, dynamic> arb) =>
 
 void main() {
   test('every ARB file has the template keys', () {
-    final dir = Directory('lib/l10n');
-    final template =
-        jsonDecode(File('lib/l10n/app_en.arb').readAsStringSync()) as Map<String, dynamic>;
-    for (final f in dir.listSync().whereType<File>().where((f) => f.path.endsWith('.arb'))) {
+    final template = jsonDecode(
+      File('lib/l10n/app_en.arb').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final files = Directory('lib/l10n')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.arb'))
+        .toList();
+    // Positive control: a wrong directory must not pass with zero files.
+    expect(files, hasLength(2), reason: 'update when a locale is added');
+    for (final f in files) {
       final arb = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
       expect(_keys(arb), _keys(template), reason: f.path);
     }
@@ -145,12 +167,17 @@ Extend it to compare `{placeholder}` sets per key if translations are edited by 
 
 ```dart
 testWidgets('shows the Spanish CTA', (tester) async {
-  await tester.pumpWidget(const MaterialApp(
-    localizationsDelegates: AppLocalizations.localizationsDelegates,
-    supportedLocales: AppLocalizations.supportedLocales,
-    locale: Locale('es'),
-    home: SignInScreen(),
-  ));
+  await tester.pumpWidget(
+    const MaterialApp( // material_ui
+      localizationsDelegates: [
+        AppLocalizations.delegate,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: Locale('es'),
+      home: SignInScreen(),
+    ),
+  );
   await tester.pumpAndSettle();
   final l10n = AppLocalizations.of(tester.element(find.byType(SignInScreen)))!;
   expect(find.text(l10n.signInButton), findsOneWidget);
@@ -158,6 +185,7 @@ testWidgets('shows the Spanish CTA', (tester) async {
 ```
 
 - Assert through the generated accessor, not a raw English literal.
+- Use the same delegate list as the app. A test that wires the legacy list against a `material_ui` app fails on the first non-English locale, so a test running only `en` hides the mistake.
 - Layout tests need the longest translation, a phone-sized surface and a check that no overflow exception was thrown; widget tests use a test font, so confirm reflow on a device. See [flutter-testing-traps.md](flutter-testing-traps.md).
 - A helper that expands a section by its English heading fails in another locale; key such helpers on the locale under test.
 - Tests that pump a widget needing a shared-package catalogue must register that package's delegate, or the widget crashes with a null check on `of(context)`.

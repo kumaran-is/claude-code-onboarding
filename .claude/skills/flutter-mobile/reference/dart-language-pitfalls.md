@@ -1,7 +1,56 @@
 # Dart Language Pitfalls
 
-Common Dart mistakes and the correct patterns — specific to Dart 3.10.9+ / Flutter 3.41.x+.
+Common Dart mistakes and the correct patterns — verified on Dart 3.14.0 / Flutter 3.50.1. Language features are gated by the package's `environment: sdk:` lower bound, not by the installed SDK (see §0).
 These are language-level issues distinct from Flutter widget, architecture, or test patterns.
+
+---
+
+## 0. Newer Language Features and Their SDK Floors
+
+The analyzer enables a feature only when the package's minimum SDK constraint reaches its language version; below that it reports `experiment_not_enabled` (tested on Dart 3.14.0 with `// @dart=` overrides from 3.9 to 3.14).
+
+| Feature | Minimum `sdk:` lower bound | Use |
+|---------|----------------------------|-----|
+| Dot shorthands (`.idle`, `.origin()`, `const Point p = .origin()`) | 3.10 | ADOPT where the context type is obvious (enum `switch` arms, typed parameters); keep the type name when it aids reading |
+| Null-aware collection elements (`[base, ?extra]`) | 3.8 | ADOPT instead of `if (extra != null) extra` |
+| Private named parameters (`A({required this._id})`, caller passes `id:`) | 3.12 | OPTIONAL: removes the public-field-plus-initializer boilerplate |
+| Primary constructors (`class Money(final int cents, final String currency);`) | 3.13 | OPTIONAL for small value types; Freezed stays the default for models that need `copyWith`, equality and JSON |
+
+```dart
+enum Status { idle, loading, done }
+
+class Point {
+  const Point(this.x, this.y);
+  const Point.origin() : x = 0, y = 0;
+  final int x;
+  final int y;
+}
+
+class Money(final int cents, final String currency);
+
+class Account {
+  Account({required this._id});
+  final String _id;
+  String get id => _id;
+}
+
+Status next(Status s) => switch (s) {
+  .idle => .loading,
+  .loading => .done,
+  .done => .done,
+};
+
+List<String> tags(String? extra) => ['base', ?extra];
+
+void main() {
+  const Point origin = .origin();
+  final money = Money(250, 'EUR');
+  final account = Account(id: 'a1');
+  print('${next(.idle)} ${tags(null)} ${origin.x} ${money.cents} ${account.id}');
+}
+```
+
+Rule: a package that uses any of these must declare `environment: sdk: ^3.14.0` (or at least the floor in the table); shared packages in a workspace use the same lower bound as the apps.
 
 ---
 
@@ -116,7 +165,7 @@ final coords = getCoordinates();
 final lat = coords['lat'] as double;
 ```
 
-### Rule — use Dart 3 records (Dart 3.10.9+ / Flutter 3.41.x+)
+### Rule — use Dart 3 records (Dart 3.0+)
 
 ```dart
 // GOOD: positional record
@@ -237,7 +286,7 @@ final summary = "Cart total: \$${cart.total.toStringAsFixed(2)}";
 
 ### Anti-pattern
 ```dart
-// BAD: verbose, outdated syntax
+// BAD: outdated syntax. `List()` no longer compiles (no unnamed constructor since null safety)
 final names = new List<String>();
 final lookup = new Map<String, int>();
 final ids = new Set<String>();

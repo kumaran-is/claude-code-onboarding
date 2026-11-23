@@ -69,7 +69,7 @@ Future<void> refresh() async {
 - Every schema bump commits a schema snapshot and a **per-hop upgrade test** that (a) keeps queued/user rows and (b) leaves the database usable. Add a **chained-upgrade test** from the oldest supported version — per-hop tests alone do not prove the whole path.
 - Set a busy timeout when more than one connection can open the file.
 - **Dates:** many stores read a stored epoch back as local time, so `==` against a UTC literal fails for the same instant. Compare instants (`isAtSameMomentAs`, `isAfter`, `difference`), at the precision the store keeps — for last-write-wins and staleness checks.
-- If you use Drift, its docs describe schema export/verification tooling for migration tests; verify the current commands against the Drift documentation for your pinned version.
+- With Drift, `dart run drift_dev make-migrations` writes the schema snapshot, the `stepByStep` helper and a `SchemaVerifier` data-preservation test per version; setup in [flutter-offline-sync.md](flutter-offline-sync.md) ("Migrations with Drift").
 
 ## 6. Account isolation and sign-out with pending changes
 
@@ -97,7 +97,7 @@ Rules:
 - A guard failure **fails closed**: stay signed in and say so. The only "proceed" case is a typed "queue unavailable" meaning the database never opened this session; if database files exist but are unreadable, ask "Discard unreadable changes?".
 - Never move the queue to a post-logout store; never silently extend the budget.
 - The wipe is destructive and reachable only from a real sign-out ([flutter-offline-reliability.md](flutter-offline-reliability.md) §8): delete the database **file** (not `DELETE FROM`), destroy the key, delete media directories (upload staging and download cache).
-- Encrypt at rest when the cache holds personal data; keep the key in secure storage only, generated on first launch, never derived from credentials; a key/database mismatch ⇒ drop the cache and refetch.
+- Encrypt at rest when the cache holds personal data; keep the key in secure storage only, generated on first launch, never derived from credentials; a key/database mismatch ⇒ drop the cache and refetch (never the queue silently: run the pending-changes guard). Setup (SQLite3MultipleCiphers via the `sqlite3` build hook, fail-closed cipher guard, one file and key per user): [flutter-offline-sync.md](flutter-offline-sync.md) ("Encryption at rest").
 
 ## 7. Keep offline data out of OS backups
 

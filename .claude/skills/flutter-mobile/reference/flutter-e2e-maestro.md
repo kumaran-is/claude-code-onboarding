@@ -6,6 +6,9 @@ Read this before writing or running a Maestro flow, choosing between `integratio
 an emulator/simulator for E2E, or testing deep links and push notifications on a simulator. Unit/widget/golden traps are in
 [flutter-testing-traps.md](flutter-testing-traps.md). Maestro behaviours below were checked against docs.maestro.dev and
 Maestro CLI 2.11.0 (`maestro test --help`) — re-check after upgrades with the Maestro MCP `cheat_sheet` tool.
+Run on Flutter 3.50.1 (2026-11-23): a debug build with `appId: ${APP_ID}`, `-e APP_ID=<id>` and
+`--format junit --output report.xml` passed on an iPhone 17 simulator (iOS 26.4) and an Android 36.1 emulator
+(Google Play image, arm64) and exited 1 on a deliberately wrong `assertVisible`; tested on both platforms.
 
 ## 1. Which tier proves what
 
@@ -53,8 +56,12 @@ Black-box E2E needs a debug-only seam (an auth bypass, a seeded backend, test de
 
 - A stale older build with the same URL scheme on the simulator can capture links: if deep-link flows are red on a screen that looks
   like another app, list installed apps (`xcrun simctl listapps <udid>`) and uninstall stale ones before blaming code.
-- An iOS build may rewrite lockfile metadata (e.g. the CocoaPods version stamp in `Podfile.lock`); revert it before committing.
-- Pin and document the emulator API level your Maestro version supports; drivers and API levels move together (one 2.2.x driver failed before the first command on a newer API).
+- Flutter 3.50 builds iOS plugins with Swift Package Manager by default; only CocoaPods-only plugins still add a `Podfile`.
+  When one exists, an iOS build may rewrite its metadata (e.g. the CocoaPods version stamp in `Podfile.lock`); revert it before committing.
+- Pin and document the emulator API level your Maestro version supports; drivers and API levels move together (one 2.2.x driver
+  failed before the first command on a newer API; Maestro 2.11.0 drove API 36.1). An emulator whose `/data` is full fails
+  `adb install` with `INSTALL_FAILED_INSUFFICIENT_STORAGE`: give the test AVD a larger `-partition-size` or a fresh AVD rather
+  than reporting the flow red.
 
 ## 4. Flow conventions
 

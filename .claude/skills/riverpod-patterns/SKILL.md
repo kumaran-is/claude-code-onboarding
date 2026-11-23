@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-11-21"
 ---
 
-**Iron Law:** Always use the correct Riverpod provider type for the use case; never use StateProvider for async data or FutureProvider for mutable state.
+## Iron Law
+
+Always use the correct Riverpod provider type for the use case; never use StateProvider for async data or FutureProvider for mutable state.
 
 # Riverpod Patterns
 

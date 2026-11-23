@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Never generate an OpenAPI spec without running it through a validator; always produce machine-parseable YAML/JSON, not prose descriptions.
+## Iron Law
+
+Never generate an OpenAPI spec without running it through a validator; always produce machine-parseable YAML/JSON, not prose descriptions.
 
 # OpenAPI Spec Generation
 

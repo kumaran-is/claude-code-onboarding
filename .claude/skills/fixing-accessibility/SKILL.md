@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Fix only the reported violation. Never refactor unrelated code during an accessibility fix. Prefer native HTML or widget semantics over ARIA workarounds.
+## Iron Law
+
+Fix only the reported violation. Never refactor unrelated code during an accessibility fix. Prefer native HTML or widget semantics over ARIA workarounds.
 
 # Fixing Accessibility
 

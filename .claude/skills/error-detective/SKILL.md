@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** Never state a root cause without log evidence at file:line — hypothesis and confirmed cause are different things.
+## Iron Law
+
+Never state a root cause without log evidence at file:line — hypothesis and confirmed cause are different things.
 
 # Error Detective
 

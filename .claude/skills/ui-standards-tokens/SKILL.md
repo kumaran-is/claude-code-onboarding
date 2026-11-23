@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Never use raw color hex values, spacing literals, or inline TextStyles — always reference design tokens; run /lint-design-system before any UI PR.
+## Iron Law
+
+Never use raw color hex values, spacing literals, or inline TextStyles — always reference design tokens; run /lint-design-system before any UI PR.
 
 **Iron Law 2 (token SSOT):** Each token family (`AppSpacing`, `AppRadius`, `AppSize`, `AppOpacity`, `AppShadows`) has exactly ONE canonical scale. Never introduce a parallel "legacy" scale alongside the canonical one (e.g. a numeric `space1..space16` series next to a t-shirt `xs..xxl` series). Migrate callers and delete the old scale in one PR — never use `@Deprecated` to defer the migration.
 

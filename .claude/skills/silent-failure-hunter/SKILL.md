@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** An empty catch block is not error handling — it is a lie to the operator. Every catch must log AND rethrow or return an error state.
+## Iron Law
+
+An empty catch block is not error handling — it is a lie to the operator. Every catch must log AND rethrow or return an error state.
 
 # Silent Failure Hunter
 

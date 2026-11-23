@@ -13,7 +13,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Never register a domain without verifying availability via live lookup; never suggest a domain based on pattern-matching alone.
+## Iron Law
+
+Never register a domain without verifying availability via live lookup; never suggest a domain based on pattern-matching alone.
 
 # Domain Finder Skill
 

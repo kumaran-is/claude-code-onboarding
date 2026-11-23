@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** Load `writing-skills/references/skill-authoring-spec.md` before reviewing any skill — never assess skill quality from memory.
+## Iron Law
+
+Load `writing-skills/references/skill-authoring-spec.md` before reviewing any skill — never assess skill quality from memory.
 
 # Skill Reviewer
 

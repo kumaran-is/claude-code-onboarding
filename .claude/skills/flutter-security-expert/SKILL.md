@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** Load `flutter-mobile/reference/flutter-security-hardening.md` (and `flutter-security-client-trust.md` for secrets/debug-gate/fail-closed checks) before auditing — never assess mobile security from memory.
+## Iron Law
+
+Load `flutter-mobile/reference/flutter-security-hardening.md` (and `flutter-security-client-trust.md` for secrets/debug-gate/fail-closed checks) before auditing — never assess mobile security from memory.
 
 # Flutter Security Expert
 

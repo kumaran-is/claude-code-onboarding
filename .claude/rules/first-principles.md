@@ -113,8 +113,9 @@ After any refactor:
 **No unsolicited documentation.**
 Never create `.md` files, reports, READMEs, diagrams, or summaries unless the human
 explicitly asks for them. Proactively generating docs no one requested is scope creep.
-Exception: `lessons.md` entries (governed by the CLAUDE.md self-improvement loop) are a
-mandatory write, not unsolicited.
+Exceptions (mandatory writes, not unsolicited): `lessons.md` entries (CLAUDE.md self-improvement
+loop), an approved plan saved to `docs/plans/` (`leverage-patterns.md`), and the ADR the
+Architecture Gate requires (`verification-and-reporting.md`).
 
 **3-attempt hard stop.**
 If you have tried the same approach ≥ 3 times and it keeps failing: STOP.

@@ -179,7 +179,7 @@ Save the Decision Log to `docs/decisions/YYYY-MM-DD-<feature-name>.md` regardles
 
 ## Related Workflows
 
-- [`brainstorm.md`](brainstorm.md) — explore options BEFORE running this workflow (input)
+- [`/brainstorm`](../../.claude/commands/brainstorm.md) — explore options BEFORE running this workflow (input)
 - [`plan-review.md`](plan-review.md) — lock implementation plan AFTER APPROVED verdict (output)
 - [`architecture-design.md`](architecture-design.md) — generates the C4/sequence diagrams this workflow validates
 - [`subagent-driven-development.md`](subagent-driven-development.md) — implements the validated plan

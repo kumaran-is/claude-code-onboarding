@@ -59,7 +59,7 @@ Before creating a new file, state explicitly:
 2. Why they could not be extended or reused
 3. Why the new file is necessary for this specific task
 
-Every new file must have a clear purpose that traces directly to the requested change. Creating a new file to avoid understanding the existing structure is not acceptable.
+Every new file must have a clear purpose that traces directly to the requested change. Creating a new file to avoid understanding the existing structure is not acceptable. A new file the request did not call for needs approval first (`core-behaviors.md` §5, RED).
 
 ## Error Handling
 

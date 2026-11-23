@@ -77,6 +77,19 @@ gcloud run services update my-service \
 - Return cached/degraded responses
 - Block write operations temporarily
 
+**Mitigation by target** — the commands above are for Cloud Run services. Other targets stop the bleeding differently:
+
+| Target | Fastest mitigation | Reference |
+|---|---|---|
+| Angular / React on static hosting | Promote the previous release (same files, no rebuild), then re-run the post-deploy header check | `.claude/skills/deployment-ci-cd/reference/web-frontend-delivery.md` §4 |
+| Flutter Android (Google Play) | Halt the staged rollout (`gpd publish halt`); a halted build stops reaching new users but stays on devices that already updated | `.claude/skills/gpd-build-lifecycle/SKILL.md` |
+| Flutter iOS (App Store) | Pause the phased release in App Store Connect; a shipped build cannot be recalled, so disable the feature by remote config and ship a fix build | `.claude/skills/asc-release-flow/SKILL.md` |
+| AI feature (LLM, agent, RAG) | Pull the AI kill switch or roll back the prompt/model version, then follow the AI runbook | `/ai-incident-response`, `.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md` |
+| MCP server | Roll back the server revision (Cloud Run as above) or remove the server from client config; revoke any credential it could have leaked | `.claude/skills/mcp-builder/reference/production-deployment-structure.md` |
+| GenUI (A2UI) surface | Stop the agent emitting the faulty component or action, or remove it from the catalog; renderers must already show the unknown-component fallback | `.claude/skills/genui-contract/SKILL.md` |
+
+Verify the mitigation on the affected target itself (a Flutter fix is proven on a device with Maestro, never in a browser — `.claude/rules/testing-tool-selection.md`).
+
 **Gate**: User-facing errors must drop before leaving Phase 2.
 
 ---

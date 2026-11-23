@@ -928,7 +928,7 @@ This repo registers 36 hooks in `.claude/settings.json`. The ones most people in
 | **Web typecheck + security advisories** | `post-edit-typecheck.sh`, `post-edit-web-security-advisory.sh` | `PostToolUse` → Write/Edit | Type-check with the command that actually checks the layout (Angular `tsc -p tsconfig.app.json`, Vite `tsc -b`, plain `tsc --noEmit`); flag XSS sinks (`bypassSecurityTrust*`, raw `innerHTML`, `dangerouslySetInnerHTML`), tokens written to Web Storage and `eval`/`new Function` in Angular/React app code. Advisory, `--selftest` with planted positives and negatives |
 | **Python lint advisory** | `post-edit-python-lint-advisory.sh` | `PostToolUse` → Write/Edit | Check-only `ruff` (plus F401/F811/F841 and hard-coded-config greps) on edited `.py` files, reported to Claude as advice; never auto-fixes; says so when `ruff` is missing. Typecheck and AI-pattern hooks were fixed and now have `--selftest` |
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
-| **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Warns if changed files contain AWS/GCP/GitHub/OpenAI API keys |
+| **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Scans changed and untracked files with the shared `post-edit-secrets-scan` pattern table (+JWT) |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |
 
 > After cloning: `chmod +x .claude/hooks/*.sh`
@@ -2902,7 +2902,7 @@ This is where agents and skills do the heavy lifting.
 
 Slash commands trigger multi-agent reviews; hooks catch what slips through.
 
-`/review-code` auto-detects the stack and delegates to the right reviewer (`spring-reactive-reviewer`, `nestjs-reviewer`, `agentic-ai-reviewer`, `riverpod-reviewer`). `/audit-security` runs `security-reviewer` across the scope. `/status-check` gives you an honest binary works/broken report — no "95% done" hedging.
+`/review-code` auto-detects the stack and delegates to the right reviewer (`spring-reactive-reviewer`, `nestjs-reviewer`, `agentic-ai-reviewer`, `riverpod-reviewer`). `/audit-security` runs `security-reviewer` across the scope. `/status-check` gives you an honest binary works/broken report — no "95% done" hedging. Pass a plan file or issue number to audit every plan item against the source.
 
 **Hooks** run automatically and act as deterministic guardrails you never have to think about:
 - `post-edit-format.sh` — auto-formats after every edit
@@ -3053,9 +3053,9 @@ This repo includes Claude Code hooks (`.claude/hooks/`) and a git pre-commit hoo
 | `pre-bash-guard.sh` | PreToolUse | `rm -rf /`, force-push to main, `DROP DATABASE`, piping curl to shell |
 | `pre-edit-protect-sensitive.sh` | PreToolUse | Direct edits to `.env`, private keys, credentials, lock files |
 | `pre-prompt-injection.sh` | PreToolUse | Blocks terminal escape sequences and NUL bytes; role-override phrases and chat-template delimiters in Bash/WebFetch input are reported as an advisory, never blocked |
-| `pre-unicode-injection.sh` | PreToolUse | Zero-width characters, RTL overrides, ANSI escapes, null bytes hidden in file edits (CVE-2025-53109/53110) |
+| `pre-unicode-injection.sh` | PreToolUse | Zero-width characters, bidi overrides and isolates, tag characters, ANSI escapes, null bytes hidden in file edits (CVE-2025-53109/53110) |
 | `session-claudemd-scan.sh` | SessionStart | Injection patterns in `CLAUDE.md` / `.claude/*.md` files loaded at session start |
-| `stop-secret-scan.sh` | Stop | Warns if changed files contain AWS/GCP/GitHub/Stripe/Anthropic API key patterns |
+| `stop-secret-scan.sh` | Stop | Scans changed and untracked files with the shared `post-edit-secrets-scan` pattern table (+JWT) |
 | `post-edit-format.sh` | PostToolUse | Not security-related, but auto-formats to prevent malformed code commits |
 
 **Git pre-commit hook** — fires on every `git commit`, before the commit is created:
@@ -3073,8 +3073,8 @@ cp git-hooks/pre-commit-secrets.sh .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 
 # The hook then runs automatically on every git commit.
-# To bypass in an emergency (use with caution):
-git commit --no-verify
+# Never bypass it with --no-verify. A false positive goes on the allowlist (below);
+# a real secret is removed from the commit and rotated.
 
 # To add a false-positive to the allowlist, edit the WHITELIST array in:
 git-hooks/pre-commit-secrets.sh   # source (committed)
@@ -3118,6 +3118,12 @@ Beyond the passive guardrails above, this kit ships dedicated security commands,
 - [ ] Hook scripts are executable (`chmod +x .claude/hooks/*.sh`)
 
 ## 19. CI/CD Automation — Deployment Engineer Agent
+
+**This toolkit's own CI:**
+- `.github/workflows/toolkit-lint.yml` runs on every PR that touches `.claude/**`, `docs/**` or `CLAUDE.md`. It runs the 4 lint scripts (skills, agents, commands, testing tools), `bash -n` on every hook and script, and every hook `--selftest`.
+- `.github/workflows/context-budget-gate.yml` runs when the always-loaded instructions change.
+
+For a Flutter app's PR gate, see `.claude/skills/deployment-ci-cd/reference/flutter-ci.md`. Maestro device tests are advisory there and report BLOCKED when no device is available.
 
 The `deployment-engineer` agent generates production-ready GitHub Actions pipelines for every service in this stack. It knows your exact tech versions, branching model (`feature/* → develop → main`), and pipeline architecture — no generic templates.
 
@@ -4077,7 +4083,7 @@ claude --resume <name>              # Resume named session
 /review-code [scope]                # Code review (auto-detects stack)
 /audit-security [scope]             # Security vulnerability scan
 /project-status                     # Codebase summary
-/status-check                       # Binary works/broken report
+/status-check [plan|issue#]          # Binary works/broken report; with a plan, plan-vs-source audit
 ```
 
 ### Requirements & Feature Specs Skills (`feature-forge`)

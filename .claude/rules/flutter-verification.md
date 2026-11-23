@@ -3,12 +3,11 @@ paths:
   - "**/*.dart"
   - "**/pubspec.yaml"
   - "**/analysis_options.yaml"
-  - ".github/workflows/**"
 ---
 
 # Flutter verification
 
-Path-scoped: loads only when Dart, pubspec, analysis-options or workflow files are in play. Detail and commands: `.claude/skills/flutter-mobile/reference/flutter-testing-traps.md` (validation matrix) and `.claude/commands/verify.md`.
+Path-scoped: loads only when Dart, pubspec or analysis-options files are in play (not on CI workflow edits in non-Flutter repos; workflow authoring rules live in `hook-and-gate-authoring.md`). Detail and commands: `.claude/skills/flutter-mobile/reference/flutter-testing-traps.md` (validation matrix) and `.claude/commands/verify.md`.
 
 - **Status words per check:** PASS | FAIL | BLOCKED | NOT RUN | NOT APPLICABLE. Only PASS is a pass. Never write "tests pass" for a command you did not run in this session.
 - **Order:** narrow check after each fix → one review of the complete change → fix findings in one batch → run heavy gates (device/E2E, release build) once, last. An edit after a heavy gate voids that gate.

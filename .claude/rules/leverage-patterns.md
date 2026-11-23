@@ -161,34 +161,9 @@ For **web** targets, use a browser MCP for real-time validation: verify against 
 
 ## Skill and Agent Selection
 
-Skills and agents are lazy-loaded — load the right one before working in a domain. CLAUDE.md has the full mapping tables; custom and general-purpose subagents inherit it, but the built-in Explore and Plan subagents start without it. This section provides the selection logic in always-loaded form.
+Skills and agents are lazy-loaded. The authoritative technology → skill / agent / command mapping is the **Code Conventions** table in `CLAUDE.md`, and the reviewer mapping is its **Code Review Agents** table; this section adds only the selection rules. (The built-in Explore and Plan subagents do not load `CLAUDE.md`: paste the row they need into their prompt.)
 
-### When to Load a Skill
-
-```
-About to write or modify code?
-    |
-    +-- What technology? Match to skill:
-    |   Java/Spring    -> java-spring-api
-    |   NestJS         -> nestjs-api
-    |   Python/FastAPI  -> python-dev
-    |   Agentic AI     -> agentic-ai-dev
-    |   Angular        -> angular-spa
-    |   React (web)    -> react-spa
-    |   Flutter        -> flutter-mobile
-    |   Database schema -> database-schema-designer
-    |   Architecture   -> architecture-design
-    |
-    +-- Cross-cutting concern?
-        Debugging       -> systematic-debugging
-        Security audit  -> load skill, then dispatch security-reviewer agent
-        Code review     -> load skill, then dispatch tech-specific reviewer agent
-        Browser testing (web targets only) -> browser-testing
-        Flutter mobile UI/E2E -> flutter-mobile skill + Maestro (never browser-testing)
-        Plan review     -> plan-mode-review
-```
-
-**Rule:** Load the skill BEFORE writing code, not after. Skills contain patterns, templates, and MCP server references that prevent mistakes.
+**Rule:** Load the skill BEFORE writing code, not after. Skills contain patterns, templates, and MCP server references that prevent mistakes. Cross-cutting: debugging → `systematic-debugging`; plan review → `plan-mode-review`; test tooling per target → `testing-tool-selection.md`.
 
 ### Auto Mode Detection — Trigger Words → Behavior
 
@@ -197,7 +172,7 @@ When a request contains these trigger words, adopt the corresponding behavior au
 | Trigger words in request | Mode | Behavior |
 |--------------------------|------|----------|
 | "what if", "options", "alternatives", "explore", "compare", "should we use", "which approach", "evaluate this idea", "should we build" | **BRAINSTORM** | Use `/brainstorm` — ≥3 options with trade-offs, Mermaid diagram, no code yet. Load `titan-methodology` skill for scoring when evaluating product/feature ideas. |
-| "build", "create", "add", "implement", "write", "scaffold" | **IMPLEMENT** | Code only, max 2-sentence summary, no tutorial comments, no over-engineering (`core-behaviors.md §4`) |
+| "build", "create", "add", "implement", "write", "scaffold" | **IMPLEMENT** | Code first, no tutorial prose or comments, no over-engineering (`core-behaviors.md §4`); report with the change description from `code-standards.md` plus evidence, nothing more |
 | "not working", "error", "bug", "failing", "broken", "crash", "exception", "why does" | **DEBUG** | Use `/debug` — load `systematic-debugging`, root cause first, no fixes before investigation |
 | "review", "check", "audit", "is this right", "look at" | **REVIEW** | Load tech-specific reviewer agent, severity-bucketed findings |
 | "explain", "how does", "what is", "teach me", "help me understand" | **TEACH** | Fundamentals first, analogy, example, then technical detail |
@@ -207,18 +182,7 @@ When a request contains these trigger words, adopt the corresponding behavior au
 
 ### When to Dispatch a Reviewer Agent
 
-Reviewer agents are dispatched AFTER code is written, not before. Match by domain:
-
-| Signal in Changed Files | Reviewer Agent |
-|------------------------|----------------|
-| `*.java`, `pom.xml`, Spring annotations | `spring-reactive-reviewer` |
-| `*.ts` with NestJS decorators (`@Controller`, `@Injectable`) | `nestjs-reviewer` |
-| `*.dart`, `pubspec.yaml`, Riverpod providers | `riverpod-reviewer` |
-| LangChain/LangGraph imports, agent graphs | `agentic-ai-reviewer` |
-| SQL migrations, schema changes | `postgresql-database-reviewer` |
-| Any security-sensitive change (auth, crypto, input handling) | `security-reviewer` |
-| UI components (tokens/theming), shared component library, accessibility (web + Flutter, WCAG 2.2 AA) | `ui-standards-expert`, `design-system-reviewer`, `accessibility-auditor` |
-| None of the above / mixed | `code-reviewer` (general) |
+Reviewer agents run AFTER code is written, matched by the changed files' domain using the **Code Review Agents** table in `CLAUDE.md`. Security-sensitive changes (auth, crypto, input handling) always add `security-reviewer`.
 
 **Rule:** When in doubt, dispatch `code-reviewer`. It covers all languages. Stack-specific reviewers add deeper checks but are not a replacement — use both for critical changes.
 
@@ -261,7 +225,7 @@ Every tool call, agent dispatch, and file read consumes tokens. Be deliberate.
 
 ### Model Selection for Sub-Agents
 
-The Task tool accepts a `model` parameter. Use it:
+The Agent tool accepts a `model` parameter. Use it:
 
 | Model | When to Use | Examples |
 |-------|-------------|---------|
@@ -294,20 +258,18 @@ The context window is finite. Protect it:
 
 The correct metric is **tokens-per-task** — total tokens consumed from task start to completion, including re-fetching costs. Aggressive compression that loses a file path or decision forces the agent to re-read files and re-explore approaches, wasting more tokens than were saved. When deciding what to compress, preserve file paths, function names, error messages, and decisions — these are the most expensive to re-fetch.
 
-#### Degradation Threshold (This Workspace: Sonnet 4.6)
+#### Degradation Threshold
 
-This workspace runs `claude-sonnet-4-6` with a **1M token context window** (GA as of 2026-03-13, no long-context premium). Context compaction is also available — the API automatically summarizes earlier conversation when the window approaches its limit, enabling effectively unbounded sessions.
-
-Despite the large window, degradation still occurs well before the limit. Degradation is a function of attention mechanics, not window size. **Begin active compression at ~700–800K tokens** (70–80% of 1M) — this matches the empirically validated 70–80% trigger point regardless of model generation. Signs of onset: repeating earlier steps, forgetting which files were modified, losing track of decisions made.
+Degradation starts well before the context limit, whatever the window size. **Begin active compression at ~70–80% of the window.** Signs of onset: repeating earlier steps, forgetting which files were modified, losing track of decisions made.
 
 Known degradation patterns to watch for:
 - **Lost-in-middle**: Information in the center of context gets ~10–40% lower recall than content at the start or end. Place critical constraints and the current task at the top; put supporting detail in the middle.
 - **Context poisoning**: A hallucination or wrong output that enters context gets reinforced on every subsequent turn. If outputs start diverging from what was agreed, treat context as potentially poisoned — summarize from scratch using only verified information.
 - **Context distraction**: Irrelevant files or tool outputs in context reduce performance even if they're clearly not relevant. Even a single irrelevant document degrades recall. Trim aggressively.
 
-#### Structured Summary Template (use before `/compact` or at ~700K tokens)
+#### Structured Summary Template (use before `/compact` or at ~70–80% of the window)
 
-Structure forces preservation — each section is a checklist the summarizer must populate, preventing silent loss of file paths or decisions (`context-compression/SKILL.md:29`).
+Structure forces preservation — each section is a checklist the summarizer must populate, preventing silent loss of file paths or decisions.
 
 ```markdown
 ## Session Intent
@@ -330,7 +292,7 @@ Structure forces preservation — each section is a checklist the summarizer mus
 2. [follow-on action]
 ```
 
-**When to use:** Before `/compact`, before handing off to a sub-agent, or at ~700K tokens in a multi-step session. With 1M context and automatic compaction available, manual compression is rarely needed — but when it is triggered (manually or by compaction), this template ensures the right information survives. Everything not in these sections can be lost.
+**When to use:** Before `/compact`, before handing off to a sub-agent, or at ~70–80% of the window in a multi-step session. Automatic compaction makes manual compression rarely needed, but when it is triggered this template ensures the right information survives. Everything not in these sections can be lost.
 
 ### When to Break Tasks vs Do In-Session
 
@@ -356,7 +318,7 @@ When a task is too large for a single context window:
 
 ## Sub-Agent Governance
 
-Sub-agents (via Task tool or Agent Teams) are powerful but have blind spots. Govern them.
+Sub-agents (via the Agent tool or Agent Teams) are powerful but have blind spots. Govern them.
 
 ### When to Use Sub-Agents vs Do It Yourself
 
@@ -372,10 +334,10 @@ Sub-agents (via Task tool or Agent Teams) are powerful but have blind spots. Gov
 
 ### Mandatory Pre-Dispatch Checklist
 
-Before dispatching ANY agent (Task tool or TeamCreate):
+Before dispatching ANY agent (Agent tool or TeamCreate):
 
-1. **Load the skill first.** The `subagent-driven-development` skill defines the Implementer -> Spec Reviewer -> Quality Reviewer pipeline. Skipping it means skipping review stages.
-2. **Pass explicit context.** A subagent starts in a fresh context: it never receives the conversation history or tool results. Custom and general-purpose subagents load the `CLAUDE.md` hierarchy (which includes `.claude/rules/`, so `lessons.md` too) unless their definition sets `omitClaudeMd`; the built-in Explore and Plan subagents do not. For Task tool: include the task, file paths and decisions in the `prompt` param (and any rules an Explore/Plan agent needs). For Teams: include in the initial `SendMessage` body.
+1. **Plan-driven implementation → load `subagent-driven-development` first.** It defines the Implementer -> Spec Reviewer -> Quality Reviewer pipeline; skipping it skips review stages. A single reviewer or research dispatch does not need it.
+2. **Pass explicit context.** A subagent starts in a fresh context: it never receives the conversation history or tool results. Custom and general-purpose subagents load the `CLAUDE.md` hierarchy (which includes `.claude/rules/`, so `lessons.md` too) unless their definition sets `omitClaudeMd`; the built-in Explore and Plan subagents do not. For the Agent tool: include the task, file paths and decisions in the `prompt` param (and any rules an Explore/Plan agent needs). For Teams: include in the initial `SendMessage` body.
 3. **Specify the subagent_type.** Match the agent to the work — read-only agents (Explore, Plan) cannot edit files. Do not assign implementation to research agents.
 4. **Set isolation when needed.** Use `isolation: "worktree"` for changes that might conflict with concurrent work.
 

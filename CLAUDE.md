@@ -11,7 +11,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 ## Tech Stack
 - **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux / Reactive), REST APIs
 - **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
-- **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async
+- **Backend (Python)**: Python 3.14, FastAPI (backend references verified on 0.165.x; the agentic stack pins 0.135.2), Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2
 - **Frontend**: Angular 21.2.x (SPA), TypeScript 5.9.x, RxJS, SCSS
 - **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.x SPA, Vite 8, React Router 8, TanStack Query 5, TypeScript 5.9.3
@@ -47,7 +47,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 >
 > **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools (unit: Angular `ng test` on Vitest, React Vitest + Testing Library). Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
 >
-> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), `typescript-node-backend.md` for NestJS, plain Node and MCP server files (controllers, `src/app.module.ts`, `src/modules/**`, `nest-cli.json`, `**/mcp/**`, `src/server.ts`; never Angular/React app files), `genui-a2ui.md` for GenUI files (`**/a2ui/**`, `**/genui/**`, `**/*catalog*.json`), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), `typescript-node-backend.md` for NestJS, plain Node and MCP server files (controllers, `src/app.module.ts`, `src/modules/**`, `nest-cli.json`, `**/mcp/**`, `src/server.ts`; never Angular/React app files), `genui-a2ui.md` for GenUI files (`**/a2ui/**`, `**/genui/**`, `**/*catalog*.json`), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 
@@ -69,7 +69,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
 | React (web SPA; not React Native, not Next.js/SSR) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
-| GenUI contract (A2UI v0.9, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
+| GenUI contract (suitability gate, A2UI v0.9, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
 | Angular GenUI (A2UI renderer) | `.claude/skills/a2ui-angular/` | `a2ui-angular` | `/scaffold-a2ui` |
 | Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |
 | Web performance + SEO (public sites only) | `.claude/skills/web-performance-optimization/` | `performance-oracle` | — |
@@ -120,10 +120,13 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | General | `code-reviewer` |
 | Java / Spring | `spring-reactive-reviewer` |
 | NestJS | `nestjs-reviewer` |
+| Python / FastAPI; background workers | `python-reviewer`; `python-worker-reviewer` |
 | Agentic AI | `agentic-ai-reviewer` |
 | Google ADK | `adk-reviewer` |
 | Flutter | `riverpod-reviewer`, `flutter-security-expert` |
-| Security | `security-reviewer` |
+| Security (code) / threat model (design time) | `security-reviewer` / `threat-modeling-expert` |
+| Performance (quantified) | `performance-oracle` |
+| Plan (adversarial, before implementation) | `plan-challenger` |
 | Database | `postgresql-database-reviewer` |
 | pgvector schema | `pgvector-schema-reviewer` |
 | Weaviate schema | `weaviate-schema-reviewer` |
@@ -192,7 +195,7 @@ When the user corrects a mistake during any session:
 
 1. BEFORE proceeding with the corrected approach — write the lesson
 2. Open `.claude/rules/lessons.md`
-3. Check if this exact mistake already has an entry — if yes, increment [xN]
+3. Check if this exact mistake already has an entry — if yes, increment [xN]. Also search `.claude/rules/*.md`: if the rule is already promoted, cite that rule instead of adding a lesson
 4. If no existing entry — add a new one in the 4-line format
 5. If the entry is now [x3] — promote Rule to the matching rules file, delete entry from lessons.md
 6. THEN continue with the task

@@ -4,12 +4,11 @@ paths:
   - "**/pyproject.toml"
   - "**/uv.lock"
   - "**/alembic/**"
-  - "**/Dockerfile*"
 ---
 
 # Python backend guardrails
 
-Path-scoped: loads only when Python/packaging/migration/Dockerfile files are in play. These are the always-apply guardrails; each links to the reference holding the reasoning and snippets (`.claude/skills/python-dev/reference/` unless a path is given). Items about a technology apply only **if the project uses** it.
+Path-scoped: loads only when Python, packaging or migration files are in play (not on a bare Dockerfile: Java, Node and Flutter repos have those too). These are the always-apply guardrails; each links to the reference holding the reasoning and snippets (`.claude/skills/python-dev/reference/` unless a path is given). Items about a technology apply only **if the project uses** it.
 
 - **Sessions open and close in the dependency; transactions are owned by the service / unit of work.** A `yield` dependency's exit code runs after the response is sent by default, so a failed commit there returns 200 for unsaved data; `Depends(..., scope="function")` (FastAPI 0.121+) runs it before the response. → `sqlalchemy-async-sessions-and-transactions.md`
 - **One `AsyncSession` per task; never share the request session with a background task.** Eager-load what the response reads; implicit lazy loads raise `MissingGreenlet` in async code. A server-side `onupdate` column is expired after the UPDATE commit even with `expire_on_commit=False`: `await session.refresh(obj, ["updated_at"])`. A server-generated PK is `None` until flush. → `sqlalchemy-async-sessions-and-transactions.md`

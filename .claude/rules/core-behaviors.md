@@ -89,11 +89,11 @@ Use this to decide whether to pause and ask vs proceed:
 
 | Color | Approval Needed | Examples |
 |-------|----------------|---------|
-| 🔴 RED | Explicit approval required — STOP and ask | New agents, new files that didn't exist, architecture changes, MCP config changes, deleting existing files, modifying CI/CD or hooks |
+| 🔴 RED | Explicit approval required — STOP and ask | New agents, new files the request did not call for, architecture changes, MCP config changes, deleting pre-existing files, modifying CI/CD or hooks |
 | 🟡 YELLOW | Inform and proceed — state what you're doing | Editing existing file content, refactoring logic within a file, updating rules, adding to existing config |
 | 🟢 GREEN | Just do it — no announcement needed | Typos, formatting, fixing broken imports, removing dead code YOUR changes created |
 
-When in doubt between RED and YELLOW, default to RED.
+When in doubt between RED and YELLOW, default to RED. Files the request itself calls for (a new feature's module, its tests, a scaffold's output) are not "new files the request did not call for"; they still need the justification in `code-standards.md`. Orphans YOUR change created are GREEN (dead-code rule above).
 
 ## 7. Think Before You Code
 
@@ -141,17 +141,7 @@ Note: This section covers **your own code quality**. For **claims about code sta
 
 Context is lost between sessions and after `/clear` or `/compact`. Recover it before doing new work.
 
-### On Every Session Start
-
-```
-1. Run TaskList — check for pending/in_progress tasks
-2. If tasks exist → present status summary (see CLAUDE.md "Resuming Tasks")
-3. If NO tasks exist → ready for new work
-```
-
-### After `/clear` or `/compact`
-
-Same as session start: run TaskList immediately. Do not assume you remember what was in progress.
+At session start and immediately after `/clear` or `/compact`: run TaskList and, if tasks exist, present the summary from CLAUDE.md "Resuming Tasks". Do not assume you remember what was in progress.
 
 ### Context Recovery Priority
 

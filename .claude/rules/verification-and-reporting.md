@@ -171,6 +171,20 @@ behavior), every non-trivial claim MUST carry an explicit confidence level.
 
 ---
 
+## Review Severity Policy
+
+One policy for every review: `/review-code`, `/verify`, `/ship`, `/create-pr`, reviewer agents and CI.
+
+| Highest unresolved finding | Verdict | Merge |
+|---|---|---|
+| CRITICAL | **BLOCK** | No. Fix first. |
+| HIGH | **NEEDS_REVIEW** | Only after each HIGH is fixed or has a written justification in the PR. Never reported as PASS or APPROVE. |
+| MEDIUM / LOW only | **APPROVE** with advisories | Yes. List each advisory, and track MEDIUMs as follow-up tasks or issues. |
+
+- A required check that is BLOCKED or NOT RUN caps the verdict at NEEDS_REVIEW.
+- Domain gates may be stricter, never looser: security reviewers (BLOCK on CRITICAL; HIGH must be fixed before production), database migrations (`SAFE TO APPLY` only), design-system tier rules and accessibility audits keep their own thresholds.
+- Other vocabularies map onto this one: `PASS` = APPROVE; `CONDITIONAL PASS` / `NEEDS WORK` = NEEDS_REVIEW; `REJECT` = BLOCK.
+
 ## Quality Gates
 
 Before declaring any workflow type complete, the following gates must pass. These are minimum bars — do not skip them.
@@ -206,7 +220,7 @@ Before declaring any workflow type complete, the following gates must pass. Thes
 - [ ] Flutter: `packages/shared_ui/` widgets extend `StatelessWidget` — no `ConsumerWidget` (dumb rule enforced)
 
 ### Release / Merge Gate
-- [ ] `/review-code` verdict = **APPROVE** (NEEDS_REVIEW requires written justification in PR; REJECT = hard block)
+- [ ] `/review-code` verdict = **APPROVE** (NEEDS_REVIEW requires written justification in PR; BLOCK = hard block)
 - [ ] `/audit-security` verdict = **APPROVED** — Lock Document exists at `docs/approvals/security-YYYY-MM-DD-<commit>.md` (no file = audit was not run or failed; `/ship` will block without it)
 - [ ] CLAUDE.md tech stack versions still accurate
 - [ ] No TODOs or stub implementations in changed files

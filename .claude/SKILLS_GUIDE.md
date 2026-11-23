@@ -2,7 +2,7 @@
 
 > Complete skill catalog for Claude Code Onboarding Kit. Use this to find the right skill for any task.
 >
-> ~92 skills across 10 domains. Each skill is loaded with `/skill-name` or via `Skill` tool.
+> 158 skills across 10 domains. Each skill is loaded with `/skill-name` or via `Skill` tool.
 >
 > **Lazy-load pattern:** Each SKILL.md is a routing document only. Detailed patterns live in `reference/` files within each skill directory. Load the reference file explicitly when the detail is needed — do not expect it to be loaded automatically.
 
@@ -15,7 +15,7 @@
 - **adk-eval-guide**: Used when evaluating ADK agents, running `adk eval`, writing evalsets and configuring the 13 documented criteria with their score scales and directions (e.g. `hallucinations_v1` is higher-is-better: gate on a minimum). Covers LLM-as-judge config, user simulation, multimodal eval, and the CI trap that `adk eval` does not fail the process on failed cases.
 - **llm-evaluation**: Canonical home for metric formulas (`reference/evaluation-metrics.md` §2: Recall@K, Precision@K, MRR, nDCG with executed worked examples and edge cases) and statistics (`ab-testing.md`: paired tests for same-case comparisons, McNemar, power and sample size, fail-closed regression detection), plus trajectory scoring. Eval process and CI tiers live in eval-guide.
 - **eval-guide**: AI evaluation process and tooling (DeepEval, Ragas, Giskard, Promptfoo, Langfuse, Phoenix, adk eval): pre-flight, verdict precedence (deterministic checks outrank the judge), every planned case accounted for (skipped is never pass), median-of-3 judge trials with no rerun-until-green, AI test layers with fake models, golden-set discipline and versioning, CI tiers R1-R4, prompt regression and promotion gates, prompt registry (`reference/langfuse-prompts.md`), pytest harness.
-- **deployment-ci-cd**: CI/CD, health endpoints, env validation and Python supply chain, plus `reference/python-observability.md` (canonical logging, `log_exception`, request id), `reference/ai-observability.md` (OTel GenAI semconv incl. `gen_ai.provider.name`, agent/tool/retrieval/rerank spans, TTFT, token and cost metrics, content-capture redaction, Langfuse v3 optional, SLOs, drift, incident replay) and `reference/llmops-release-and-rollout.md` (prompt/model versioning, eval-gated promotion, canary and rollback for prompt/config changes, provider migration, provenance, feedback loop).
+- **deployment-ci-cd**: CI/CD, health endpoints, env validation and Python supply chain, plus `reference/python-observability.md` (canonical logging, `log_exception`, request id), `reference/ai-observability.md` (OTel GenAI semconv incl. `gen_ai.provider.name`, agent/tool/retrieval/rerank spans, TTFT, token and cost metrics, content-capture redaction, Langfuse v3 optional, SLOs, drift, incident replay) and `reference/llmops-release-and-rollout.md` (prompt/model versioning, eval-gated promotion, canary and rollback for prompt/config changes, provider migration, provenance, feedback loop), plus `reference/flutter-ci.md` (pinned Flutter PR gate; Maestro advisory, BLOCKED without a device). The toolkit itself is gated in CI by `.github/workflows/toolkit-lint.yml` (skill, agent, command and testing-tool lints, `bash -n`, hook selftests).
 - **adk-observability-guide**: Used when configuring tracing (Cloud Trace), prompt-response logging, BigQuery Agent Analytics, or SLO-based alerting for ADK agents — covers 4 observability tiers. Reference files: `reference/cloud-trace-and-logging.md` (Tiers 1-2), `reference/bigquery-agent-analytics.md` (Tier 3), `reference/slo-alerting.md` (Tier 4 — burn-rate alerting, error budget tracking, dual-window PromQL patterns).
 - **agentic-ai-coding-standard**: Provides coding standards for Python agentic AI services with LangChain/LangGraph, covering state management, tool definitions, graph structure, error handling, and observability.
 - **ai-playbook**: AI lifecycle router and design playbook. SKILL.md maps each stage (design → inference → context/memory → agents/tools → RAG → evals/testing → review → guardrails → observability → LLMOps → streaming/voice) to its canonical skill, reference, agent and command; `playbook.md` holds principles, operating controls, the deterministic-vs-probabilistic control table, security and launch/ops.
@@ -64,6 +64,7 @@
   - the Angular/React/Flutter compatibility matrix
   - when to use A2UI, AG-UI, CopilotKit or Flutter GenUI
 
+  Should this workflow use GenUI at all? Run `reference/genui-suitability.md` before the contract-first workflow.
   Reference files: `catalog-contract.md`, `backend-topologies.md`, `ag-ui-transport.md`, `action-security.md`, `runtime-lifecycle.md`, `backend-emitters.md`, `compatibility-matrix.md`. Reviewer: `genui-contract-reviewer`. Commands: `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature`. Rule: `genui-a2ui.md`. Hook: `post-edit-genui-advisory.sh`, an advisory that flags protocol-version drift.
 - **a2ui-angular**: A2UI **v0.9** (`@a2ui/angular@0.14.0`) renderer development for Angular 21.x, direct or with CopilotKit Angular 0.3.1 (optional). Additional reference files: `canonical-catalog-angular.md`, `copilotkit-angular.md`. Also covers protocol implementation, component catalog, recursive renderer, action handling, streaming A2UI payloads, and security validation. Reference files: `a2ui-protocol.md`, `a2ui-protocol-advanced.md`, `a2ui-security.md`, `a2ui-component-catalog.md`, `a2ui-component-containers.md`, `a2ui-renderer-patterns.md`, `a2ui-renderer-template.md`, `a2ui-chat-template.md`, `a2ui-renderer-services.md`, `a2ui-client-integration.md` (agUiResource service pattern, demo-only vs production action handler warning, rate limits).
 - **streaming-protocols**: Three-layer mental model (Transport/Framing/Message) for AI streaming: SSE vs HTTP streaming vs NDJSON vs WebSocket, wire formats, proxy buffering/compression/reconnection pitfalls, and the server-side stream lifecycle (`reference/server-stream-lifecycle.md`: client disconnect cancels the upstream model call, exactly one terminal done/error frame, never persist or act on partial structured output, WebSocket auth before accept).
@@ -176,7 +177,7 @@
 - **brainstorm** (`/brainstorm`): Divergent exploration before committing to an approach — generates ≥3 distinct alternatives with trade-offs and Mermaid diagram. No code; use before feature-forge or architecture-design when the solution space is still open.
 - **new-project** (`/new-project`): Single entry point for starting any new project — detects tech stack from natural language description and routes to the correct scaffold command. Supports all 9 workspace stacks. Flutter requests automatically load mobile-design + flutter-mobile skills.
 - **debug** (`/debug`): Slash command entry point for systematic-debugging skill. Enforces root-cause-first investigation with structured Symptom → Root Cause → Fix → Prevention output format.
-- **audit-skills** (`/audit-skills`): Periodic health audit of all 61 skills — checks Iron Law, `last-reviewed` staleness (90/180-day thresholds), description quality, `allowed-tools` declaration, and body line count. Outputs aggregate PASS/WARN/FAIL report with recommended actions. Run monthly or after adding multiple skills.
+- **audit-skills** (`/audit-skills`): Periodic health audit of all skills — checks Iron Law, `last-reviewed` staleness (90/180-day thresholds), description quality, `allowed-tools` declaration, and body line count. Outputs aggregate PASS/WARN/FAIL report with recommended actions. Run monthly or after adding multiple skills. Also re-audits settings permissions, hooks and MCP allow entries against `security-reviewer/reference/claude-config-security.md`.
 - **iterate-pr**: Autonomous PR completion loop — fetches CI failures and review feedback, fixes and pushes until all checks are green. Classifies feedback by LOGAF scale (high/medium auto-fix, low asks user), polls CI, and posts GitHub thread replies.
 - **multi-agent-brainstorming**: Structured design review using 5 constrained sequential roles (Primary Designer, Skeptic, Constraint Guardian, User Advocate, Arbiter) to validate designs before implementation. Produces mandatory Decision Log and APPROVED/REVISE/REJECT verdict. Use after `/brainstorm` and before `/plan-review` for high-stakes or irreversible decisions. Reference files: `agent-role-scripts.md`, `decision-log-template.md`, `exit-criteria-checklist.md`.
 - **parallel-agents**: Multi-agent orchestration for Claude Code's native Agent tool — coordinates this workspace's 42 actual agents across 6 orchestration patterns (comprehensive review, pre-deploy audit, Flutter feature, agentic AI review, DB schema review, architecture validation). Includes workspace agent catalog and synthesis protocol. Reference files: `workspace-agent-catalog.md`, `orchestration-patterns.md`, `synthesis-protocol.md`.
@@ -213,7 +214,7 @@
 | `/backlog` | Generate feature backlog from product idea | `idea-to-backlog` |
 | `/shortlist` | Select MVP features from backlog using Titan scoring | `mvp-shortlist` |
 | `/wireframe` | Generate premium dual-theme wireframe (Aurora 2026) | `premium-wireframe-2026` |
-| `/sketch-wireframe` | Generate hand-drawn lo-fi sketch wireframe | Sketch wireframe agent |
+| `/sketch-wireframe` | Generate hand-drawn lo-fi sketch wireframe | `wireframe-agent` |
 | `/review-wireframe` | Score wireframe with Elon+Steve dual-persona /100 | `wireframe-reviewer` |
 | `/iterate-wireframe` | Apply review feedback in 3 prioritized passes | `wireframe-iterator` |
 | `/publish-wireframes` | Deploy all wireframes to Firebase Hosting | `publish-wireframes` |
@@ -546,7 +547,7 @@ flutter-mobile + asc-cli-usage + asc-signing-setup + asc-id-resolver + asc-relea
 flutter-mobile + gpd-cli-usage + gpd-id-resolver + gpd-build-lifecycle + gpd-betagroups + gpd-release-flow + gpd-submission-health
 
 ### Angular SPA
-angular-spa + frontend-design + ui-standards-tokens + browser-testing
+angular-spa + frontend-design + design-system + browser-testing
 
 ### AI Chat UI (Angular or Flutter)
 ai-chat + angular-spa (or flutter-mobile) + security-reviewer

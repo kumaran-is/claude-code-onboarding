@@ -58,7 +58,7 @@ Produce:
 - C4 context + container diagrams in `docs/diagrams/`
 - API contracts (request/response shapes, error codes) — defined BEFORE any code
 - Sequence diagrams for all non-trivial flows
-- ADR for each key technology decision in `docs/adr/YYYY-MM-DD-<decision>.md`
+- ADR for each key technology decision in `docs/adr/NNNN-<decision>.md` (numbering per the `architecture-decision-records` skill)
 
 The `plan-challenger` agent must review the architecture for assumptions, missing failure modes, and over-engineering. Address all BLOCK-level findings before advancing.
 

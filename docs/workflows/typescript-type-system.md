@@ -1,11 +1,11 @@
 # TypeScript Type System Workflow
 
-> **When to use**: Strengthening TypeScript type safety, designing advanced type patterns, resolving type errors, setting up TypeScript infrastructure for Angular 21.x, NestJS 11.x, or MCP Builder projects
+> **When to use**: Strengthening TypeScript type safety, designing advanced type patterns, resolving type errors, setting up TypeScript infrastructure for Angular 22.x, React, NestJS 11.x, or MCP Builder projects
 > **Prerequisites**: TypeScript project exists with `tsconfig.json` configured
 
 ## Overview
 
-Two-skill TypeScript pipeline: **typescript-advanced-types** (canonical for type design: boundary validation vs compile-time types, discriminated unions, typed errors, generics, mapped/conditional types) and **typescript-expert** (tsconfig strictness, solution-style configs, type-check commands that actually check, build performance, ESM/CJS interop). `typescript-pro` is a pointer kept only so old links resolve. Applies to Angular 21.x, React, NestJS 11.x and MCP Builder TypeScript projects — not Flutter, Java, or Python.
+Two-skill TypeScript pipeline: **typescript-advanced-types** (canonical for type design: boundary validation vs compile-time types, discriminated unions, typed errors, generics, mapped/conditional types) and **typescript-expert** (tsconfig strictness, solution-style configs, type-check commands that actually check, build performance, ESM/CJS interop). `typescript-pro` is a pointer kept only so old links resolve. Applies to Angular 22.x, React, NestJS 11.x and MCP Builder TypeScript projects — not Flutter, Java, or Python.
 
 ## Skill Selection Guide
 
@@ -37,7 +37,7 @@ Two-skill TypeScript pipeline: **typescript-advanced-types** (canonical for type
 2. Open `resources/implementation-playbook.md` for the relevant pattern section
 3. Identify which pattern applies: Generics / Conditional Types / Mapped Types / Template Literals / Utility Types
 4. Implement with workspace framework (nestjs-api or angular-spa patterns)
-5. Validate with the type-check command for your project layout (`typescript-expert` SKILL.md, "type-check commands"): Angular 21 `npx tsc -p tsconfig.app.json --noEmit` plus `npx ng build`; create-vite (React) `npx tsc -b`; plain tsconfig (NestJS) `npx tsc --noEmit`. A bare `tsc --noEmit` at an Angular or Vite root checks an empty program and exits 0.
+5. Validate with the type-check command for your project layout (`typescript-expert` SKILL.md, "type-check commands"): Angular 22 `npx tsc -p tsconfig.app.json --noEmit` plus `npx ng build`; create-vite (React) `npx tsc -b`; plain tsconfig (NestJS) `npx tsc --noEmit`. A bare `tsc --noEmit` at an Angular or Vite root checks an empty program and exits 0.
 
 **Gate**: the type-check exits 0 AND fails on a planted type error; no `any` introduced
 

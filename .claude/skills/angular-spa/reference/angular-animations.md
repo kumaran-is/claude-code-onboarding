@@ -1,11 +1,11 @@
-# Angular 21.2 Animations — Canonical Reference
+# Angular 22.3 Animations — Canonical Reference
 
-> Official guide: https://angular.dev/guide/animations (v21: "Migrating away from Angular's
-> Animations package"). Snippets compiled against `@angular/*@21.2.26` with `strictTemplates`.
+> Official guide: https://angular.dev/guide/animations (v22: "Migrating away from Angular's
+> Animations package"). Snippets compiled against `@angular/*@22.3.0` with `strictTemplates`.
 
 ## Which system
 
-| System | Status in 21.x | Use |
+| System | Status in 22.x | Use |
 |---|---|---|
 | `animate.enter` / `animate.leave` (built into `@angular/core`) + CSS | Current | All new enter/leave animations |
 | Native CSS transitions / `@keyframes` / Tailwind `transition-*` | Current | Hover, press, state changes (open/closed, expanded) |
@@ -14,11 +14,10 @@
 ## `animate.enter` / `animate.leave`
 
 ```typescript
-import { AnimationCallbackEvent, ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { AnimationCallbackEvent, Component, signal } from '@angular/core';
 
 @Component({
   selector: 'app-notice',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <button type="button" class="btn" (click)="open.set(!open())" [attr.aria-expanded]="open()">Toggle</button>
 

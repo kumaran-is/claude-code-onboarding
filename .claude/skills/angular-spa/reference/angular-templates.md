@@ -1,11 +1,13 @@
-# Angular 21.2 Code Templates
+# Angular 22.3 Code Templates
 
-Starting points for features in an Angular 21.2 SPA. Compiled against `@angular/*@21.2.26`,
-TypeScript 5.9.3, `strictTemplates`.
+Bodies for features in an Angular 22.3 SPA. Compiled against `@angular/*@22.3.0`,
+TypeScript 6.0.3, `strictTemplates`. **Create each file with the CLI first** (`npm exec --no -- ng generate
+service|component|guard|interceptor <path/name>`), then replace the generated body with the code
+below. Never create these files by hand.
 
-> Zoneless is the 21.x default: no `zone.js`, no change-detection provider. `standalone: true` is the
-> default — omit it. Do not import `CommonModule`. Set `ChangeDetectionStrategy.OnPush` explicitly
-> (it is still opt-in). Background: `angular` skill §Zoneless.
+> Zoneless and OnPush are the v22 defaults: no `zone.js`, no change-detection provider, no
+> `changeDetection` property. `standalone: true` is the default — omit it. Do not import
+> `CommonModule`. Background: `angular` skill §Zoneless + OnPush.
 
 Canonical homes used by these templates:
 - Load / empty / error states and the typed `ApiError`: `angular-ui-patterns/reference/loading-control-flow.md`, `error-handling.md`
@@ -19,7 +21,7 @@ Canonical homes used by these templates:
 
 ```typescript
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_CONFIG } from '../../core/config/api-config';
 
@@ -27,7 +29,7 @@ export interface User { readonly id: string; readonly name: string }
 export interface Page<T> { readonly items: readonly T[]; readonly total: number }
 export interface UserQuery { readonly filter: string; readonly offset: number }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class UsersApi {
   private readonly http = inject(HttpClient);
   private readonly base = `${inject(API_CONFIG).apiRoots[0]}/users`;
@@ -55,14 +57,13 @@ export class UsersApi {
 ## Page component (resource + load-state union)
 
 ```typescript
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { toApiError } from '../../core/http/api-error';
 import { UserQuery, UsersApi } from './users-api';
 
 @Component({
   selector: 'app-user-list',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (users.error()) {
       <div role="alert" class="alert alert-error">
@@ -86,7 +87,7 @@ export class UserList {
   private readonly api = inject(UsersApi);
   protected readonly query = signal<UserQuery>({ filter: '', offset: 0 });
 
-  // rxResource is EXPERIMENTAL in 21.x. Branch on error() → hasValue() → value(): value() throws in error.
+  // rxResource is stable in v22. Branch on error() → hasValue() → value(): value() throws in error.
   readonly users = rxResource({ params: () => this.query(), stream: ({ params }) => this.api.list(params) });
 
   protected readonly errorMessage = computed(() => {
@@ -127,7 +128,7 @@ document title changes on navigation (route-change focus: `angular-spa/reference
 ## app.config.ts
 
 ```typescript
-import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
@@ -138,7 +139,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding()),
-    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor])),
     {
       provide: API_CONFIG,
       useValue: { apiRoots: ['https://api.example.test/v1'], refreshUrl: 'https://api.example.test/v1/auth/refresh' },

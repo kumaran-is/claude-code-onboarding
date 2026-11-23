@@ -1,6 +1,6 @@
 # Angular Form Fields
 
-Angular 21+ form field components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Angular 22+ form field components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 All components use standalone, OnPush, and signal-based APIs.
 
 ---
@@ -41,7 +41,7 @@ All components use standalone, OnPush, and signal-based APIs.
 Reusable wrapper for label + input slot + error/hint display.
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
+import { Component, input, computed } from '@angular/core';
 
 @Component({
   selector: 'app-form-field',
@@ -71,7 +71,6 @@ import { Component, ChangeDetectionStrategy, input, computed } from '@angular/co
       }
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FormFieldComponent {
   label = input.required<string>();
@@ -94,7 +93,7 @@ Complete form using `FormFieldComponent` and reactive forms.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, inject
+  Component, signal, inject
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormFieldComponent } from './form-field.component';
@@ -141,7 +140,6 @@ import { FormFieldComponent } from './form-field.component';
       </div>
     </form>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContactFormComponent {
   private readonly fb = inject(FormBuilder);

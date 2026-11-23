@@ -1,7 +1,7 @@
 # Angular Forms Advanced Patterns
 
 Multi-step forms, dynamic fields, form arrays, and file upload patterns.
-Angular 21+ with daisyUI 5.5.5 + TailwindCSS 4.x. Standalone, OnPush, signal-based.
+Angular 22+ with daisyUI 5.8.2 + Tailwind CSS 4.3.5. Standalone, OnPush, signal-based.
 
 ---
 
@@ -13,7 +13,7 @@ Signals-based wizard. Each step is a standalone component; the orchestrator mana
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, inject, input
+  Component, inject, input
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
@@ -45,7 +45,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WizardStepPersonalComponent {
   private readonly fb = inject(FormBuilder);
@@ -74,7 +73,7 @@ export class WizardStepPersonalComponent {
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed
+  Component, signal, computed
 } from '@angular/core';
 import { WizardStepPersonalComponent } from './wizard-step-personal.component';
 
@@ -128,7 +127,6 @@ import { WizardStepPersonalComponent } from './wizard-step-personal.component';
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MultiStepWizardComponent {
   protected readonly currentStep = signal(0);
@@ -176,7 +174,7 @@ export class MultiStepWizardComponent {
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed, inject
+  Component, signal, computed, inject
 } from '@angular/core';
 import { HttpClient, HttpEventType, HttpErrorResponse } from '@angular/common/http';
 
@@ -224,7 +222,6 @@ const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
       </button>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FileUploadComponent {
   private readonly http = inject(HttpClient);
@@ -266,7 +263,7 @@ export class FileUploadComponent {
     this.state.set('uploading');
     this.progress.set(0);
     this.http.post<{ url: string }>('/api/upload', form, {
-      reportProgress: true, observe: 'events'
+      reportUploadProgress: true, observe: 'events'
     }).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.UploadProgress && event.total) {
@@ -285,7 +282,9 @@ export class FileUploadComponent {
 ```
 
 **Key rules:**
-- `reportProgress: true` + `observe: 'events'` enables `HttpEventType.UploadProgress`
+- `reportUploadProgress: true` + `observe: 'events'` enables `HttpEventType.UploadProgress` (`reportProgress` is
+  deprecated in v22). The default `FetchBackend` throws on `reportUploadProgress`: register
+  `provideHttpClient(withXhr())` in browser apps that show upload progress.
 - Client-side type/size validation is UX only — backend MUST also validate both
 - For GCS presigned URL uploads: set `Content-Type` header to match what was used when generating the signed URL — mismatch causes 403
 - Never log or store a presigned URL — it is a credential valid for 15 minutes

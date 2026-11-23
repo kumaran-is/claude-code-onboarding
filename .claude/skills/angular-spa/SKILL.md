@@ -1,9 +1,9 @@
 ---
 name: angular-spa
-description: "Angular 21.x SPA development skill with TailwindCSS 4.x and daisyUI 5.5.5. Use when building Angular standalone components, services, lazy-loaded routes, auth (interceptor, guards), unit tests with Vitest, or creating UI with TailwindCSS + daisyUI. Covers component scaffolding, UI/UX design, accessibility, web security, and design systems."
+description: "Angular 22.x SPA development skill with Tailwind CSS 4.3.5 and daisyUI 5.8.2. Use when building Angular standalone components, services, lazy-loaded routes, auth (interceptor, guards), unit tests with Vitest, or creating UI with TailwindCSS + daisyUI. Covers component scaffolding, UI/UX design, accessibility, web security, and design systems."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation
 metadata:
-  triggers: Angular, Angular 21, standalone components, Angular SPA, TailwindCSS, daisyUI, Angular component, Angular service, lazy-loaded route, Angular testing, Angular auth, Angular interceptor
+  triggers: Angular, Angular 22, standalone components, Angular SPA, TailwindCSS, daisyUI, Angular component, Angular service, lazy-loaded route, Angular testing, Angular auth, Angular interceptor
   related-skills: angular, angular-best-practices, angular-ui-patterns, accessibility-audit, browser-testing, tailwind-patterns, frontend-design, ui-standards-tokens
   domain: frontend
   role: specialist
@@ -20,29 +20,30 @@ last-reviewed: "2026-11-22"
 
 **ANIMATION LAW:** `@angular/animations` is deprecated since v20.2. Use `animate.enter` / `animate.leave` with CSS classes and native CSS transitions; respect `prefers-reduced-motion`. See `reference/angular-animations.md`.
 
-# Angular 21.x SPA Development Skill
+# Angular 22.x SPA Development Skill
 
-> **Tech stack**: Angular 21.2.x, TypeScript 5.9.x, TailwindCSS 4.x, daisyUI 5.5.5, Vitest (via `@angular/build:unit-test`), Playwright for E2E.
+> **Tech stack**: Angular 22.3.x, TypeScript 6.0.x (Angular 22 requires `>=6.0 <6.1`; TypeScript 7 is not supported), Node `^22.22.3 || ^24.15.0 || ^26.0.0` (team default: Node 26 LTS), RxJS 7.8, Tailwind CSS 4.3.5, daisyUI 5.8.2, Vitest 5 + jsdom (via `@angular/build:unit-test`), Playwright for E2E.
 
 ## Documentation sources
 
 | Source | Tool | Purpose |
 |---|---|---|
-| Angular 21 | `angular-cli` MCP: `get_best_practices` **with `workspacePath`**; `search_documentation` with `version: 21` | Version-matched standards and API docs |
-| Installed packages | `node_modules/@angular/*/types/*.d.ts` | Ground truth for signatures and `@experimental` tags |
-| daisyUI 5.5.5 | `https://daisyui.com/llms.txt` | Component classes, themes |
+| Angular 22 | `angular-cli` MCP: `get_best_practices` **with `workspacePath`**; `search_documentation` with `version: 22` | Version-matched standards and API docs |
+| Installed packages | `node_modules/@angular/*/types/*.d.ts` | Ground truth for signatures and `@publicApi` / `@experimental` / `@deprecated` tags |
+| daisyUI 5.8.2 | `https://daisyui.com/llms.txt` | Component classes, themes |
 | Tailwind / RxJS | Context7 MCP (fallback) | Utilities, operators |
 
-`get_best_practices` without `workspacePath` returns the guide for the newest Angular major (v22),
-which contradicts 21.x in places (for example the default change-detection strategy). Always pass
-the folder that contains `angular.json`; it must be inside the client's project roots. If the MCP
-refuses the path, say so and fall back to the `.d.ts` files — do not apply v22 guidance to a 21.x app.
+`get_best_practices` without `workspacePath` returns the CLI's bundled generic guide, which may not
+match the installed major. Always pass the folder that contains `angular.json`; it must be inside the
+client's project roots. If the MCP refuses the path, say so and fall back to the `.d.ts` files. An app
+still on 21.x is upgraded first (`ng update @angular/core@22 @angular/cli@22`, see angular.dev/update-guide);
+this skill's v22 defaults (OnPush, stable resources and Signal Forms, `@Service`) do not apply to it.
 
 ## Quick scaffold — new project
 
-Use `/scaffold-angular-app <name>` (pinned versions, Tailwind 4, daisyUI 5.5.5, angular-eslint).
+Use `/scaffold-angular-app <name>` (pinned versions, Tailwind 4.3.5, daisyUI 5.8.2, angular-eslint 22.8.0).
 Do not run `npx @angular/cli@latest` — pin the CLI to the workspace major
-(`npx @angular/cli@21.2.30 new …`); the raw-scaffold hook blocks ad-hoc creator calls.
+(`@angular/cli@22.3.0`, run by the scaffold command); the raw-scaffold hook blocks ad-hoc creator calls.
 
 ## Before writing UI code
 
@@ -55,9 +56,9 @@ Do not run `npx @angular/cli@latest` — pin the CLI to the workspace major
 ## Process
 
 1. **Understand requirements** — scope, endpoints, data models, states, roles (401 vs 403 UX).
-2. **Feature folder** — `src/app/features/<feature>/`.
-3. **Service** — typed `HttpClient` calls that let errors propagate (`reference/angular-templates.md`).
-4. **Component** — signals + resource or `toSignal`, `OnPush`, load-state union (`angular-ui-patterns`).
+2. **Generate, don't hand-write, the skeleton** — `npm exec --no -- ng generate component|service|guard|interceptor|interface features/<feature>/<name>` (CLI-first rule in `.claude/rules/web-frontend.md`); then fill in the logic.
+3. **Service** — `@Service()` singleton with typed `HttpClient` calls that let errors propagate (`reference/angular-templates.md`).
+4. **Component** — signals + resource or `toSignal` (OnPush is the default), load-state union (`angular-ui-patterns`).
 5. **Route** — lazy `loadComponent`/`loadChildren`; guards are UX only (`reference/web-security.md`).
 6. **Tests** — Vitest + TestBed + harnesses + `HttpTestingController` (`reference/testing-vitest.md`);
    E2E with Playwright (`browser-testing` skill).
@@ -79,7 +80,7 @@ API reference for signals/resources/forms/SSR lives in the `angular` skill.
 
 ### UI / design system
 - `tailwind-v4-config.md`, `daisyui-v5-components.md`
-- `angular-forms-fields.md`, `angular-forms-validation.md` (validation modes, async validators — canonical), `angular-forms-advanced.md` — typed reactive forms (production default; Signal Forms is experimental, see `angular` skill)
+- `angular-forms-fields.md`, `angular-forms-validation.md` (validation modes, async validators — canonical), `angular-forms-advanced.md` — typed reactive forms for existing reactive-form code (new forms: Signal Forms, stable in v22, see `angular` skill `references/signal-forms.md`)
 - `angular-ui-tables.md` (paged list with a query signal — canonical), `angular-ui-lists.md`, `angular-ui-navigation.md`, `angular-ui-data-components.md`, `angular-ui-form-components.md`, `angular-ui-feedback-components.md`
 - `angular-aria.md` — CDK a11y primitives, route-change focus, live announcements
 - i18n, RTL, `Intl` formatting: `design-system/reference/i18n-rtl-intl.md` (canonical; no Angular copy)
@@ -91,7 +92,8 @@ API reference for signals/resources/forms/SSR lives in the `angular` skill.
 
 - `NgModule`, `CommonModule`, `HttpClientModule`, `*ngIf`/`*ngFor` → standalone, control flow, `provideHttpClient()`.
 - `@Input()`/`@Output()` in new code → `input()`, `output()`, `model()`.
-- Missing `changeDetection: ChangeDetectionStrategy.OnPush` → still opt-in in 21.x; set it everywhere.
+- Explicit `changeDetection: ChangeDetectionStrategy.OnPush` → redundant in v22 (OnPush is the default); remove it.
+- `@Injectable({ providedIn: 'root' })` on a new singleton → `@Service()` (`ng generate @angular/core:service` migrates eligible classes).
 - Plain mutable fields updated from async callbacks → signals (zoneless only renders on signal/event/markForCheck).
 - `effect()` that sets another signal → `computed()` / `linkedSignal()`.
 - `toObservable`/`toSignal` created in a method → field initializer (else `NG0203`).
@@ -109,8 +111,12 @@ ng serve                                   # dev server
 ng test --watch=false                      # unit tests once (Vitest); exit code is the gate
 ng build                                   # production build
 ng lint                                    # needs angular-eslint (added by /scaffold-angular-app)
-ng generate component features/orders/order-list
-ng generate service features/orders/orders-api
+ng generate component features/orders/order-list   # local CLI: npm exec --no -- ng …
+ng generate service features/orders/orders-api     # emits @Service()
+ng generate guard core/auth/signed-in --implements CanActivate   # functional
+ng generate interceptor core/http/auth             # functional
+ng update @angular/core@22 @angular/cli@22         # existing app on an older major
+ng generate @angular/core:service-migration --dry-run   # Injectable → Service
 ```
 
 ## Design tokens

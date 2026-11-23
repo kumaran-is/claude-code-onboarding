@@ -1,4 +1,4 @@
-# Angular 21.x — Troubleshooting, CLI Commands & Best Practices
+# Angular 22.x — Troubleshooting, CLI Commands & Best Practices
 
 ## Common Compilation Errors
 
@@ -6,13 +6,13 @@
 - **Fix:** Add `provideHttpClient()` to `app.config.ts` providers
 
 **Error:** `NG0908: In this configuration Angular requires Zone.js`
-- **Fix:** Remove `provideZoneChangeDetection()` from `app.config.ts` — Angular 21 is zoneless by default. Do NOT install `zone.js`.
+- **Fix:** Remove `provideZoneChangeDetection()` from `app.config.ts` — Angular 22 is zoneless by default. Do NOT install `zone.js`.
 
 **Error:** `Cannot find module './feature.component'`
 - **Fix:** Ensure component is exported with `export class FeatureComponent`
 
 **Error:** `ExpressionChangedAfterItHasBeenCheckedError`
-- **Fix:** Use `ChangeDetectionStrategy.OnPush` and signals; avoid mutating state outside Angular's change detection cycle
+- **Fix:** Keep the v22 OnPush default and use signals; avoid mutating state outside Angular's change detection cycle
 
 ## Runtime Errors
 
@@ -29,26 +29,33 @@
 - **Fix:** Add `canActivate: [guardFn]` to route config
 
 **Error:** Blank screen after bootstrap
-- **Fix:** Check browser console for errors. Common cause: using `provideZoneChangeDetection()` without `zone.js` installed. Remove it — Angular 21 is zoneless by default.
+- **Fix:** Check browser console for errors. Common cause: using `provideZoneChangeDetection()` without `zone.js` installed. Remove it — Angular 22 is zoneless by default.
 
 **Error:** TailwindCSS/daisyUI styles not applied (unstyled page)
 - **Fix:** Angular's `@angular/build:application` builder only reads `.postcssrc.json` for PostCSS config. It **ignores** `postcss.config.js`. Create `.postcssrc.json` in the project root:
   ```json
   { "plugins": { "@tailwindcss/postcss": {} } }
   ```
-  Also ensure global styles are in a `.css` file (not `.scss`) — Sass intercepts TailwindCSS 4.x directives. After changing the config, restart `ng serve`.
+  Also ensure global styles are in a `.css` file (not `.scss`) — Sass intercepts Tailwind CSS 4.3.5 directives. After changing the config, restart `ng serve`.
 
 ## Angular CLI Commands
 
 ```bash
-# Generate component (standalone is the default — no flag needed)
+# Run with the workspace's local CLI: npm exec --no -- ng …  (options verified with `ng <cmd> --help`, CLI 22.3.0)
+# Component: files user-list.ts/.html/.css/.spec.ts, class UserList; OnPush is the default
 ng generate component features/users/user-list
 
-# Generate service
-ng generate service core/services/user
+# Service: emits @Service() (22.3 default; --injectable would emit the old @Injectable)
+ng generate service core/auth/auth-session
 
-# Generate guard (functional)
-ng generate guard core/guards/auth --functional
+# Guard / interceptor: functional by default (CanActivateFn / HttpInterceptorFn)
+ng generate guard core/auth/signed-in --implements CanActivate
+ng generate interceptor core/http/auth
+
+# Interface, environments, library
+ng generate interface core/http/api-error
+ng generate environments
+ng generate library shared-ui
 
 # Run dev server
 ng serve
@@ -63,11 +70,11 @@ ng test
 ng lint
 ```
 
-**Note:** Do NOT pass `--standalone` to `ng generate component` — standalone is the default since Angular v19 and the flag has been removed.
+**Note:** Do NOT pass `--standalone` to `ng generate component` — it still exists in 22.3 but standalone is already the default. There is no `--path` option in 22.3: put the folder in the name. Generated guards return `true` and generated interfaces are empty: replace these placeholders before `ng lint` (it fails on them).
 
 ## Best Practices
 
-- Always use `ChangeDetectionStrategy.OnPush` for performance
+- Rely on the v22 OnPush default; never set `changeDetection` explicitly
 - Prefer signals over BehaviorSubject for component state
 - Use `inject()` instead of constructor injection (modern Angular style)
 - Use `input()` and `output()` functions instead of `@Input`/`@Output` decorators

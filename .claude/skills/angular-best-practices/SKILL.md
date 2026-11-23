@@ -1,6 +1,6 @@
 ---
 name: angular-best-practices
-description: "Impact-prioritized Angular 21.x review checklist — CRITICAL: OnPush+Signals on the zoneless default, async waterfalls, bundle optimization. HIGH: rendering performance, SSR hydration. MEDIUM: template optimization, state management. LOW: memory management. Load when reviewing Angular code, writing components, or optimizing performance."
+description: "Impact-prioritized Angular 22.x review checklist — CRITICAL: Signals on the zoneless + OnPush defaults, async waterfalls, bundle optimization. HIGH: rendering performance, SSR hydration. MEDIUM: template optimization, state management. LOW: memory management. Load when reviewing Angular code, writing components, or optimizing performance."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation
 metadata:
   triggers: Angular performance, Angular optimization, Angular OnPush, Angular bundle, Angular lazy loading, Angular SSR, Angular memory leak, Angular track, Angular virtual scroll, Angular review
@@ -14,21 +14,22 @@ last-reviewed: "2026-11-22"
 
 ## Iron Law
 
-**LOAD `angular-spa` FIRST for TailwindCSS 4.x + daisyUI workspace conventions. This skill is the ranked review checklist — not the API reference (`angular`) and not implementation templates (`angular-spa`).**
+**LOAD `angular-spa` FIRST for Tailwind CSS 4.3.5 + daisyUI workspace conventions. This skill is the ranked review checklist — not the API reference (`angular`) and not implementation templates (`angular-spa`).**
 
 ## Documentation Sources
 
 Verify every Angular API against the `angular-cli` MCP before citing it in a review:
-- `search_documentation` with `version: 21` — check the page's experimental banner.
+- `search_documentation` with `version: 22` — check the page's experimental / developer-preview banner.
 - `get_best_practices` **with `workspacePath`** (an `angular.json` folder inside the client's project).
-  Without it the tool returns the latest-major guide (v22 guidance, e.g. a different default change-detection strategy) — wrong for 21.2.
+  Without it the tool returns the bundled generic guide, which may not match the installed major.
 
 Context7 is a fallback for non-Angular libraries.
 
-**Version facts for 21.2** (checked against `@angular/*@21.2` `.d.ts` and v21 docs):
-zoneless is the default; `ChangeDetectionStrategy.OnPush` is still explicit (the 21.2 default is `Eager`; `Default` is a deprecated alias);
-`resource` / `rxResource` / `httpResource` and Signal Forms are **EXPERIMENTAL**; `standalone: true` is the
-default and must not be written.
+**Version facts for 22.3** (checked against `@angular/*@22.3.0` `.d.ts` and `get_best_practices` for v22):
+zoneless is the default; **OnPush is the default** (`ChangeDetectionStrategy` docs: "OnPush is enabled by default") —
+do not write `changeDetection: ChangeDetectionStrategy.OnPush`; `resource` / `rxResource` / `httpResource` and
+Signal Forms are stable (`@publicApi 22.0`); `standalone: true` is the default and must not be written;
+new singleton services use `@Service()` instead of `@Injectable({ providedIn: 'root' })`.
 
 ---
 
@@ -58,12 +59,11 @@ default and must not be written.
 
 ## 1. Change Detection (CRITICAL)
 
-### Use OnPush Change Detection
+### Rely on the OnPush Default
 
 ```typescript
-// ✅ CORRECT - OnPush with Signals (explicit in 21.x)
+// ✅ CORRECT - signals on the v22 OnPush default (no changeDetection property)
 @Component({
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div>{{ count() }}</div>`,
 })
 export class Counter {
@@ -86,11 +86,13 @@ field mutated from a timer or a promise never re-renders.
 
 ### Zoneless Is the Default — Do Not Add Providers
 
-Angular 21 apps are zoneless by default: no `zone.js` polyfill, no change-detection provider in
+Angular 22 apps are zoneless by default: no `zone.js` polyfill, no change-detection provider in
 `app.config.ts`. Review findings:
 
 - `provideZoneChangeDetection(...)` present → the app opted back into zone.js; flag unless justified.
-- `provideZonelessChangeDetection()` in a 21.x app → redundant (it was the v20 opt-in); remove.
+- `provideZonelessChangeDetection()` in a 22.x app → redundant (it was the v20 opt-in); remove.
+- `changeDetection: ChangeDetectionStrategy.OnPush` → redundant in v22 (the default); remove. A component that
+  explicitly sets `ChangeDetectionStrategy.Eager` needs a recorded reason.
 - `NgZone.onStable` / `onMicrotaskEmpty` / `isStable` → never fire / always true under zoneless; replace
   with `afterNextRender` / `afterEveryRender`. `NgZone.run` / `runOutsideAngular` remain compatible.
 - Reactive-forms `setValue` / `patchValue` from code do not schedule change detection; the template must
@@ -113,7 +115,7 @@ this.route.params.subscribe((params) => {
 });
 
 // ✅ CORRECT - Route param as input() + a resource: latest id wins, stale requests cancelled,
-// no manual subscribe. rxResource is EXPERIMENTAL in 21.x.
+// no manual subscribe. rxResource is stable in v22 (@publicApi 22.0).
 export class PostsPage {
   private readonly http = inject(HttpClient);
   readonly id = input.required<string>(); // provideRouter(routes, withComponentInputBinding())
@@ -247,7 +249,7 @@ Template method calls run on every check of the view; a pure pipe or `computed()
 Canonical guide: `angular/references/ssr-hydration.md`. Review points:
 
 - Hydration on: `provideClientHydration(...)` in `app.config.ts`.
-- Incremental hydration (`withIncrementalHydration()`, stable in 21.x) **enables event replay itself** —
+- Incremental hydration (`withIncrementalHydration()`, stable) **enables event replay itself** —
   `withEventReplay()` next to it is redundant.
 - Hydrate triggers are `hydrate on …`, `hydrate when …`, `hydrate never`; each `@defer` block is separate
   (`@defer (hydrate on viewport) { … } @placeholder { … }`).
@@ -304,7 +306,7 @@ The stack uses **signal services**, not a store library (no NgRx). Rules:
 - Feature-scoped state: `@Injectable()` (no `providedIn: 'root'`) provided in the feature route or page
   component — it is created and destroyed with that feature.
 - Derived state is `computed()` / `linkedSignal()`; never mirror state with `effect()`.
-- Server state is read through resources (experimental in 21.x) and mutated through `HttpClient` + `reload()`.
+- Server state is read through resources (stable in v22) and mutated through `HttpClient` + `reload()`.
 
 Examples: [references/extended-patterns.md](references/extended-patterns.md). Adopting a store library is an
 architecture decision (ADR), not a review fix.
@@ -329,7 +331,7 @@ Examples: [references/extended-patterns.md](references/extended-patterns.md).
 > Full New Component, Performance Review and SSR checklists: [references/extended-patterns.md](references/extended-patterns.md).
 
 **New component minimum:**
-- [ ] `changeDetection: ChangeDetectionStrategy.OnPush`
+- [ ] No explicit `changeDetection` (OnPush is the v22 default); any `Eager` override is justified
 - [ ] No `standalone: true` (the default since v19) and no `NgModule`
 - [ ] `input()` / `output()` / `model()`, `inject()`, signal queries
 - [ ] `@for` with `track item.id` (not `$index`)

@@ -1,7 +1,7 @@
 # Angular Best Practices — Extended Patterns
 
-Detailed examples for `../SKILL.md`. Angular 21.2: zoneless default, OnPush explicit, `standalone`
-implicit, resources and Signal Forms EXPERIMENTAL.
+Detailed examples for `../SKILL.md`. Angular 22.3: zoneless default, OnPush default (never set
+explicitly), `standalone` implicit, resources and Signal Forms stable, `@Service()` for new singletons.
 
 ---
 
@@ -15,7 +15,6 @@ import { CdkFixedSizeVirtualScroll, CdkVirtualForOf, CdkVirtualScrollViewport } 
 @Component({
   selector: 'app-large-list',
   imports: [CdkVirtualScrollViewport, CdkFixedSizeVirtualScroll, CdkVirtualForOf],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <cdk-virtual-scroll-viewport itemSize="50" class="h-96">
       <!-- *cdkVirtualFor is the CDK API; @for does not virtualize -->
@@ -71,7 +70,7 @@ get filteredProducts() {
 ### Signal Service With Read-Only Exposure
 
 ```typescript
-@Injectable({ providedIn: 'root' })
+@Service()
 export class SessionPrefs {
   private readonly _theme = signal<'light' | 'dark'>('light');
   readonly theme = this._theme.asReadonly(); // not computed(() => this._theme())
@@ -94,7 +93,6 @@ export class ProductFilters {
 @Component({
   selector: 'app-product-page',
   providers: [ProductFilters],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `…`,
 })
 export class ProductPage {
@@ -102,7 +100,7 @@ export class ProductPage {
 }
 
 // ❌ WRONG - One root service holding every feature's state
-@Injectable({ providedIn: 'root' })
+@Service()
 export class GlobalState { /* all app state */ }
 ```
 
@@ -159,7 +157,7 @@ export class Account {
 ```
 
 `toSignal` / `toObservable` must run in an injection context (field initializer or constructor). Called
-from a method they throw NG0203 — verified on Angular 21.2.
+from a method they throw NG0203 — verified on Angular 21.2 (not re-run on 22.3).
 
 ---
 
@@ -167,7 +165,7 @@ from a method they throw NG0203 — verified on Angular 21.2.
 
 ### New Component Checklist
 
-- [ ] `changeDetection: ChangeDetectionStrategy.OnPush`
+- [ ] No explicit `changeDetection` (OnPush is the v22 default)
 - [ ] No `standalone: true`, no `NgModule`, no `CommonModule`
 - [ ] Signals for state (`signal()`, `computed()`, `input()`, `output()`, `model()`)
 - [ ] `inject()` for dependencies

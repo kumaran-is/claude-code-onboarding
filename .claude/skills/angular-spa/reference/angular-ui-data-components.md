@@ -1,6 +1,6 @@
 # Angular UI Data Display Components
 
-Reusable Angular 21+ data display components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Reusable Angular 22+ data display components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 Components are standalone by default (do not write `standalone: true`), use OnPush and signal-based APIs.
 
 ---
@@ -8,7 +8,7 @@ Components are standalone by default (do not write `standalone: true`), use OnPu
 ## Tables, pagination, server-side paging, virtual scroll
 
 Canonical home: [`angular-ui-tables.md`](angular-ui-tables.md) — tier decision, `PaginationComponent`,
-server-side paged table with `rxResource` (EXPERIMENTAL in 21.x), CDK virtual scroll, library choice and
+server-side paged table with `rxResource` (stable in v22), CDK virtual scroll, library choice and
 responsive strategies. Do not copy those patterns here.
 
 ---
@@ -21,7 +21,7 @@ responsive strategies. Do not copy those patterns here.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed,
+  Component, signal, computed,
   input, output
 } from '@angular/core';
 
@@ -54,7 +54,6 @@ import {
       </div>
     </article>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExampleCardComponent {
   title = input.required<string>();
@@ -72,7 +71,7 @@ export class ExampleCardComponent {
 ## Empty State
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-empty-state',
@@ -93,7 +92,6 @@ import { Component, ChangeDetectionStrategy, input, output } from '@angular/core
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EmptyStateComponent {
   icon = input<string>('');
@@ -107,7 +105,7 @@ export class EmptyStateComponent {
 ## Skeleton Loader
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 @Component({
   selector: 'app-skeleton',
@@ -128,7 +126,6 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
       <span class="sr-only">Loading...</span>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SkeletonComponent {
   rows = input<number>(3);
@@ -141,7 +138,7 @@ export class SkeletonComponent {
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, input, signal, computed, output
+  Component, input, signal, computed, output
 } from '@angular/core';
 import { EmptyStateComponent } from './empty-state.component';
 
@@ -199,7 +196,6 @@ export interface TableColumn<T> {
       </table>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class DataTableComponent<T extends Record<string, unknown>> {
   columns = input.required<TableColumn<T>[]>();
@@ -239,7 +235,7 @@ export class DataTableComponent<T extends Record<string, unknown>> {
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, input
+  Component, signal, input
 } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 
@@ -290,7 +286,6 @@ interface NavItem { label: string; path: string; icon?: string; }
       </aside>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ResponsiveNavComponent {
   title = input<string>('App');
@@ -306,7 +301,7 @@ export class ResponsiveNavComponent {
 ## Expandable Section
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, signal } from '@angular/core';
+import { Component, input, signal } from '@angular/core';
 
 @Component({
   selector: 'app-expandable-section',
@@ -322,7 +317,6 @@ import { Component, ChangeDetectionStrategy, input, signal } from '@angular/core
       <div class="collapse-content"><div class="pt-2"><ng-content></ng-content></div></div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExpandableSectionComponent {
   title = input.required<string>();

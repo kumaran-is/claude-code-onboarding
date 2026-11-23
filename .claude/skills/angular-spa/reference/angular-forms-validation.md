@@ -1,6 +1,6 @@
 # Angular Forms Validation
 
-Angular 21+ validation patterns, error messages, and accessibility for forms using daisyUI 5.5.5 + TailwindCSS 4.x.
+Angular 22+ validation patterns, error messages, and accessibility for forms using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 
 ---
 

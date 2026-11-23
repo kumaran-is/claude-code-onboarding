@@ -33,7 +33,7 @@ All directives automatically handle: keyboard navigation (arrows, Enter, Space, 
 | Focus trapping (modal, drawer) | `FocusTrap` from `@angular/cdk/a11y` |
 | Screen reader announcements | `LiveAnnouncer` from `@angular/cdk/a11y` |
 
-Angular CDK provides headless, accessible UI primitives via `@angular/cdk/a11y`. Angular 21+ also ships `@angular/cdk` with built-in ARIA patterns for common interactive widgets.
+Angular CDK provides headless, accessible UI primitives via `@angular/cdk/a11y`. Angular 22+ also ships `@angular/cdk` with built-in ARIA patterns for common interactive widgets.
 
 ## Install CDK
 
@@ -293,12 +293,12 @@ users stay on the link they activated (WCAG 2.2 SC 2.4.3 Focus Order, 2.4.2 Page
 route a `title`, and move focus to the new page's `<h1>` after each in-app navigation:
 
 ```typescript
-import { DOCUMENT, EnvironmentInjector, Injectable, afterNextRender, inject } from '@angular/core';
+import { DOCUMENT, EnvironmentInjector, Service, afterNextRender, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class RouteFocus {
   private readonly router = inject(Router);
   private readonly document = inject(DOCUMENT);

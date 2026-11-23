@@ -28,7 +28,7 @@ A **dumb component** renders what it is given and emits what the user does — n
 - Contains zero HTTP calls
 - Lives in `shared/components/` directory
 
-**The portability test:** If you can move this component to any other Angular project and it still compiles and works, it is dumb. If it breaks because it depends on `PropertyService`, `Router`, or any project-specific injectable, it is (or should be) smart.
+**The portability test:** If you can move this component to any other Angular project and it still compiles and works, it is dumb. If it breaks because it depends on `ItemService`, `Router`, or any project-specific injectable, it is (or should be) smart.
 
 ---
 
@@ -59,48 +59,51 @@ Is this component reused in 2+ places OR is it a leaf UI element?
 ### Smart Component (page-level container)
 
 ```typescript
-// features/properties/properties-page.component.ts
+// features/items/items-page.component.ts
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { resource } from '@angular/core';
-import { PropertyCardComponent } from '../../shared/components/property-card/property-card.component';
+import { ItemCardComponent } from '../../shared/components/item-card/item-card.component';
 import { LoadingSpinnerComponent } from '../../shared/components/loading-spinner/loading-spinner.component';
 import { ErrorStateComponent } from '../../shared/components/error-state/error-state.component';
-import { PropertyService } from '../../core/services/property.service';
-import { Property } from '../../shared/models/property.model';
+import { ItemService } from '../../core/services/item.service';
+import { Item } from '../../shared/models/item.model';
 
 @Component({
-  selector: 'ph-properties-page',
-  standalone: true,
-  imports: [PropertyCardComponent, LoadingSpinnerComponent, ErrorStateComponent],
+  selector: 'app-items-page',
+  imports: [ItemCardComponent, LoadingSpinnerComponent, ErrorStateComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (propertiesResource.isLoading()) {
-      <ph-loading-spinner />
-    } @else if (propertiesResource.error()) {
-      <ph-error-state [message]="propertiesResource.error()!.message" />
-    } @else {
+    <!-- error → hasValue → loading: a reload after an error keeps showing the error, not a bare spinner -->
+    @if (itemsResource.error(); as err) {
+      <app-error-state [message]="err.message" />
+    } @else if (itemsResource.hasValue()) {
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        @for (property of propertiesResource.value(); track property.id) {
-          <ph-property-card
-            [property]="property"
-            (selected)="onPropertySelected($event)"
+        @for (item of itemsResource.value(); track item.id) {
+          <app-item-card
+            [item]="item"
+            (selected)="onItemSelected($event)"
           />
         }
       </div>
+    } @else {
+      <app-loading-spinner />
     }
   `,
 })
-export class PropertiesPageComponent {
+export class ItemsPageComponent {
   // ✅ Smart: injects service
-  private propertyService = inject(PropertyService);
+  private itemService = inject(ItemService);
 
-  // ✅ Smart: owns async state via resource()
-  protected propertiesResource = resource({
-    loader: () => this.propertyService.getAll(),
+  // ✅ Smart: owns async state via resource() — EXPERIMENTAL in Angular 21 (`@experimental` in the
+  // 21.2 typings; the API may change). `loader` must return a Promise: here `getAll(): Promise<Item[]>`.
+  // For an Observable-returning service use rxResource({ stream: () => this.itemService.getAll() })
+  // from '@angular/core/rxjs-interop' (also experimental).
+  protected itemsResource = resource({
+    loader: () => this.itemService.getAll(),
   });
 
   // ✅ Smart: handles business events from dumb children
-  protected onPropertySelected(id: string): void {
+  protected onItemSelected(id: string): void {
     // navigate, open modal, update state, etc.
   }
 }
@@ -109,24 +112,23 @@ export class PropertiesPageComponent {
 ### Dumb Component (shared presentational)
 
 ```typescript
-// shared/components/property-card/property-card.component.ts
+// shared/components/item-card/item-card.component.ts
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { Property } from '../../models/property.model';
+import { Item } from '../../models/item.model';
 
 @Component({
-  selector: 'ph-property-card',
-  standalone: true,
+  selector: 'app-item-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <article class="card bg-base-100 shadow-md hover:shadow-xl transition-shadow duration-200">
       <div class="card-body">
-        <h3 class="card-title text-base-content">{{ property().address }}</h3>
-        <p class="text-base-content/70 text-sm">{{ property().city }}, {{ property().state }}</p>
+        <h3 class="card-title text-base-content">{{ item().name }}</h3>
+        <p class="text-base-content/70 text-sm">{{ item().category }}</p>
         <div class="card-actions justify-end mt-4">
           <button
             class="btn btn-primary btn-sm"
-            (click)="selected.emit(property().id)"
-            [attr.aria-label]="'View property at ' + property().address"
+            (click)="selected.emit(item().id)"
+            [attr.aria-label]="'View details for ' + item().name"
           >
             View Details
           </button>
@@ -135,9 +137,9 @@ import { Property } from '../../models/property.model';
     </article>
   `,
 })
-export class PropertyCardComponent {
+export class ItemCardComponent {
   // ✅ Dumb: receives ALL data via input()
-  readonly property = input.required<Property>();
+  readonly item = input.required<Item>();
 
   // ✅ Dumb: emits user actions via output()
   readonly selected = output<string>();
@@ -155,8 +157,7 @@ Local UI state (e.g. hover, open/closed) that does not affect business logic is 
 import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 
 @Component({
-  selector: 'ph-accordion-item',
-  standalone: true,
+  selector: 'app-accordion-item',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="collapse collapse-arrow bg-base-200">
@@ -250,7 +251,7 @@ When a dumb component needs state that multiple siblings share, lift it to the n
 ```typescript
 // ❌ Wrong: dumb component owns shared state
 // shared/components/search-filter/search-filter.component.ts
-@Component({ selector: 'ph-search-filter' })
+@Component({ selector: 'app-search-filter' })
 export class SearchFilterComponent {
   private filterService = inject(FilterService); // ❌ inject() in shared/components/
 
@@ -259,7 +260,7 @@ export class SearchFilterComponent {
 
 // ✅ Correct: smart parent owns state, passes down via input(), receives changes via output()
 // features/search/search-page.component.ts
-@Component({ selector: 'ph-search-page' })
+@Component({ selector: 'app-search-page' })
 export class SearchPageComponent {
   private filterService = inject(FilterService); // ✅ smart component injects
 
@@ -271,7 +272,7 @@ export class SearchPageComponent {
 }
 
 // shared/components/search-filter/search-filter.component.ts
-@Component({ selector: 'ph-search-filter' })
+@Component({ selector: 'app-search-filter' })
 export class SearchFilterComponent {
   readonly filters = input.required<FilterState>();  // ✅ receives state via input()
   readonly filtersChanged = output<FilterState>();   // ✅ emits changes via output()
@@ -293,34 +294,33 @@ If a smart parent must pass 5+ inputs to a dumb component, consider:
 Dumb components are trivially testable because they have no dependencies:
 
 ```typescript
-// shared/components/property-card/property-card.component.spec.ts
+// shared/components/item-card/item-card.component.spec.ts
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { PropertyCardComponent } from './property-card.component';
+import { ItemCardComponent } from './item-card.component';
 
-describe('PropertyCardComponent', () => {
-  let fixture: ComponentFixture<PropertyCardComponent>;
+describe('ItemCardComponent', () => {
+  let fixture: ComponentFixture<ItemCardComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [PropertyCardComponent],
+      imports: [ItemCardComponent],
       providers: [provideZonelessChangeDetection()],
       // ✅ No mocks needed — dumb component has no inject() calls
     }).compileComponents();
 
-    fixture = TestBed.createComponent(PropertyCardComponent);
-    fixture.componentRef.setInput('property', {
+    fixture = TestBed.createComponent(ItemCardComponent);
+    fixture.componentRef.setInput('item', {
       id: '1',
-      address: '123 Main St',
-      city: 'Austin',
-      state: 'TX',
+      name: 'Sample item',
+      category: 'General',
     });
     await fixture.whenStable();
   });
 
-  it('displays the property address', () => {
+  it('displays the item name', () => {
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('123 Main St');
+    expect(el.textContent).toContain('Sample item');
   });
 
   it('emits selected event when View Details is clicked', async () => {

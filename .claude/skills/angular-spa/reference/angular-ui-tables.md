@@ -1,7 +1,7 @@
 # Angular UI Table Patterns
 
 Angular 21+ table and grid components using daisyUI 5.5.5 + TailwindCSS 4.x.
-All components use standalone, OnPush, and signal-based APIs.
+Components are standalone by default (do not write `standalone: true`), use OnPush and signal-based APIs.
 
 ---
 
@@ -17,7 +17,7 @@ Choose the right implementation based on row count.
                   Use: DataTableComponent + PaginationComponent + client filter
 
 1,000–10,000 rows Server-side pagination
-                  Use: Angular HttpClient + signals (TableStateService below)
+                  Use: query signal + rxResource (Section C)
 
 10,000+ rows      Virtual scrolling
                   Use: @angular/cdk CdkVirtualScrollViewport (Section D below)
@@ -39,12 +39,11 @@ import {
 
 @Component({
   selector: 'app-pagination',
-  standalone: true,
   template: `
     <nav class="flex items-center justify-between mt-4" aria-label="Pagination">
       <div class="flex items-center gap-2">
         <span class="text-sm text-base-content/60">Rows per page:</span>
-        <select class="select select-sm select-bordered"
+        <select class="select select-sm"
           [value]="pageSize()"
           (change)="onPageSizeChange($event)"
           aria-label="Rows per page">
@@ -128,71 +127,142 @@ export class PaginationComponent {
 
 ---
 
-## Section C: Server-Side Table Service
+## Section C: Server-Side Paged Table (canonical paged fetch)
 
-Use when row count exceeds 1,000 or data must be filtered/sorted server-side.
+Use when row count exceeds 1,000 or data must be filtered/sorted server-side. This is the single
+home for the paged-fetch pattern; other files link here.
+
+- One `query` signal holds page, size, sort and filter. Changing the filter or sort resets `page` to 0.
+- `rxResource` re-fetches when `query()` changes and cancels the stale request (latest wins).
+  **`rxResource` is EXPERIMENTAL in Angular 21.x** — pin the Angular version and re-check on upgrade.
+- Never wire `toObservable(...)` inside a method: it needs an injection context (throws `NG0203`) and
+  each call adds another live subscription. Declare the resource as a field.
+- Never replace a failed load with `{ items: [], total: 0 }` — that renders a failure as "no data".
+  Render the error state with a retry (`reload()`). Load-state rules (check `error()` before `value()`,
+  `hasValue()`, 401 vs 403 messages) live in `angular-ui-patterns/reference/loading-control-flow.md`
+  and `error-handling.md`.
+- Mutations go through `HttpClient`, then call `orders.reload()`.
 
 ```typescript
-import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { switchMap, tap, catchError, of } from 'rxjs';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, Injectable, computed, inject, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { Observable } from 'rxjs';
+import { PaginationComponent } from './pagination.component';
 
-interface PagedResponse<T> { items: T[]; total: number; }
+export interface Order { readonly id: string; readonly customer: string; readonly total: number; }
+export interface PagedResponse<T> { readonly items: readonly T[]; readonly total: number; }
+export interface TableQuery {
+  readonly page: number;
+  readonly pageSize: number;
+  readonly sortField: 'customer' | 'total' | null;
+  readonly sortDir: 'asc' | 'desc';
+  readonly filter: string;
+}
 
 @Injectable({ providedIn: 'root' })
-export class ServerTableService<T> {
+export class OrdersApi {
   private readonly http = inject(HttpClient);
 
-  readonly page = signal(0);
-  readonly pageSize = signal(25);
-  readonly sortField = signal<string | null>(null);
-  readonly sortDir = signal<'asc' | 'desc'>('asc');
-  private readonly _loading = signal(false);
-  private readonly _error = signal<string | null>(null);
-  private readonly _items = signal<T[]>([]);
-  private readonly _total = signal(0);
-  readonly loading = this._loading.asReadonly();
-  readonly error = this._error.asReadonly();
-  readonly items = this._items.asReadonly();
-  readonly total = this._total.asReadonly();
-  readonly totalPages = computed(() => Math.ceil(this._total() / this.pageSize()));
+  list(q: TableQuery): Observable<PagedResponse<Order>> {
+    let params = new HttpParams()
+      .set('page', q.page)
+      .set('pageSize', q.pageSize)
+      .set('filter', q.filter);
+    if (q.sortField) params = params.set('sort', q.sortField).set('dir', q.sortDir);
+    return this.http.get<PagedResponse<Order>>('/api/orders', { params });
+  }
+}
 
-  loadFrom(endpoint: string): void {
-    toObservable(
-      computed(() => ({
-        page: this.page(), pageSize: this.pageSize(),
-        sortField: this.sortField(), sortDir: this.sortDir()
-      }))
-    ).pipe(
-      tap(() => { this._loading.set(true); this._error.set(null); }),
-      switchMap(({ page, pageSize, sortField, sortDir }) => {
-        let params = new HttpParams()
-          .set('page', page.toString())
-          .set('pageSize', pageSize.toString());
-        if (sortField) params = params.set('sort', sortField).set('dir', sortDir);
-        return this.http.get<PagedResponse<T>>(endpoint, { params }).pipe(
-          catchError(err => {
-            this._error.set(err?.error?.message ?? 'Failed to load data');
-            return of({ items: [], total: 0 });
-          })
-        );
-      })
-    ).subscribe(response => {
-      this._items.set(response.items);
-      this._total.set(response.total);
-      this._loading.set(false);
-    });
+@Component({
+  selector: 'app-orders-table',
+  imports: [PaginationComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (orders.error()) {
+      <div class="alert alert-error" role="alert">
+        <span>Orders could not be loaded.</span>
+        <button type="button" class="btn btn-sm" (click)="orders.reload()">Try again</button>
+      </div>
+    } @else if (!orders.hasValue()) {
+      <div class="flex justify-center p-8" role="status" aria-label="Loading orders">
+        <span class="loading loading-spinner loading-lg"></span>
+      </div>
+    } @else {
+      <div class="overflow-x-auto rounded-box border border-base-300">
+        <table class="table table-zebra">
+          <thead class="bg-base-200">
+            <tr>
+              <th [attr.aria-sort]="ariaSort('customer')">
+                <button type="button" class="btn btn-ghost btn-xs" (click)="sortBy('customer')">Customer</button>
+              </th>
+              <th [attr.aria-sort]="ariaSort('total')">
+                <button type="button" class="btn btn-ghost btn-xs" (click)="sortBy('total')">Total</button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (order of orders.value().items; track order.id) {
+              <tr><td>{{ order.customer }}</td><td>{{ order.total }}</td></tr>
+            } @empty {
+              <tr><td colspan="2">No orders match this filter.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <app-pagination
+        [total]="orders.value().total"
+        [currentPage]="query().page"
+        [pageSize]="query().pageSize"
+        (pageChange)="goTo($event)"
+        (pageSizeChange)="setPageSize($event)" />
+    }
+  `,
+})
+export class OrdersTableComponent {
+  private readonly api = inject(OrdersApi);
+
+  protected readonly query = signal<TableQuery>({
+    page: 0, pageSize: 25, sortField: null, sortDir: 'asc', filter: '',
+  });
+
+  // EXPERIMENTAL (Angular 21.x). A params change moves status to 'loading' and clears value();
+  // reload() keeps the previous value while status is 'reloading'.
+  protected readonly orders = rxResource({
+    params: () => this.query(),
+    stream: ({ params }) => this.api.list(params),
+  });
+
+  protected readonly sortState = computed(() => {
+    const q = this.query();
+    return { field: q.sortField, dir: q.sortDir };
+  });
+
+  search(filter: string): void {
+    this.query.update((q) => ({ ...q, filter: filter.trim(), page: 0 }));
   }
 
-  sortBy(field: string): void {
-    if (this.sortField() === field) {
-      this.sortDir.update(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      this.sortField.set(field);
-      this.sortDir.set('asc');
-    }
-    this.page.set(0);
+  protected sortBy(field: 'customer' | 'total'): void {
+    this.query.update((q) => ({
+      ...q,
+      sortField: field,
+      sortDir: q.sortField === field && q.sortDir === 'asc' ? 'desc' : 'asc',
+      page: 0,
+    }));
+  }
+
+  protected ariaSort(field: 'customer' | 'total'): 'ascending' | 'descending' | 'none' {
+    const s = this.sortState();
+    if (s.field !== field) return 'none';
+    return s.dir === 'asc' ? 'ascending' : 'descending';
+  }
+
+  protected goTo(page: number): void {
+    this.query.update((q) => ({ ...q, page }));
+  }
+
+  protected setPageSize(pageSize: number): void {
+    this.query.update((q) => ({ ...q, pageSize, page: 0 }));
   }
 }
 ```
@@ -201,24 +271,64 @@ export class ServerTableService<T> {
 
 ## Section D: Virtual Scrolling (10,000+ rows)
 
-**Install:** `npm install @angular/cdk`
+**Install:** `npm install @angular/cdk@~21.2.0` (match the installed `@angular/core` minor).
 
-Structure: `CdkVirtualScrollViewport [itemSize]="48" [style.height.px]="600"` wraps a `<table>` with `*cdkVirtualFor`. Fixed header rendered **outside** the viewport with `sticky top-0`.
+Virtual scrolling renders only the rows in the viewport, so DOM size stays fixed regardless of dataset size.
+`*cdkVirtualFor` is still the CDK API (there is no `@for` equivalent for virtual scroll).
 
 ```typescript
-// imports: [ScrollingModule]  — from '@angular/cdk/scrolling'
-// columns = input.required<{ key: string; label: string; width?: string }[]>()
-// items = input.required<T[]>()
-// rowHeightPx = input<number>(48)   // must match actual rendered row height exactly
-// viewportHeightPx = input<number>(600)
-// trackById(_i, row) { return row['id']; }  // REQUIRED — prevents full re-render on scroll
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ScrollingModule } from '@angular/cdk/scrolling';
+
+export interface VirtualRow { readonly id: string | number; readonly [key: string]: unknown; }
+
+@Component({
+  selector: 'app-virtual-table',
+  imports: [ScrollingModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="overflow-x-auto rounded-box border border-base-300">
+      <!-- Header outside the viewport so it stays visible -->
+      <table class="table w-full">
+        <thead class="bg-base-200 sticky top-0 z-10">
+          <tr>
+            @for (col of columns(); track col.key) {
+              <th [style.width]="col.width">{{ col.label }}</th>
+            }
+          </tr>
+        </thead>
+      </table>
+      <cdk-virtual-scroll-viewport [itemSize]="rowHeightPx()" [style.height.px]="viewportHeightPx()" class="w-full">
+        <table class="table w-full">
+          <tbody>
+            <tr *cdkVirtualFor="let row of items(); trackBy: trackById; let odd = odd" [class.bg-base-200]="odd">
+              @for (col of columns(); track col.key) {
+                <td [style.width]="col.width">{{ row[col.key] }}</td>
+              }
+            </tr>
+          </tbody>
+        </table>
+      </cdk-virtual-scroll-viewport>
+    </div>
+  `,
+})
+export class VirtualTableComponent<T extends VirtualRow> {
+  readonly columns = input.required<readonly { key: keyof T & string; label: string; width?: string }[]>();
+  readonly items = input.required<readonly T[]>();
+  readonly rowHeightPx = input(48); // must equal the rendered row height
+  readonly viewportHeightPx = input(600);
+
+  protected trackById(_index: number, row: T): string | number {
+    return row.id;
+  }
+}
 ```
 
 **Key constraints:**
-- `itemSize` must match actual rendered row height — mismatches cause scroll jitter
-- `trackBy` is mandatory — without it CDK re-renders every row on each scroll event
-- Headers must be rendered outside `CdkVirtualScrollViewport` and positioned sticky
-- Import `ScrollingModule` from `@angular/cdk/scrolling`, not from `@angular/cdk`
+- `itemSize` must match the rendered row height — mismatches cause scroll jitter.
+- `trackBy` is mandatory — without it CDK re-renders every row on scroll.
+- Rows are recycled: stripe from the item index (`let odd = odd`), not with `table-zebra` (DOM-index striping flickers).
+- Import `ScrollingModule` from `@angular/cdk/scrolling`.
 
 ---
 
@@ -226,35 +336,44 @@ Structure: `CdkVirtualScrollViewport [itemSize]="48" [style.height.px]="600"` wr
 
 | Need | Recommended | Install |
 |------|-------------|---------|
-| Full design control, TypeScript-first, headless | **TanStack Table** | `npm install @tanstack/angular-table` |
-| Enterprise: grouping, aggregation, export, pivot | **AG Grid Community** | `npm install ag-grid-angular ag-grid-community` |
+| Full design control, TypeScript-first, headless | **TanStack Table** | `@tanstack/angular-table` (pin the version) |
+| Enterprise: grouping, aggregation, export, pivot | **AG Grid Community** | `ag-grid-angular ag-grid-community` (pin) |
 | Standard sort/filter/paginate, <1K rows | **Existing DataTableComponent** | No install needed |
-| 10K+ rows, smooth scroll | **Angular CDK virtual scroll** | `npm install @angular/cdk` |
+| 10K+ rows, smooth scroll | **Angular CDK virtual scroll** | `@angular/cdk` |
 
-Rule: introduce a table library only when you need ≥3 features DataTableComponent does not provide.
+Rule: introduce a table library only when you need ≥3 features DataTableComponent does not provide
+(e.g. inline editing + column resize + export). A library for a simple CRUD list adds bundle weight for no user-visible benefit.
 
 ---
 
 ## Section F: Responsive Table Strategies
 
-| Strategy | When to Use |
-|----------|-------------|
-| **Horizontal scroll** | All columns critical — wrap in `overflow-x-auto` |
-| **Priority columns** | `hidden md:table-cell` on lower-priority `<th>` and `<td>` |
-| **Card stack** | Row count < 50; mobile-first — `<div class="block md:hidden">` card per row |
-| **Truncate & expand** | Many columns — show 2–3 columns + expand row trigger |
+| Strategy | When to Use | Implementation |
+|----------|-------------|----------------|
+| **Horizontal scroll** (default) | All columns critical | `<div class="overflow-x-auto">` around `<table class="table min-w-[640px]">` |
+| **Priority columns** | Some columns secondary on mobile | `hidden md:table-cell` on the `<th>` AND matching `<td>` |
+| **Card stack** | Row count < 50; mobile-first | `<div class="block md:hidden">` card per row + `<div class="hidden md:block">` table |
+| **Truncate & expand** | Many columns | Show 2–3 columns + an expand button revealing the rest |
 
 **Expand row toggle:**
 ```typescript
 protected readonly expandedRows = signal(new Set<string>());
 
 protected toggleRow(id: string): void {
-  this.expandedRows.update(set => {
+  this.expandedRows.update((set) => {
     const next = new Set(set);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     return next;
   });
 }
+```
+
+```html
+<button type="button" class="btn btn-xs btn-ghost"
+  [attr.aria-expanded]="expandedRows().has(row.id)"
+  [attr.aria-label]="'Toggle details for ' + row.name"
+  (click)="toggleRow(row.id)">{{ expandedRows().has(row.id) ? '−' : '+' }}</button>
 ```
 
 ---

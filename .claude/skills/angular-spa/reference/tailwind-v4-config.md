@@ -45,8 +45,7 @@ For SCSS projects, add to `src/styles.scss`:
 |------------------------|-------------------------------|--------|
 | `ng add tailwindcss` automated | Manual setup | More control over daisyUI integration |
 | SCSS `@use 'tailwindcss'` supported | CSS only (`src/styles.css`) | Sass intercepts `@import`/`@theme`/`@plugin` — CSS is required |
-| `@import 'tailwindcss'` | `@import "tailwindcss"` + `@import "daisyui/daisyui.css"` | daisyUI added as direct CSS import |
-| No mention of `@source` | `@source "./**/*.ts"` required | Angular build pipeline doesn't auto-scan TS inline templates |
+| `@import "tailwindcss"` | `@import "tailwindcss";` + `@plugin "daisyui";` | daisyUI 5 is a Tailwind 4 plugin |
 
 > Angular 21 does **not** use Tailwind v4 by default — it must be installed explicitly via `ng add tailwindcss` or manual setup. The `ng add` command installs Tailwind v4 when run in Angular 17+ projects using the `@angular/build:application` (esbuild) builder.
 
@@ -116,48 +115,30 @@ TailwindCSS v4 is a complete rewrite using CSS-native configuration:
 }
 ```
 
-## daisyUI v5 Import (CRITICAL)
-
-> **Do NOT use `@plugin "daisyui"` in TailwindCSS 4.x with Angular.** The `@plugin` directive requires the daisyUI PostCSS plugin which is not bundled with `@tailwindcss/postcss` in Angular builds. It silently fails — no styles applied.
+## daisyUI v5 import
 
 ```css
-/* src/styles.css — correct for Angular + TailwindCSS v4 + daisyUI v5 */
+/* src/styles.css — all @import lines first */
 @import "tailwindcss";
-@import "daisyui/daisyui.css";   /* Direct CSS import — always works */
+@plugin "daisyui";
 ```
 
-Install:
-```bash
-npm install daisyui@latest
-```
+Install pinned: `npm install --save-exact tailwindcss@4.3.5 @tailwindcss/postcss@4.3.5 postcss@8.5.33 daisyui@5.5.5`.
 
-## TailwindCSS v4 Utility Class Scanning in Angular (CRITICAL)
+Verified on Angular 21.2.30 (`ng build` exit 0): with `.postcssrc.json` present, `@plugin "daisyui"` emits
+daisyUI component classes (`.btn-primary` found in `dist/<app>/browser/styles-*.css`) and no `@plugin`
+text remains. The `@plugin` failure people report is a **wrong PostCSS file**: Angular reads
+`.postcssrc.json` or `postcss.config.json`, **not** `postcss.config.js`. Symptom: the build still exits
+0, `@plugin` appears verbatim in the output CSS and no daisyUI classes exist.
 
-> **TailwindCSS v4 with `@tailwindcss/postcss` does NOT auto-scan Angular inline templates in `.ts` files.** Utility classes used only in TypeScript template strings (e.g. `px-6`, `mx-auto`, `max-w-4xl`) will NOT be generated — only daisyUI component classes (from the direct CSS import) will work.
+Keep Tailwind/daisyUI directives in a plain `styles.css`; using them through Sass is UNVERIFIED.
 
-**Symptom:** daisyUI buttons/badges/cards render correctly, but spacing/layout/typography utilities (padding, margin, flex, grid, max-width) are completely missing.
+## Class scanning
 
-**Fix — add explicit source directives:**
-```css
-/* src/styles.css */
-@import "tailwindcss";
-@import "daisyui/daisyui.css";
-@source "./**/*.ts";
-@source "./**/*.html";
-```
-
-**If `@source` still doesn't work** (path resolution can be inconsistent with PostCSS), safelist critical utilities directly in `styles.css`:
-```css
-@layer utilities {
-  .px-4 { padding-left: 1rem; padding-right: 1rem; }
-  .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
-  .mx-auto { margin-left: auto; margin-right: auto; }
-  .max-w-4xl { max-width: 56rem; }
-  /* ...add any utilities used in TypeScript template strings */
-}
-```
-
-**Root cause:** `@tailwindcss/postcss` runs PostCSS transforms but its content scanner is invoked differently than the Tailwind CLI. Angular's build pipeline does not pass TypeScript source paths to the PostCSS plugin's scanner by default.
+Tailwind 4 scans the project sources automatically, **including inline templates in `.ts` files**
+(verified: utilities used only in an inline `template:` string — `max-w-4xl`, `tracking-widest` — are
+emitted). No `@source` lines or hand-written utility safelists are needed. Add `@source` only for
+classes that live outside the project (for example a library in `node_modules`).
 
 ## Verification Checklist
 
@@ -173,9 +154,7 @@ After scaffolding, ALWAYS verify these before writing any UI components:
 2. **CSS entry point** (`src/styles.css`) must contain:
    ```css
    @import "tailwindcss";
-   @import "daisyui/daisyui.css";
-   @source "./**/*.ts";
-   @source "./**/*.html";
+   @plugin "daisyui";
    ```
    ❌ Old Tailwind v3 syntax is WRONG for v4:
    ```css
@@ -184,14 +163,13 @@ After scaffolding, ALWAYS verify these before writing any UI components:
    @tailwind components;
    @tailwind utilities;
    ```
-   ❌ Do NOT use `@plugin "daisyui"` — it silently fails in Angular builds (see daisyUI v5 Import section above).
 
 3. **Angular JSON styles** — `angular.json` must reference `src/styles.css`:
    ```json
    "styles": ["src/styles.css"]
    ```
 
-4. **PostCSS config** — `.postcssrc.json` (not `postcss.config.js`) must exist in the project root:
+4. **PostCSS config** — `.postcssrc.json` or `postcss.config.json` (never `postcss.config.js`) must exist in the project root:
    ```json
    {
      "plugins": {

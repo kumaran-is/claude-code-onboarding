@@ -1,166 +1,128 @@
-# Angular SSR & Hydration Reference
+# Angular 21.2 SSR and Hydration — Canonical Reference
 
-Server-Side Rendering, hydration configuration, and incremental hydration patterns.
+Snippets compiled against `@angular/*@21.2.26` + `@angular/ssr@21.2.x`, TypeScript 5.9.3,
+`strictTemplates`.
 
----
-
-## SSR Setup
+## Setup
 
 ```bash
-ng add @angular/ssr
+ng add @angular/ssr   # adds @angular/ssr, server.ts, app.config.server.ts, app.routes.server.ts
 ```
 
-This adds:
-- `@angular/ssr` package
-- `server.ts` entry point
-- `app.config.server.ts` for server-specific providers
-- Build targets: `build` (browser) + `server` (SSR)
-
----
-
-## Hydration Configuration
+## Client config
 
 ```typescript
-// app.config.ts
-import { ApplicationConfig } from "@angular/core";
-import {
-  provideClientHydration,
-  withEventReplay,
-} from "@angular/platform-browser";
-import { provideRouter } from "@angular/router";
-import { provideHttpClient, withFetch } from "@angular/common/http";
+import { provideHttpClient, withFetch } from '@angular/common/http';
+import { ApplicationConfig } from '@angular/core';
+import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
+import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes),
-    // withFetch() required for SSR — uses native fetch instead of XMLHttpRequest
-    provideHttpClient(withFetch()),
-    // withEventReplay() replays user events that happened before hydration
-    provideClientHydration(withEventReplay()),
+    provideHttpClient(withFetch()), // fetch backend: recommended for SSR
+    // withEventReplay: replays clicks made before hydration finished.
+    // withIncrementalHydration: REQUIRED for any `hydrate on …` trigger below.
+    provideClientHydration(withEventReplay(), withIncrementalHydration()),
   ],
 };
 ```
 
-### Server config (app.config.server.ts)
+## Server config and render modes
 
 ```typescript
-import { mergeApplicationConfig, ApplicationConfig } from "@angular/core";
-import { provideServerRendering } from "@angular/platform-server";
-import { appConfig } from "./app.config";
+import { mergeApplicationConfig } from '@angular/core';
+import { RenderMode, ServerRoute, provideServerRendering, withRoutes } from '@angular/ssr';
+import { appConfig } from './app.config';
 
-const serverConfig: ApplicationConfig = {
-  providers: [provideServerRendering()],
-};
+export const serverRoutes: ServerRoute[] = [
+  { path: 'account/**', renderMode: RenderMode.Client },   // per-user pages: no SSR
+  { path: 'about', renderMode: RenderMode.Prerender },      // static at build time
+  { path: '**', renderMode: RenderMode.Server },
+];
 
-export const config = mergeApplicationConfig(appConfig, serverConfig);
+export const config = mergeApplicationConfig(appConfig, {
+  providers: [provideServerRendering(withRoutes(serverRoutes))],
+});
 ```
 
----
+`provideServerRendering` is imported from **`@angular/ssr`** (with `withRoutes`). The argument-less
+`provideServerRendering()` in `@angular/platform-server` is the old entry point; do not mix them.
 
-## Incremental Hydration with @defer (v20+)
+### Security: `allowedHosts` (SSRF)
 
-Incremental hydration defers hydration of non-critical components until they are needed.
+The SSR engine builds absolute URLs from the request `Host`. Configure the hosts you serve in
+`angular.json` → `projects.<name>.architect.build.options.security.allowedHosts` (or the
+`NG_ALLOWED_HOSTS` env var, or `AngularNodeAppEngine({ allowedHosts })`). Unknown hosts get a
+client-rendered page or a 400 (from the `@angular/ssr` 21.2 `.d.ts` remarks). Never render
+per-user data on prerendered routes, and never put secrets in `TransferState` — it is serialized
+into the HTML.
+
+## Incremental hydration
 
 ```typescript
-import { Component } from "@angular/core";
-
 @Component({
-  selector: "app-page",
-  standalone: true,
+  selector: 'app-page',
+  imports: [ProductList, ChatWidget],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <!-- Critical content — hydrated immediately -->
-    <app-hero />
-    <app-nav />
-
-    <!-- Hydrate when section scrolls into view -->
-    @defer (hydrate on viewport) {
-      <app-product-list />
-    }
-
-    <!-- Hydrate when user interacts with the element -->
-    @defer (hydrate on interaction) {
-      <app-chat-widget />
-    }
-
-    <!-- Hydrate when browser is idle -->
-    @defer (hydrate on idle) {
-      <app-analytics-panel />
-    }
-
-    <!-- Hydrate after a delay -->
-    @defer (hydrate on timer(2000ms)) {
-      <app-cookie-banner />
-    }
-
-    <!-- Hydrate when user hovers -->
-    @defer (hydrate on hover) {
-      <app-dropdown-menu />
-    }
+    @defer (hydrate on viewport) { <app-product-list /> }
+    @defer (on idle; hydrate on interaction) { <app-chat-widget /> }
+    @defer (hydrate never) { <footer>Static footer</footer> }
   `,
 })
-export class PageComponent {}
+export class Page {}
 ```
 
-**Available hydration triggers:**
+| Trigger | Hydrates when |
+|---|---|
+| `hydrate on idle` | Browser is idle |
+| `hydrate on viewport` | Block enters the viewport |
+| `hydrate on interaction` | User clicks/focuses inside it |
+| `hydrate on hover` | Pointer hovers it |
+| `hydrate on timer(2s)` | After the delay |
+| `hydrate when expr` | Expression becomes truthy (only checked once a parent is hydrated) |
+| `hydrate never` | Stays static HTML |
 
-| Trigger | When it hydrates |
-|---------|-----------------|
-| `on idle` | Browser is idle (requestIdleCallback) |
-| `on viewport` | Element enters the viewport |
-| `on interaction` | User clicks, touches, or focuses the element |
-| `on hover` | User hovers over the element |
-| `on timer(Nms)` | After N milliseconds |
-| `when condition` | When a signal/expression becomes truthy |
+Regular `on …` triggers control client-side loading; `hydrate on …` controls when server-rendered
+content becomes interactive. Without `withIncrementalHydration()` the `hydrate` triggers are ignored.
 
----
+## Avoiding duplicate requests
 
-## TransferState (Avoiding Duplicate HTTP Requests)
-
-Prevent server-fetched data from being re-fetched on the client:
+- **HttpClient GET/HEAD** responses made during SSR are cached into the page and reused on the
+  client automatically when `provideClientHydration()` is present (tune with
+  `withHttpTransferCacheOptions`). This covers `httpResource` and `HttpClient`-based `rxResource`.
+- Requests with an `Authorization` header are not cached by default — keep it that way for
+  per-user data.
+- Use `TransferState` manually only for non-HttpClient data:
 
 ```typescript
-import { Component, inject } from "@angular/core";
-import { TransferState, makeStateKey } from "@angular/core";
-import { HttpClient } from "@angular/common/http";
-import { isPlatformServer } from "@angular/common";
-import { PLATFORM_ID } from "@angular/core";
+const CONFIG_KEY = makeStateKey<{ region: string }>('runtime-config');
 
-const PRODUCTS_KEY = makeStateKey<Product[]>("products");
+@Component({ selector: 'app-browser-only', changeDetection: ChangeDetectionStrategy.OnPush, template: `{{ width() }}` })
+export class BrowserOnly {
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  private readonly state = inject(TransferState);
+  readonly width = signal(0);
+  readonly region = this.state.get(CONFIG_KEY, { region: 'unknown' }).region;
 
-@Component({ ... })
-export class ProductsComponent {
-  private transferState = inject(TransferState);
-  private http = inject(HttpClient);
-  private platformId = inject(PLATFORM_ID);
-
-  loadProducts() {
-    if (this.transferState.hasKey(PRODUCTS_KEY)) {
-      // Client: use server-fetched data
-      return this.transferState.get(PRODUCTS_KEY, []);
-    }
-
-    // Server: fetch and store in TransferState
-    return this.http.get<Product[]>('/api/products').pipe(
-      tap(products => {
-        if (isPlatformServer(this.platformId)) {
-          this.transferState.set(PRODUCTS_KEY, products);
-        }
-      })
-    );
+  constructor() {
+    // Browser-only APIs belong in render hooks: they never run on the server.
+    afterNextRender(() => this.width.set(window.innerWidth));
+    if (!this.isBrowser) this.state.set(CONFIG_KEY, { region: 'eu' });
   }
 }
 ```
 
-**Note:** When using `resource()` or `httpResource()`, Angular handles TransferState automatically — no manual setup needed.
+## Common SSR issues
 
----
-
-## Common SSR Issues
-
-| Issue | Solution |
-|-------|---------|
-| `window is not defined` | Guard with `isPlatformBrowser(platformId)` |
-| Hydration mismatch | Ensure server and client render identical HTML |
-| HTTP requests fire twice | Use `withFetch()` + let Angular handle transfer |
-| SSR fetch fails | Use `provideHttpClient(withFetch())` — required for SSR |
-| Slow TTFB | Use incremental hydration + `@defer` for below-fold content |
+| Issue | Fix |
+|---|---|
+| `window`/`document`/`localStorage` is not defined | Move the code into `afterNextRender`, or guard with `isPlatformBrowser` |
+| Hydration mismatch (NG0500-series) | Server and client must render the same DOM: no random ids/dates in templates, no DOM manipulation outside Angular, valid HTML nesting |
+| `hydrate on …` has no effect | Add `withIncrementalHydration()` |
+| Request rendered with wrong host / 400 | Add the host to `security.allowedHosts` |
+| Data fetched twice | Use `HttpClient` (the transfer cache is on by default with `provideClientHydration()`; `withFetch()` does not enable it) |
+| `status` on a Prerender route does not compile (TS2353) | Only `RenderMode.Server` routes accept `status`/`headers`; prerendered pages cannot set an HTTP status |
+| Server and browser call the API on different origins | `HTTP_TRANSFER_CACHE_ORIGIN_MAP` — provide it on the **server** only (internal → public origin) |

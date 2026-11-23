@@ -1,216 +1,182 @@
-# Angular Testing with Vitest
+# Angular 21.2 Unit Testing with Vitest — Canonical Reference
 
-Angular 21 supports Vitest as the default test runner (replacing Karma/Jasmine). Vitest is faster, ESM-native, and integrates with Vite's build pipeline.
+Canonical home for Angular unit/component tests. Facts were verified with `ng new` from
+`@angular/cli@21.2.30` (`@angular/*@21.2.26`, Vitest 4.1, jsdom 28) and every spec below passed with
+`ng test --watch=false`. E2E belongs to the `browser-testing` skill (Playwright); tool choice per target:
+`.claude/rules/testing-tool-selection.md`.
 
-## Setup — new Angular project
+## What `ng new` 21.2 gives you
+
+- `angular.json` → `"test": { "builder": "@angular/build:unit-test" }`, runner **Vitest** (default),
+  environment **jsdom**. No `vitest.config.ts`, no `karma.conf.js`, no `test.ts`, no zone.js.
+- `tsconfig.spec.json` → `"types": ["vitest/globals"]` so `describe`/`it`/`expect`/`vi` are global.
+- TestBed is initialized by the builder and runs **zoneless** (zone.js is absent). Adding
+  `provideZonelessChangeDetection()` to TestBed providers is optional, not required.
 
 ```bash
-# Angular 21 projects: Vitest is the default when using the CLI
-npx @angular/cli@latest new my-app --style=scss --ssr=false --ai-config=claude
-# Vitest config is generated automatically
+ng test --watch=false                          # CI run; exit code is the gate
+ng test --watch=false --include src/app/users  # a folder or file
+ng test --watch=false --filter '^UserList'     # by suite/test name
+ng test --watch=false --coverage               # coverage (v8)
+ng test --browsers ChromeHeadless              # real browser instead of jsdom (needs @vitest/browser + provider)
 ```
 
-## Setup — existing project (migrate from Karma)
+Migrating an existing Karma/Jasmine project (schematics present in `@schematics/angular` 21.2.30):
+switch the `test` target builder to `@angular/build:unit-test`, add `vitest` + `jsdom`, set
+`types: ["vitest/globals"]`, then run `ng generate @schematics/angular:refactor-jasmine-vitest` to
+rewrite Jasmine APIs (`jasmine.createSpyObj` → `vi.fn()` objects, `spyOn` → `vi.spyOn`). Review the
+diff; remove every `fakeAsync`/`waitForAsync` by hand (see below). Browser mode setup:
+`ng generate @schematics/angular:vitest-browser`.
 
-```bash
-# Remove Karma
-npm uninstall karma karma-chrome-launcher karma-coverage karma-jasmine karma-jasmine-html-reporter
+## Rules that bite under zoneless + Vitest
 
-# Add Vitest + Angular Vitest preset
-npm install --save-dev vitest @analogjs/vitest-angular
+| Old habit | Under 21.x Vitest | Use instead |
+|---|---|---|
+| `fakeAsync` / `tick` / `flush` | Throws `zone-testing.js is needed for the fakeAsync() test helper` | `vi.useFakeTimers()` + `await vi.advanceTimersByTimeAsync(ms)` |
+| `waitForAsync` | Needs zone.js | Plain `async` test + `await fixture.whenStable()` |
+| `fixture.detectChanges()` after every change | Works, but hides scheduling bugs | `await fixture.whenStable()` (lets the zoneless scheduler render) |
+| Set a plain field, expect the DOM to update | Does not render zoneless | Make it a signal or use `componentRef.setInput()` |
+| `await fixture.whenStable()` with an unflushed `HttpClient` request | **Hangs**: in-flight requests are pending tasks | Flush via `HttpTestingController` first, then await |
 
-# Update angular.json: change "test" builder to Vitest
+## Component with HttpTestingController and a CDK harness
+
+Harnesses come from `@angular/cdk`, which `ng new` does not install. Add it once, on the same minor as the
+framework: `npm install --save-dev @angular/cdk@~21.2.14` (then pin it like the other `@angular/*` packages).
+
+```typescript
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { TestBed } from '@angular/core/testing';
+import { UserList } from './user-list';           // rxResource-backed list with a load-state union
+import { UserListHarness } from './user-list.harness';
+
+const URL = 'https://api.example.test/v1/users';
+
+describe('UserList', () => {
+  let ctrl: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    ctrl = TestBed.inject(HttpTestingController);
+  });
+  afterEach(() => ctrl.verify()); // fails on unexpected or unflushed requests
+
+  const pending = () => ctrl.expectOne((r) => r.url === URL);
+
+  async function render(respond: (req: ReturnType<typeof pending>) => void) {
+    const fixture = TestBed.createComponent(UserList);
+    fixture.detectChanges();                 // first render: loading state, request issued
+    const loadingText: string = fixture.nativeElement.textContent;
+    respond(pending());                      // flush BEFORE whenStable()/harness calls
+    await fixture.whenStable();
+    const harness = await TestbedHarnessEnvironment.harnessForFixture(fixture, UserListHarness);
+    return { harness, loadingText };
+  }
+
+  it('renders rows on success', async () => {
+    const { harness, loadingText } = await render((r) => r.flush({ items: [{ id: '1', name: 'Ada' }], total: 1 }));
+    expect(loadingText).toContain('Loading users');
+    expect(await harness.names()).toEqual(['Ada']);
+  });
+
+  it('renders 403 as not authorised, without retry', async () => {
+    const { harness } = await render((r) => r.flush(null, { status: 403, statusText: 'Forbidden' }));
+    expect(await harness.errorText()).toContain('not authorised');
+  });
+
+  it('retries after a 503', async () => {
+    const { harness } = await render((r) => r.flush({ detail: 'Upstream timeout' }, { status: 503, statusText: 'Unavailable' }));
+    const click = harness.retry();                  // the click's stability wait blocks on the reload…
+    const reload = await vi.waitFor(() => pending()); // …so flush it while the click is pending
+    reload.flush({ items: [{ id: '2', name: 'Grace' }], total: 1 });
+    await click;
+    expect(await harness.names()).toEqual(['Grace']);
+  });
+});
 ```
 
-angular.json change:
-```json
-{
-  "architect": {
-    "test": {
-      "builder": "@analogjs/vitest-angular:test",
-      "options": {
-        "configFile": "vitest.config.ts"
-      }
-    }
+```typescript
+// user-list.harness.ts — tests talk to the harness, not to CSS selectors
+import { ComponentHarness } from '@angular/cdk/testing';
+
+export class UserListHarness extends ComponentHarness {
+  static hostSelector = 'app-user-list';
+  private readonly rows = this.locatorForAll('li');
+  private readonly alert = this.locatorForOptional('[role="alert"]');
+  private readonly retryButton = this.locatorForOptional('button');
+
+  async names(): Promise<string[]> {
+    return Promise.all((await this.rows()).map((row) => row.text()));
+  }
+  async errorText(): Promise<string | null> {
+    return (await this.alert())?.text() ?? null;
+  }
+  async retry(): Promise<void> {
+    const button = await this.retryButton();
+    if (!button) throw new Error('No retry button rendered');
+    await button.click();
   }
 }
 ```
 
-vitest.config.ts:
-```typescript
-import { defineConfig } from 'vitest/config';
-import angular from '@analogjs/vitest-angular/plugin';
+Harness API detail (Material harnesses, `getHarness`, `getAllHarnesses`): [component-harnesses.md](component-harnesses.md).
 
-export default defineConfig({
-  plugins: [angular()],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['src/test-setup.ts'],
-    include: ['src/**/*.spec.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'lcov'],
-      thresholds: {
-        branches: 90,
-        lines: 90,
-        functions: 90,
-        statements: 90,
-      },
-    },
-  },
+## Debounce with Vitest fake timers
+
+```typescript
+beforeEach(() => {
+  vi.useFakeTimers();
+  TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
 });
-```
+afterEach(() => vi.useRealTimers());
 
-src/test-setup.ts:
-```typescript
-import '@angular/compiler';
-import { getTestBed } from '@angular/core/testing';
-import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
-
-getTestBed().initTestEnvironment(
-  BrowserDynamicTestingModule,
-  platformBrowserDynamicTesting(),
-);
-```
-
-## Writing tests with Vitest syntax
-
-Vitest uses the same `describe`/`it`/`expect` API as Jest — tests are largely compatible.
-
-```typescript
-// counter.component.spec.ts
-import { TestBed } from '@angular/core/testing';
-import { CounterComponent } from './counter.component';
-
-describe('CounterComponent', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [CounterComponent],
-    }).compileComponents();
-  });
-
-  it('should increment count on button click', async () => {
-    const fixture = TestBed.createComponent(CounterComponent);
-    fixture.detectChanges();
-
-    const button = fixture.nativeElement.querySelector('button');
-    button.click();
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance.count()).toBe(1);
-  });
-});
-```
-
-## Zoneless TestBed (Angular 21 default)
-
-```typescript
-import { TestBed } from '@angular/core/testing';
-import { provideExperimentalZonelessChangeDetection } from '@angular/core';
-
-// In Angular 21, TestBed is zoneless by default — no special config needed
-// But if you need to be explicit:
-await TestBed.configureTestingModule({
-  imports: [MyComponent],
-  providers: [
-    // Only needed if explicitly enabling for Angular 20 compat
-    // provideExperimentalZonelessChangeDetection(),
-  ],
-}).compileComponents();
-```
-
-## Testing Signals
-
-```typescript
-it('should react to signal changes', async () => {
-  const fixture = TestBed.createComponent(SearchComponent);
-  fixture.detectChanges();
-
-  // Set signal input
-  fixture.componentRef.setInput('query', 'angular');
-  fixture.detectChanges();
-
-  // Read signal value
-  expect(fixture.componentInstance.results()).toHaveLength(3);
-  
-  // Wait for async signal resolution
+it('debounces input and renders results', async () => {
+  const ctrl = TestBed.inject(HttpTestingController);
+  const fixture = TestBed.createComponent(UserSearch); // toObservable(term).pipe(debounceTime(300), switchMap(...))
+  fixture.componentInstance.term.set('a');
+  fixture.componentInstance.term.set('ad');
+  await vi.advanceTimersByTimeAsync(300);
+  ctrl.expectNone((r) => r.params.get('filter') === 'a');
+  ctrl.expectOne((r) => r.params.get('filter') === 'ad').flush({ items: [{ id: '1', name: 'Ada' }], total: 1 });
+  await vi.advanceTimersByTimeAsync(0);
   await fixture.whenStable();
-  fixture.detectChanges();
-  
-  const items = fixture.nativeElement.querySelectorAll('.result-item');
-  expect(items.length).toBe(3);
+  expect(fixture.nativeElement.querySelectorAll('li').length).toBe(1);
+  ctrl.verify();
 });
 ```
 
-## Testing resource() (async data primitive)
+## Signal inputs, outputs and services
 
 ```typescript
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
-
-describe('UserProfileComponent', () => {
-  let httpMock: HttpTestingController;
-
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [UserProfileComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
-    }).compileComponents();
-
-    httpMock = TestBed.inject(HttpTestingController);
-  });
-
-  afterEach(() => httpMock.verify());
-
-  it('should display user name after resource loads', fakeAsync(async () => {
-    const fixture = TestBed.createComponent(UserProfileComponent);
-    fixture.componentRef.setInput('userId', '42');
-    fixture.detectChanges();
-
-    // resource() starts loading — isLoading() is true
-    expect(fixture.componentInstance.userResource.isLoading()).toBe(true);
-
-    // Flush HTTP request
-    const req = httpMock.expectOne('/api/users/42');
-    req.flush({ id: '42', name: 'Jane Doe' });
-    tick();
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance.userResource.value()?.name).toBe('Jane Doe');
-    expect(fixture.nativeElement.querySelector('h2').textContent).toContain('Jane Doe');
-  }));
+it('renders the name input and emits on select', async () => {
+  const fixture = TestBed.createComponent(UserCard);
+  fixture.componentRef.setInput('id', 'u1');      // signal inputs: setInput, never assign
+  fixture.componentRef.setInput('name', 'Ada');
+  const emitted = vi.fn();
+  fixture.componentInstance.selected.subscribe(emitted);
+  await fixture.whenStable();
+  expect(fixture.nativeElement.textContent).toContain('Ada');
+  fixture.nativeElement.querySelector('button').click();
+  expect(emitted).toHaveBeenCalledWith('u1');
 });
 ```
 
-## Vitest vs Karma comparison
+Code that calls `inject()` outside a class (a factory function, a guard) runs in tests via
+`TestBed.runInInjectionContext(() => fn())`.
 
-| Feature | Karma | Vitest |
-|---|---|---|
-| Speed | Slow (browser launch) | Fast (native ESM) |
-| Watch mode | Slow rebuild | Instant HMR |
-| ESM support | Limited | Native |
-| Coverage | Istanbul | V8 (faster) |
-| Angular 21 default | No | Yes |
-| Config file | karma.conf.js | vitest.config.ts |
+Mock collaborators with `{ provide: X, useValue: { method: vi.fn() } }`; type the mock with
+`vi.fn<(arg: A) => R>()` rather than `any`.
 
-## Run commands
+## Guards and routing
 
-```bash
-# Run all tests
-ng test
+Use `RouterTestingHarness` with a real `provideRouter([...])` config. Example for an async auth
+guard (waits for session restore, redirects with `returnUrl`, shows an error page when restore
+fails): `web-security.md` §Testing.
 
-# Watch mode
-ng test --watch
+## What to test per component
 
-# Coverage
-ng test --coverage
-
-# Single file
-ng test --include="**/counter.component.spec.ts"
-
-# Run via Vitest CLI directly
-npx vitest run
-npx vitest --coverage
-```
+- Every load state the template can show: loading, empty, error (401, 403, 5xx, offline), success.
+- Every user action, including the in-flight guard (double click does not double submit).
+- Accessibility basics in the unit test (role="alert"/"status" present, labels); full checks with
+  axe in Playwright — "no automated violations; manual checks required" (see `accessibility-audit`).

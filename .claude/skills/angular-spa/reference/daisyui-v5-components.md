@@ -63,9 +63,28 @@ border-base-300         — default borders
 <!-- Set theme on HTML element -->
 <html lang="en" data-theme="light">
 
-<!-- Angular theme binding -->
-<html lang="en" [attr.data-theme]="currentTheme()">
 ```
+
+`<html>` is outside the Angular root, so it cannot be template-bound. Set the attribute from a service:
+
+```typescript
+import { DOCUMENT, Injectable, effect, inject, signal } from '@angular/core';
+
+export type ThemeName = 'light' | 'dark';
+
+@Injectable({ providedIn: 'root' })
+export class ThemeService {
+  private readonly document = inject(DOCUMENT); // SSR-safe: no global `document`
+  readonly theme = signal<ThemeName>('light');
+
+  constructor() {
+    // effect() pushes state OUT to the DOM — its legitimate use.
+    effect(() => this.document.documentElement.setAttribute('data-theme', this.theme()));
+  }
+}
+```
+
+Persisting the preference and avoiding a flash on load: `tailwind-patterns` skill §5.
 
 ## Color System
 
@@ -85,8 +104,10 @@ bg-error          /* Error state */
 
 /* Text */
 text-base-content        /* Primary text */
-text-base-content/60     /* Secondary text */
-text-base-content/40     /* Muted text */
+text-base-content/70     /* Secondary text (on base-200/300 too) */
+text-base-content/60     /* Muted text on base-100 — the lowest opacity that keeps 4.5:1; never /40 */
+/* text-error on the default light theme measures 2.87:1 on base-100 — fails AA for body text.
+   For error messages use text-base-content with an error icon, or darken --color-error in the theme. */
 text-primary-content     /* Text on primary bg */
 
 /* Borders */
@@ -107,6 +128,14 @@ border-error             /* Error border */
 | Modal backdrop | Auto | Explicit | Add `modal-backdrop` form |
 | Drawer overlay | Auto | Explicit | Requires `drawer-overlay` label |
 | Loading | `loading` | `loading loading-spinner` | Must specify loader type |
+| Input / select / textarea / file-input borders | `input-bordered` etc. | removed (bordered by default) | Use `input-ghost` for no border |
+| Form wrapper | `form-control`, `label-text`, `label-text-alt` | `fieldset`, `fieldset-legend`, `label` | `label` is a real class in v5 |
+| Field validation | manual | `validator` on the input + `validator-hint` | Native constraint validation styling |
+| Button group | `btn-group` | `join` + `join-item` | |
+| Tabs | `tabs-boxed`, `tabs-bordered`, `tabs-lifted` | `tabs-box`, `tabs-border`, `tabs-lift` | |
+| Card | `card-bordered`, `card-compact` | `card-border`, `card-sm` | |
+| Bottom navigation | `btm-nav` | `dock` | |
+| Avatar placeholder | `avatar placeholder` | `avatar avatar-placeholder` | |
 
 ## Required Patterns (v5.5.5)
 
@@ -221,11 +250,9 @@ border-error             /* Error border */
   <input type="email" class="input" />
 </fieldset>
 
-<!-- Validator (v5) -->
-<div class="validator">
-  <input type="email" class="input" required />
-  <span class="validator-hint">Please enter a valid email</span>
-</div>
+<!-- Validator (v5): the class goes on the input -->
+<input type="email" class="input validator" required aria-describedby="email-hint" />
+<p id="email-hint" class="validator-hint">Please enter a valid email</p>
 
 <!-- Filter (v5) -->
 <div class="filter">
@@ -268,13 +295,14 @@ border-error             /* Error border */
   <li class="step">Purchase</li>
 </ul>
 
-<!-- Dropdown -->
-<div class="dropdown">
-  <div tabindex="0" role="button" class="btn m-1">Click</div>
-  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-52 p-2 shadow">
-    <li><a>Item 1</a></li>
+<!-- Dropdown: native <details>/<summary> gives keyboard and screen-reader semantics for free.
+     Avoid <div role="button" tabindex="0">: it needs hand-written Enter/Space handling. -->
+<details class="dropdown">
+  <summary class="btn m-1">Options</summary>
+  <ul class="dropdown-content menu bg-base-100 rounded-box z-10 w-52 p-2 shadow">
+    <li><a routerLink="/settings">Settings</a></li>
   </ul>
-</div>
+</details>
 
 <!-- Toast -->
 <div class="toast toast-end">
@@ -289,18 +317,18 @@ border-error             /* Error border */
 <!-- Avatar group -->
 <div class="avatar-group -space-x-6">
   <div class="avatar"><div class="w-12"><img src="1.jpg" /></div></div>
-  <div class="avatar placeholder"><div class="bg-neutral text-neutral-content w-12"><span>+99</span></div></div>
+  <div class="avatar avatar-placeholder"><div class="bg-neutral text-neutral-content w-12"><span>+99</span></div></div>
 </div>
 
 <!-- Form inputs -->
-<input type="text" class="input input-bordered w-full" placeholder="Text" />
-<select class="select select-bordered w-full"><option>Option</option></select>
-<textarea class="textarea textarea-bordered w-full"></textarea>
+<input type="text" class="input w-full" placeholder="Text" />
+<select class="select w-full"><option>Option</option></select>
+<textarea class="textarea w-full"></textarea>
 <input type="checkbox" class="checkbox" />
 <input type="radio" name="r" class="radio" />
 <input type="checkbox" class="toggle" />
 <input type="range" class="range" min="0" max="100" />
-<input type="file" class="file-input file-input-bordered w-full" />
+<input type="file" class="file-input w-full" />
 
 <!-- Rating -->
 <div class="rating">

@@ -11,7 +11,7 @@ conditions:
     operator: regex_match
     pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:<input\s(?![^>]*(?:formControl|formField|ngModel|type=\"(?:checkbox|radio|file|hidden|submit|button|range)\"))|<select\s(?![^>]*(?:formControl|formField|ngModel))|<textarea\s(?![^>]*(?:formControl|formField|ngModel)))
 ---
-Form input without a form binding detected in an Angular feature template. Bind it to a form model (reactive `formControlName`/`[formControl]`, template `ngModel`, or experimental Signal Forms `[formField]`) and use daisyUI form classes:
+Form input without a form binding detected in an Angular feature template. Bind it to a form model (reactive `formControlName`/`[formControl]`, template `ngModel`, or Signal Forms `[formField]`, stable in Angular 22 and the default for new forms) and use daisyUI form classes:
 - `<input class="input" formControlName="...">` not bare `<input>` (daisyUI 5: `input-bordered` no longer exists)
 - `<select class="select" formControlName="...">` not bare `<select>`
 - Group with `<fieldset class="fieldset">` + `<legend class="fieldset-legend">`, and give every control a `<label class="label" for="...">` (daisyUI 5 replaces `form-control`)

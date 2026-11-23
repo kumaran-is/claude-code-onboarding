@@ -1,6 +1,6 @@
 ---
 name: accessibility-audit
-description: WCAG 2.2 AA accessibility audit and fix guidance for web (Angular 21.x, React) and Flutter 3.41.x. Use when auditing or fixing UI accessibility, identifying barriers, adding automated a11y tests, or preparing accessibility evidence. Owns the canonical WCAG 2.2 checklist. Covers axe-core with Playwright, flutter_test guidelines, Maestro flows for Flutter mobile, keyboard and screen-reader checks, contrast, target size, focus, forms, and CI integration.
+description: WCAG 2.2 AA accessibility audit and fix guidance for web (Angular 22.x, React) and Flutter 3.50.x. Use when auditing or fixing UI accessibility, identifying barriers, adding automated a11y tests, or preparing accessibility evidence. Owns the canonical WCAG 2.2 checklist. Covers axe-core with Playwright, flutter_test guidelines, Maestro flows for Flutter mobile, keyboard and screen-reader checks, contrast, target size, focus, forms, and CI integration.
 allowed-tools: Read, Grep, Glob, Bash
 agent: accessibility-auditor
 context: fork

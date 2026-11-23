@@ -26,7 +26,7 @@
 ## Performance (MEDIUM)
 
 - Inefficient algorithms (O(n^2) when O(n log n) possible)
-- Unnecessary re-renders in Angular (missing OnPush, unoptimized signals)
+- Unnecessary re-renders in Angular (an unjustified `ChangeDetectionStrategy.Eager` opt-out from the v22 OnPush default, unoptimized signals)
 - Missing memoization
 - Large bundle sizes
 - Unoptimized images

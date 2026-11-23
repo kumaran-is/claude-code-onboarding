@@ -38,7 +38,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | **NestJS** | Docker multi-stage | Vitest | Cloud Run (canary → prod) |
 | **Spring Boot** | Maven + Docker | JUnit | Cloud Run (health check gate) |
 | **Python/FastAPI** | Docker + uv (`--locked`, `reference/python-ci-supply-chain.md`) | pytest | Cloud Run service; Cloud Run Functions only for single-purpose event handlers |
-| **Angular** | `npm ci` + `ng build` (production is the default; `--prod` was removed), Node pinned via `.nvmrc` | `ng test` (Vitest, the v21 default) + Playwright E2E | Static hosting: preview → promote same files → post-deploy header check (`reference/web-frontend-delivery.md`) |
+| **Angular** | `npm ci` + `ng build` (production is the default; `--prod` was removed), Node pinned via `.nvmrc` | `ng test` (Vitest, the default since v21) + Playwright E2E | Static hosting: preview → promote same files → post-deploy header check (`reference/web-frontend-delivery.md`) |
 | **React** | `npm ci` + `npm run build` (`tsc -b && vite build`), Node pinned via `.nvmrc` | `vitest run` + Playwright E2E (+ axe) | Static hosting, same flow as Angular (`reference/web-frontend-delivery.md`) |
 | **Flutter** | `flutter build appbundle/ipa` | `flutter analyze` + `flutter test`; device UI/E2E with Maestro only (missing device → BLOCKED, never a browser) | Firebase App Distribution → Google Play staged rollout / App Store (`reference/flutter-ci.md`) |
 | **MCP server (Node/Python)** | Docker, non-root pinned image | protocol conformance, tool contracts, authn/authz negative cases | Cloud Run service (`reference/node-ci-and-observability.md`) |

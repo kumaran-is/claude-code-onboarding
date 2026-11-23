@@ -303,14 +303,14 @@ Proven on 2026-11-23 fixtures (TypeScript 5.9.3, NestJS 11.2.11, Vitest 5.1.1, J
 
 ### Web apps — Angular (`angular.json`) and React (`package.json` with `react` + `vite` / `react-scripts` / `next`)
 
-Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=pre-pr`. It finds every app root up to 4 levels deep (`web/<app>/angular.json`, `apps/<app>/package.json`), so nested apps are never skipped, and prints one `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` line per check from the command's own exit code. React Native and NestJS packages are excluded.
+Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=pre-pr`. It finds every app root up to 4 levels deep (`web/<app>/angular.json`, `apps/<app>/package.json`), so nested apps are never skipped, and prints one `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` line per check from the command's own exit code. React Native and NestJS packages are excluded. Local binaries run through `npm exec --no --`, which uses the app's own `node_modules/.bin` and never downloads a package (npm 11 docs for `npm exec`: "When standard input is not a TTY or a CI environment is detected, `--yes` is assumed", so a bare `npx <typo>` in this gate would install from the registry). Nothing here needs `zone.js`: Angular 22 apps are zoneless by default. Angular checks follow the CLI-first rule (`.claude/rules/web-frontend.md`): lint, unit and build run through the workspace's own `ng`, never a `package.json` script or raw `eslint`; `tsc -p` is the one non-`ng` step, because `ng` has no type-check-only command and `ng build` does not compile `tsconfig.spec.json`.
 
-| Check | Angular 21 | React (Vite / CRA / Next) |
+| Check | Angular 22 | React (Vite / CRA / Next) |
 |---|---|---|
 | Type-check | `tsc -p tsconfig.app.json --noEmit` and `tsconfig.spec.json` (the root tsconfig is `"files": []`, so plain `tsc --noEmit` checks nothing). Templates are checked only by `ng build` / `ng test` | `tsc -b` when tsconfig.json has `references` (create-vite), else `tsc --noEmit` |
-| Lint (quick+) | `npm run lint` / `ng lint` target / `eslint.config.*`; none → **NOT RUN** (a new Angular 21 workspace has no linter until `ng add angular-eslint`) | `npm run lint` / `eslint.config.*`; none → **NOT RUN** |
+| Lint (quick+) | `ng lint` (the `lint` target in `angular.json`); none → **NOT RUN** (a new Angular 22 workspace has no linter until `ng add angular-eslint`) | `npm run lint` / `eslint.config.*`; none → **NOT RUN** |
 | Unit (full+) | `ng test --watch=false` (`@angular/build:unit-test`: Vitest + jsdom by default; no Karma `--browsers` flag) | `vitest run`, else `npm test` |
-| Build (full+) | `npm run build` (`ng build`, production by default) | `npm run build` |
+| Build (full+) | `ng build` (production by default) | `npm run build` |
 | E2E (full+) | `playwright test` when `playwright.config.*` exists; missing browser/server → **BLOCKED** | same |
 | Audit (pre-pr) | `npm audit --audit-level=high` | same |
 
@@ -328,6 +328,7 @@ web_check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code;
   rm -f "$log"
 }
 not_run() { echo "WEB $1 | $2: NOT RUN ($3)"; WEB_NOTRUN=$((WEB_NOTRUN + 1)); }
+has_cfg() { local e; for e in js mjs cjs ts mts cts; do [ -f "$1/$2.$e" ] && return 0; done; return 1; } # real config names only: eslint.config.js.bak must not count
 FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git -o -name .angular \) -prune -o \( -name angular.json -o -name package.json \) -print)
 while IFS= read -r f; do
   [ -n "$f" ] || continue; d=$(dirname "$f")
@@ -347,35 +348,38 @@ while IFS= read -r entry <&3; do
   kind="${entry%%:*}"; root="${entry#*:}"
   echo "WEB $root: $kind"
   if [ ! -d "$root/node_modules" ]; then echo "WEB $root | all checks: BLOCKED (no node_modules: run npm ci in $root)"; WEB_BLOCKED=1; continue; fi
-  # 1. type-check (the root tsconfig of Angular 21 / create-vite has "files": [] -> plain `tsc --noEmit` there checks nothing)
+  # 1. type-check (the root tsconfig of Angular 22 / create-vite has "files": [] -> plain `tsc --noEmit` there checks nothing)
   if [ ! -f "$root/tsconfig.json" ]; then not_run "$root" typecheck "no tsconfig.json (JavaScript-only app)"
   elif [ ! -x "$root/node_modules/.bin/tsc" ]; then echo "WEB $root | typecheck: BLOCKED (tsconfig.json present but no local typescript: npm ci)"; WEB_BLOCKED=1
   elif [ "$kind" = angular ]; then
     for cfg in tsconfig.app.json tsconfig.spec.json; do
-      [ -f "$root/$cfg" ] && web_check "$root" "typecheck $cfg" npx tsc -p "$cfg" --noEmit
+      [ -f "$root/$cfg" ] && web_check "$root" "typecheck $cfg" npm exec --no -- tsc -p "$cfg" --noEmit
     done
-  elif grep -q '"references"' "$root/tsconfig.json" 2>/dev/null; then web_check "$root" "typecheck" npx tsc -b
-  else web_check "$root" "typecheck" npx tsc --noEmit; fi
+  elif grep -q '"references"' "$root/tsconfig.json" 2>/dev/null; then web_check "$root" "typecheck" npm exec --no -- tsc -b
+  else web_check "$root" "typecheck" npm exec --no -- tsc --noEmit; fi
   # 2. lint: only a configured linter; absence is NOT RUN, never PASS
-  if has_script "$root" lint; then web_check "$root" lint npm run lint
-  elif [ "$kind" = angular ] && grep -q '"lint"' "$root/angular.json"; then web_check "$root" lint npx ng lint
-  elif ls "$root"/eslint.config.* >/dev/null 2>&1; then web_check "$root" lint npx eslint .
-  else not_run "$root" lint "no lint script, ng lint target or eslint.config.* (Angular: ng add angular-eslint)"; fi
+  # Angular is CLI-first (.claude/rules/web-frontend.md): lint, test and build run through the workspace's own `ng`.
+  if [ "$kind" = angular ]; then
+    if grep -q '"lint"' "$root/angular.json"; then web_check "$root" lint npm exec --no -- ng lint
+    else not_run "$root" lint "no lint target in angular.json (ng add angular-eslint)"; fi
+  elif has_script "$root" lint; then web_check "$root" lint npm run lint
+  elif has_cfg "$root" eslint.config; then web_check "$root" lint npm exec --no -- eslint .
+  else not_run "$root" lint "no lint script or eslint.config.*"; fi
   [ "$MODE" = quick ] && continue
   # 3. unit tests
   if [ "$kind" = angular ]; then
-    if grep -q '"@angular/build:unit-test"' "$root/angular.json"; then web_check "$root" "unit (ng test, Vitest)" npx ng test --watch=false
-    elif grep -q '"test"' "$root/angular.json"; then web_check "$root" "unit (ng test, configured builder)" npx ng test --watch=false
+    if grep -q '"@angular/build:unit-test"' "$root/angular.json"; then web_check "$root" "unit (ng test, Vitest)" npm exec --no -- ng test --watch=false
+    elif grep -q '"test"' "$root/angular.json"; then web_check "$root" "unit (ng test, configured builder)" npm exec --no -- ng test --watch=false
     else not_run "$root" unit "no test target in angular.json"; fi
-  elif [ -x "$root/node_modules/.bin/vitest" ]; then web_check "$root" "unit (vitest)" npx vitest run
+  elif [ -x "$root/node_modules/.bin/vitest" ]; then web_check "$root" "unit (vitest)" npm exec --no -- vitest run
   elif has_script "$root" test; then web_check "$root" "unit (npm test)" npm test
   else not_run "$root" unit "no vitest and no test script"; fi
   # 4. production build (Angular: also the only template type-check)
-  if has_script "$root" build; then web_check "$root" build npm run build
-  elif [ "$kind" = angular ]; then web_check "$root" build npx ng build
+  if [ "$kind" = angular ]; then web_check "$root" build npm exec --no -- ng build
+  elif has_script "$root" build; then web_check "$root" build npm run build
   else not_run "$root" build "no build script"; fi
   # 5. E2E (Playwright), when configured
-  if ls "$root"/playwright.config.* >/dev/null 2>&1; then web_check "$root" e2e npx playwright test
+  if has_cfg "$root" playwright.config; then web_check "$root" e2e npm exec --no -- playwright test
   else not_run "$root" e2e "no playwright.config.*"; fi
   [ "$MODE" = pre-pr ] && web_check "$root" "npm audit (high)" npm audit --audit-level=high
 done 3<<EOF_ROOTS
@@ -386,13 +390,16 @@ echo "WEB VERDICT: $v; $WEB_NOTRUN check(s) NOT RUN (not passes: report each wit
 [ "$v" = PASS ] || [ "$v" = "NOT APPLICABLE" ]
 ```
 
-Proven on 2026-11-22 fixtures (Angular CLI 21.2.30, create-vite 9.3.4 + TypeScript 5.9.3, Vitest 5.1.1): clean apps → PASS; planted `const n: number = "x"` → typecheck + unit + build FAIL; an unknown template binding (NG8002) passes `tsc` and FAILs `ng test` and `ng build`; no lint setup → NOT RUN; no `node_modules` → BLOCKED. The previous line `npm run build -- --configuration=production --silent 2>&1 | tail -5; echo "EXIT:$?"` printed `EXIT:0` on a broken build (`--silent` is also rejected by `ng build`). In a multi-project Angular workspace, run `ng test <project>` / `ng build <project>` per project (UNVERIFIED — check `ng test --help` before relying on the no-argument form). Web UI tool choice: `.claude/rules/testing-tool-selection.md`.
+Proven on 2026-11-23, `MODE=full`, Node 26.13.1, against an Angular 22.3.0 workspace (`ng new` 22.3 output: zoneless, `@angular/build:unit-test`, TypeScript 6.0.3, Vitest 5.1.1, jsdom 31.0.1, angular-eslint 22.8.0) and a create-vite 9.3.4 React SPA (React 19.3.1, Vite 8.3.8, TypeScript 6.0.3, Vitest 5.1.1, ESLint 10.15.0, Playwright 1.65.1): clean apps → PASS (e2e ran 8 Playwright tests in Chromium); planted `const n: number = "x"` → typecheck + build FAIL in both (plus `ng test`, which compiles the app, and the React Playwright run, whose `webServer` builds it); an unknown template binding (NG8002) passes `tsc` and FAILs `ng test` and `ng build`; one changed assertion → unit FAIL only (Angular 1 of 2, React 4 of 4 failed); no lint setup → NOT RUN with verdict PASS (Angular: no `lint` target in `angular.json` → NOT RUN even with an `eslint.config.js` and a `lint` script present, because Angular lint runs only as `ng lint`); a planted `any` → `ng lint` FAIL; an `eslint.config.js.bak` alone is not a config (it used to make ESLint exit 2); no `node_modules` → BLOCKED. The previous line `npm run build -- --configuration=production --silent 2>&1 | tail -5; echo "EXIT:$?"` printed `EXIT:0` on a broken build (`--silent` is also rejected by `ng build`). In a multi-project Angular workspace, run `ng test <project>` / `ng build <project>` per project (UNVERIFIED — check `ng test --help` before relying on the no-argument form). Web UI tool choice: `.claude/rules/testing-tool-selection.md`.
 
 ### Flutter (`pubspec.yaml` with flutter:)
 
 Capture each command's OWN exit code (a pipe into `tail` reports `tail`'s status, not the tool's):
 
 ```bash
+# codegen first when pubspec lists build_runner (generated files are usually gitignored)
+grep -q 'build_runner:' pubspec.yaml && { dart run build_runner build > /tmp/codegen.log 2>&1; echo "CODEGEN EXIT:$?"; tail -5 /tmp/codegen.log; }
+
 # quick — static checks (every Dart change)
 dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
 flutter analyze --no-pub > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -5 /tmp/analyze.log
@@ -401,7 +408,10 @@ flutter analyze --no-pub > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -
 flutter test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -5 /tmp/test.log
 ```
 
-Count `error`, `warning` AND `info` findings from `flutter analyze` — by default it exits non-zero on info-level issues too (confirm for your SDK version with `flutter analyze --help`).
+Count `error`, `warning` AND `info` findings from `flutter analyze`: on Flutter 3.50.1 it exits 1 on a single info, e.g. the
+`deprecated_member_use` info for `package:flutter/material.dart` (deprecated since 3.47; import `package:material_ui/material_ui.dart`).
+Proven 2026-11-23 on Flutter 3.50.1: a clean sample app → format, analyze, codegen and 9 tests exit 0; a deleted
+`*.mocks.dart` → analyze exit 1 until codegen re-runs; one unformatted file, one deprecated import, one broken assertion → exit 1 each.
 
 **Proportional validation.** Run what the change can affect — not everything, not less. The full change-type table is in
 [flutter-testing-traps.md §10](../skills/flutter-mobile/reference/flutter-testing-traps.md); summary:

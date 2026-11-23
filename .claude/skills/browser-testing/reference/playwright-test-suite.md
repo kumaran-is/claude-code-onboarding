@@ -2,7 +2,7 @@
 
 Committed, CI-run E2E suites for **web targets** (Angular, React, any SPA, or a Flutter **web** build). `playwright-cli` (see `playwright-cli-tools.md`) is for interactive QA and debugging; this file is for `.spec.ts` suites that gate PRs. Flutter Android/iOS apps are tested with Maestro, never here (`.claude/rules/testing-tool-selection.md`).
 
-Every config and spec below ran in real Chromium against `@playwright/test@1.58.2` and `@axe-core/playwright@4.11.0` (clean run: 31 passed, exit 0; each planted regression: exit 1). Pin the versions your lockfile resolves; check newer releases with `npm view @playwright/test version`.
+Every config and spec below ran in real Chromium against `@playwright/test@1.58.2` and `@axe-core/playwright@4.11.0` (clean run: 31 passed, exit 0; each planted regression: exit 1). The current pins for Angular 22 and React are 1.65.1 / 4.14.0: a React 19.3 SPA suite (4 specs × 375/1280 px, axe included) passed on them on 2026-11-23, but this file's 31 specs have not been re-run on 1.65.1. Pin the versions your lockfile resolves; check newer releases with `npm view @playwright/test version`.
 
 ## Where E2E sits in the web test pyramid
 
@@ -18,7 +18,7 @@ E2E never owns business rules; if a rule can be tested below the browser, test i
 ## Install
 
 ```bash
-npm install -D @playwright/test@1.58.2 @axe-core/playwright@4.11.0
+npm install -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.0
 npx playwright install --with-deps chromium     # browser build that matches the installed @playwright/test
 echo "playwright/.auth/" >> .gitignore           # saved sessions are credentials
 ```
@@ -107,6 +107,8 @@ export { expect };
 ```
 
 Chromium logs every failed request as a console error ("Failed to load resource: … status of 500"), so failure-state tests must declare it (below). Unexpected errors still fail them.
+
+If the app enforces Trusted Types (`require-trusted-types-for 'script'`), never plant DOM with `innerHTML` from a test (`page.evaluate`): the assignment is a Trusted Types violation, which the browser reports as a console error, so the guard fails the test for a reason the app did not cause. Build fixtures with `textContent` / `createElement`, go through the app's Trusted Types policy, or load a test page.
 
 ## Auth: set up once, reuse `storageState`
 
@@ -324,7 +326,7 @@ Emit the meta tag (or a `/version.json`) from the build with the commit SHA and 
 ## GitHub Actions: sharded run + merged report
 
 ```yaml
-# .github/workflows/e2e.yml
+# .github/workflows/e2e.yml (Node 26 = Active LTS; Angular 22 engines ^22.22.3 || ^24.15.0 || ^26.0.0)
 name: e2e
 on: pull_request
 jobs:
@@ -334,10 +336,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4      # pin to a full commit SHA: deployment-ci-cd/reference/python-ci-supply-chain.md
       - uses: actions/setup-node@v4    # pin to a full commit SHA
-        with: { node-version: '24', cache: 'npm' }
+        with: { node-version: '26', cache: 'npm' }
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test --shard=${{ matrix.shard }}/4 --grep-invert @quarantine
+      - run: npm exec --no -- playwright install --with-deps chromium   # --no: never downloads a package; uses the lockfile's @playwright/test
+      - run: npm exec --no -- playwright test --shard=${{ matrix.shard }}/4 --grep-invert @quarantine
         env: { E2E_USER: '${{ secrets.E2E_USER }}', E2E_PASSWORD: '${{ secrets.E2E_PASSWORD }}', EXPECTED_BUILD: '${{ github.sha }}' }
       - uses: actions/upload-artifact@v4   # pin to a full commit SHA
         if: ${{ !cancelled() }}
@@ -354,11 +356,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '24', cache: 'npm' }
+        with: { node-version: '26', cache: 'npm' }
       - run: npm ci
       - uses: actions/download-artifact@v4
         with: { path: all-blob-reports, pattern: 'e2e-*', merge-multiple: true }
-      - run: npx playwright merge-reports --reporter html ./all-blob-reports/blob-report
+      - run: npm exec --no -- playwright merge-reports --reporter html ./all-blob-reports/blob-report
       - uses: actions/upload-artifact@v4
         with: { name: playwright-report, path: playwright-report, retention-days: 14 }
 ```

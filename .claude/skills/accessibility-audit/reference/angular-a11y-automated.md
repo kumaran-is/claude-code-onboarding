@@ -1,10 +1,10 @@
-# Web Automated Accessibility Testing (Angular 21.x; patterns also apply to React)
+# Web Automated Accessibility Testing (Angular 22.x; patterns also apply to React)
 
 Automated accessibility tests for web targets. The criteria they check are defined in [wcag22-checklist.md](wcag22-checklist.md). Tool choice per target: `.claude/rules/testing-tool-selection.md` (web → Playwright; Flutter mobile → `flutter test` + Maestro, never a browser).
 
 **What a green run means:** "no automated violations; manual checks required". axe-core 4.14 automates only one new 2.2 criterion (`target-size`, 2.5.8) and accepts a `placeholder` as an accessible name, so a passing run never establishes WCAG conformance. Record the manual checks (checklist §4) as PASS / FAIL / NOT RUN.
 
-Verified in this repo's validation sandbox: Playwright 1.65.1 + `@axe-core/playwright` 4.14.0 (axe-core 4.14.1) in Chromium; Angular 21.2 with its default Vitest runner.
+Verified in this repo's validation sandbox: Playwright 1.65.1 + `@axe-core/playwright` 4.14.0 (axe-core 4.14.1) in Chromium; Angular 22.3 with its default Vitest runner.
 
 ## 1. Playwright + axe (primary gate, real browser)
 
@@ -42,7 +42,7 @@ test('dark theme contrast', async ({ page }) => {
 
 ## 2. Component-level checks (Vitest, jsdom)
 
-Angular 21 runs unit tests with Vitest by default. Call `axe-core` directly on the rendered element. jsdom has no layout or computed colours, so **disable `color-contrast`** there and check contrast in Playwright (§1).
+Angular 22 runs unit tests with Vitest by default. Call `axe-core` directly on the rendered element. jsdom has no layout or computed colours, so **disable `color-contrast`** there and check contrast in Playwright (§1).
 
 ```typescript
 // order-form.spec.ts
@@ -164,7 +164,7 @@ Reduced motion: gate each animation (`motion-safe:` / `motion-reduce:` utilities
 </button>
 ```
 
-- **Do not put error text in `text-error` on the default light theme**: daisyUI 5.5.5 light `--color-error` on `base-100` measures 2.87:1 (axe, Chromium), an AA failure (1.4.3). Use body text colour with an "Error:" prefix (colour is then decorative, 1.4.1), or define a darker `--color-error` in a custom theme and re-measure. The dark theme passes.
+- **Do not put error text in `text-error` on the default light theme**: daisyUI 5.8.2 light `--color-error` on `base-100` measures 2.87:1 (axe, Chromium), an AA failure (1.4.3). Use body text colour with an "Error:" prefix (colour is then decorative, 1.4.1), or define a darker `--color-error` in a custom theme and re-measure. The dark theme passes.
 - daisyUI 4 names (`form-control`, `label-text`, `label-text-alt`, `input-bordered`) generate no CSS in daisyUI 5.
 - State "required" in visible text plus the native `required` attribute. `aria-label` on a `<span>` is ignored (generic role), and axe does not flag it, so automated scans will not catch that mistake.
 - On submit, move focus to an error summary or the first invalid field.

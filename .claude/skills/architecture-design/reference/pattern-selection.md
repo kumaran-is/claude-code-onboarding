@@ -105,4 +105,4 @@ START: What is your MAIN architectural concern?
 ### Flutter
 - Default: Riverpod providers calling repository
 - Repository pattern: always (testability is critical in mobile)
-- State: Riverpod AsyncNotifier for server state, StateNotifier for local UI state
+- State: Riverpod 3 `AsyncNotifier` for server state, `Notifier` for local UI state (`StateNotifier`/`StateProvider` are legacy imports in Riverpod 3)

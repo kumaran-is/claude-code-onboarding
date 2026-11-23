@@ -37,7 +37,7 @@ Default to `@playwright/test` for anything that must be repeatable and `playwrig
 ## Install (pinned)
 
 ```bash
-npm i -D @playwright/test@1.58.2 @axe-core/playwright@4.11.0   # suite validated here; react-spa ran on 1.65.1 / 4.14.0. Pin what your lockfile resolves
+npm i -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.0   # Angular 22 / React pins (React SPA suite green on these, 2026-11-23); reference suite first validated on 1.58.2 / 4.11.0
 npx playwright install --with-deps chromium
 npm i -g @playwright/cli@0.1.25        # binary: playwright-cli (NOT @playwright/mcp, whose binary is playwright-mcp)
 playwright-cli install-browser chromium

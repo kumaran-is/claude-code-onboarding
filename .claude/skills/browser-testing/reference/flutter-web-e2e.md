@@ -2,7 +2,7 @@
 
 > **Scope:** a Flutter **web** build served in a browser. It is never evidence about the Android/iOS app, which is verified with Maestro (`.claude/rules/testing-tool-selection.md`). Basic build-and-serve notes: [browser-testing-workflows.md](browser-testing-workflows.md) §Flutter web build notes.
 >
-> **Evidence level:** SOURCE-PROVEN. Each trap below was observed in a production Flutter 3.4x web suite driven by `@playwright/test`. The APIs named here (`SemanticsBinding.ensureSemantics`, `Semantics.explicitChildNodes`, the `flt-semantics-identifier` attribute, `usePathUrlStrategy`) were checked against the Flutter 3.44.2 SDK source. The behaviours were not re-run in this repository; confirm against your Flutter version before relying on one.
+> **Evidence level:** SOURCE-PROVEN. Each trap below was observed in a production Flutter 3.4x web suite driven by `@playwright/test`. The APIs named here (`SemanticsBinding.ensureSemantics`, `Semantics.explicitChildNodes`, the `flt-semantics-identifier` attribute, `usePathUrlStrategy`) were checked against the Flutter 3.44.2 SDK source and re-checked against the 3.50.1 source (all four still exist there; 2026-11-23). The behaviours were not re-run in this repository; confirm against your Flutter version before relying on one.
 
 ## 1. No DOM until semantics is on
 

@@ -1,6 +1,6 @@
-# GenUI Contract CI (A2UI v0.9) — GitHub Actions example
+# GenUI Contract CI (A2UI 1.0 target, v0.9.x compatibility) — GitHub Actions example
 
-Reusable example for a project that ships generative UI on one framework-neutral A2UI v0.9 catalog with Angular, React and/or Flutter renderers. **Documentation only**: this repo has no live workflow for it; copy it to `.github/workflows/genui-contract.yml` in the consuming project and adjust the paths. GitHub Actions only.
+Reusable example for a project that ships generative UI on one framework-neutral A2UI catalog (1.0 target, v0.9.x compatibility path) with Angular, React and/or Flutter renderers. **Documentation only**: this repo has no live workflow for it; copy it to `.github/workflows/genui-contract.yml` in the consuming project and adjust the paths. GitHub Actions only.
 
 Rules it encodes (`.claude/rules/genui-a2ui.md`, `.claude/rules/hook-and-gate-authoring.md`):
 
@@ -14,7 +14,7 @@ Action pins (resolved 2026-11-23 with `gh api repos/<owner>/<repo>/commits/<tag>
 ## Layout assumed
 
 ```
-contract/                  catalog/ (catalog JSON + JSON Schema, vendored A2UI v0.9 schemas) and fixtures/ (valid, invalid, actions, streams)
+contract/                  catalog/ (canonical-catalog-v1_0.json and/or canonical-catalog.json + catalog-schema.json, vendor/a2ui-v1_0 + vendor/a2ui-v0_9) and fixtures/ (valid*, invalid*, actions*, streams*)
 tools/genui/validate_a2ui_contract.py   vendored from .claude/skills/genui-contract/scripts/ (PEP 723, pinned deps)
 tools/genui/audit-parity.sh             the script block from .claude/commands/audit-a2ui-parity.md
 web-angular/  web-react/  mobile/       renderer apps (any subset)
@@ -106,18 +106,23 @@ jobs:
           grep -Eq '^scanned ([2-9]|[1-9][0-9]+) items: PASS$' validate.log || { echo "validator saw no inputs"; exit 1; }
       - name: Validator negative control (planted violations must be caught)
         run: uv run --python 3.14 tools/genui/validate_a2ui_contract.py --selftest
-      - name: Protocol version is v0.9 everywhere in the contract
+      - name: One declared protocol version per fixture, each accepted by a catalog
         run: |
           python3 - <<'PY'
           import json, pathlib, sys
-          cat = next(p for p in pathlib.Path("contract/catalog").glob("*catalog*.json") if "x-genui" in json.loads(p.read_text()))
-          x = json.loads(cat.read_text())["x-genui"]
-          bad = [] if x.get("protocolVersion") == "v0.9" and x.get("acceptedWireVersions") == ["v0.9"] else [str(cat)]
-          for f in pathlib.Path("contract/fixtures/valid").glob("*.json"):
-              for msg in (lambda d: d if isinstance(d, list) else [d])(json.loads(f.read_text())):
-                  if isinstance(msg, dict) and msg.get("version") not in (None, "v0.9"):
-                      bad.append(str(f))
-          print("protocol drift:", bad) if bad else print("protocol v0.9: PASS")
+          accepted, bad = set(), []
+          for cat in pathlib.Path("contract/catalog").glob("*catalog*.json"):
+              doc = json.loads(cat.read_text())
+              policy = doc.get("x-genui") or doc.get("metadata", {}).get("extensions", {}).get("genui_contract")
+              if policy:  # v0.9.x: x-genui; 1.0: metadata.extensions.genui_contract
+                  accepted |= set(policy.get("acceptedWireVersions", []))
+          if not accepted:
+              sys.exit("no catalog policy with acceptedWireVersions found")
+          for f in pathlib.Path("contract/fixtures").glob("valid*/*.json"):
+              versions = {m.get("version") for m in json.loads(f.read_text()).get("messages", []) if isinstance(m, dict)}
+              if len(versions) != 1 or not versions <= accepted:
+                  bad.append(f"{f}: {sorted(map(str, versions))}")
+          print("protocol drift:", bad) if bad else print(f"protocol {sorted(accepted)}: PASS")
           sys.exit(1 if bad else 0)
           PY
       - name: Action payload compatibility with the base branch
@@ -164,10 +169,12 @@ jobs:
           echo "$files" | wc -l | xargs echo "scanned files:"
           hits=$(echo "$files" | xargs grep -nE 'innerHTML|dangerouslySetInnerHTML|bypassSecurityTrust|(^|[^.A-Za-z_])eval\(|new Function\(|WebViewWidget|loadHtmlString' || true)
           if [ -n "$hits" ]; then echo "$hits"; exit 1; fi
-      - name: No protocol drift (v0.8 / v1.0 entry points, discontinued genui package)
+      - name: No protocol drift (v0.8 entry points, discontinued genui package, files mixing /v1_0 and /v0_9)
         run: |
-          hits=$(git ls-files | grep -Ei '(a2ui|genui)' | grep -E '\.(ts|tsx|dart)$' | xargs grep -nE "@a2ui/[a-z_]+/(v1_0|v0_8)|package:genui/|package:a2ui_flutter/basic_catalog\.dart" || true)
-          if [ -n "$hits" ]; then echo "$hits"; exit 1; fi
+          files=$(git ls-files | grep -Ei '(a2ui|genui)' | grep -E '\.(ts|tsx|dart)$' || true)
+          hits=$(echo "$files" | xargs grep -nE "@a2ui/[a-z_]+/v0_8|package:genui/" || true)
+          mixed=$(for f in $files; do grep -qE '@a2ui/[a-z_]+/v1_0' "$f" && grep -qE '@a2ui/[a-z_]+/v0_9' "$f" && echo "$f: mixes /v1_0 and /v0_9"; done || true)
+          if [ -n "$hits$mixed" ]; then printf '%s\n%s\n' "$hits" "$mixed"; exit 1; fi
 
   angular:
     needs: changes
@@ -225,10 +232,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version-file: mobile/pubspec.yaml
+          flutter-version-file: mobile/pubspec.yaml   # reads environment.flutter, e.g. 3.50.1
           cache: true
       - run: flutter pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
+      # Exits 1 on any info too, e.g. a flutter/material.dart import outside the
+      # A2UI bridge file (a2ui_flutter 0.5.0 still builds on it; the app uses material_ui).
       - run: flutter analyze
       - name: Widget, security and a11y-guideline tests (device E2E is Maestro, separate job)
         run: flutter test

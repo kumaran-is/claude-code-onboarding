@@ -1,308 +1,330 @@
 # Flutter Automated Accessibility Testing
 
-Automated accessibility testing patterns for Flutter 3.41.x using `flutter_test` SemanticsController. These patterns complement the existing checklist at `.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md`.
+Automated accessibility tests for Flutter 3.50.x (Dart 3.14) with `flutter_test`. Verified on Flutter 3.50.1: every
+test below compiles with zero analyzer issues and passes, and each guideline check was shown to fail on a planted
+defect (unlabelled control, 30x30 target, low-contrast text). They complement the checklist at
+`.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md`. Device checks (TalkBack, VoiceOver,
+Switch Access) run on an emulator/simulator with Maestro and manually, never in a browser
+(`.claude/rules/testing-tool-selection.md`).
 
-## 1. SemanticsController — Widget-Level Audit
+Imports: since Flutter 3.47 `package:flutter/material.dart` is deprecated; app and test code import
+`package:material_ui/material_ui.dart` (pin `material_ui: 1.11.1`). `find.byType(TextField)` then matches only
+material_ui's `TextField`.
+
+## 1. A shared test harness (light/dark, text scale, reduced motion)
+
+Put this in `test/helpers/a11y_harness.dart` and reuse it in every screen's tests.
 
 ```dart
-// test/accessibility/order_card_a11y_test.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
+/// Wraps [child] in the app theme with the accessibility settings under test.
+Widget a11yHarness(
+  Widget child, {
+  ThemeData? light,
+  ThemeData? dark,
+  ThemeMode mode = ThemeMode.light,
+  double textScale = 1,
+  bool disableAnimations = false,
+}) {
+  return MaterialApp(
+    theme: light ?? ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0))),
+    darkTheme: dark ??
+        ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1565C0),
+            brightness: Brightness.dark,
+          ),
+        ),
+    themeMode: mode,
+    builder: (context, app) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(textScale),
+        disableAnimations: disableAnimations,
+      ),
+      child: app!,
+    ),
+    home: Scaffold(body: Center(child: child)),
+  );
+}
+```
+
+## 2. Guideline matchers (`meetsGuideline`) — the primary automated gate
+
+`flutter_test` ships four guidelines: `androidTapTargetGuideline` (48x48), `iOSTapTargetGuideline` (44x44),
+`labeledTapTargetGuideline` (tap/long-press nodes need a label) and `textContrastGuideline` (WCAG minimum text
+contrast, measured from rendered pixels).
+
+```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:your_app/widgets/order_card.dart';
+import 'package:material_ui/material_ui.dart';
+
+class OrderActions extends StatelessWidget {
+  const OrderActions({super.key, required this.onDelete});
+
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Delete order ORD-001',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: onDelete,
+        ),
+        FilledButton(onPressed: () {}, child: const Text('Reorder')),
+      ],
+    );
+  }
+}
 
 void main() {
-  group('OrderCard — Accessibility', () {
-    testWidgets('all interactive elements have semantic labels', (tester) async {
-      final SemanticsHandle handle = tester.ensureSemantics();
-
+  for (final brightness in Brightness.values) {
+    testWidgets('order actions meet the guidelines ($brightness)', (tester) async {
+      final handle = tester.ensureSemantics();
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: OrderCard(
-              orderId: 'ORD-001',
-              itemName: 'Widget Pro',
-              onDelete: () {},
-              onEdit: () {},
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1565C0),
+              brightness: brightness,
             ),
           ),
+          home: Scaffold(body: Center(child: OrderActions(onDelete: () {}))),
         ),
       );
+      // Prove the theme swap took effect, or "dark" silently re-measures light.
+      final context = tester.element(find.byType(OrderActions));
+      expect(Theme.of(context).colorScheme.brightness, brightness);
 
-      // Verify delete button has semantic label
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      await expectLater(tester, meetsGuideline(textContrastGuideline));
+      // An IconButton tooltip is exposed as the node's tooltip, not its label.
       expect(
-        tester.getSemantics(find.byTooltip('Delete order')),
-        matchesSemantics(
-          label: 'Delete order',
-          isButton: true,
-          hasTapAction: true,
-        ),
+        tester.getSemantics(find.byTooltip('Delete order ORD-001')),
+        isSemantics(tooltip: 'Delete order ORD-001', isButton: true, hasTapAction: true),
       );
-
-      // Verify edit button has semantic label
-      expect(
-        tester.getSemantics(find.byTooltip('Edit order')),
-        matchesSemantics(
-          label: 'Edit order',
-          isButton: true,
-          hasTapAction: true,
-        ),
-      );
-
-      handle.dispose();
+      handle.dispose(); // in the test body: addTearDown can fire too late
     });
-
-    testWidgets('decorative images are excluded from semantics', (tester) async {
-      final SemanticsHandle handle = tester.ensureSemantics();
-
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(body: OrderCard(orderId: 'ORD-001', itemName: 'Test')),
-        ),
-      );
-
-      // Decorative image should not appear in semantic tree
-      final semanticsTree = tester.getSemantics(find.byType(OrderCard));
-      expect(semanticsTree.label, isNot(contains('decorative')));
-
-      handle.dispose();
-    });
-
-    testWidgets('text scales correctly at 2x', (tester) async {
-      await tester.pumpWidget(
-        MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
-          child: MaterialApp(
-            home: Scaffold(body: OrderCard(orderId: 'ORD-001', itemName: 'Widget')),
-          ),
-        ),
-      );
-
-      // Widget should render without overflow at 2x scale
-      expect(tester.takeException(), isNull);
-    });
-  });
+  }
 }
-```
-
-## 2. Touch Target Size Verification
-
-```dart
-// test/accessibility/touch_target_test.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-
-void main() {
-  const double minimumTouchTarget = 48.0; // WCAG 2.5.5 / Material 3
-
-  group('Touch target sizes', () {
-    testWidgets('all buttons meet 48dp minimum', (tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: YourScreenWidget()),
-        ),
-      );
-
-      final buttons = find.byType(IconButton);
-      for (final button in tester.widgetList(buttons)) {
-        final renderBox = tester.renderObject(find.byWidget(button as Widget)) as RenderBox;
-        final size = renderBox.size;
-        expect(
-          size.width,
-          greaterThanOrEqualTo(minimumTouchTarget),
-          reason: 'Button width ${size.width}dp is below 48dp minimum',
-        );
-        expect(
-          size.height,
-          greaterThanOrEqualTo(minimumTouchTarget),
-          reason: 'Button height ${size.height}dp is below 48dp minimum',
-        );
-      }
-    });
-  });
-}
-```
-
-> **Limit of the RenderBox check above:** it measures the widget's render box, not the semantics node. When a child owns the node (e.g. a `TextField`), wrapping it in a bigger box passes this test and the node stays small. Prefer the guideline matchers in 2b.
-
-## 2b. Guideline Matchers (`meetsGuideline`)
-
-`flutter_test` ships four accessibility guidelines (verified against the Flutter API docs): `androidTapTargetGuideline` (48x48), `iOSTapTargetGuideline` (44x44), `labeledTapTargetGuideline` (tap/long-press nodes need a label) and `textContrastGuideline` (WCAG minimum text contrast, measured from rendered pixels). Add them to each screen's own test file, reusing its harness:
-
-```dart
-testWidgets('meets accessibility guidelines', (tester) async {
-  final handle = tester.ensureSemantics();
-  await tester.pumpWidget(buildScreenHarness());
-  await tester.pumpAndSettle();
-  await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
-  await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
-  await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-  await expectLater(tester, meetsGuideline(textContrastGuideline));
-  handle.dispose(); // in the test body: addTearDown can fire too late
-});
 ```
 
 Rules:
 
 - **Assert both tap-target guidelines.** A 44dp control passes iOS and fails Android.
-- **Validate the probe before trusting a pass.** Run the same four guidelines on a deliberately bad tree (a 12x12 unlabeled `GestureDetector`, light-grey text on white) and confirm they fail. A probe that matches nothing looks exactly like a clean screen.
+- **Validate the probe before trusting a pass.** Run the same four guidelines on a deliberately bad tree (a 30x30
+  unlabelled `GestureDetector`, light-grey text on white) and confirm they fail. A probe that matches nothing looks
+  exactly like a clean screen.
 - **A probe that does not compile or run is UNMEASURED, not clean.** Report it separately.
-- **Contrast is theme-dependent: run light AND dark.** Assert the theme swap took effect, or the "dark" run silently re-measures light.
-- **Never nest `MergeSemantics` inside a tappable** (`InkWell`, a card with `onTap`, `ListTile`). The tappable already merges its descendants; a nested merge moves the text to a child node and `labeledTapTargetGuideline` fails with "expected tappable node to have semantic label". Hoisting the wrapper outside turns the check green but leaves a redundant widget. When two candidate fixes both go green, try the combinations (outer only, inner only, both, neither) to find which one matters.
-- **These matchers are a floor.** They cannot see focus order, heading placement, double announcements or a load-bearing `ExcludeSemantics`; review those separately.
+- **Contrast is theme-dependent: run light AND dark,** and assert the brightness as above.
+- **Never nest `MergeSemantics` inside a tappable** (`InkWell`, a card with `onTap`, `ListTile`). The tappable already
+  merges its descendants; a nested merge moves the text to a child node and `labeledTapTargetGuideline` fails with
+  "expected tappable node to have semantic label".
+- **These matchers are a floor.** They cannot see focus order, heading placement, double announcements or a
+  load-bearing `ExcludeSemantics`; review those separately.
+- Prefer `isSemantics(...)` for partial checks; `matchesSemantics(...)` compares every flag and breaks when the
+  framework adds one.
 
-## 3. Focus Order Testing
+## 3. Text scaling and reduced motion
 
 ```dart
-// test/accessibility/focus_order_test.dart
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+
+class SaveBar extends StatelessWidget {
+  const SaveBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () {},
+      icon: const Icon(Icons.save),
+      // Text that can wrap or ellipsize instead of overflowing at 200%.
+      label: const Text('Save changes to your profile', maxLines: 2, overflow: TextOverflow.ellipsis),
+    );
+  }
+}
 
 void main() {
-  testWidgets('form fields have logical focus order', (tester) async {
+  testWidgets('no overflow at 200% text on a 320dp-wide screen', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CreateOrderForm())),
+      MaterialApp(
+        builder: (context, app) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2)),
+          child: app!,
+        ),
+        home: const Scaffold(body: Center(child: SaveBar())),
+      ),
     );
+    expect(tester.takeException(), isNull); // a RenderFlex overflow would be reported here
+    final context = tester.element(find.byType(SaveBar));
+    expect(MediaQuery.textScalerOf(context).scale(10), 20);
+  });
 
-    // Tab to first field
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pump();
-
-    final firstFocused = tester.binding.focusManager.primaryFocus?.debugLabel;
-    expect(firstFocused, contains('name')); // Name field first
-
-    // Tab to next field
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pump();
-
-    final secondFocused = tester.binding.focusManager.primaryFocus?.debugLabel;
-    expect(secondFocused, contains('email')); // Email field second
+  testWidgets('reduced motion: nothing keeps ticking', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, app) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: app!,
+        ),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => MediaQuery.disableAnimationsOf(context)
+                ? const Icon(Icons.sync, semanticLabel: 'Syncing')
+                : const CircularProgressIndicator(semanticsLabel: 'Syncing'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle(); // would time out if an animation looped
+    expect(find.bySemanticsLabel('Syncing'), findsOneWidget);
   });
 }
 ```
 
-## 4. Screen Reader Announcement Testing
+`textScaleFactor`, `MediaQuery.textScaleFactorOf` and `MediaQueryData(textScaleFactor:)` are deprecated: use
+`textScaler`, `MediaQuery.textScalerOf` and `TextScaler.linear`. Android 14+ scales text non-linearly, so never
+compute layout from a single scale factor; let text wrap.
+
+## 4. Focus order and keyboard
 
 ```dart
-// test/accessibility/announcements_test.dart
-import 'package:flutter/semantics.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
-  testWidgets('deleting item announces result to screen reader', (tester) async {
-    final SemanticsHandle handle = tester.ensureSemantics();
-    final List<SemanticsEvent> events = [];
+  testWidgets('tab order follows the visual order', (tester) async {
+    final name = FocusNode(debugLabel: 'name');
+    final email = FocusNode(debugLabel: 'email');
+    addTearDown(name.dispose);
+    addTearDown(email.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              TextField(focusNode: name, decoration: const InputDecoration(labelText: 'Name')),
+              TextField(focusNode: email, decoration: const InputDecoration(labelText: 'Email')),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(name.hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(email.hasPrimaryFocus, isTrue);
+  });
+}
+```
 
-    // Listen for semantic announcements
-    tester.binding.defaultBinaryMessenger.setMockMessageHandler(
-      'flutter/accessibility',
+## 5. Announcements and live regions
+
+`SemanticsService.announce` is deprecated (since 3.35): use `SemanticsService.sendAnnouncement(View.of(context), ...)`.
+For status text that updates in place, prefer `Semantics(liveRegion: true)`.
+
+```dart
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+
+class DeleteButton extends StatelessWidget {
+  const DeleteButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: () => SemanticsService.sendAnnouncement(
+        View.of(context),
+        'Order deleted',
+        Directionality.of(context),
+      ),
+      child: const Text('Delete'),
+    );
+  }
+}
+
+void main() {
+  testWidgets('deleting announces the result', (tester) async {
+    final announcements = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(
+      SystemChannels.accessibility,
       (message) async {
-        // Capture announcement events
+        final event = message as Map<Object?, Object?>;
+        if (event['type'] == 'announce') {
+          final data = event['data']! as Map<Object?, Object?>;
+          announcements.add(data['message']! as String);
+        }
         return null;
       },
     );
-
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: OrderListScreen())),
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null),
     );
 
-    // Trigger delete
-    await tester.tap(find.byTooltip('Delete order ORD-001'));
-    await tester.pumpAndSettle();
-
-    // Verify live region updated
-    expect(
-      find.bySemanticsLabel(RegExp(r'Order deleted')),
-      findsOneWidget,
-    );
-
-    handle.dispose();
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: DeleteButton())));
+    await tester.tap(find.text('Delete'));
+    await tester.pump();
+    expect(announcements, ['Order deleted']);
   });
 }
 ```
 
-## 5. Color Contrast — Flutter
+## 6. Colour contrast of design tokens
 
-Flutter does not have a built-in contrast checker. Use this helper in tests:
-
-```dart
-// test/helpers/contrast_checker.dart
-import 'dart:math';
-import 'package:flutter/material.dart';
-
-class ContrastChecker {
-  static double relativeLuminance(Color color) {
-    double toLinear(double channel) {
-      return channel <= 0.03928
-          ? channel / 12.92
-          : pow((channel + 0.055) / 1.055, 2.4).toDouble();
-    }
-
-    return 0.2126 * toLinear(color.red / 255) +
-        0.7152 * toLinear(color.green / 255) +
-        0.0722 * toLinear(color.blue / 255);
-  }
-
-  static double contrastRatio(Color foreground, Color background) {
-    final l1 = relativeLuminance(foreground);
-    final l2 = relativeLuminance(background);
-    final lighter = max(l1, l2);
-    final darker = min(l1, l2);
-    return (lighter + 0.05) / (darker + 0.05);
-  }
-
-  /// WCAG AA: 4.5:1 for normal text, 3:1 for large text (18sp+)
-  static bool meetsWcagAA(Color fg, Color bg, {bool largeText = false}) {
-    final ratio = contrastRatio(fg, bg);
-    return largeText ? ratio >= 3.0 : ratio >= 4.5;
-  }
-}
-
-// Usage in test
-test('primary text meets WCAG AA contrast', () {
-  const fg = Color(0xFF212121); // colorScheme.onSurface
-  const bg = Color(0xFFFFFFFF); // colorScheme.surface
-  expect(ContrastChecker.meetsWcagAA(fg, bg), isTrue);
-});
-```
-
-## 6. Full Screen Audit Helper
+`textContrastGuideline` measures rendered text. To check token pairs directly (for example every `on*`/surface pair
+of the light and dark schemes), use `Color.computeLuminance()`; `Color.red/green/blue/value/opacity` are deprecated.
 
 ```dart
-// test/helpers/a11y_audit.dart
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
-/// Run after pumping a screen to check common a11y patterns
-Future<void> runA11yAudit(WidgetTester tester) async {
-  final handle = tester.ensureSemantics();
+double contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+}
 
-  // 1. Check all images have labels or are excluded
-  final images = find.byType(Image);
-  for (final image in tester.widgetList(images)) {
-    // Images should either be in ExcludeSemantics or have a Semantics wrapper
-    // This is a reminder check — automated validation via SemanticsController
+void main() {
+  for (final brightness in Brightness.values) {
+    test('scheme text roles meet 4.5:1 ($brightness)', () {
+      final s = ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0), brightness: brightness);
+      final pairs = {
+        'onSurface/surface': (s.onSurface, s.surface),
+        'onSurfaceVariant/surface': (s.onSurfaceVariant, s.surface),
+        'onPrimary/primary': (s.onPrimary, s.primary),
+        'onError/error': (s.onError, s.error),
+      };
+      pairs.forEach((name, pair) {
+        expect(contrastRatio(pair.$1, pair.$2), greaterThanOrEqualTo(4.5), reason: name);
+      });
+    });
   }
-
-  // 2. Check no text overflow at 2x scale (run once with scaled text)
-  // Call this from a separate testWidgets with MediaQuery override
-
-  // 3. Verify semantic tree is not empty (confirms Semantics widgets present)
-  final semantics = tester.getSemantics(find.byType(Scaffold).first);
-  expect(semantics.childrenCount, greaterThan(0));
-
-  handle.dispose();
 }
 ```
 
-## Running Flutter Accessibility Tests
+## Running
 
 ```bash
-# Run all a11y tests
-flutter test test/accessibility/
-
-# Run with verbose semantics output
-flutter test test/accessibility/ --reporter=expanded
-
-# Run integration tests on device (TalkBack / VoiceOver)
-flutter drive --driver=test_driver/integration_test.dart --target=integration_test/a11y_test.dart
+flutter test test/accessibility/      # widget-level checks
+flutter analyze                       # 0 issues; catches deprecated a11y APIs
 ```
+
+On-device screen-reader and switch-access flows: Maestro (`maestro test .maestro/`) on an Android emulator / iOS
+simulator, plus the manual checklist. If no device is available, report BLOCKED, not PASS.

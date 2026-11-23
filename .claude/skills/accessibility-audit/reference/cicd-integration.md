@@ -155,15 +155,16 @@ jobs:
           retention-days: 14
 
   a11y-flutter:
+    # Scope with `on.pull_request.paths` (e.g. 'lib/**', 'test/**', 'pubspec.*');
+    # `pull_request.changed_files` is a count, not a list of paths.
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.changed_files, 'lib/')
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.0'
+          flutter-version: '3.50.1'
           channel: 'stable'
 
       - name: Install dependencies
@@ -172,7 +173,7 @@ jobs:
       - name: Run accessibility widget tests
         run: flutter test test/accessibility/ --reporter=expanded
 
-      - name: Analyze (catches semantic issues)
+      - name: Analyze (zero issues; catches deprecated a11y APIs such as textScaleFactor)
         run: flutter analyze
 ```
 

@@ -1,6 +1,6 @@
 # A2UI Angular Renderer Patterns
 
-> **LEGACY v0.8 message shapes.** This hand-built renderer reads v0.8 payloads (`surfaceUpdate`, `beginRendering`, `{ "component": { "type" } }`, `literalString`). New work uses v0.9 through the official SDK with `STRICT_VALIDATION` (`SKILL.md` § Security Defaults). The security guards below (URL policy, cycle/depth guard, unknown-type placeholder) apply to any hand-built renderer whatever the version. The models, catalog, sanitizer and renderer here were compiled on Angular 21.2.26 and browser-tested in Chromium on 2026-11-22.
+> **LEGACY v0.8 message shapes.** This hand-built renderer reads v0.8 payloads (`surfaceUpdate`, `beginRendering`, `{ "component": { "type" } }`, `literalString`). New work uses v0.9 through the official SDK with `STRICT_VALIDATION` (`SKILL.md` § Security Defaults). The security guards below (URL policy, cycle/depth guard, unknown-type placeholder) apply to any hand-built renderer whatever the version. The models, catalog, sanitizer and renderer here were compiled on Angular 21.2.26 and browser-tested in Chromium on 2026-11-22 (not re-run on 22.3; root singletons converted to `@Service()` mechanically).
 
 ## Architecture Overview
 
@@ -48,6 +48,8 @@ src/app/features/a2ui-chat/
 ```
 
 ## Models
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // models/a2ui.model.ts
@@ -174,12 +176,14 @@ export interface ChatMessage {
 
 ## Catalog Service
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // services/a2ui-catalog.service.ts
 
-import { Injectable } from '@angular/core';
+import { Service } from '@angular/core';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UICatalogService {
   private readonly allowedTypes = new Set([
     // Layout
@@ -202,16 +206,18 @@ export class A2UICatalogService {
 
 `https:` only **and** a host allowlist, used by every `[src]`, `[href]` and `openUrl`. Browser-tested: with the allowlist `img.example.com`, only `https://img.example.com/a.png` rendered; `http://img.example.com/…`, `https://evil.example/…` and `javascript:…` produced no `<img>`.
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // services/a2ui-sanitizer.service.ts
-import { Injectable, InjectionToken, inject } from '@angular/core';
+import { Service, InjectionToken, inject } from '@angular/core';
 
 /** Hosts that agent-supplied image/link URLs may point at. Empty (default) = every URL is rejected. */
 export const A2UI_ALLOWED_URL_HOSTS = new InjectionToken<ReadonlySet<string>>('A2UI_ALLOWED_URL_HOSTS', {
   factory: () => new Set<string>(),
 });
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UISanitizerService {
   private readonly allowedHosts = inject(A2UI_ALLOWED_URL_HOSTS);
 
@@ -235,6 +241,8 @@ export class A2UISanitizerService {
 ```
 
 Provide the allowlist at application level (`app.config.ts`): the service is `providedIn: 'root'`, so a component-level provider of the token is never seen (verified — the component-level provider left every image blocked).
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 { provide: A2UI_ALLOWED_URL_HOSTS, useValue: new Set(['images.example.com']) }
@@ -272,16 +280,22 @@ Key patterns:
 All Image components rendered by the A2UI renderer MUST have explicit size constraints. Never render images or SVGs without capping their dimensions.
 
 ❌ FORBIDDEN — unconstrained image:
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```html
 <img [src]="src" />
 ```
 
 ✅ CORRECT — always constrain width and height:
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```html
 <img [src]="src" class="max-w-full max-h-64 object-contain rounded-lg" />
 ```
 
 SVG from an agent is rendered only as an image file (`<img [src]>` with an allowlisted `https:` URL) inside a wrapper — never through `[innerHTML]`, `bypassSecurityTrust*` or an `<iframe>` (inline SVG can carry script and event handlers):
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```html
 <div class="w-full max-h-64 overflow-hidden flex items-center justify-center">
   <img [src]="src" alt="" class="max-w-full max-h-64 object-contain" />

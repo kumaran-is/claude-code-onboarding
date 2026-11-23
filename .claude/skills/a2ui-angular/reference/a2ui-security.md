@@ -71,9 +71,11 @@ With the official SDK this is `processorOptions: { validationConfig: STRICT_VALI
 unknown type → `A2uiValidationError`). For a hand-built renderer, the allowlist below uses the v0.8 type
 names (v0.9 renames `Checkbox` → `CheckBox` and adds `ChoicePicker`, `Slider`, `Video`, `AudioPlayer`):
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // ✅ REQUIRED: Allowlist validation with official type names
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UICatalogService {
   private readonly allowedTypes = new Set([
     'Row', 'Column',                                              // Layout
@@ -91,6 +93,8 @@ export class A2UICatalogService {
 // (a2ui-renderer-template.md).
 ```
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // ❌ FORBIDDEN: Rendering any type the agent sends
 renderComponent(comp: A2UIComponent) {
@@ -102,6 +106,8 @@ renderComponent(comp: A2UIComponent) {
 
 In v0.8 (legacy), all property values use a typed-value format. In v0.9 a property is a plain JSON value, a `{ "path": … }` binding or a function call; the same rule holds — no executable content. A value is either a literal string or a
 JSON Pointer path reference — never a raw string or executable content.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // Official property value shapes:
@@ -127,6 +133,8 @@ sanitizePropertyValue(value: unknown): string {
 
 URL properties extracted from sanitized values still require protocol validation:
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // ❌ FORBIDDEN: Direct innerHTML or unvalidated URL binding
 <div [innerHTML]="comp.properties['content']"></div>
@@ -149,6 +157,8 @@ party in its query string.
 Official v0.8 action format: `{ "name": "...", "context": [...] }`.
 Validate on `action.name`, not a legacy `action.action` field.
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // Official action interface
 interface A2UIAction {
@@ -157,9 +167,11 @@ interface A2UIAction {
 }
 ```
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // services/a2ui-action-gate.ts — every user action passes here before it reaches the agent
-import { ErrorHandler, Injectable, InjectionToken, inject } from '@angular/core';
+import { ErrorHandler, Service, InjectionToken, inject } from '@angular/core';
 
 /** Action names this app accepts. Fail closed: nothing is allowed until the app provides the set. */
 export const A2UI_ALLOWED_ACTIONS = new InjectionToken<ReadonlySet<string>>('A2UI_ALLOWED_ACTIONS', {
@@ -167,7 +179,7 @@ export const A2UI_ALLOWED_ACTIONS = new InjectionToken<ReadonlySet<string>>('A2U
   factory: () => new Set<string>(),
 });
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UIActionGate {
   private readonly allowed = inject(A2UI_ALLOWED_ACTIONS);
   private readonly errorHandler = inject(ErrorHandler);
@@ -193,8 +205,10 @@ The agent writes the action's `context` template. Bound values (`{ "path": … }
 client data model, but literal values in the template come straight from the agent, and the data model
 itself is filled by agent `updateDataModel` messages and user input. The v0.9 schema describes `context`
 as "the key-value pairs from the component's action.event.context, after resolving all data bindings"
-(`@a2ui/web_core@0.15.0`, `src/v0_9/schemas/client_to_server.json`). So the server validates every context
+(`@a2ui/web_core@0.15.0`, `src/v0_9/schemas/client_to_server.json`; historical, not re-checked on 0.16.1). So the server validates every context
 value (schema, ownership of referenced ids, ranges) exactly like any other client input.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // action (client -> agent). v0.9: { "version": "v0.9", "action": { … } }; v0.8 called it userAction
@@ -208,6 +222,8 @@ interface UserAction {
 ```
 
 ### 5. No Code Execution (Absolute Rule)
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // ❌ ABSOLUTE PROHIBITION — never execute agent-provided strings
@@ -223,6 +239,8 @@ const factory = this.resolver.resolveComponentFactory(
 ```
 
 ### 6. Payload Size Limits
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 const MAX_COMPONENTS = 200;
@@ -243,9 +261,11 @@ assertSurfaceSize(update: { surfaceId: string; components: readonly unknown[] })
 
 The `catalogId` field in `createSurface` is agent-controlled. Never load a catalog dynamically based on a catalogId from the agent without server-side allowlisting:
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 const ALLOWED_CATALOG_IDS = new Set([
-  'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json', // id used by @a2ui/web_core@0.15.0 v0.9 examples
+  'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json', // id used by @a2ui/web_core v0.9 examples
   'https://example.com/catalogs/your-custom-catalog',
 ]);
 
@@ -279,8 +299,8 @@ Server validates generated A2UI before sending it to the client
 ```
 
 The configuration flag that controls this depends on your agent SDK. `provideA2uiCatalog` and
-`sendCatalogDescription` do NOT exist in `@a2ui/angular@0.14.0` or `@a2ui/web_core@0.15.0` (searched the
-published packages 2026-11-22) — UNVERIFIED for other A2UI agent SDKs; check the SDK you use before citing a flag.
+`sendCatalogDescription` do NOT exist in `@a2ui/angular@0.14.0`/`0.16.0` or `@a2ui/web_core@0.15.0`/`0.16.1` (searched the
+published packages 2026-11-22 and 2026-11-23) — UNVERIFIED for other A2UI agent SDKs; check the SDK you use before citing a flag.
 
 ## Rate Limits (Server-Side)
 

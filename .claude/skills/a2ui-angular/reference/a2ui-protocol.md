@@ -4,10 +4,10 @@
 
 A2UI (Agent-to-User Interface) is a declarative protocol that enables AI agents to generate rich, interactive UIs safely. Agents describe UIs using structured JSONL messages; clients render using their own native components.
 
-- **Spec version used for new work:** v0.9 (`@a2ui/web_core@0.15.0` default `'0.9'`). Sections below that show `surfaceUpdate` / `beginRendering` / `dataModelUpdate` / `userAction` describe **v0.8 (legacy)**; see the v0.8 → v0.9 table at the end before using them.
+- **Spec version used for new work:** v0.9 (`@a2ui/web_core` 0.15.0/0.16.1 default `'0.9'`; v1.0 also renders on `@a2ui/angular` 0.16.0, see `../SKILL.md` § Protocol Version). Sections below that show `surfaceUpdate` / `beginRendering` / `dataModelUpdate` / `userAction` describe **v0.8 (legacy)**; see the v0.8 → v0.9 table at the end before using them.
 - **Official site:** https://a2ui.org/
 - **GitHub:** https://github.com/google/A2UI
-- **Angular package:** `npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0`
+- **Angular package:** `npm install --save-exact @a2ui/angular@0.16.0 @a2ui/web_core@0.16.1 zod@3.25.76` (peer Angular ^22.2.3)
 
 ## Core Principles
 
@@ -283,6 +283,8 @@ v0.9 also adds a `version` field to every message:
 **v0.9 `root` requirement.** Every rendered surface must include exactly one component with `id: "root"` — this is a v0.9 protocol requirement, not a renderer convention.
 
 **Import from versioned paths in v0.9:**
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 import { A2uiRendererService, SurfaceComponent } from '@a2ui/angular/v0_9';
 import type { A2uiMessage, A2uiClientAction } from '@a2ui/web_core/v0_9';
@@ -323,6 +325,8 @@ yield f"data: {json.dumps(parsed)}\n\n"
 ```
 
 **Frontend fallback** — also add this resilience in the Angular `buildSurfaceState()` function:
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // After the fold loop, if beginRendering never arrived but 'root' component exists:

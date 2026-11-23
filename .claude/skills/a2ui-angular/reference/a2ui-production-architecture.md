@@ -48,7 +48,7 @@ A2UI messages travel inside AG-UI `ACTIVITY_SNAPSHOT` events:
 }
 ```
 
-There is no single required way to embed A2UI in AG-UI — `ACTIVITY_SNAPSHOT` + `activityType: 'a2ui-surface'` is the common convention. The content key is `a2ui_operations`; CopilotKit's Angular renderer (0.3.1, SOURCE-PROVEN) also accepts `operations`. Each snapshot is cumulative for one surface (`replace: true`), so apply only the new tail and re-run the contract guard on every operation. Tested adapter: `canonical-catalog-angular.md` § AG-UI adapter; transport contract: `../../genui-contract/reference/ag-ui-transport.md`.
+There is no single required way to embed A2UI in AG-UI — `ACTIVITY_SNAPSHOT` + `activityType: 'a2ui-surface'` is the common convention. The content key is `a2ui_operations`; CopilotKit's Angular renderer also accepted `operations` in 0.3.1 (SOURCE-PROVEN then; not re-checked on 0.6.0 / Angular 22.3). Each snapshot is cumulative for one surface (`replace: true`), so apply only the new tail and re-run the contract guard on every operation. Tested adapter: `canonical-catalog-angular.md` § AG-UI adapter; transport contract: `../../genui-contract/reference/ag-ui-transport.md`.
 
 ## Domain DSL Pattern
 
@@ -75,7 +75,9 @@ Client renders
 
 ### Component definition (v0.9 SDK)
 
-> Zod version: `@a2ui/web_core@0.15.0` depends on `zod@^3.25.76` and imports `'zod'`. Author catalog schemas with that same Zod 3 copy (`zod/v3` resolves to it); whether Zod 4 schemas are accepted is UNVERIFIED — do not mix. `@a2ui/angular@0.14.0` also exports `createComponentImplementation`, which keeps `allowedParents`/`allowedChildren` (enforced since 0.14.0) and avoids the `as unknown as` cast below; check its signature in the installed `.d.ts` before use. These two snippets are illustrative (not compiled).
+> Zod version: `@a2ui/web_core@0.16.1` still depends on `zod@^3.25.76` (re-checked 2026-11-23). Install zod 3.25.76 as a direct exact dependency and author catalog schemas with that copy. A zod 4 override broke binding resolution in the Angular 22.3 sandbox, so do not mix versions. `@a2ui/angular@0.16.0` also exports `createComponentImplementation`, which keeps `allowedParents`/`allowedChildren` (enforced since 0.14.0) and avoids the `as unknown as` cast below; check its signature in the installed `.d.ts` before use. These two snippets are illustrative (not compiled).
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 import { AngularComponentImplementation } from '@a2ui/angular/v0_9';
@@ -98,6 +100,8 @@ const milesProgressEntry = {
 
 ### Custom function (v0.9 SDK)
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 import type { FunctionImplementation } from '@a2ui/web_core/v0_9';
 import { z, type ZodTypeAny } from 'zod/v3';
@@ -115,7 +119,9 @@ export const formatIdImplementation = {
 
 ### Registering custom components (v0.9)
 
-`BasicCatalogBase` options `extraComponents` and `functions` are `@deprecated` in `@a2ui/angular@0.14.0`. Build the catalog with the `AngularCatalog` constructor and `createComponentImplementation(api, componentClass)`; the API's zod schema is the per-component contract. Tested code: `canonical-catalog-angular.md`.
+`BasicCatalogBase` options `extraComponents` and `functions` are `@deprecated` (0.14.0; still deprecated in 0.16.0, `.d.ts` checked 2026-11-23). Build the catalog with the `AngularCatalog` constructor and `createComponentImplementation(api, componentClass)`; the API's zod schema is the per-component contract. Tested code: `canonical-catalog-angular.md`.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 import { AngularCatalog, createComponentImplementation } from '@a2ui/angular';
@@ -134,7 +140,9 @@ A field that accepts a literal or a `{ "path": "/..." }` binding is declared wit
 
 ### Component input types (v0.9)
 
-A catalog component extends `CatalogComponent<typeof Api>` (`@a2ui/angular@0.14.0`), which supplies the `props`, `surfaceId`, `componentId`, `dataContextPath` and `metadata` inputs. Scalar `Dynamic*` props arrive as `BoundProperty` (read with `value()`); `Action` props arrive as ready-to-call closures. Tested example (`ActionCardComponent`): `canonical-catalog-angular.md` § A catalog component.
+A catalog component extends `CatalogComponent<typeof Api>` (`@a2ui/angular@0.16.0`, tested on Angular 22.3), which supplies the `props`, `surfaceId`, `componentId` and `dataContextPath` inputs. Every prop arrives as a `BoundProperty` (read with `value()`). Bindings nested in arrays/objects arrive already resolved. Action props on 0.16.0 arrive as plain action objects: resolve them with `DataContext.resolveAction(action, { userActivation: true })` and send them with `surface.dispatchAction`. The 0.14.0 docs described ready-to-call closures; that was not re-checked. Tested example (`ActionCardComponent`): `canonical-catalog-angular.md` § A catalog component.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 export class MilesProgressComponent extends CatalogComponent<typeof MilesProgressApi> {
@@ -154,6 +162,8 @@ export class MilesProgressComponent extends CatalogComponent<typeof MilesProgres
 
 ### Dashboard widget collection pattern
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 function collectWidgets(messages: AgUiChatMessage[]): AgUiWidget[] {
   return messages.flatMap(m =>
@@ -161,6 +171,8 @@ function collectWidgets(messages: AgUiChatMessage[]): AgUiWidget[] {
   );
 }
 ```
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```html
 @for (widget of widgets(); track widget.a2uiSurfaceId) {
@@ -174,6 +186,8 @@ Dashboards work in request/response mode (not just chat): user describes a dashb
 
 ### Schema validation as test oracle
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 test('MilesProgress rejects unknown props', () => {
   expect(() =>
@@ -183,6 +197,8 @@ test('MilesProgress rejects unknown props', () => {
 ```
 
 ### Golden-file tests
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 test('booking confirmation emits expected A2UI', async () => {

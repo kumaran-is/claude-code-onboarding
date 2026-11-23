@@ -7,6 +7,8 @@
 
 ## Chat Page Component
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // components/a2ui-chat/a2ui-chat.component.ts
 
@@ -120,6 +122,8 @@ export class A2UIChatComponent {
 For progressive rendering, replace `send()` with `sendStreaming()`. Each SSE `message` event carries
 one JSONL line. The service emits typed `A2UIMessage` values; the component accumulates them into a
 live `SurfaceState` via `buildSurfaceState` and updates the signal on every message.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // Add to A2UIChatComponent

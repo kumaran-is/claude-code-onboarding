@@ -1,12 +1,14 @@
 # A2UI Renderer & Chat Component Templates
 
-> **LEGACY v0.8 payload shape** (see `a2ui-renderer-patterns.md`). Compiled on Angular 21.2.26 (`strictTemplates`) and browser-tested in Chromium 2026-11-22 with the models, catalog and sanitizer from `a2ui-renderer-patterns.md`:
+> **LEGACY v0.8 payload shape** (see `a2ui-renderer-patterns.md`). Compiled on Angular 21.2.26 (not re-run on 22.3) (`strictTemplates`) and browser-tested in Chromium 2026-11-22 with the models, catalog and sanitizer from `a2ui-renderer-patterns.md`:
 > - `root → a → root`, `root.child = root` and a 41-level tree each render one placeholder and log `A2UI: cycle or depth > 32 …`; the tab stays responsive.
 > - An unknown type (`Iframe`) renders the placeholder and logs `component type "Iframe" is not in the catalog`.
 > - Tabs are `button role="tab"` with `aria-selected` and roving `tabindex`; ArrowLeft/ArrowRight move selection and focus, and the active child renders in `role="tabpanel"`.
 > - Negative control: the previous version of this file (no guard) crashed the tab on the cycle (`Maximum call stack size exceeded`).
 
 ## Renderer Component
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // components/a2ui-renderer/a2ui-renderer.component.ts

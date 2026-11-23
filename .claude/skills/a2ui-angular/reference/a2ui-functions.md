@@ -158,11 +158,13 @@ Used in component `visible` or `disabled` properties to conditionally show/hide 
 
 Register function evaluators in the renderer. Use a dedicated `A2UIFunctionService` (illustrative — not compiled; `A2UISanitizerService` is the one in `a2ui-renderer-patterns.md`):
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
-import { ErrorHandler, Injectable, inject } from '@angular/core';
+import { ErrorHandler, Service, inject } from '@angular/core';
 import { A2UISanitizerService } from './a2ui-sanitizer.service';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UIFunctionService {
   private readonly errorHandler = inject(ErrorHandler);
   private readonly sanitizer = inject(A2UISanitizerService);

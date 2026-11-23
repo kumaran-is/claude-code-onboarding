@@ -1,8 +1,10 @@
-# Canonical GenUI catalog in Angular (A2UI v0.9, `@a2ui/angular@0.14.0`)
+# Canonical GenUI catalog in Angular (A2UI v0.9; Angular 22 + `@a2ui/angular@0.16.0`)
 
 How the eight canonical catalog IDs from the `genui-contract` skill (`../../genui-contract/reference/catalog-contract.md`) become Angular components in one A2UI v0.9 custom catalog, plus the action gateway, ingest guard, topology adapters and AG-UI adapter around it.
 
-**Evidence.** The code blocks are excerpts from a sandbox app (Angular 21.2.26, `@a2ui/angular@0.14.0`, `@a2ui/web_core@0.15.0`, zod 3.25.76, TypeScript 5.9.3 strict + strictTemplates), checked on 2026-11-23 against the contract fixtures and the reference backend in both topologies:
+**Evidence (Angular 22, current):** [canonical-catalog-angular22-components.md](canonical-catalog-angular22-components.md) (components, action dispatch) and [canonical-catalog-angular22-session.md](canonical-catalog-angular22-session.md) (stream session, providers, lazy routes) were compiled and tested on Angular 22.3.0 + `@a2ui/angular@0.16.0`.
+
+**Evidence (historical; not re-run on 22.3):** the code blocks in this file are excerpts from an earlier sandbox app (Angular 21.2.26, `@a2ui/angular@0.14.0`, `@a2ui/web_core@0.15.0`, zod 3.25.76, TypeScript 5.9.3 strict + strictTemplates), checked on 2026-11-23 against the contract fixtures and the reference backend in both topologies:
 
 | Check | Result | Negative control |
 |---|---|---|
@@ -23,7 +25,7 @@ Wire IDs are the canonical names. Angular class names never go on the wire.
 | `ConfirmationDialog` | `ConfirmationDialogComponent` (native `<dialog>`, server-authored) | DOCUMENTED AND TESTED |
 | `DataSummaryTable`, `SelectionList`, `DetailPanel`, `StatusIndicator` | Same pattern: one `ComponentApi` + one `CatalogComponent` each | NOT RUN in the sandbox. Build them before you accept fixtures that use them; until then the guard rejects them with `UNKNOWN_COMPONENT` |
 
-## SDK facts the catalog relies on (SOURCE-PROVEN, web_core 0.15.0)
+## SDK facts the catalog relies on (SOURCE-PROVEN, web_core 0.15.0; Angular 22 notes in the last section)
 
 - `AngularCatalog(id, '0.9', components, functions)` + `createComponentImplementation(api, componentClass)` is the supported way to register components. `BasicCatalogBase({ extraComponents, functions })` is `@deprecated`.
 - Catalog functions are separate from components. The basic functions are not inherited: a fixture that calls `required` fails with `Unrecognized function 'required'` unless you register it (filter `BASIC_FUNCTIONS` from `@a2ui/web_core/v0_9/basic_catalog`).
@@ -32,6 +34,8 @@ Wire IDs are the canonical names. Angular class names never go on the wire.
 - `STRICT_VALIDATION` rejects unknown components, orphans, dangling references, missing root, cycles and over-depth trees. It does **not** validate component props, and `targetVersion` only checks messages that carry a version. An app-level ingest guard is therefore required (see below).
 
 ## Component API and catalog
+
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
 
 ```typescript
 import { z } from 'zod';
@@ -67,6 +71,8 @@ const dataBinding = DataBindingSchema;
 ```
 
 Each component API is `{ name: '<CanonicalId>', schema: z.object({...}).strict() }`, built from these helpers and the contract's per-component JSON Schema. The catalog registration:
+
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
 
 ```typescript
 import { EnvironmentProviders, InjectionToken, inject, makeEnvironmentProviders } from '@angular/core';
@@ -116,8 +122,10 @@ export function provideGenui(backend: GenuiBackend): EnvironmentProviders {
 
 ## A catalog component
 
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
+
 ```typescript
-import { ChangeDetectionStrategy, Component, computed } from '@angular/core';
+import { Component, computed } from '@angular/core';
 import { CatalogComponent } from '@a2ui/angular';
 import { ActionCardApi } from '../canonical-catalog';
 
@@ -130,7 +138,6 @@ interface CardAction {
 /** Canonical `ActionCard`: title, optional subtitle/body, 1-3 server-event buttons. Text only, never HTML. */
 @Component({
   selector: 'app-action-card',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <article class="card" [attr.aria-labelledby]="surfaceId() + '-' + componentId() + '-title'">
       <h3 [id]="surfaceId() + '-' + componentId() + '-title'">{{ title() }}</h3>
@@ -174,6 +181,8 @@ export class ActionCardComponent extends CatalogComponent<typeof ActionCardApi> 
 
 Two-way binding for nested fields (InputForm, ApprovalForm comment):
 
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
+
 ```typescript
 import { DestroyRef, Signal, effect, inject, signal } from '@angular/core';
 import { A2uiRendererService } from '@a2ui/angular';
@@ -216,6 +225,8 @@ Accessibility rules the e2e axe run enforces: DOM ids are scoped as `surfaceId +
 ## Action gateway: allowlist, payload schema, idempotency, server authz
 
 Every `actionHandler` call goes through one gateway. Unknown action names and invalid payloads never leave the browser. Side-effecting actions get an `Idempotency-Key` **header** (never a context field), created once per user intent: a duplicate click while the request is in flight is dropped, a retry after a failure reuses the key, and the key is discarded once the server accepts the action. The SDK dispatches actions without extra arguments, so the intent is identified by its canonical message (without the timestamp). Catalog components bind every action control to `[disabled]="busy()"` (`busy = inject(ActionGateway).busy`). The server re-authorizes from the session and holds every `requiresHumanApproval` action. It answers `202 { status: "confirmation_required", messages }` with a server-authored `ConfirmationDialog` surface, which the app ingests through the same guard.
+
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
 
 ```typescript
 /**
@@ -350,6 +361,8 @@ A rejected message is logged through `ErrorHandler`, listed in a visible `role="
 
 Only the adapter edge differs between topologies; the catalog, guard and gateway are identical. One build serves both by reading public origins from a runtime file (no secrets):
 
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
+
 ```typescript
 export async function loadBackend(topology: Topology): Promise<GenuiBackend> {
   const response = await fetch('/genui-config.json', { cache: 'no-store' });
@@ -373,6 +386,8 @@ The stream client reads the topology the server reports (`X-GenUI-Topology`) and
 ## AG-UI adapter (optional transport)
 
 `@ag-ui/client@1.0.5` `HttpAgent` against an AG-UI endpoint. A2UI arrives as `ACTIVITY_SNAPSHOT { activityType: 'a2ui-surface', content: { a2ui_operations }, replace: true }`. Snapshots are cumulative per surface, so apply only the new tail. Rewriting the whole surface on each snapshot remounted the surface host and lost bindings in testing. Actions still go through the REST gateway. Contract: `../../genui-contract/reference/ag-ui-transport.md`.
+
+*Not recompiled on Angular 22.3 (historical Angular 21.2.26 excerpt; the compiled 22.3 versions are in the last section).*
 
 ```typescript
 /**

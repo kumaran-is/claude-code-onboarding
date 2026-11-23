@@ -8,8 +8,10 @@ Reference for wiring the A2UI renderer into a real Angular application — the `
 
 The recommended Angular abstraction wraps the AG-UI connection, chat history, tool definitions, widget extraction, and cleanup in a single injectable service. The component layer never touches AG-UI or A2UI directly.
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```ts
-@Injectable({ providedIn: 'root' })
+@Service()
 export class TicketingChatService {
   private readonly config = inject(ConfigService);
   private readonly chatStore = inject(ChatRegistry);
@@ -62,6 +64,8 @@ export class TicketingChatService {
 
 The component template does not need to know about A2UI protocol details. It iterates messages and delegates widget rendering to `<app-widget-container>`:
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```html
 @for (message of chat.value(); track message.id) {
   @if (message.content) {
@@ -78,11 +82,15 @@ The component template does not need to know about A2UI protocol details. It ite
 
 Sending a message:
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```ts
 this.chat.sendMessage({ role: 'user', content: 'Did I book my flight to France?' });
 ```
 
 **Surface collection for dashboards** (request/response mode, not chat):
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```ts
 function collectWidgets(messages: AgUiChatMessage[]): AgUiWidget[] {
@@ -91,6 +99,8 @@ function collectWidgets(messages: AgUiChatMessage[]): AgUiWidget[] {
   );
 }
 ```
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```html
 @for (widget of widgets(); track widget.a2uiSurfaceId) {
@@ -103,6 +113,8 @@ function collectWidgets(messages: AgUiChatMessage[]): AgUiWidget[] {
 ## 3. Action Handler — Demo vs Production Pattern
 
 ### ⚠️ Demo-Only Anti-Pattern (do NOT use in production)
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```ts
 // ❌ FORBIDDEN in production
@@ -137,6 +149,8 @@ private registerHandler(): void {
 ### ✅ Production Pattern
 
 Forward every action to the agent. Let the agent decide whether to emit a new `updateDataModel`.
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```ts
 // In your action handler service
@@ -183,6 +197,8 @@ A misbehaving or compromised agent can DOS the client by spamming surface creati
 
 **Implementation location:** Apply in your agent gateway or the A2UI validation middleware, not in the Angular renderer. The renderer is the consumer of validated payloads, not the enforcer.
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```ts
 // Example: server-side surface session guard (pseudocode)
 const MAX_SURFACES_PER_SESSION = 50;
@@ -201,6 +217,8 @@ function validateCreateSurface(sessionId: string, msg: A2uiMessage): void {
 ## 5. `registerHandlers` Pattern
 
 When using `agUiResource`, named action handlers are registered once at service construction. Each handler receives the action and has access to the chat resource:
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```ts
 registerHandlers({

@@ -156,6 +156,8 @@ if (
 
 Also add a frontend fallback in `travel-agent.service.ts` `buildSurfaceState()`:
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // Fallback: agent sent surfaceUpdate with a 'root' component but no beginRendering
 if (!state.rootComponentId && state.componentMap.has('root')) {

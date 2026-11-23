@@ -5,16 +5,18 @@
 The `@a2ui/angular` package is the **official Angular renderer SDK** from Google. Use it for new projects instead of building a custom renderer from scratch.
 
 ```bash
-npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0   # peer: @angular/* ^21.2.5
+npm install --save-exact @a2ui/angular@0.16.0 @a2ui/web_core@0.16.1 zod@3.25.76   # peer: @angular/* ^22.2.3
 ```
 
-Verified 2026-11-22 against the published packages and in Chromium (Angular 21.2.26). Exports used below:
+Historical evidence, not re-run on 22.3: verified 2026-11-22 against 0.14.0 in Chromium (Angular 21.2.26); the same exports exist in 0.16.0 (`.d.ts` checked 2026-11-23). Exports used below:
 `provideA2Ui`, `MarkdownRenderer`, `A2uiRendererService` (`@a2ui/angular`); `SurfaceComponent`
 (selector `a2ui-v09-surface`), `BasicCatalog` (`@a2ui/angular/v0_9`); `STRICT_VALIDATION`, `ActionPayload`
-(`@a2ui/web_core/v0_9`). `provideA2uiRenderer` and `@a2ui/angular/catalogs` do not exist in 0.14.0. The
+(`@a2ui/web_core/v0_9`). `provideA2uiRenderer` and `@a2ui/angular/catalogs` do not exist in 0.14.0 or 0.16.0. The
 package root `BasicCatalog` is the v1.0 catalog — import the v0.9 one from `@a2ui/angular/v0_9`.
 
 ### Provider Setup (app.config.ts)
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // app.config.ts excerpt — official renderer, A2UI v0.9 wire format, strict validation
@@ -54,14 +56,15 @@ export function provideA2uiStrict(): EnvironmentProviders {
 
 ### Feeding messages and rendering a surface
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
-import { Component, ChangeDetectionStrategy, ErrorHandler, inject, signal } from '@angular/core';
+import { Component, ErrorHandler, inject, signal } from '@angular/core';
 import { A2uiRendererService } from '@a2ui/angular';
 import { SurfaceComponent } from '@a2ui/angular/v0_9';
 
 @Component({
   selector: 'app-agent-surface',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SurfaceComponent],
   template: `
     @if (rejected()) { <p role="alert">This content could not be displayed.</p> }
@@ -93,6 +96,8 @@ the agent client; a cycle and an unknown type were rejected with the alert shown
 ### Production vs Demo Action Handler
 
 A common demo pattern answers an action inside the browser by calling `processMessages` directly:
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // ⚠️ DEMO-ONLY — do NOT use in production
@@ -128,16 +133,18 @@ its `context` and decides which messages, if any, come back. Apply the response 
 > guard and then `AgentSurfaceComponent.ingest()`; `processMessages` owns the surface state. Keep the
 > transport rules from this section (a malformed frame or a dropped stream is an error, never a silent complete).
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // services/a2ui-agent.service.ts
 
-import { Injectable, inject } from '@angular/core';
+import { Service, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { A2UIMessage, SurfaceState, UserAction } from '../models/a2ui.model';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class A2UIAgentService {
   private http = inject(HttpClient);
 
@@ -224,6 +231,8 @@ export class A2UIAgentService {
 ## Unit Test Template — LEGACY v0.8 hand-built renderer
 
 For the SDK path, test the ingest guard and the action gateway instead (`canonical-catalog-angular.md`).
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // components/a2ui-renderer/a2ui-renderer.component.spec.ts

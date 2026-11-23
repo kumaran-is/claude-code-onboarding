@@ -1,7 +1,7 @@
 ---
 name: a2ui-angular
-description: "A2UI (Agent-to-User Interface) renderer development for Angular 21.x. Use when building A2UI component renderers, agent-driven UIs, A2UI catalogs, action handlers, or streaming A2UI payloads. Covers protocol implementation, security validation, component mapping, and agent integration."
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
+description: "A2UI (Agent-to-User Interface) renderer development for Angular 22.x. Use when building A2UI component renderers, agent-driven UIs, A2UI catalogs, action handlers, or streaming A2UI payloads. Covers protocol implementation, security validation, component mapping, and agent integration."
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation, mcp__context7__resolve-library-id, mcp__context7__query-docs
 metadata:
   triggers: A2UI, agent-to-user interface, agent UI, A2UI renderer, A2UI catalog, A2UI component, agent-driven UI, declarative UI protocol
   related-skills: genui-contract, angular-spa, frontend-design, ui-standards-tokens, ai-chat
@@ -14,39 +14,50 @@ last-reviewed: "2026-11-23"
 
 # A2UI Angular Renderer Development Skill
 
-> **Tech Stack**: Angular 21.2.x, A2UI protocol **v0.9** (wire value `"version": "v0.9"`), `@a2ui/angular@0.14.0` + `@a2ui/web_core@0.15.0`, TailwindCSS 4.x, daisyUI 5.5.5. Optional: `@ag-ui/client@1.0.5` (AG-UI transport), `@copilotkit/angular@0.3.1` (the last line that supports Angular 21).
+> **Tech Stack**: Angular 22.3.0 (zoneless, OnPush default), TypeScript 6.0.3, `@a2ui/angular@0.16.0` + `@a2ui/web_core@0.16.1` (+ optional `@a2ui/markdown-it@0.2.4`), zod 3.25.76, TailwindCSS 4.3.5, daisyUI 5.8.2. Optional: `@ag-ui/client@1.0.5` (AG-UI transport), `@copilotkit/angular@0.6.0` (latest; peer Angular ^22, cdk ^22). `@a2ui/angular` 0.16.0 is the first release that peers Angular `^22.2.3`; 0.14.0/0.15.0 require `^21.2.5`.
 >
 > **Cross-platform contract:** the canonical catalog, action table, fixtures and backend topologies are owned by the `genui-contract` skill (`../genui-contract/SKILL.md`). This skill is the Angular side of that contract.
 
-## Protocol Version (pin one per stack)
+## Protocol Version (pin one per surface)
 
-- **New work targets v0.9.** Verified 2026-11-22 against the published packages: `@a2ui/web_core@0.15.0` has `DEFAULT_PROTOCOL_VERSION = '0.9'`; its v0.9 schemas define `createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface` and the client→server `action` message. `@a2ui/angular@0.14.0` serves v0.9 from `@a2ui/angular/v0_9` (`SurfaceComponent`, `BasicCatalog`).
-- **v0.8 is legacy.** Its shapes (`surfaceUpdate`, `beginRendering`, `dataModelUpdate`, `{ "component": { "type": … } }`, `{ "literalString": … }`) remain only for agents that still emit v0.8; the SDK keeps them under `@a2ui/angular/v0_8`. The hand-built renderer in `reference/a2ui-renderer-patterns.md` / `a2ui-renderer-template.md` uses the v0.8 shapes and is labelled LEGACY there.
-- **v1.0** exists in the packages (`@a2ui/web_core/v1_0`, wire value `"1.0"`), and the `@a2ui/angular` root `BasicCatalog` is the v1.0 catalog. Treat it as not yet adopted here: import v0.9 classes from `@a2ui/angular/v0_9`, not the package root.
-- Never mix versions between agent, renderer and catalog. The spec status labels on a2ui.org (v0.9 current, v1.0 candidate) were not re-checked this session — UNVERIFIED, check before relying on them.
+Verified 2026-11-23 by execution in an Angular 22.3.0 app on the shared `genui-contract` catalogs (Vitest LIVE-PROTOCOL with the real renderer, Playwright Chromium on a production build, axe, and one LIVE run against an AG-UI backend):
+
+| Wire | Import from | Catalog | Status on Angular |
+|---|---|---|---|
+| **v1.0** (`"version": "1.0"`, not `"v1.0"`) — **target** | `@a2ui/angular` (package root) | `new AngularCatalog(id, '1.0', [...BASIC_COMPONENTS, ...custom], BASIC_FUNCTIONS)` or root `BasicCatalog`, with `useUniversalComponents: true` | **Proven for the shared ActionCard, EditableForm and ApprovalRequest plus the basic catalog only**: render, `@path` bindings, `@accessibility`, actions, required-field validation, SDK rejection of unknown types, axe 0 violations. Other custom components need their own proof. |
+| **v0.9** (`"version": "v0.9"`) — compatibility path | `@a2ui/angular/v0_9` for v0.9 `BASIC_COMPONENTS`/`BASIC_FUNCTIONS`; services from the root | `new AngularCatalog(id, '0.9', …)` | Proven with the same tests. Use it for agents that cannot send 1.0, and for CopilotKit (its A2UI path is v0.9 only). |
+| v0.8 | `@a2ui/angular/v0_8` | v0.8 catalog | LEGACY. Hand-built renderer docs (`a2ui-renderer-patterns.md`, `a2ui-renderer-template.md`) use it. |
+
+- The package exports `.`, `./v0_8`, `./v0_9` (and `/testing`). There is no `./v1_0` subpath: v1.0 is served by the root entry (CHANGELOG 0.12.0: "the root exports version-agnostic core services … and the v1.0 `BasicCatalog`"). SOURCE-PROVEN from `package.json` and `types/a2ui-angular.d.ts`.
+- v1.0 differences that bite: wire literal `"1.0"`; common directives are `@`-prefixed (`@path`, `@call`, `@accessibility`, `@checks`, `@catalogId`, `@metadata`); `createSurface` may carry `components` and `dataModel` inline. Schemas: `@a2ui/web_core/v1_0`.
+- Never mix versions on one surface, and never translate between versions without a documented, tested adapter.
+- `@a2ui/angular/testing` `createBoundProperty` returns a `jasmine.Spy`; it does not type-check in a Vitest project. Build `BoundProperty` stubs with `signal()` or render through `A2uiRendererService` instead.
 
 ## Integration Paths
 
 | Path | Use when | What you build |
 |---|---|---|
-| **A. Direct A2UI** (default) | The app owns chat, state and transport | `@a2ui/angular` `SurfaceComponent` + an `AngularCatalog` for the canonical IDs + ingest guard + action gateway, fed by SSE or by an `@ag-ui/client` `HttpAgent` (AG-UI `ACTIVITY_SNAPSHOT`, `activityType: "a2ui-surface"`, `content.a2ui_operations`) |
-| **B. Full copilot** (optional) | You want CopilotKit's agent/chat client and an AG-UI-compatible runtime | `@copilotkit/angular@0.3.1` + an activity renderer that feeds `a2ui-surface` activities into the same `@a2ui/angular` catalog and guard |
+| **A. Direct A2UI** (default) | The app owns chat, state and transport | `SurfaceComponent` + an `AngularCatalog` for the canonical IDs + ingest guard + action gateway, fed by JSONL/SSE or by an `@ag-ui/client` `HttpAgent` (AG-UI `ACTIVITY_SNAPSHOT`, `activityType: "a2ui-surface"`, `content.a2ui_operations`) |
+| **B. Full copilot** (optional) | You want CopilotKit's chat, tools, human-in-the-loop and an AG-UI runtime | `@copilotkit/angular@0.6.0`: `provideCopilotKit({ runtimeUrl, humanInTheLoop: [...] })`, HITL renderers implementing `HumanInTheLoopToolRenderer`, `injectAgentStore` for streaming state, `injectInterrupt` for interrupts |
 
-- `@copilotkit/angular` 0.4.0 and later (latest 0.6.0) peer `@angular/core ^22`, so they do **not** support Angular 21.2.x. 0.3.1 peers `^20 || ^21 || ^22`. SOURCE-PROVEN from `npm view`/`npm pack` on 2026-11-23.
-- CopilotKit's built-in A2UI renderer is Lit-based with its own `@a2ui/web_core` 0.10.4. Do not run it next to `@a2ui/angular` for the canonical catalog. Its action bridge sends no idempotency key, so the server must authorize and hold every side effect.
-- Details, compatibility table and the compile-proven bridge: `reference/copilotkit-angular.md`.
+- `@copilotkit/angular` 0.6.0 (latest; `next` is a 2.0.0 RC, not for production) nests its own `@a2ui/web_core` 0.10.4 and `@ag-ui/client` 1.0.2; `@copilotkit/core` 1.90.0 brings `@a2ui/web_core` 0.15.0. Tested by execution: CopilotKit's A2UI code imports `@a2ui/web_core/v0_9`, which resolves to its nested **0.10.4**, and that copy has **no `./v1_0` export**. Fed a 1.0 stream, its v0.9 processor reported no error and created the surface, so it accepts 1.0 messages silently. Path B is **v0.9 only**: never send it a 1.0 surface.
+- Two supported combinations: (A) `@a2ui/angular` 0.16.0 + `@a2ui/web_core` 0.16.1 over AG-UI or JSONL, on 1.0 or v0.9; (B) CopilotKit Angular with its own bundled runtime, on v0.9. Each surface belongs to one of them. Mixing them on one surface is untested; do not do it.
+- Details and the compiled HITL example: `reference/copilotkit-angular.md`.
 
 ## Canonical Catalog (shared contract)
 
 The wire IDs are `ActionCard`, `DataSummaryTable`, `ApprovalForm`, `SelectionList`, `DetailPanel`, `StatusIndicator`, `InputForm`, `ConfirmationDialog`. No Angular class names go on the wire. Topologies are `shared-backend` and `standalone-backend`; only the adapter edge (base URL from runtime config) differs, and the catalog, guard and gateway are identical. Tested Angular implementation (ActionCard, InputForm, ApprovalForm, ConfirmationDialog; Vitest + Playwright + axe in both topologies): `reference/canonical-catalog-angular.md`.
 
 - Register components with `new AngularCatalog(id, '0.9', [createComponentImplementation(Api, Component)], functions)`. `BasicCatalogBase` `extraComponents`/`functions` are deprecated. Register the catalog functions the contract uses (for example `required`, `email`) from `BASIC_FUNCTIONS`; they are not inherited.
-- Components extend `CatalogComponent<typeof Api>`. Scalar `Dynamic*` props arrive as `BoundProperty` (`value()`); `Action` props arrive as ready-to-call closures; nested bindings write through `surface.dataModel.set(path, value)`.
-- `STRICT_VALIDATION` does not validate component props and does not reject unversioned messages. Run an app ingest guard first: size, single body + `version === "v0.9"`, forbidden strings, catalog ID, known surface, component allowlist, no `functionCall` actions, per-component action allowlist, zod prop schema. Map each failure to the contract error code and show it.
+- Components extend `CatalogComponent<typeof Api>`. Scalar `Dynamic*` props arrive as `BoundProperty` (`value()`). On 0.16.0, `Action` props arrive as plain action objects: check the event name against the component's allowlist, resolve with `new DataContext(surface, dataContextPath).resolveAction(action, { userActivation: true })`, then send with `surface.dispatchAction(resolved, componentId)`. Nested bindings arrive resolved; write an edit back with `new DataContext(surface, dataContextPath).set(path, value)` (tested: `reference/canonical-catalog-angular22-components.md`).
+- **SDK validation is the primary control** for unknown component types and prop schemas: `processorOptions.validationConfig: STRICT_VALIDATION` with `reportErrorsOnly: true` sends `VALIDATION_FAILED` (unknown type, an action name outside the component's `z.enum`) and `INTEGRITY_ERROR` (1.0 `createSurface.theme`) to `errorHandler`. This was tested on v0.9 and 1.0; removing it made the unknown-component tests fail. No separate app component allowlist is needed.
+- web_core does **not** cover the rest of the contract. In tests it accepted `javascript:` strings, a v0.9 `{"path"}` binding on a 1.0 surface and mixed versions in one stream. `@a2ui/agent`'s `validatePayload` also accepts `javascript:` URLs and non-allowlisted actions. Run an app gate before `processMessages`: byte cap before `JSON.parse`, one wire version per stream, `forbiddenStringPatterns`, and no legacy bindings on 1.0. At dispatch, check the per-component action allowlist again. Map every failure to a visible error state.
 
-## Supply-Chain Note (npm audit, 2026-11-23)
+## Supply-Chain Note (2026-11-23)
 
-`npm audit` on Angular 21.2.26 + `@a2ui/angular@0.14.0` + `@a2ui/web_core@0.15.0` reports **zod 3.25.76 as HIGH** (GHSA-mrhx-c7xc-m3w5, fixed in zod ≥ 4.6.6). It comes in through `@a2ui/web_core` and also through `@ag-ui/client` 1.0.5 and `@copilotkit/angular` 0.3.1. Overriding zod to 4.x is not an option: web_core 0.15.0 crashes at runtime, verified in a separate React test app (2026-11-23). Mitigation: cap message bytes **before** `JSON.parse` and before any zod parse (tested: `canonical-catalog-angular.md` § Ingest guard), keep the strict ingest guard, and re-run `npm audit` on every A2UI/AG-UI/CopilotKit bump. DOMPurify ≤ 3.4.16 has moderate advisories; pin `dompurify@3.5.0` (all checks stayed green).
+- `@a2ui/angular@0.16.0`, `@a2ui/web_core@0.16.1` and `@a2ui/markdown-it@0.2.4` were all published on 2026-11-23 by the `a2ui-team` npm account. They carry `dist.integrity` (sha512) but **no npm provenance attestations**. `@copilotkit/angular@0.6.0` (published by GitHub Actions) and `@ag-ui/client@1.0.5` do have SLSA provenance. Pin exact versions (`npm install --save-exact`) and review the lockfile diff on every bump.
+- `npm audit` reports **zod 3.25.76 as HIGH** (GHSA-mrhx-c7xc-m3w5, range `<4.6.6`). It comes in through `@a2ui/angular`, `@a2ui/web_core` and `@a2ui/markdown-it`, which require `zod ^3.25.76`, and no zod 3.x fix exists. A baseline Angular 22.3.0 app without A2UI passes `npm audit --audit-level=high`. **Override decision: do not override.** `overrides: { "zod": "4.6.7" }` is outside the declared `^3.25.76` range. It was tested: install exit 0 and audit clean, but `ng test` failed 9 of 28 because bindings stopped resolving (`[object Object]` text) and the processor raised `INTERNAL_ERROR`. Run `npm audit` on every install and record the result. Report it as an unresolved HIGH; never describe the stack as clean. Mitigation: cap message bytes **before** `JSON.parse` (the session rejects lines over 256 KiB) and keep `STRICT_VALIDATION` plus the app gate. The Feature/PR gate (`npm audit --audit-level=high`) stays NEEDS_REVIEW until `@a2ui/*` moves to zod 4.
+- Install zod 3.25.76 as a direct dependency (exact) so your catalog schemas use the **same** zod copy as `web_core`. Angular 22 itself pulls zod 4 (CLI, forms), and `web_core` uses `instanceof z.ZodType` checks.
 
 ## Secure Action Handling
 
@@ -81,8 +92,8 @@ Every component from an agent must be validated against the client's approved ca
 | A2UI GitHub | `https://github.com/google/A2UI` | Reference implementations, samples |
 | A2A Extension | `https://a2ui.org/a2a-extension/a2ui/v0.8` | A2A protocol integration (Python ADK) — v0.8 URI; confirm the v0.9 URI before use (UNVERIFIED) |
 | A2UI Composer | `https://a2ui.org/composer/` | Visual widget builder — prototype before wiring |
-| @a2ui/angular | `npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0` | Official Angular renderer SDK (peer: Angular ^21.2.5). The optional `@a2ui/markdown-it@0.2.2` peer requires `web_core@^0.14` and fails to resolve with 0.15 — supply your own sanitizing `MarkdownRenderer` instead (see Security Defaults) |
-| Angular v21 | `angular-cli` MCP | Workspace-aware help, schematics |
+| @a2ui/angular | `npm install --save-exact @a2ui/angular@0.16.0 @a2ui/web_core@0.16.1 @a2ui/markdown-it@0.2.4 zod@3.25.76` | Official Angular renderer SDK (peer: Angular ^22.2.3; `@a2ui/markdown-it` 0.2.4 peers `web_core ^0.16.1` and is optional) |
+| Angular v22 | `angular-cli` MCP (`get_best_practices` with `workspacePath`, `search_documentation` version 22) | Workspace-aware best practices |
 | daisyUI v5 | `https://daisyui.com/llms.txt` | Component reference for rendering |
 | TailwindCSS | `Context7` MCP | Utility classes for layout |
 
@@ -93,7 +104,7 @@ Every component from an agent must be validated against the client's approved ca
 2. **Read `reference/a2ui-renderer-patterns.md`** — Angular renderer architecture, catalog service, recursive rendering
 3. **Read `reference/a2ui-security.md`** — allowlist enforcement, injection prevention, input sanitization
 4. **Read `reference/a2ui-component-catalog.md`** — standard component types, property schemas, action definitions
-5. **Verify Angular APIs** — Use `angular-cli` MCP or Context7 MCP before using any Angular API
+5. **Verify Angular APIs** — Use the `angular-cli` MCP (Context7 as fallback) before using any Angular API
 
 ## Process
 
@@ -119,8 +130,10 @@ Detailed patterns are in `reference/`:
 - `a2ui-functions.md` — Full functions reference: validation (required, regex, email), formatting (formatCurrency, formatDate, pluralize), logical (and, or, not), navigation (openUrl) — `A2UIFunctionService` implementation
 
 ### Angular Implementation
-- `canonical-catalog-angular.md` — Canonical catalog → Angular components (tested), ingest guard order + error codes, action gateway (allowlist, idempotency header, server-held approval), topology runtime config, AG-UI `HttpAgent` adapter
-- `copilotkit-angular.md` — CopilotKit Angular compatibility (0.6.0 needs Angular 22; 0.3.1 supports 21), built-in Lit A2UI renderer facts, bridge from CopilotKit activities to `@a2ui/angular`
+- `canonical-catalog-angular.md` — Canonical catalog → Angular components, ingest guard order + error codes, action gateway (allowlist, idempotency header, server-held approval), topology runtime config, AG-UI `HttpAgent` adapter
+- `canonical-catalog-angular22-components.md` — Angular 22 components on the shared contract (tested): component APIs for both wire versions, dispatch allowlist, ActionCard, ApprovalRequest, EditableForm
+- `canonical-catalog-angular22-session.md` — Angular 22 stream session (contract gate, size cap, cancellation, bounded reconnect), providers per wire version, lazy routes
+- `copilotkit-angular.md` — CopilotKit Angular 0.6.0 on Angular 22: provider config, human-in-the-loop renderer (compiled + tested), streaming state, interrupts, its v0.9 A2UI path
 - `a2ui-renderer-patterns.md` — LEGACY v0.8 hand-built renderer: architecture, models, catalog service, URL policy (https + host allowlist), cycle/depth guard
 - `a2ui-renderer-template.md` — LEGACY v0.8 `A2UIRendererComponent` (compiled + browser-tested guards: cycle/depth placeholder, unknown type, URL allowlist, accessible tabs)
 - `a2ui-chat-template.md` — LEGACY v0.8 chat page for the hand-built renderer, streaming variant (SSE + JSONL), v0.8 wire format reference
@@ -128,51 +141,59 @@ Detailed patterns are in `reference/`:
 - `a2ui-production-architecture.md` — Production stack, AG-UI `a2ui_operations` envelope, Domain DSL, Custom Catalog patterns (`AngularCatalog` constructor, BoundProperty, FunctionImplementation), Charts/Dashboard, Testing patterns, Observability metrics
 - `a2ui-client-integration.md` — `agUiResource` service pattern, `registerHandlers`, widget template, **demo-only vs production action handler warning**, rate limits (surfaces/session, actions/sec, payload size)
 
-## Security Defaults (official SDK, browser-tested)
+## Security Defaults (official SDK, tested on 0.16.0)
 
-Verified 2026-11-22 in Chromium (Angular 21.2.26, `@a2ui/angular@0.14.0`, Playwright 1.58.2):
+Verified 2026-11-23 (Angular 22.3.0, `@a2ui/angular@0.16.0`, `@a2ui/web_core@0.16.1`, Vitest 5.1.1, Playwright 1.65.1 Chromium):
 
-- **Without** a `validationConfig`, the v0.9 `MessageProcessor` accepts a self-referencing child, an unknown component type and a 61-level tree at ingest; the renderer only logs a console error and shows the user nothing.
-- **With** `STRICT_VALIDATION`, `processMessages` throws `A2uiRecursionError` (cycle, depth) or `A2uiValidationError` (unknown type), so the app can log it and show a recoverable error.
-- The v0.9 `Text` component binds rendered markdown to `[innerHTML]`. Angular's sanitizer alone keeps `<img src>` and `unsafe:javascript:` links, so plug in the `marked` → DOMPurify `MarkdownService` from `ai-chat` (`reference/streaming-patterns.md`).
+- **Without** `validationConfig`, an unknown component type passes `processMessages` with no error. `ComponentHostComponent.reportUnresolved` only writes to the console and renders nothing. A console-only `reportUnresolved` is **not an error signal**: nothing reaches `errorHandler` and the user sees an empty slot.
+- **With** `STRICT_VALIDATION` and `reportErrorsOnly: true`, the unknown type reaches `processorOptions.errorHandler` on v0.9 and 1.0. The app turns it into `role="alert"` text ("Part of this response could not be displayed.").
+- Some failures throw out of `processMessages` instead (for example a renderer with no catalogs). Catch them in the session and show the same error state; do not let them look like a transport failure that triggers a retry.
+- The v0.9 `Text` component renders markdown into `[innerHTML]`. Use `@a2ui/markdown-it` 0.2.4 (depends on DOMPurify) or the `marked` → DOMPurify `MarkdownService` from `ai-chat` (`reference/streaming-patterns.md`). Never `bypassSecurityTrust*`.
+
+Recommended wiring: one lazy route per wire version. It keeps the renderer out of the initial bundle (initial 287 kB with this pattern, 916 kB without it; the GenUI chunk is 670 kB) and gives each version its own renderer. `provideGenui(version)` returns `A2uiRendererService` itself (it is `providedIn: 'root'` and would otherwise miss the route's config with `Catalog not found`), the session gate, and `provideA2Ui` with `STRICT_VALIDATION`. Full compiled files: `reference/canonical-catalog-angular22-components.md` and `reference/canonical-catalog-angular22-session.md`.
 
 ```typescript
-// app.config.ts excerpt — official renderer, A2UI v0.9 wire format, strict validation
-import { EnvironmentProviders, Provider, inject, makeEnvironmentProviders } from '@angular/core';
-import { MarkdownRenderer, provideA2Ui } from '@a2ui/angular';
-import { BasicCatalog } from '@a2ui/angular/v0_9';
-import { STRICT_VALIDATION } from '@a2ui/web_core/v0_9';
-import { MarkdownService } from './features/chat/services/markdown.service'; // ai-chat: marked -> DOMPurify
-import { AgentActionsService } from './features/a2ui/agent-actions.service';   // your agent client
+import { type Routes } from '@angular/router';
+import { provideGenui } from './genui-providers';
 
-// The v0.9 Text component binds rendered markdown to [innerHTML]. Route it through the
-// marked -> DOMPurify pipeline (ai-chat streaming-patterns.md) instead of the default renderer.
-const sanitizedMarkdown: Provider = {
-  provide: MarkdownRenderer,
-  useFactory: () => {
-    const markdown = inject(MarkdownService);
-    return { render: async (text: string) => markdown.render(text) };
+const SURFACES = ['card-1', 'appr-1', 'form-1'];
+
+/** Lazy GenUI routes: each wire version gets its own renderer instance. */
+export const GENUI_ROUTES: Routes = [
+  {
+    path: '',
+    providers: provideGenui('0.9'),
+    loadComponent: () => import('./genui-page'),
+    data: { version: 'v0.9', streamUrl: '/genui-v0_9.jsonl', surfaceIds: SURFACES },
   },
-};
-
-export function provideA2uiStrict(): EnvironmentProviders {
-  return makeEnvironmentProviders([
-    provideA2Ui(() => {
-      const agent = inject(AgentActionsService); // factory runs in an injection context
-      return {
-        catalogs: [new BasicCatalog()],
-        // Without a validationConfig the v0.9 processor accepts self-referencing children,
-        // unknown component types and unbounded depth (web_core 0.15.0, verified). STRICT rejects them.
-        processorOptions: { validationConfig: STRICT_VALIDATION },
-        actionHandler: (action) => agent.forward(action), // the server re-authorizes every action
-      };
-    }),
-    sanitizedMarkdown,
-  ]);
-}
+  {
+    path: 'v1',
+    providers: provideGenui('1.0'),
+    loadComponent: () => import('./genui-page'),
+    data: { version: '1.0', streamUrl: '/genui-v1_0.jsonl', surfaceIds: SURFACES },
+  },
+];
 ```
 
-`provideA2uiStrict()` goes in `appConfig.providers`. `AgentActionsService.forward(action)` posts the action (`ActionPayload` from `@a2ui/web_core/v0_9`: `name`, `surfaceId`, `sourceComponentId`, `timestamp`, `context`) to your agent API. Ingest inside `try { renderer.processMessages(msgs) } catch (err) { errorHandler.handleError(err); showRecoverableError(); }` and keep the last good surface.
+```typescript
+// genui-providers.ts (excerpt): the renderer half of provideGenui()
+A2uiRendererService, // re-provided at route level
+provideA2Ui(() => {
+  const outbox = inject(GenuiOutbox);
+  const injector = inject(Injector); // GenuiSession depends on the renderer: resolve lazily (NG0200)
+  return {
+    catalogs: [createCatalog(version)], // AngularCatalog(GENUI_CATALOG_ID_V10, '1.0', …) or (…_V09, '0.9', …)
+    useUniversalComponents: version === '1.0',
+    processorOptions: {
+      validationConfig: STRICT_VALIDATION, // primary control for unknown types and prop schemas
+      outboundListener: (message) => outbox.push(message), // forward to the agent; the server re-authorizes
+      unifiedOutbound: true,
+      errorHandler: (error) => injector.get(GenuiSession).reportRendererError(error),
+      reportErrorsOnly: true,
+    },
+  };
+}),
+```
 
 ## Anti-Patterns — What to Avoid
 
@@ -219,7 +240,7 @@ onAction(name: string, context: Record<string, unknown>): void {
   "timestamp": "2026-03-10T12:00:00Z", "context": { "hotelId": "H-456" } } }
 ```
 
-Shapes checked against `@a2ui/web_core@0.15.0` `src/v0_9/schemas/` (`server_to_client.json`, `client_to_server.json`, `catalogs/basic/examples/00_interactive-button.json`).
+Shapes checked against `@a2ui/web_core@0.15.0` `src/v0_9/schemas/` (unchanged in 0.16.1 for v0.9) (`server_to_client.json`, `client_to_server.json`, `catalogs/basic/examples/00_interactive-button.json`).
 
 ## Error Handling
 
@@ -236,9 +257,9 @@ Shapes checked against `@a2ui/web_core@0.15.0` `src/v0_9/schemas/` (`server_to_c
 # Generate A2UI feature module
 mkdir -p src/app/features/a2ui-chat/{components,services,models}
 
-# Run tests
-npx ng test --watch=false
+# Run tests (Vitest via @angular/build:unit-test)
+npm exec --no -- ng test --no-watch
 
 # Build
-npx ng build
+npm exec --no -- ng build
 ```

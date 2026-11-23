@@ -1,32 +1,32 @@
 ---
 name: scaffold-a2ui
-description: Scaffold an A2UI (Agent-to-User Interface) renderer feature module in an existing Angular 21.x app with component catalog, recursive renderer, agent service, and chat page
+description: Scaffold an A2UI (Agent-to-User Interface) renderer feature module in an existing Angular 22.x app with component catalog, recursive renderer, agent service, and chat page
 argument-hint: "[feature name, default: a2ui-chat]"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disable-model-invocation: true
 ---
 
 # Scaffold A2UI Angular Renderer
 
-Create an A2UI renderer feature module in an existing Angular 21.x project.
+Create an A2UI renderer feature module in an existing Angular 22.x project.
 
 **Feature name:** $ARGUMENTS (default to "a2ui-chat" if not provided)
 
 ## Pre-requisites
 
-> **Official SDK first (A2UI v0.9):** `npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0`, then follow
+> **Official SDK first (A2UI 1.0 target via the `@a2ui/angular` root entry; v0.9 compatibility path via `/v0_9`):** `npm install --save-exact @a2ui/angular@0.16.0 @a2ui/web_core@0.16.1 zod@3.25.76` (peer Angular ^22.2.3), then follow
 > `reference/a2ui-renderer-services.md` (`provideA2uiStrict()` with `STRICT_VALIDATION`, sanitizing `MarkdownRenderer`,
 > `<a2ui-v09-surface>`). For the shared GenUI catalog (`genui-contract` skill), follow
 > `reference/canonical-catalog-angular.md` instead: `AngularCatalog` with the canonical IDs, ingest guard, action gateway
 > (allowlist, `Idempotency-Key` header, server-held approval) and `/genui-config.json` for `shared-backend` /
-> `standalone-backend`; optional AG-UI or CopilotKit (`reference/copilotkit-angular.md`: 0.3.1 is the last Angular 21 line).
+> `standalone-backend`; optional AG-UI or CopilotKit (`reference/copilotkit-angular.md`: `@copilotkit/angular@0.6.0`, A2UI v0.9 only).
 > Then gate it with `/validate-genui-feature` and `/audit-a2ui-parity`. The steps below scaffold the hand-built LEGACY v0.8 renderer — use them only when the agent
 > still emits v0.8. A custom design system does not rule out the SDK: register your own components in a v0.9 custom
-> catalog with `AngularCatalog` from `@a2ui/angular@0.14.0` (`.claude/skills/a2ui-angular/reference/canonical-catalog-angular.md`). Never mix protocol versions.
+> catalog with `AngularCatalog` from `@a2ui/angular@0.16.0` (`.claude/skills/a2ui-angular/reference/canonical-catalog-angular.md`). Never mix protocol versions.
 
 1. Read the `a2ui-angular` skill (`SKILL.md` and all `reference/*.md` files) for protocol spec, security rules, component catalog, and renderer patterns.
 2. Read the `angular-spa` skill's `reference/angular-conventions.md` for Angular coding standards.
-3. Verify Angular APIs with the `angular-cli` MCP (`search_documentation`, version 21) and A2UI APIs against the installed package `.d.ts` files.
+3. Verify Angular APIs with the `angular-cli` MCP (`get_best_practices` with the workspace path, `search_documentation` version 22) and A2UI APIs against the installed package `.d.ts` files.
 
 ## Steps
 
@@ -66,7 +66,7 @@ Create an A2UI renderer feature module in an existing Angular 21.x project.
 
 ## Reference
 
-- `a2ui-angular` skill: `reference/canonical-catalog-angular.md`, `reference/copilotkit-angular.md`, `reference/a2ui-protocol.md`, `reference/a2ui-security.md`, `reference/a2ui-component-catalog.md`, `reference/a2ui-renderer-patterns.md`
+- `a2ui-angular` skill: `reference/canonical-catalog-angular.md`, `reference/canonical-catalog-angular22-components.md`, `reference/canonical-catalog-angular22-session.md`, `reference/copilotkit-angular.md`, `reference/a2ui-protocol.md`, `reference/a2ui-security.md`, `reference/a2ui-component-catalog.md`, `reference/a2ui-renderer-patterns.md`
 - `genui-contract` skill: canonical catalog, action table, fixtures, backend topologies
 - `angular-spa` skill: `reference/angular-conventions.md`, `reference/angular-templates.md`
 

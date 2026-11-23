@@ -30,7 +30,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [voice-ai-engine-development.md](voice-ai-engine-development.md) | (skill: `voice-ai-development`, optional) Full voice engine — async worker pipeline, Gemini Live STT, Gemini TTS, interrupt handling, LangGraph or ADK agent |
 | [prompt-engineering-patterns.md](prompt-engineering-patterns.md) | Designing agent system prompts, CoT/ToT reasoning, few-shot learning, prompt optimization — LangGraph + ADK |
 | [workflow-orchestration-patterns.md](workflow-orchestration-patterns.md) | Temporal durable workflow orchestration — Java 21, Python 3.14, NestJS 11.x |
-| [feature-angular-spa.md](feature-angular-spa.md) | Angular 21.x / TailwindCSS / daisyUI |
+| [feature-angular-spa.md](feature-angular-spa.md) | Angular 21.x / TailwindCSS / daisyUI; auth plumbing in `angular-spa/reference/web-security.md`, unit tests (Vitest) in `angular-spa/reference/testing-vitest.md` |
 | [web-performance-optimization.md](web-performance-optimization.md) | Angular 21.x Core Web Vitals, bundle size, lazy loading, runtime perf |
 | [fixing-motion-performance.md](fixing-motion-performance.md) | Angular 21.x CSS animation performance — compositor vs paint, layout thrashing, FLIP, scroll-linked motion |
 | [tailwind-v4-patterns.md](tailwind-v4-patterns.md) | Configure Tailwind v4 in Angular — `@theme`, container queries, OKLCH daisyUI themes, Bento layouts, v3→v4 migration |
@@ -78,8 +78,8 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [code-review.md](code-review.md) | Giving code review — `/review-code`, `/review-pr` |
 | [receiving-code-review.md](receiving-code-review.md) | Processing and responding to review feedback |
 | [pre-commit-validation.md](pre-commit-validation.md) | `/pr-risk`, `/validate-changes` before committing |
-| [design-system-compliance.md](design-system-compliance.md) | Design token enforcement, WCAG 2.1 audit |
-| [accessibility-audit.md](accessibility-audit.md) | WCAG 2.1 AA audit, axe-core + flutter_test automation, manual keyboard/screen reader testing, CI/CD gate |
+| [design-system-compliance.md](design-system-compliance.md) | Design token enforcement, WCAG 2.2 AA audit |
+| [accessibility-audit.md](accessibility-audit.md) | WCAG 2.2 AA audit (web + Flutter), axe-core + flutter_test automation, manual keyboard/screen reader testing, CI/CD gate |
 | [vibe-code-auditor.md](vibe-code-auditor.md) | Pre-commit audit for AI-generated / prototyped code — hallucination detection, 7-dimension analysis, Production Readiness Score (0-100) |
 
 ---

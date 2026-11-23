@@ -2,209 +2,100 @@
 
 > **Scope:** web targets (Angular, React, websites, Flutter web builds). Flutter Android/iOS UI/E2E is Maestro-only, see Phase 7 and `.claude/rules/testing-tool-selection.md`.
 
-> **When to use**: Validating critical user journeys end-to-end in a running browser — login flows, checkout, core feature workflows
-> **Time estimate**: 30 min per E2E scenario; 2–4 hours for full critical path suite
-> **Prerequisites**: App running locally or on staging; Chrome DevTools MCP and Browser-Use MCP configured
+> **When to use**: Validating critical user journeys end-to-end in a real browser — sign-in, checkout, core feature workflows
+> **Time estimate**: 30 min per E2E scenario; 2–4 hours for a full critical-path suite
+> **Prerequisites**: A fresh build of the branch running locally (or via `webServer`); `@playwright/test` and `@playwright/cli` installed at pinned versions
 
 ## Overview
 
-E2E browser testing using the dual-MCP pattern: Chrome DevTools MCP for inspection, debugging, and network analysis — and Browser-Use MCP for human-like interactions (form fills, clicks, navigation). Covers critical path identification, test scenario design, and the `browser-testing` skill Iron Law.
+The default is **Playwright**: committed `@playwright/test` specs gate PRs, and `playwright-cli` handles interactive QA and debugging. Chrome DevTools MCP adds performance traces and Lighthouse. Browser-Use MCP is optional, for exploratory goal-driven checks. Details: the `browser-testing` skill (`.claude/skills/browser-testing/SKILL.md`) and its `reference/playwright-test-suite.md`.
 
----
-
-## Iron Law (from `skills/browser-testing/SKILL.md`)
-
-> **READ THE BROWSER-TESTING SKILL BEFORE WRITING ANY E2E CODE**
-> Chrome DevTools MCP and Browser-Use MCP have distinct roles — confusing them wastes time.
-
----
-
-## Dual-MCP Architecture
-
-| MCP Server | Role | When to Use |
-|------------|------|------------|
-| **Chrome DevTools MCP** | Inspect, debug, analyze | Network requests, console errors, performance traces, DOM inspection |
-| **Browser-Use MCP** | Interact, automate | Form fills, clicks, navigation, user journey automation |
-
-**Pattern**: Use both simultaneously — Browser-Use drives the user journey while Chrome DevTools monitors the technical behavior.
+| Tool | Role |
+|---|---|
+| `@playwright/test` | Repeatable specs in CI: auth via `storageState`, mocked 500/empty/offline, axe, viewports, visual, sharding |
+| `playwright-cli` | Interactive QA: `requests`, `console`, `route`, `network-state-set`, `screenshot --filename` |
+| Chrome DevTools MCP | Performance traces (LCP, CLS, INP), throttling, Lighthouse |
+| Browser-Use MCP (optional) | Exploratory flows via `browser_exec` + `browser_screenshot` |
 
 ---
 
 ## Phases
 
-### Phase 1 — Load Skill and Identify Critical Paths
+### Phase 1 — Load the skill and identify critical paths
 
-**Skill**: Load `browser-testing` (`.claude/skills/browser-testing/SKILL.md`)
-**Agent**: `browser-testing` agent
-
-**Critical path identification**:
-```
-Which user journeys, if broken, would block the user completely?
-    |
-    +-- Authentication? → Login → authenticated state → logout
-    +-- Core feature? → The primary value action (create, search, purchase)
-    +-- Data entry? → Form submission → confirmation → persistence
-    +-- Navigation? → Deep links, back navigation, redirects
-```
-
-**Prioritize by impact**:
-1. Authentication and authorization
-2. Core feature happy path
-3. Data persistence (create/read/update/delete)
-4. Error states (invalid input, server errors, empty states)
-
----
-
-### Phase 2 — Set Up Browser Environment
-
-**Open a new page** (Chrome DevTools MCP):
-```
-mcp__chrome-devtools__new_page
-mcp__chrome-devtools__navigate_page → http://localhost:4200  (or staging URL)
-```
-
-**Start network monitoring** (before any interaction):
-```
-mcp__chrome-devtools__list_network_requests  → baseline
-mcp__chrome-devtools__list_console_messages  → baseline (should be empty)
-```
-
-**Set viewport** (for responsive testing):
-```
-mcp__chrome-devtools__resize_page → 1440x900 (desktop)
-mcp__chrome-devtools__resize_page → 390x844  (mobile)
-```
-
----
-
-### Phase 3 — Execute User Journeys (Browser-Use MCP)
-
-**Example: Login flow**
+**Skill**: `browser-testing` · **Agent**: `browser-testing`
 
 ```
-Step 1 — Navigate to login
-  mcp__browser-use__navigate → /login
-
-Step 2 — Fill credentials
-  mcp__browser-use__fill → [email field] → test@example.com
-  mcp__browser-use__fill → [password field] → TestPassword123!
-
-Step 3 — Submit
-  mcp__browser-use__click → [Login button]
-
-Step 4 — Verify redirect
-  mcp__browser-use__wait_for → URL contains /dashboard
+Which user journeys, if broken, block the user completely?
+    +-- Authentication → sign in → protected page → sign out
+    +-- Core feature   → the primary value action (create, search, purchase)
+    +-- Data entry     → submit → confirmation → persisted (re-load shows it)
+    +-- Navigation     → deep link while signed out → sign-in → back to the target; unknown route → 404
 ```
 
-**Example: Form submission flow**
+Each journey gets a happy path plus at least two error paths (server error, invalid input, empty, offline).
 
-```
-Step 1 — Navigate to feature
-  mcp__browser-use__navigate → /orders/new
+### Phase 2 — Set up the suite
 
-Step 2 — Fill form
-  mcp__browser-use__fill_form → {
-    itemId: "item-1",
-    quantity: "2",
-    notes: "Test order"
-  }
-
-Step 3 — Submit
-  mcp__browser-use__click → [Submit button]
-
-Step 4 — Wait for confirmation
-  mcp__browser-use__wait_for → [confirmation message visible]
+```bash
+npm i -D @playwright/test@1.58.2 @axe-core/playwright@4.11.0   # match your lockfile
+npx playwright install --with-deps chromium
 ```
 
----
+Use the `playwright.config.ts` from `playwright-test-suite.md`: Playwright-only `outputDir`, `fullyParallel`, `retries` only with `failOnFlakyTests` in CI, traces/screenshots/video on failure, `locale`/`timezoneId`/`reducedMotion` pinned, a `setup` project that signs in once with a **test** account from env vars and saves `storageState` (gitignored), `desktop` and `phone-viewport` projects, and a `webServer` that CI always starts fresh.
 
-### Phase 4 — Inspect and Assert (Chrome DevTools MCP)
+### Phase 3 — Write the journeys
 
-After each user action, verify the technical behavior:
+```ts
+test('success: shows the orders returned by the API', async ({ page }) => {
+  await page.goto('/orders');
+  await expect(page.getByRole('list', { name: 'Orders' }).getByRole('listitem')).toHaveCount(2);
+});
 
-**Network assertions**:
-```
-mcp__chrome-devtools__list_network_requests
-→ Expect: POST /api/orders → 201 Created
-→ Expect: No 4xx or 5xx responses
-→ Expect: Response time < 2000ms
-```
+test('server error (500): shows a visible error state', async ({ page }) => {
+  await page.route('**/api/orders*', route => route.fulfill({ status: 500 }));
+  await page.goto('/orders');
+  await expect(page.getByRole('alert')).toContainText(/could not load/i);
+});
 
-**Console assertions**:
-```
-mcp__chrome-devtools__list_console_messages
-→ Expect: No ERROR level messages
-→ Expect: No unhandled promise rejections
-```
-
-**DOM assertions**:
-```
-mcp__chrome-devtools__take_snapshot
-→ Inspect element presence and content
+test('authorization is decided by the server', async ({ request }) => {
+  expect((await request.get('/api/admin/users')).status()).toBe(403);   // not "the button is hidden"
+});
 ```
 
-**Screenshot evidence**:
-```
-mcp__chrome-devtools__take_screenshot → login-success.png
-mcp__chrome-devtools__take_screenshot → order-confirmation.png
-```
+Locators: `getByRole` → `getByLabel` → `getByText` → `getByTestId`. Waiting: web-first assertions only — never `waitForTimeout`, never `networkidle`.
 
----
+### Phase 4 — Run and capture evidence
 
-### Phase 5 — Error Path Testing
-
-Test what happens when things go wrong:
-
-**Invalid inputs**:
-```
-Fill form with invalid data → submit → expect validation message
-→ mcp__chrome-devtools__take_snapshot → verify error displayed
-→ mcp__chrome-devtools__list_network_requests → verify NO API call made
+```bash
+npx playwright test; echo "E2E EXIT:$?"          # the runner's own exit code, never a pipe's
+cp -R test-results/playwright evidence/run-$(date +%s)   # before the next run wipes outputDir
 ```
 
-**Server error handling**:
-```
-# Use Chrome DevTools to simulate network failure
-mcp__chrome-devtools__evaluate_script →
-  "fetch = () => Promise.reject(new Error('Network error'))"
-→ Trigger form submit
-→ Expect user-visible error message (not silent failure)
-→ mcp__chrome-devtools__take_screenshot → error-state.png
+For interactive investigation of a failing journey:
+
+```bash
+playwright-cli -s=qa open http://127.0.0.1:4200/orders
+playwright-cli -s=qa requests --filter "/api/"
+playwright-cli -s=qa console error
+playwright-cli -s=qa screenshot --filename evidence/orders.png
 ```
 
-**Empty states**:
-```
-Navigate to empty list → verify empty state message displayed
-→ Not a blank page, not an error — intentional empty state UI
-```
+### Phase 5 — Error paths
 
----
+- **Server error / empty**: `page.route(...).fulfill({ status: 500 })` or `{ status: 200, body: '[]' }` in specs; `playwright-cli route "<pattern>" --status 500` interactively. Assert the user-visible state.
+- **Offline**: `context.setOffline(true)` in specs; `playwright-cli network-state-set offline` interactively. Mock at the network layer — never override `window.fetch` with an injected script, which bypasses the app's HTTP client and interceptors.
+- **Invalid input**: submit, assert the field error, and assert no API call was made (`requests --filter`, or `page.waitForRequest` not firing).
 
-### Phase 6 — Performance Snapshot
+### Phase 6 — Accessibility, viewports and performance
 
-For critical paths, capture performance baseline:
-
-```
-mcp__chrome-devtools__performance_start_trace
-→ Execute critical user action (page load, form submit, search)
-mcp__chrome-devtools__performance_stop_trace
-mcp__chrome-devtools__performance_analyze_insight
-→ Expected: LCP < 2.5s, INP < 200ms, CLS < 0.1
-```
-
-**Lighthouse audit** (for page-level quality):
-```
-mcp__chrome-devtools__lighthouse_audit → /dashboard
-→ Performance score >= 80
-→ Accessibility score >= 90
-→ Best Practices score >= 90
-```
-
----
+- `@axe-core/playwright` per UI state with tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa`; report "no automated violations; manual checks required".
+- `phone-viewport` project: assert no horizontal overflow and one breakpoint-dependent behaviour. A phone-sized viewport tests the web layout only.
+- Performance (Chrome DevTools MCP): `new_page` → `performance_start_trace({ pageId, reload: true })` → read LCP/CLS from the summary → `performance_analyze_insight({ pageId, insightSetId: "NAVIGATION_0", insightName: "LCPBreakdown" })`. Targets: LCP < 2.5 s, CLS < 0.1, INP < 200 ms. Lighthouse: `lighthouse_audit`.
 
 ### Phase 7 — Flutter Mobile E2E (Maestro)
 
-For Flutter, E2E uses Maestro CLI (from `flutter-mobile` skill), not Chrome DevTools:
+Flutter Android/iOS E2E uses Maestro CLI/MCP only — never a browser:
 
 ```yaml
 # .maestro/login_flow.yaml
@@ -212,54 +103,45 @@ appId: com.example.app
 ---
 - launchApp
 - tapOn: "Email"
-- inputText: "test@example.com"
+- inputText: ${E2E_USER}
 - tapOn: "Password"
-- inputText: "TestPassword123!"
-- tapOn: "Login"
+- inputText: ${E2E_PASSWORD}
+- tapOn: "Sign in"
 - assertVisible: "Dashboard"
 ```
 
-**Run**:
 ```bash
-maestro test .maestro/login_flow.yaml
-maestro test .maestro/  # Run all flows
+maestro test -e E2E_USER="$E2E_USER" -e E2E_PASSWORD="$E2E_PASSWORD" .maestro/login_flow.yaml
 ```
 
-**Dart MCP alternative** (for running app inspection):
-```
-mcp__dart-mcp-server__get_widget_tree       → inspect current widget tree
-mcp__dart-mcp-server__get_runtime_errors    → check for runtime errors
-mcp__dart-mcp-server__get_app_logs          → inspect logs during test
-```
+No emulator/simulator/device or no Maestro → BLOCKED, not a browser substitute. The Dart MCP server (`get_runtime_errors`, `widget_inspector`) is a runtime-inspection aid for a running app, not an E2E tool. Detail: `.claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md`.
 
 ---
 
 ## Quick Reference
 
-| Phase | Tool | Action | Gate |
-|-------|------|--------|------|
-| 1 — Identify | Manual | List critical paths | Happy path + 2 error paths per journey |
-| 2 — Setup | Chrome DevTools MCP | Open page, start monitoring | Page loads, no baseline errors |
-| 3 — Execute | Browser-Use MCP | Drive user journey | Each step completes without JS error |
-| 4 — Inspect | Chrome DevTools MCP | Assert network + console | No 4xx/5xx, no console errors |
-| 5 — Error paths | Both MCPs | Test failure scenarios | Errors shown to user, no silent failures |
-| 6 — Performance | Chrome DevTools MCP | Lighthouse + trace | LCP < 2.5s, score >= 80 |
-| 7 — Mobile | Maestro | Flutter E2E | All flows pass |
-
----
+| Phase | Tool | Gate |
+|-------|------|------|
+| 1 — Identify | Manual | Happy path + 2 error paths per journey |
+| 2 — Setup | `@playwright/test` | Config from `playwright-test-suite.md`; test accounts from env |
+| 3 — Journeys | `@playwright/test` | Role-first locators, web-first assertions, server-side authorization asserted |
+| 4 — Run | `npx playwright test` | Own exit code 0; evidence copied out of `outputDir` |
+| 5 — Error paths | `page.route`, `setOffline` | Visible error/empty states, no silent failures |
+| 6 — a11y, viewports, perf | axe, `phone-viewport`, Chrome DevTools MCP | No automated violations (manual checks listed); no overflow; LCP < 2.5 s |
+| 7 — Flutter mobile | Maestro | All flows pass on a real emulator/simulator/device |
 
 ## Common Pitfalls
 
-- **Testing only happy paths** — error states are where users actually get stuck
-- **No network inspection** — a "successful" UI action can mask a 500 from the server
-- **Screenshot without assertion** — screenshots are evidence, not assertions; explicitly check what happened
-- **Flaky tests from timing** — use `wait_for` to wait for specific conditions, not `sleep`
-- **Wrong viewport** — test at mobile AND desktop; layout bugs are viewport-specific
-- **Missing baseline** — capture network/console state before interaction to diff against after
+- **Testing only happy paths** — error states are where users get stuck.
+- **A green run against a stale server** — CI must start a fresh server; locally, confirm the build stamp.
+- **`retries` hiding flakes** — use `failOnFlakyTests` in CI and quarantine with an issue + expiry.
+- **Token in `localStorage` as proof of sign-in** — prove it with the protected page and the API status.
+- **Screenshot without assertion** — screenshots are evidence, not assertions.
 
 ## Related Workflows
 
-- [`test-driven-development.md`](test-driven-development.md) — unit and integration test layer below E2E
+- [`test-driven-development.md`](test-driven-development.md) — unit and component layer below E2E
 - [`api-testing.md`](api-testing.md) — API contract and integration testing
+- [`visual-regression-testing.md`](visual-regression-testing.md) — `toHaveScreenshot` baselines
 - [`feature-flutter-mobile.md`](feature-flutter-mobile.md) — Maestro E2E for Flutter
 - [`feature-angular-spa.md`](feature-angular-spa.md) — Angular E2E context

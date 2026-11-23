@@ -115,7 +115,7 @@ test('OrderNotifier creates order successfully', () async {
 
 #### Angular / TypeScript
 ```typescript
-// Skill: angular-spa — jasmine + TestBed
+// Skill: angular-spa — ng test (Vitest via @angular/build:unit-test) + TestBed
 it('should display order confirmation after submit', async () => {
   const fixture = TestBed.createComponent(OrderFormComponent);
   fixture.componentInstance.form.setValue({ itemId: 'item-1', quantity: 2 });

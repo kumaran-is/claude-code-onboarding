@@ -6,7 +6,7 @@
 
 ## Overview
 
-Design system compliance audit using the `design-system` skill, `/lint-design-system` command, `ui-standards-expert` agent, and `accessibility-auditor` agent. Enforces token usage, semantic colors, spacing scale, typography, and WCAG 2.1 AA accessibility.
+Design system compliance audit using the `design-system` skill, `/lint-design-system` command, `ui-standards-expert` agent, and `accessibility-auditor` agent. Enforces token usage, semantic colors, spacing scale and typography; accessibility (WCAG 2.2 AA) is reviewed by `accessibility-auditor`, the only agent that gives accessibility verdicts.
 
 ---
 
@@ -95,15 +95,16 @@ Text('Title', style: Theme.of(context).textTheme.titleLarge)
 - Design token usage audit (colors, spacing, typography)
 - Material 3 theming (Flutter) or daisyUI theming (Angular)
 - Responsive layout patterns
-- Interaction contract compliance (touch targets, hover states)
+- Interaction contract and async-state coverage (`design-system/reference/interaction-contracts.md` §6b)
+- No accessibility verdicts: accessibility signals are handed to `accessibility-auditor`
 
 **Flutter interaction contracts** (from `ui-standards-tokens` skill):
-- Touch targets ≥ 48dp minimum
+- Touch targets ≥ 48dp (Android platform guideline; WCAG 2.5.8 AA floor is 24×24)
 - `InkWell` or `GestureDetector` with proper `hitTestBehavior`
 - No nested `GestureDetector` without `HitTestBehavior.opaque`
 
 **Angular interaction contracts** (from `angular-spa` skill):
-- Touch targets ≥ 44px
+- Touch targets ≥ 24×24 CSS px (WCAG 2.5.8 AA); house standard ≥ 44px
 - `:hover` and `:focus-visible` states on all interactive elements
 - No `outline: none` without a custom focus indicator
 
@@ -111,7 +112,7 @@ Text('Title', style: Theme.of(context).textTheme.titleLarge)
 
 ### Phase 3 — `accessibility-auditor` Agent
 
-**Agent**: `accessibility-auditor` (WCAG 2.1 compliance)
+**Agent**: `accessibility-auditor` (read-only WCAG 2.2 AA review, web and Flutter; checklist: `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`)
 
 **Flutter checks**:
 ```dart
@@ -199,8 +200,8 @@ Exception markers: [N] (reviewed in PR)
 
 **All three must pass**:
 - [ ] `/lint-design-system` returns zero violations (or all are exception-marked)
-- [ ] `ui-standards-expert` agent PASS
-- [ ] `accessibility-auditor` agent PASS (WCAG 2.1 AA)
+- [ ] `ui-standards-expert` agent `VERDICT: NO VIOLATIONS`
+- [ ] `accessibility-auditor` agent `VERDICT` is not BLOCK, and its open manual checks are listed (automated results never establish conformance)
 
 ---
 
@@ -209,10 +210,10 @@ Exception markers: [N] (reviewed in PR)
 | Check | Tool | Gate |
 |-------|------|------|
 | Token usage | `/lint-design-system` | Zero violations (or exception-marked) |
-| UI standards | `ui-standards-expert` agent | PASS |
-| WCAG 2.1 AA | `accessibility-auditor` agent | PASS |
-| Touch targets | Part of ui-standards-expert | ≥ 48dp Flutter / ≥ 44px Angular |
-| Color contrast | Part of accessibility-auditor | ≥ 4.5:1 normal, ≥ 3:1 large |
+| UI standards | `ui-standards-expert` agent | NO VIOLATIONS |
+| WCAG 2.2 AA | `accessibility-auditor` agent | No CRITICAL/HIGH; manual checks listed |
+| Target size | Part of accessibility-auditor | ≥ 24×24 CSS px (AA); house ≥ 48dp Flutter / ≥ 44px web |
+| Color contrast | Part of accessibility-auditor | ≥ 4.5:1 normal, ≥ 3:1 large, light and dark |
 
 ---
 

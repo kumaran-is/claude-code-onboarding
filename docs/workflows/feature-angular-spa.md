@@ -13,7 +13,7 @@ Angular feature development using the `angular-spa` skill, Angular CLI MCP, and 
 ## Iron Law (from `skills/angular-spa/SKILL.md`)
 
 > **QUERY ANGULAR CLI MCP FOR CURRENT API BEFORE WRITING COMPONENT CODE**
-> Angular 21.x has changed significantly from 15.x — `ngModule`, `@NgModule`, zone.js patterns are deprecated.
+> Angular 21.x has changed significantly from 15.x — `ngModule`, `@NgModule`, zone.js is not used (zoneless is the 21.x default).
 
 ---
 
@@ -30,215 +30,92 @@ Angular feature development using the `angular-spa` skill, Angular CLI MCP, and 
 
 ```
 mcp__angular-cli__list_projects         → find workspace path
-mcp__angular-cli__get_best_practices    → get Angular 21.x standards
-mcp__context7__resolve-library-id       → angular, @angular/core, @angular/router
-mcp__context7__query-docs               → query for signals, standalone components
+mcp__angular-cli__get_best_practices    → pass workspacePath (the angular.json folder); without it you get v22 guidance
+mcp__angular-cli__search_documentation  → version: 21
 ```
 
 ---
 
-### Phase 2 — Scaffold Feature
+### Phase 2 — Scaffold the Feature
 
-**Command**: `/scaffold-angular-app [feature-name]`
+New workspace: `/scaffold-angular-app <name>` (pinned Angular 21.2.x, Tailwind 4, daisyUI 5.5.5, angular-eslint).
+Existing workspace — generate into a feature folder (no `--standalone`: it is the default):
 
-**Generate standalone component**:
 ```bash
-ng generate component features/orders/order-list --standalone --skip-tests=false
-ng generate service features/orders/order
-ng generate interface features/orders/models/order
+ng generate component features/orders/order-list
+ng generate service features/orders/orders-api
 ```
 
-**Feature directory structure**:
 ```
 src/app/features/orders/
-├── order-list/
-│   ├── order-list.component.ts     # Standalone component
-│   ├── order-list.component.html   # Template with daisyUI
-│   ├── order-list.component.scss
-│   └── order-list.component.spec.ts
-├── order-detail/
-│   ├── order-detail.component.ts
-│   └── ...
-├── models/
-│   └── order.ts                    # Interfaces + types
-├── services/
-│   └── order.service.ts            # HTTP client service
-└── orders.routes.ts                # Lazy routes
+├── order-list.ts / .html / .spec.ts   # page (smart) component
+├── order-detail.ts
+├── orders-api.ts                      # typed HttpClient service
+├── order.ts                           # interfaces / types
+└── orders.routes.ts                   # lazy routes
 ```
 
 ---
 
-### Phase 3 — Implement with Signals
+### Phase 3 — Page Component with Signals
 
-**Standalone component** (Angular 21.x pattern):
-```typescript
-// order-list.component.ts
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { AsyncPipe, NgFor, NgIf } from '@angular/common';
-import { OrderService } from '../services/order.service';
-import { Order } from '../models/order';
+Follow `angular-spa/reference/angular-templates.md` §Page component and the canonical load-state
+union in `angular-ui-patterns/reference/loading-control-flow.md`:
 
-@Component({
-  selector: 'app-order-list',
-  standalone: true,
-  imports: [NgFor, NgIf, AsyncPipe],
-  templateUrl: './order-list.component.html',
-})
-export class OrderListComponent implements OnInit {
-  private orderService = inject(OrderService);
-
-  orders = signal<Order[]>([]);
-  loading = signal(true);
-  error = signal<string | null>(null);
-
-  filteredOrders = computed(() =>
-    this.orders().filter(o => o.status !== 'CANCELLED')
-  );
-
-  async ngOnInit() {
-    try {
-      const result = await this.orderService.getOrders();
-      this.orders.set(result);
-    } catch (err) {
-      this.error.set('Failed to load orders');
-      // No silent failure — error is visible to user
-    } finally {
-      this.loading.set(false);
-    }
-  }
-}
-```
-
-**Template** (daisyUI semantic tokens):
-```html
-<!-- order-list.component.html -->
-@if (loading()) {
-  <div class="loading loading-spinner loading-lg"></div>
-}
-
-@if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-}
-
-@for (order of filteredOrders(); track order.id) {
-  <div class="card bg-base-100 shadow-md">
-    <div class="card-body">
-      <h2 class="card-title">Order #{{ order.id }}</h2>
-      <div class="badge badge-{{ order.status | lowercase }}">{{ order.status }}</div>
-    </div>
-  </div>
-}
-
-@if (!loading() && filteredOrders().length === 0) {
-  <div class="hero min-h-32">
-    <p class="text-base-content/60">No active orders</p>
-  </div>
-}
-```
+- `ChangeDetectionStrategy.OnPush` (still opt-in in 21.x); no `CommonModule`/`NgIf`/`NgFor` imports.
+- Read with `rxResource`/`httpResource` (EXPERIMENTAL in 21.x — label it) or `toSignal`; derive one
+  `computed()` state in the order `error()` → `hasValue()` → `value()`.
+- Render loading (`role="status"`), empty (only after a settled load), error (`role="alert"`, 401 →
+  sign in again, 403 → not authorised, no retry), success; keep stale data on a failed refresh.
+- Never fallback or mock data on failure; log via the central `Logger`.
 
 ---
 
 ### Phase 4 — HTTP Service
 
-```typescript
-// order.service.ts
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { Order, CreateOrderRequest } from '../models/order';
-
-@Injectable({ providedIn: 'root' })
-export class OrderService {
-  private http = inject(HttpClient);
-  private baseUrl = '/api/orders';
-
-  async getOrders(): Promise<Order[]> {
-    return firstValueFrom(this.http.get<Order[]>(this.baseUrl));
-  }
-
-  async createOrder(request: CreateOrderRequest): Promise<Order> {
-    return firstValueFrom(this.http.post<Order>(this.baseUrl, request));
-  }
-}
-```
+Typed `HttpClient` service that returns observables and lets errors propagate
+(`angular-templates.md` §Service). Encode path segments, build queries with `HttpParams`. Mutations
+use `HttpClient` then `resource.reload()`; guard against double submit
+(`angular-ui-patterns/reference/form-dialog-patterns.md`).
 
 ---
 
-### Phase 5 — Lazy Routing
+### Phase 5 — Lazy Routing and Auth
 
 ```typescript
 // orders.routes.ts
 import { Routes } from '@angular/router';
-import { authGuard } from '../../core/guards/auth.guard';
 
-export const ordersRoutes: Routes = [
-  {
-    path: '',
-    canActivate: [authGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./order-list/order-list.component')
-          .then(m => m.OrderListComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./order-detail/order-detail.component')
-          .then(m => m.OrderDetailComponent),
-      },
-    ],
-  },
+export const ORDER_ROUTES: Routes = [
+  { path: '', title: 'Orders', loadComponent: () => import('./order-list').then((m) => m.OrderList) },
+  { path: ':id', title: 'Order', loadComponent: () => import('./order-detail').then((m) => m.OrderDetail) },
 ];
 
-// app.routes.ts — register lazy route
-{
-  path: 'orders',
-  loadChildren: () => import('./features/orders/orders.routes')
-    .then(m => m.ordersRoutes),
-}
+// app.routes.ts
+// { path: 'orders', canActivate: [signedInGuard], loadChildren: () => import('./features/orders/orders.routes').then((m) => m.ORDER_ROUTES) }
 ```
+
+`signedInGuard`, the credential allow-list interceptor and safe `returnUrl` come from
+`angular-spa/reference/web-security.md`. Guards are UX; the API authorizes every request.
+`withComponentInputBinding()` binds `:id` to an `input()`.
 
 ---
 
-### Phase 6 — Unit Tests
+### Phase 6 — Unit Tests (Vitest)
 
-```typescript
-// order-list.component.spec.ts
-describe('OrderListComponent', () => {
-  let component: OrderListComponent;
-  let orderService: jasmine.SpyObj<OrderService>;
+`ng new` 21.2 uses `@angular/build:unit-test` with Vitest — not Karma/Jasmine. Patterns in
+`angular-spa/reference/testing-vitest.md`:
 
-  beforeEach(async () => {
-    orderService = jasmine.createSpyObj('OrderService', ['getOrders']);
-    await TestBed.configureTestingModule({
-      imports: [OrderListComponent],
-      providers: [{ provide: OrderService, useValue: orderService }],
-    }).compileComponents();
-    component = TestBed.createComponent(OrderListComponent).componentInstance;
-  });
+- `HttpTestingController`: flush each request **before** `await fixture.whenStable()`.
+- One spec per UI state (loading, empty, 401, 403, 5xx with retry, success); harnesses for DOM access.
+- Mocks with `vi.fn()`; timers with `vi.useFakeTimers()` — `fakeAsync` fails without zone.js.
 
-  it('loads orders on init', async () => {
-    orderService.getOrders.and.resolveTo([{ id: '1', status: 'PENDING' }]);
-    await component.ngOnInit();
-    expect(component.orders()).toHaveSize(1);
-    expect(component.loading()).toBeFalse();
-  });
-
-  it('sets error signal on service failure', async () => {
-    orderService.getOrders.and.rejectWith(new Error('Network error'));
-    await component.ngOnInit();
-    expect(component.error()).toBeTruthy();
-    expect(component.loading()).toBeFalse();
-  });
-});
-```
-
-**Run**:
 ```bash
-ng test --watch=false
+ng test --watch=false; echo "test exit=$?"
+ng build; echo "build exit=$?"
 ```
+
+E2E (optional): Playwright via the `browser-testing` skill.
 
 ---
 
@@ -249,7 +126,7 @@ ng test --watch=false
 **Agent 1**: `ui-standards-expert`
 - No hardcoded colors (only daisyUI semantic: `bg-primary`, `text-base-content`)
 - No raw spacing values (use Tailwind scale: `p-4`, not `p-[16px]`)
-- Touch targets ≥ 44px for interactive elements
+- Target size ≥ 24×24 CSS px (WCAG 2.2 AA); house standard ≥ 44px
 
 **Agent 2**: `accessibility-auditor`
 - Semantic HTML (`<button>` not `<div>` for interactive elements)
@@ -285,7 +162,7 @@ ng test --watch=false
 | 3 — Component | Standalone + signals | Manual | Component renders |
 | 4 — Service | HTTP service | Manual | API calls work |
 | 5 — Routing | Lazy routes | Manual | Navigation works |
-| 6 — Tests | Jasmine unit tests | `ng test` | All tests pass |
+| 6 — Tests | Vitest unit tests | `ng test --watch=false` | All tests pass |
 | 7 — Design | `/lint-design-system` | `ui-standards-expert` + `accessibility-auditor` | Zero violations |
 | 8 — Review | `/review-code` + `/ship` | Multiple agents | Zero CRITICAL findings |
 
@@ -294,10 +171,11 @@ ng test --watch=false
 ## Common Pitfalls
 
 - **Using `NgModule`** — deprecated in Angular 21.x; use standalone components only
-- **Zone.js-based change detection** — prefer `OnPush` or signals; zone.js is being phased out
+- **Plain fields updated from async callbacks** — zoneless 21.x does not re-render; hold state in signals and set `OnPush`
 - **Hardcoded colors** — always daisyUI semantic tokens; never `#FF5733` or `text-blue-500`
 - **`async pipe` without loading state** — users see blank screen during load; always show loading indicator
-- **No error state** — errors that produce an empty screen look like empty data; show `alert-error`
+- **No error state** — errors that produce an empty screen look like empty data; show `role="alert"` with retry (and never fallback data)
+- **Credentials on every request** — attach tokens only to allow-listed API origins (`web-security.md`)
 
 ## Related Workflows
 
@@ -305,5 +183,5 @@ ng test --watch=false
 - [`design-system-compliance.md`](design-system-compliance.md) — enforcing design tokens
 - [`browser-e2e-testing.md`](browser-e2e-testing.md) — E2E testing the Angular app
 - [`angular-best-practices`](../../.claude/skills/angular-best-practices/SKILL.md) — performance-ranked rules for PR review
-- [`web-design-guidelines`](./../.claude/skills/web-design-guidelines/SKILL.md) — run after Phase 3 to audit component against Vercel Web Interface Guidelines (third review layer after `/lint-design-system` and `accessibility-auditor`)
+- [`web-design-guidelines`](../../.claude/skills/web-design-guidelines/SKILL.md) — run after Phase 3 to audit component against Vercel Web Interface Guidelines (third review layer after `/lint-design-system` and `accessibility-auditor`)
 - [`angular-ui-patterns`](../../.claude/skills/angular-ui-patterns/SKILL.md) — loading/error/empty state doctrine

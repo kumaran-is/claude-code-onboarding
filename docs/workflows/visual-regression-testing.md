@@ -38,10 +38,9 @@ Get baseline live screenshot and binary verdict before setting up regression too
 
 | Project Type | Tool |
 |---|---|
-| Angular with Storybook | Chromatic |
-| Angular E2E | Playwright Visual Comparisons |
-| Config-based (no Storybook) | BackstopJS |
-| Cross-browser cloud | Percy |
+| Angular or React app (default) | Playwright `toHaveScreenshot` (`.claude/skills/browser-testing/reference/playwright-test-suite.md`) |
+| Repo that already runs Storybook | Chromatic (optional) |
+| Hosted cross-browser review | Percy / BackstopJS (optional, only if the team already uses them) |
 | Flutter | `golden_toolkit` (`flutter test --update-goldens`) |
 
 ### Phase 3 — Run 13-Item Mandatory Checklist
@@ -57,13 +56,10 @@ Add GitHub Actions workflow for automated screenshot diffs on every PR. See tool
 Generate reference screenshots on the main branch:
 
 ```bash
-# BackstopJS
-backstop reference
-
 # Flutter
 flutter test --update-goldens
 
-# Playwright
+# Playwright (in the pinned CI image)
 npx playwright test --update-snapshots
 ```
 
@@ -72,14 +68,11 @@ npx playwright test --update-snapshots
 Run comparison — zero regressions required:
 
 ```bash
-# BackstopJS
-backstop test
-
 # Flutter
 flutter test
 
 # Playwright
-npx playwright test
+npx playwright test; echo "E2E EXIT:$?"
 ```
 
 ---
@@ -87,7 +80,9 @@ npx playwright test
 ## Common Pitfalls
 
 - **Skipping reality-checker and relying only on automated tools** — automated tools miss layout shifts and interaction states
-- **Setting mismatch threshold too low (< 0.05%)** — font rendering differences between CI and local cause false failures
+- **Misreading Playwright's tolerances** — `threshold` is a per-pixel colour tolerance (YIQ, 0–1, default 0.2), not a percentage of pixels; use `maxDiffPixelRatio` (share of pixels, e.g. `0.01`) or `maxDiffPixels` for a pixel budget, and keep tight budgets on regions that carry data
+- **Non-deterministic baselines** — pin `locale`, `timezoneId`, `colorScheme`, `reducedMotion: 'reduce'`; self-host fonts and await `document.fonts.ready`; `mask` dynamic regions; generate baselines only in the pinned CI image, never on a laptop
+- **Waiting with `networkidle` or fixed sleeps before a screenshot** — wait with a web-first assertion on the content instead
 - **Not testing both light AND dark mode** (daisyUI `data-theme` switch, Flutter `ThemeMode.dark`)
 - **Not establishing baseline on stable main branch** — first run will always fail without reference screenshots
 - **Flutter golden tests fail on CI due to font rendering differences** — use `golden_toolkit` `loadAppFonts()` to fix

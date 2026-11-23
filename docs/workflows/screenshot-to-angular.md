@@ -32,7 +32,7 @@ Replicate a UI screenshot as a production-ready Angular 21.x standalone componen
 
 **MCP queries:**
 ```
-mcp__angular-cli__get_best_practices    → Angular 21.x standards
+mcp__angular-cli__get_best_practices    → pass workspacePath (angular.json folder); without it the tool returns v22 guidance
 mcp__context7__resolve-library-id       → angular, @angular/core
 ```
 
@@ -96,13 +96,13 @@ Run after implementation:
 □ All components standalone (no NgModule)
 □ All state uses signal()
 □ @if/@for control flow (no *ngIf/*ngFor)
-□ Touch targets ≥ 44px for interactive elements
+□ Target size ≥ 24×24 CSS px (WCAG 2.2 AA); house standard ≥ 44px
 □ /lint-design-system passes with zero violations
 ```
 
 **Dispatch reviewer:**
 - `ui-standards-expert` agent — token compliance
-- `accessibility-auditor` agent — WCAG 2.1 AA
+- `accessibility-auditor` agent — WCAG 2.2 AA
 
 ---
 

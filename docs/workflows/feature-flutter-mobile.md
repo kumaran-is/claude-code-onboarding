@@ -187,9 +187,9 @@ ref.watch(myProvider).when(
 - Touch targets >= 48dp for all interactive elements
 
 **Agent**: `ui-standards-expert` for Material 3 theming compliance
-**Agent**: `accessibility-auditor` for WCAG 2.1 AA (Semantics widgets, focus, contrast)
+**Agent**: `accessibility-auditor` for WCAG 2.2 AA (Semantics widgets, focus, contrast, target size)
 
-**Gate**: Zero design violations; WCAG 2.1 AA pass
+**Gate**: Zero design violations; no blocking WCAG 2.2 AA findings, manual checks listed (automated tests never prove conformance)
 
 ---
 

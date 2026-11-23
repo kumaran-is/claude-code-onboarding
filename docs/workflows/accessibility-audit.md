@@ -1,13 +1,15 @@
 # Accessibility Audit
 
-> **When to use**: After building any Angular or Flutter UI component — before PR review, or when auditing for WCAG compliance
+> **When to use**: After building any web (Angular, React) or Flutter UI — before PR review, or when auditing against WCAG 2.2 AA
 > **Time estimate**: 30–60 min automated setup; 1–2 hours for a full manual audit session
-> **Prerequisites**: Angular or Flutter UI written; `test/accessibility/` directory created
+> **Prerequisites**: Web or Flutter UI written; Playwright e2e (web) or `test/accessibility/` (Flutter) directory created
 > **Skill**: `accessibility-audit`
 
 ## Overview
 
-4-phase audit pipeline: automated scan → manual checks → remediation → CI/CD gate. Dispatches `accessibility-auditor` agent for WCAG 2.1 AA compliance and `ui-standards-expert` for design token + interaction contract verification. Works for both Angular 21.x and Flutter 3.38.
+5-phase audit pipeline: automated scan → agent review → manual checks → remediation → CI/CD gate. The bar is WCAG 2.2 AA; the canonical checklist is `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`. The read-only `accessibility-auditor` agent reviews web (Angular, React) and Flutter; `ui-standards-expert` covers tokens and interaction contracts (no accessibility verdicts). Works for Angular 21.x, React and Flutter 3.41.x. Tool choice per target: `.claude/rules/testing-tool-selection.md` (Flutter Android/iOS device flows use Maestro only).
+
+**Evidence rule:** automated results never prove conformance. Report a clean run as "no automated violations; manual checks required", and record each manual check as PASS / FAIL / NOT RUN.
 
 ---
 
@@ -28,30 +30,29 @@
 
 **Skill**: Load `accessibility-audit` (`.claude/skills/accessibility-audit/SKILL.md`)
 
-### Angular — axe-core + pa11y
+### Web (Angular / React) — Playwright + axe-core
 
 ```bash
-# Install (one-time setup)
-npm install --save-dev @axe-core/playwright axe-core jest-axe @testing-library/angular
+# Install (one-time setup; pin the versions your lockfile resolves)
+npm install --save-dev @playwright/test @axe-core/playwright axe-core
 
-# Run axe component tests
+# Run the Playwright axe suite (tags include wcag22aa)
 npm run test:a11y
 
-# Run pa11y against running dev server (port 4200)
-npx ng serve &
+# Optional second engine, with the axe runner
 npx pa11y-ci --config .pa11yci.json
 ```
 
 **Reference**: `.claude/skills/accessibility-audit/reference/angular-a11y-automated.md`
 
-What axe catches automatically:
-- Missing alt text on images
-- Icon-only buttons without `aria-label`
-- Form inputs without labels
-- Color contrast violations (WCAG 1.4.3)
-- Missing heading structure (no h1, skipped levels)
+What axe catches automatically (with tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa`):
+- Missing alt text on images; icon-only buttons without a name
+- Form inputs without any accessible name (a `placeholder` counts as a name for axe, so a missing visible label is **not** caught)
+- Color contrast (1.4.3), in a real browser only (jsdom cannot compute it)
+- Target size below 24×24 CSS px (2.5.8), only when `wcag22aa` is included
 - Missing `lang` attribute on `<html>`
-- Keyboard traps
+
+What axe does **not** catch: keyboard traps and focus order (use the scripted Playwright tests in `angular-a11y-automated.md` §3), route-change focus, focus not obscured (2.4.11), dragging alternatives (2.5.7), consistent help (3.2.6), redundant entry (3.3.7), accessible authentication (3.3.8), and anything a screen reader user hears.
 
 ### Flutter — flutter_test SemanticsController
 
@@ -66,20 +67,24 @@ What flutter_test catches:
 - Interactive elements without `Semantics(label:)`
 - Missing button semantics
 - Text overflow at 2x font scale
-- Touch target sizes below 48dp
-- Focus order via `FocusTraversalGroup`
+- Tap targets below the platform guidelines (`androidTapTargetGuideline` 48×48 dp, `iOSTapTargetGuideline` 44×44 pt)
+- Text contrast (`textContrastGuideline`) and labelled tap targets (`labeledTapTargetGuideline`)
 
-**Gate**: Zero automated violations before proceeding to Phase 2.
+Device-level flows (navigation, dialogs, TalkBack/VoiceOver smoke tests) run on an emulator, simulator or device with **Maestro**, never a browser.
+
+**Gate**: Zero automated violations before proceeding to Phase 2. This is not a conformance claim.
 
 ---
 
 ## Phase 2 — Agent: `accessibility-auditor`
 
-**Agent**: `accessibility-auditor` (WCAG 2.1 AA compliance)
+**Agent**: `accessibility-auditor` (read-only WCAG 2.2 AA review, web and Flutter)
 
-Dispatch after automated scan passes. The agent reads your component files and cross-references against:
-- `.claude/skills/angular-spa/reference/accessibility-checklist.md` (Angular)
-- `.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md` (Flutter)
+Dispatch after the automated scan passes. The agent detects the target from file types and checks against:
+- `.claude/skills/accessibility-audit/reference/wcag22-checklist.md` (canonical, web + Flutter)
+- `.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md` (Flutter widget depth)
+
+It reports severity + file:line + remediation, lists the manual checks still open, and ends with `VERDICT: NO BLOCKING FINDINGS | FINDINGS | BLOCK`. It never outputs "compliant".
 
 **Angular findings the agent checks:**
 
@@ -95,9 +100,9 @@ Dispatch after automated scan passes. The agent reads your component files and c
 <!-- ❌ CRITICAL — form input without label -->
 <input type="email" placeholder="Email" />
 
-<!-- ✅ FIX — associated label -->
-<label for="email">Email address</label>
-<input id="email" type="email" aria-required="true" />
+<!-- ✅ FIX — visible associated label, native required, autocomplete token -->
+<label class="label" for="email">Email address</label>
+<input id="email" class="input" type="email" required autocomplete="email" />
 
 <!-- ❌ IMPORTANT — no live region for dynamic content -->
 <div>{{ orderStatus() }}</div>
@@ -129,9 +134,9 @@ ConstrainedBox(
 )
 ```
 
-**Color contrast**: >= 4.5:1 for normal text, >= 3:1 for large text (18px/18sp+)
+**Color contrast**: >= 4.5:1 for normal text, >= 3:1 for large text (>= 24 CSS px, or >= 18.66 px bold), in light and dark themes
 
-**Touch targets**: >= 48dp (Flutter) / >= 44px (Angular)
+**Target size**: >= 24×24 CSS px is the WCAG 2.5.8 AA requirement. 44 px (web) and 48 dp (Flutter Android) are house/platform recommendations; a miss that is still >= 24 px is MEDIUM, not a WCAG failure.
 
 ---
 
@@ -145,16 +150,20 @@ Run in this order — each takes 5–10 minutes:
 
 1. Tab through the entire UI — every interactive element must receive focus
 2. Activate each element with Enter or Space
-3. Open any modal — verify focus traps inside; Esc closes and returns focus to trigger
+3. Open any modal — focus moves inside, the page behind is inert, Esc closes and focus returns to the trigger
 4. No keyboard trap anywhere
+5. Web: after each route change, the title changes and focus lands on the new view's heading or `<main>`
+6. Sticky headers, toasts and cookie bars never fully cover the focused element (2.4.11)
 
 ### 3b. Screen Reader
 
 | Platform | Tool | Shortcut |
 |----------|------|---------|
-| macOS / iOS | VoiceOver | Cmd+F5 |
-| Windows | NVDA | Free download |
+| macOS (web, Safari) / iOS | VoiceOver | Cmd+F5 |
+| Windows (web, Firefox or Chrome) | NVDA | Free download |
 | Android | TalkBack | Hold both volume keys |
+
+Minimum: one screen reader per platform you ship (web: NVDA **and** VoiceOver; mobile: TalkBack **and** VoiceOver).
 
 Navigate by headings -> navigate to forms -> trigger errors -> confirm announcements.
 
@@ -164,38 +173,47 @@ Navigate by headings -> navigate to forms -> trigger errors -> confirm announcem
 # In Chrome DevTools -> Rendering tab:
 # - Enable "Emulate CSS media feature prefers-color-scheme"
 # - Enable "Emulate CSS media feature prefers-contrast: more"
-# Zoom to 200% — verify no overflow
+# - Enable "Emulate CSS media feature forced-colors: active"
+# Zoom to 200% (text) and 400% / 320 CSS px wide — verify no overflow or 2-D scrolling
 # Enable grayscale — verify all information still conveyed
 ```
 
-### 3d. Cognitive (New — not in existing checklists)
+### 3d. Cognitive and new 2.2 criteria
 
 - Every error message says what went wrong AND how to fix it
 - Destructive actions (delete, cancel) have a confirmation step
 - No form loses user input without warning
-- Navigation order is consistent across all screens
+- Navigation order is consistent across all screens; help/contact appears in the same place (3.2.6)
+- Data already entered in the flow is not asked for again (3.3.7)
+- Login allows paste and password managers; no cognitive-test-only step (3.3.8)
+- Every drag has a button or keyboard alternative (2.5.7)
 
-**Gate**: No Critical findings. Important findings documented with file:line and fix.
+Record each row as PASS / FAIL / NOT RUN.
+
+**Gate**: No CRITICAL findings. HIGH findings documented with file:line and fix.
 
 ---
 
 ## Phase 4 — Remediation and Re-test
 
-For each Critical or Important finding:
+For each CRITICAL or HIGH finding:
 
 1. Apply exact code fix (file:line)
 2. Re-run automated scan: `npm run test:a11y` or `flutter test test/accessibility/`
 3. Confirm finding no longer appears
 4. Add regression test to prevent recurrence
 
-**Regression test pattern (Angular)**:
+**Regression test pattern (Angular, Vitest + axe-core; contrast is checked in Playwright)**:
 ```typescript
-it('delete button has aria-label', async () => {
-  const { container } = await render(OrderListComponent);
-  const results = await axe(container, {
-    runOnly: { type: 'rule', values: ['button-name'] },
-  });
-  expect(results).toHaveNoViolations();
+import { TestBed } from '@angular/core/testing';
+import axe from 'axe-core';
+import { OrderList } from './order-list';
+
+it('delete button has an accessible name', async () => {
+  const fixture = TestBed.createComponent(OrderList);
+  await fixture.whenStable();
+  const results = await axe.run(fixture.nativeElement, { runOnly: { type: 'rule', values: ['button-name'] } });
+  expect(results.violations).toEqual([]);
 });
 ```
 
@@ -227,7 +245,7 @@ Add automated a11y tests to the existing CI pipeline.
   # or: flutter test test/accessibility/  # Flutter
 ```
 
-**Gate rule**: `--threshold 0` (pa11y) and `expect(violations).toEqual([])` (axe). Any violation fails the PR. No exceptions without explicit justification in PR description.
+**Gate rule**: `--threshold 0` (pa11y) and `expect(violations).toEqual([])` (axe). Any automated violation fails the PR. No exceptions without explicit justification in PR description. A green gate is "no automated violations", not conformance.
 
 ---
 
@@ -235,10 +253,10 @@ Add automated a11y tests to the existing CI pipeline.
 
 | Phase | Action | Tool | Gate |
 |-------|--------|------|------|
-| 1 — Automated | axe-core + pa11y (Angular) / flutter_test (Flutter) | CLI | Zero violations |
-| 2 — Agent | WCAG 2.1 AA code review | `accessibility-auditor` | PASS |
-| 3 — Manual | Keyboard, screen reader, visual, cognitive | Human + DevTools | No Critical findings |
-| 4 — Remediate | Fix findings, add regression tests | Code + tests | All Critical/Important resolved |
+| 1 — Automated | Playwright + axe (`wcag22aa`) (web) / flutter_test guidelines (Flutter) | CLI | Zero automated violations |
+| 2 — Agent | WCAG 2.2 AA code review (web + Flutter) | `accessibility-auditor` | No CRITICAL/HIGH (`VERDICT` ≠ BLOCK) |
+| 3 — Manual | Keyboard, screen reader, zoom/reflow, forced colours, new 2.2 criteria | Human + DevTools / devices | Each row PASS; NOT RUN rows listed |
+| 4 — Remediate | Fix findings, add regression tests | Code + tests | All CRITICAL/HIGH resolved |
 | 5 — CI/CD | Automated gate on every PR | GitHub Actions | Build green |
 
 ---

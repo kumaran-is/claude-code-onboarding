@@ -157,5 +157,5 @@ Add to `.github/workflows/flutter.yml`:
 
 - [feature-flutter-mobile.md](feature-flutter-mobile.md) — Full Flutter feature lifecycle
 - [visual-regression-testing.md](visual-regression-testing.md) — Golden test setup for animated widgets
-- [accessibility-audit.md](accessibility-audit.md) — WCAG 2.1 reduce-motion compliance
+- [accessibility-audit.md](accessibility-audit.md) — WCAG 2.2 reduce-motion compliance
 - [deployment-ci-cd.md](deployment-ci-cd.md) — CI/CD pipeline with animation size checks

@@ -143,7 +143,7 @@ Requirements:
 - Data: [provider or repository]
 - State: Riverpod AsyncNotifier or Notifier
 - Navigation: [from / to]
-- Accessibility: WCAG 2.1 AA — touch targets >= 48dp
+- Accessibility: WCAG 2.2 AA — target size >= 24×24 (AA minimum); Flutter house standard 48dp
 
 Run MFRI risk scoring (reference/mfri-scoring.md) before implementing UI.
 Check Dart MCP for current Flutter API before writing widget code.

@@ -45,7 +45,7 @@ Determine which phase applies before proceeding:
 
 ### Phase 3 — Configure Tailwind v4
 
-**Verify `.postcssrc.json` exists** (not `postcss.config.js`):
+**Verify `.postcssrc.json` exists** (not `postcss.config.js`, which the Angular builder ignores):
 ```json
 {
   "plugins": {
@@ -54,9 +54,9 @@ Determine which phase applies before proceeding:
 }
 ```
 
-**Verify global styles use v4 import** (`src/styles.scss`):
-```scss
-/* v4 — correct */
+**Verify global styles use v4 import** (`src/styles.css`; keep Tailwind and daisyUI directives in a plain `.css` file, not Sass):
+```css
+/* v4 — correct. Every @import comes first; legacy CSS goes into the base layer */
 @import "tailwindcss";
 
 /* Define custom tokens in @theme — NOT in tailwind.config.js */
@@ -67,14 +67,18 @@ Determine which phase applies before proceeding:
   --spacing-section: 4rem;
 }
 
-/* daisyUI plugin */
+/* daisyUI plugin (custom "brand" theme defined in Phase 5) */
 @plugin "daisyui" {
-  themes: light, dark, brand;
+  themes: light --default, dark --prefersdark;
 }
 ```
 
+Never name spacing tokens `--spacing-sm/md/lg/xl`: they shadow `max-w-sm/md/lg/xl` (`--spacing-section` above is safe).
+
+**Symptom of a wrong PostCSS setup:** `ng build` succeeds, but the output CSS contains `@plugin "daisyui"` verbatim and no `.btn-primary` rule. Check with `grep -c 'btn-primary' dist/*/browser/styles-*.css` (verified: `.postcssrc.json` → classes emitted; `postcss.config.js` only → 0 classes, `@plugin` left in output).
+
 **Verify no v3 directives remain**:
-```scss
+```css
 /* v3 — FORBIDDEN in v4 projects */
 @tailwind base;
 @tailwind components;
@@ -120,15 +124,17 @@ Container queries respond to the parent container size, not the viewport. Use th
 
 ### Phase 5 — Custom daisyUI Theme with OKLCH
 
-**Define theme in global styles**:
-```scss
+**Define theme in global styles** (`src/styles.css`; daisyUI 5 syntax. The v4 `themes: [{ brand: {…} }]` object is a build error):
+```css
 @plugin "daisyui" {
-  themes: light --default, dark --prefersdark, brand;
+  themes: light --default, dark --prefersdark;
 }
 
 @plugin "daisyui/theme" {
   name: "brand";
   default: false;
+  prefersdark: false;
+  color-scheme: light;
 
   --color-primary: oklch(55% 0.22 260);
   --color-primary-content: oklch(98% 0.01 260);
@@ -142,6 +148,8 @@ Container queries respond to the parent container size, not the viewport. Use th
   --color-base-content: oklch(20% 0.02 240);
 }
 ```
+
+Each `--color-X` / `--color-X-content` pair must reach 4.5:1; re-run axe `color-contrast` for the theme (muted text floor: `ui-standards-tokens/reference/ui-design-tokens.md`).
 
 **OKLCH format**: `oklch(lightness chroma hue)` — use https://oklch.com/ to pick values and verify they are in-gamut for sRGB.
 
@@ -209,10 +217,14 @@ ng build --configuration=production
 - **Primitive colors in Angular templates** (`bg-blue-500`, `text-gray-700`) — use daisyUI semantic tokens (`bg-primary`, `text-base-content`) for theme-awareness
 - **Container query children without `@container` on the parent** — `@sm:` prefixes are silently ignored if no `@container` ancestor exists
 - **OKLCH values outside sRGB gamut** — use https://oklch.com/ to verify values before committing; out-of-gamut colors display incorrectly in some browsers
+- **`postcss.config.js` instead of `.postcssrc.json`** — the Angular builder ignores it; the build passes and emits no Tailwind/daisyUI classes
+- **Unlayered global CSS** — an unlayered reset beats every utility (`px-6` computes to 0); import it with `@import "./legacy.css" layer(base);`
+- **daisyUI 4 class names** (`input-bordered`, `form-control`, `label-text`, `btn-group`) — emit nothing in daisyUI 5; see `/lint-design-system`
+- **`dark:` utilities with a `data-theme` toggle** — `dark:` follows the OS unless you declare `@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));`
 - **`tailwind.config.js` left as an orphan** — if migrating from v3, delete the config file after migrating all tokens to `@theme {}`; leaving both causes unpredictable merge behavior
 
 ## Related Workflows
 
 - [`feature-angular-spa.md`](feature-angular-spa.md) — Angular 21.x feature development end-to-end
 - [`web-performance-optimization.md`](web-performance-optimization.md) — Angular Core Web Vitals, bundle size
-- [`design-system-compliance.md`](design-system-compliance.md) — design token enforcement, WCAG 2.1 audit
+- [`design-system-compliance.md`](design-system-compliance.md) — design token enforcement; accessibility (WCAG 2.2 AA) via `accessibility-auditor`

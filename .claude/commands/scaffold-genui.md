@@ -1,116 +1,108 @@
 ---
 name: scaffold-genui
-description: Scaffold a Flutter GenUI (A2UI) conversational UI feature module — widget catalog, SurfaceController, Conversation setup, agent transport, and chat screen
-argument-hint: "[feature name, default: gen-ui-chat]"
+description: Scaffold a Flutter A2UI v0.9 agent-driven UI feature module — pinned a2ui_flutter/a2ui_core, catalog, surface host, transport, actions, and tests
+argument-hint: "[feature name, default: agent-ui]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__dart-mcp-server__dart, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disable-model-invocation: true
 ---
 
-# Scaffold Flutter GenUI Feature
+# Scaffold Flutter A2UI Feature (v0.9)
 
-Creates a Flutter GenUI conversational UI feature module in an existing Flutter project.
+Creates an agent-driven UI feature module in an existing Flutter project, on A2UI protocol v0.9 with `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. The discontinued `genui` package is not used.
 
-**Feature name:** $ARGUMENTS (default to "gen-ui-chat" if not provided)
+**Feature name:** $ARGUMENTS (default to "agent-ui" if not provided)
 
 ## Pre-requisites
 
-1. Read the `flutter-genui` skill (`SKILL.md` and all `reference/*.md` files) for SDK concepts, catalog design, security rules, and state binding patterns.
-2. Read the `flutter-mobile` skill's `reference/flutter-conventions.md` for Flutter coding standards.
-3. Verify Flutter/Dart APIs using `dart-mcp-server` MCP or Context7 MCP before using any API.
+1. Read the `flutter-genui` skill (`SKILL.md` and the `reference/*.md` files). Every code template below comes from those references, where it compiles and is tested.
+2. Read the `flutter-mobile` skill's `reference/flutter-architecture-patterns.md` (structure) and `reference/flutter-testing-traps.md` (tests).
+3. Confirm the project's Flutter is ≥ 3.38 and Dart ≥ 3.10 (`flutter --version`); `a2ui_flutter` 0.4.0 requires them.
+4. Ask which topology applies if the request does not say: an agent server streams A2UI (default), or the app calls a model itself (adds `a2ui_agent`).
 
 ## Steps
 
-1. **Add GenUI dependencies to `pubspec.yaml`**
+1. **Add pinned dependencies to `pubspec.yaml`**
 
    ```yaml
    dependencies:
-     genui:
-       git:
-         url: https://github.com/flutter/genui.git
-         path: packages/genui
-     genui_a2a:
-       git:
-         url: https://github.com/flutter/genui.git
-         path: packages/genui_a2a
-     intl: ^0.19.0          # for A2UIFunctionEvaluator formatting
-     url_launcher: ^6.3.0   # for openUrl function
+     a2ui_core: 0.8.0
+     a2ui_flutter: 0.4.0
+     json_schema_builder: 0.1.7   # only if a custom component schema is created
+     # a2ui_agent: 0.4.0          # only for the in-app model topology
    ```
 
-2. **Create feature folder structure**
+   Add `url_launcher` only if links are required and the agent is trusted (see step 4); pin its current stable version.
+
+2. **Create the feature folder**
 
    ```
    lib/features/<name>/
-   ├── models/
-   │   └── gen_ui_message.dart          # ChatMessage, SurfaceState models
-   ├── services/
-   │   └── gen_ui_agent_service.dart    # SSE transport + Conversation setup
-   ├── widgets/
-   │   ├── gen_ui_renderer.dart         # SurfaceController + rendering logic
-   │   ├── widget_catalog.dart          # Catalog with all registered CatalogItems
-   │   ├── widget_types.dart            # Custom widget builders
-   │   └── a2ui_function_evaluator.dart # Declarative functions evaluator
-   ├── screens/
-   │   └── gen_ui_chat_screen.dart      # Chat screen with history + GenUI surfaces
-   └── <name>_page.dart                 # Lazy-loaded page entry point
+   ├── a2ui/
+   │   ├── app_catalog.dart          # CatalogImplementation (basic subset + custom), catalog id
+   │   └── custom_components.dart    # ComponentImplementation definitions (only if needed)
+   ├── data/
+   │   └── agent_client.dart         # request body, SSE/JSONL decode with size limit, processMessages
+   ├── application/
+   │   └── conversation_controller.dart  # transcript, loading, error; owns the processor
+   └── presentation/
+       ├── agent_surfaces.dart       # surface list, Semantics boundary, error state
+       └── <name>_screen.dart        # transcript + surfaces + input
    ```
 
-3. **Create models** (`gen_ui_message.dart`)
-   - `ChatMessage` — role (user/assistant), text content, optional surfaceId
-   - `GenUIState` — message history, loading flag, error state
-   Use Riverpod `StateNotifier` or `AsyncNotifier` for state management.
+3. **Catalog** (`app_catalog.dart`) — from `genui-catalog-design.md`:
+   - `basicCatalog()` from `package:a2ui_flutter/v0_9/basic_catalog.dart` when no custom component is needed.
+   - Otherwise a `CatalogImplementation` with an id you own, the `BasicComponents` members the feature needs, custom components, `BasicCatalog.v0_9().functions`, `BasicComponents.api.themeSchema` and `.definitions`.
+   - For an agent you do not control, start from the locked-down catalog in `genui-security.md` (no Image, Video, AudioPlayer, Modal or `openUrl`).
 
-4. **Create widget catalog** (`widget_catalog.dart`)
-   - Register all A2UI v0.8 standard types: `text`, `button`, `text_field`, `checkbox`, `date_time_input`, `row`, `column`, `card`, `list`, `tabs`, `divider`, `image`, `icon`
-   - Register extended types: `slider`, `audio_player`, `video` (see `genui-custom-widgets.md`)
-   - Each `CatalogItem` must validate agent properties before passing to builder
-   - Follow the security rules in `genui-security.md` — unknown types are silently skipped
+4. **Processor** (`conversation_controller.dart`):
+   - `MessageProcessor<ComponentImplementation>(catalogs: [...], defaultVersion: A2uiProtocolVersion.v0_9, validationConfig: ...)` — strict for whole-surface payloads, `streamingValidation` for parent-before-child streams (`genui-security.md`).
+   - `openUrl`: omit the callback unless the agent is trusted; if passed, allowlist scheme and host inside it.
+   - Subscribe to `onSurfaceCreated` / `onSurfaceDeleted` / `onAction`; dispose the processor with the controller.
+   - Riverpod is optional; if the project uses it, follow the provider pattern in `genui-state-binding.md`.
 
-5. **Create `A2UIFunctionEvaluator`** (`a2ui_function_evaluator.dart`)
-   - Copy the full implementation from `reference/genui-functions.md`
-   - Allowlisted functions only: validation, formatting, logical, navigation
-   - Inject into catalog builders for property resolution
+5. **Transport** (`agent_client.dart`) — from `genui-a2ui-transport.md`:
+   - SSE (`a2uiPayloads` + `applyStream`) or JSONL (`applyJsonl`), each with a per-event byte limit.
+   - `actionRequestBody`: `RendererToAgentMessagePayload([ActionMessage(...)])` plus `a2uiClientCapabilities` and `a2uiClientDataModel`.
+   - Connect and idle timeouts; retry with backoff for reads only.
+   - In-app model topology instead: `InAppModelTurns` from `genui-conversation-orchestration.md`.
 
-6. **Create renderer** (`gen_ui_renderer.dart`)
-   - `SurfaceController` to process A2UI messages from agent
-   - Recursive widget building using catalog + function evaluator
-   - Evaluate `visible` and `disabled` function calls before rendering
-   - Handle `createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface` message types
+6. **Surface host** (`agent_surfaces.dart`) — from `genui-state-binding.md`:
+   - `A2uiSurface(surface:)` per surface, keyed `ObjectKey(surface)`, inside `Semantics(container: true, explicitChildNodes: true)`.
+   - `processMessages` in `try` / `on A2uiError`: log `code` + `message`, show an error state; never swallow.
+   - Use the app's theme and spacing tokens, not raw values.
 
-7. **Create agent service** (`gen_ui_agent_service.dart`)
-   - `Conversation` initialization with catalog and `A2uiTransportAdapter`
-   - `sendMessage(String text)` — sends user text, returns streamed A2UI messages
-   - `sendUserAction(Map<String, dynamic> action)` — sends widget interactions back to agent
-   - SSE/JSONL stream parsing following `genui-a2ui-transport.md`
-   - Graceful fallback: if GenUI unavailable, surface error state (never swallow silently)
+7. **Actions** — check each `A2uiRendererAction.name` against an app allowlist before any local effect; send it with `actionRequestBody`; show send failures.
 
-8. **Create chat screen** (`gen_ui_chat_screen.dart`)
-   - Message history with chat bubbles (user + assistant)
-   - `GenUIRenderer` widget for surfaces from agent
-   - Text input field with send button
-   - Loading indicator during streaming
-   - Wire widget actions back to agent via `sendUserAction`
-   - Handle `deleteSurface` to clean up rendered surfaces from history
+8. **Custom components** (only if requested) — from `genui-custom-widgets.md`: `CommonSchemas` v0.9 types, `Semantics(container: true, ...)`, write-back via `props.writable(key)` with `A2uiDataError` handled, I/O only behind an action.
 
-9. **Write unit tests**
-   ```
-   test/features/<name>/
-   ├── widget_catalog_test.dart         # allow known types, reject unknown
-   ├── a2ui_function_evaluator_test.dart # formatCurrency, required, email, and/or/not
-   └── gen_ui_renderer_test.dart        # renders card, skips unknown type, handles empty surface
-   ```
+9. **Fallback** — an app-owned form shown when the stream fails or a payload is rejected.
 
-10. **Verify**
+10. **Tests** (`flutter test`)
+
+    ```
+    test/features/<name>/
+    ├── agent_surfaces_test.dart   # renders; typed input reaches action context; deleteSurface; error state
+    ├── security_test.dart         # unregistered catalog and unknown type rejected; oversize payload rejected
+    └── agent_client_test.dart     # SSE/JSONL decode; action body carries v0.9 capabilities
+    ```
+
+    Add semantics assertions (`tester.ensureSemantics()`): each control keeps its own node. Device E2E uses Maestro only (`.maestro/<name>.yaml`); report BLOCKED if no emulator or simulator is available.
+
+11. **Verify**
+
     ```bash
     flutter pub get
     flutter analyze lib/features/<name>/
     flutter test test/features/<name>/
     ```
 
-11. **Print summary** — list created files, how to wire the screen into the app's router, next steps (connect to real agent backend endpoint).
+    Show each command's exit code.
+
+12. **Print summary** — created files, how to route to the screen, the backend contract to agree with the agent team (`genui-a2ui-transport.md` → Backend contract), and anything not done.
 
 ## Reference
 
-- `flutter-genui` skill: all `reference/*.md` files — catalog, conversation, state binding, transport, functions, security
-- `flutter-mobile` skill: `reference/flutter-conventions.md`
+- `flutter-genui` skill: `SKILL.md` and all `reference/*.md` files
+- `flutter-mobile` skill: `reference/flutter-architecture-patterns.md`, `reference/flutter-testing-traps.md`, `reference/flutter-e2e-maestro.md`
 
 $ARGUMENTS

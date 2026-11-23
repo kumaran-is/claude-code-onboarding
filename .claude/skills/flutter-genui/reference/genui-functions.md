@@ -1,275 +1,109 @@
-# Flutter GenUI — A2UI Declarative Functions
+# A2UI Declarative Functions (v0.9)
 
-A2UI components support **declarative function calls** inside property value objects. Instead of sending a literal string or a data-model path, the agent sends a `call` descriptor. The Flutter renderer evaluates it using its own Dart implementation — no agent code runs.
+Verified against `a2ui_core` 0.8.0 (`lib/src/basic_catalog/v0_9/catalog.g.dart` and `functions.dart`). The examples below are exercised by `flutter test` in a check app.
 
-## How It Works
+## How it works
 
-In the JSON payload received from the agent:
-
-```json
-{
-  "id": "price-text",
-  "component": {
-    "type": "Text",
-    "text": {
-      "call": {
-        "name": "formatCurrency",
-        "args": [{"path": "/booking/totalPrice"}, {"literalString": "USD"}],
-        "returnType": "string"
-      }
-    }
-  }
-}
-```
-
-The Flutter renderer resolves the `call` node via `A2UIFunctionEvaluator` before passing the result to the widget builder. Args can themselves be `call` nodes — enabling composition like `not(and(required(x), required(y)))`.
-
----
-
-## Function Reference
-
-### Validation Functions
-
-Used in widget `validation` properties and form submission gates.
-
-| Name | Args | Returns | Description |
-|------|------|---------|-------------|
-| `required` | `(value)` | `bool` | True if value is non-null and non-empty |
-| `regex` | `(value, pattern)` | `bool` | True if value matches the regex pattern |
-| `length` | `(value, min, max)` | `bool` | True if string length is within [min, max] |
-| `numeric` | `(value, min?, max?)` | `bool` | True if value is a number, optionally in range |
-| `email` | `(value)` | `bool` | True if value matches email format |
-
-### Formatting Functions
-
-Used in `Text` widget `text` properties for display.
-
-| Name | Args | Returns | Description |
-|------|------|---------|-------------|
-| `formatString` | `(template, ...args)` | `String` | Substitutes `{0}`, `{1}` in template with args |
-| `formatNumber` | `(value, decimalPlaces?)` | `String` | Locale-aware number: `"1,234.50"` |
-| `formatCurrency` | `(value, currencyCode)` | `String` | `"$1,234.56"` for USD |
-| `formatDate` | `(value, pattern?)` | `String` | ISO 8601 input → `"May 19, 2026"` |
-| `pluralize` | `(count, singular, plural)` | `String` | `"1 item"` vs `"3 items"` |
-
-### Logical Functions
-
-Used in widget `visible` or `disabled` properties for conditional rendering.
-
-| Name | Args | Returns | Description |
-|------|------|---------|-------------|
-| `and` | `(...booleans)` | `bool` | True if all args are truthy |
-| `or` | `(...booleans)` | `bool` | True if any arg is truthy |
-| `not` | `(boolean)` | `bool` | Logical negation |
-
-### Navigation Functions
-
-| Name | Args | Returns | Description |
-|------|------|---------|-------------|
-| `openUrl` | `(url)` | `void` | Opens URL externally — `https://` only, validated before launch |
-
----
-
-## Dart Implementation: `A2UIFunctionEvaluator`
-
-```dart
-// lib/widgets/gen_ui/a2ui_function_evaluator.dart
-
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-/// Evaluates A2UI declarative function call descriptors.
-/// This is a renderer-side implementation — agent never sends executable code.
-class A2UIFunctionEvaluator {
-  static const _allowed = {
-    'required', 'regex', 'length', 'numeric', 'email',
-    'formatString', 'formatNumber', 'formatCurrency', 'formatDate', 'pluralize',
-    'and', 'or', 'not', 'openUrl',
-  };
-
-  final Map<String, dynamic> dataModel;
-
-  const A2UIFunctionEvaluator({required this.dataModel});
-
-  dynamic evaluate(Map<String, dynamic> call) {
-    final name = call['name'] as String?;
-    if (name == null || !_allowed.contains(name)) {
-      // Unknown function — silently skip, log for debugging
-      assert(() { debugPrint('A2UI: unknown function "$name" — rejected'); return true; }());
-      return null;
-    }
-    final rawArgs = (call['args'] as List<dynamic>? ?? []);
-    final args = rawArgs.map((a) => _resolveArg(a as Map<String, dynamic>)).toList();
-    return _dispatch(name, args);
-  }
-
-  dynamic _resolveArg(Map<String, dynamic> arg) {
-    if (arg.containsKey('literalString')) return arg['literalString'];
-    if (arg.containsKey('path')) return _resolvePath(arg['path'] as String);
-    if (arg.containsKey('call')) return evaluate(arg['call'] as Map<String, dynamic>);
-    return null;
-  }
-
-  dynamic _resolvePath(String path) {
-    final parts = path.replaceFirst(RegExp(r'^/'), '').split('/');
-    dynamic current = dataModel;
-    for (final part in parts) {
-      if (current is! Map) return null;
-      current = current[part];
-    }
-    return current;
-  }
-
-  dynamic _dispatch(String name, List<dynamic> args) {
-    switch (name) {
-      // Validation
-      case 'required':
-        final v = args[0];
-        return v != null && v.toString().isNotEmpty;
-      case 'email':
-        return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(args[0]?.toString() ?? '');
-      case 'regex':
-        return RegExp(args[1]?.toString() ?? '').hasMatch(args[0]?.toString() ?? '');
-      case 'length':
-        final len = args[0]?.toString().length ?? 0;
-        return len >= (args[1] as num? ?? 0) && len <= (args[2] as num? ?? double.infinity);
-      case 'numeric':
-        final n = num.tryParse(args[0]?.toString() ?? '');
-        if (n == null) return false;
-        final min = args.length > 1 ? args[1] as num? : null;
-        final max = args.length > 2 ? args[2] as num? : null;
-        return (min == null || n >= min) && (max == null || n <= max);
-
-      // Formatting
-      case 'formatCurrency':
-        final value = (args[0] as num? ?? 0).toDouble();
-        final code = args[1]?.toString() ?? 'USD';
-        return NumberFormat.currency(symbol: _currencySymbol(code), decimalDigits: 2).format(value);
-      case 'formatNumber':
-        final value = (args[0] as num? ?? 0).toDouble();
-        final decimals = (args.length > 1 ? args[1] as int? : null) ?? 2;
-        return NumberFormat.decimalPattern().format(value);
-      case 'formatDate':
-        final d = DateTime.tryParse(args[0]?.toString() ?? '');
-        if (d == null) return args[0]?.toString() ?? '';
-        return DateFormat(args.length > 1 ? args[1]?.toString() : 'MMM d, yyyy').format(d);
-      case 'formatString':
-        String result = args[0]?.toString() ?? '';
-        for (var i = 1; i < args.length; i++) {
-          result = result.replaceAll('{${i - 1}}', args[i]?.toString() ?? '');
-        }
-        return result;
-      case 'pluralize':
-        final count = (args[0] as num? ?? 0).toInt();
-        return '$count ${count == 1 ? args[1] : args[2]}';
-
-      // Logical
-      case 'and':
-        return args.every((a) => a == true || (a is num && a != 0) || (a is String && a.isNotEmpty));
-      case 'or':
-        return args.any((a) => a == true || (a is num && a != 0) || (a is String && a.isNotEmpty));
-      case 'not':
-        return !(args[0] == true || (args[0] is num && args[0] != 0) || (args[0] is String && (args[0] as String).isNotEmpty));
-
-      // Navigation
-      case 'openUrl':
-        final url = args[0]?.toString() ?? '';
-        if (!url.startsWith('https://')) {
-          debugPrint('A2UI: openUrl blocked non-https URL: $url');
-          return null;
-        }
-        launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        return null;
-
-      default:
-        return null;
-    }
-  }
-
-  String _currencySymbol(String code) {
-    const symbols = {'USD': '\$', 'EUR': '€', 'GBP': '£', 'JPY': '¥', 'AUD': 'A\$'};
-    return symbols[code] ?? code;
-  }
-}
-```
-
----
-
-## Integration with the Catalog Builder
-
-Pass the evaluator to widget builders so they can resolve function-valued properties:
-
-```dart
-// In your CatalogItem builder function:
-CatalogItem(
-  type: 'text',
-  schema: JsonSchema.object({
-    'text': JsonSchema.object({}), // accepts literalString, path, or call
-  }),
-  builder: (properties, conversation, dataModel) {
-    final evaluator = A2UIFunctionEvaluator(dataModel: dataModel);
-    final textProp = properties['text'];
-    final resolvedText = textProp is Map
-        ? evaluator.evaluate(textProp as Map<String, dynamic>)?.toString() ?? ''
-        : textProp?.toString() ?? '';
-    return Text(resolvedText);
-  },
-),
-```
-
-## Integration with the Renderer
-
-In `gen_ui_renderer.dart`, evaluate function calls before rendering conditional properties (`visible`, `disabled`):
-
-```dart
-Widget _buildWidget(Map<String, dynamic> spec, Map<String, dynamic> dataModel) {
-  final evaluator = A2UIFunctionEvaluator(dataModel: dataModel);
-
-  // Evaluate conditional visibility
-  final visibleProp = spec['visible'];
-  if (visibleProp is Map && visibleProp.containsKey('call')) {
-    final visible = evaluator.evaluate(visibleProp['call'] as Map<String, dynamic>) as bool? ?? true;
-    if (!visible) return const SizedBox.shrink();
-  }
-
-  return catalog.build(spec, evaluator);
-}
-```
-
----
-
-## Example: Validation-Gated Submit Button
-
-Agent sends a submit button that is disabled until both name and email are valid:
+An agent never sends code. Where a property accepts a dynamic value, it may send a **function call** that names a function the surface's catalog declares:
 
 ```json
-{
-  "id": "submit-btn",
-  "component": {
-    "type": "button",
-    "label": {"literalString": "Submit"},
-    "disabled": {
-      "call": {
-        "name": "not",
-        "args": [{
-          "call": {
-            "name": "and",
-            "args": [
-              {"call": {"name": "required", "args": [{"path": "/user/name"}], "returnType": "boolean"}},
-              {"call": {"name": "email", "args": [{"path": "/user/email"}], "returnType": "boolean"}}
-            ],
-            "returnType": "boolean"
-          }
-        }],
-        "returnType": "boolean"
-      }
-    }
-  }
-}
+{"call": "formatCurrency", "args": {"value": {"path": "/total"}, "currency": "USD"}}
 ```
 
----
+- `args` values are literals, `{"path"}` bindings or nested calls.
+- The renderer evaluates the call and re-evaluates it when a bound input changes.
+- **The catalog's function list is the allowlist.** The v0.9 basic catalog supplies 14 functions, implemented in `a2ui_core`; apps do not write a function evaluator. A custom catalog includes them with `BasicCatalog.v0_9().functions.values.toList()`, or a filtered subset.
+- With a strict `validationConfig`, a call to a function the catalog does not declare is rejected when the payload is processed (tested with a catalog that omits `openUrl`, plus a positive control against the full catalog).
 
-## Security Rule
+## The 14 v0.9 basic functions
 
-The `_allowed` set in `A2UIFunctionEvaluator` is a **security boundary** — identical in purpose to the catalog allowlist. An agent sending an unknown function name results in a null return and a debug log, never execution. Never add dynamic dispatch (e.g., using `mirrors` or `Function.apply` with agent-provided names).
+### Validation (return `boolean`)
+
+| Function | Args | True when |
+|---|---|---|
+| `required` | `value` | the value is not null or empty |
+| `regex` | `value`, `pattern` | the value matches the pattern |
+| `length` | `value`, `min` and/or `max` | the string length is within bounds |
+| `numeric` | `value`, `min` and/or `max` | the number is within bounds |
+| `email` | `value` | the value is a valid email address |
+
+### Formatting (return `string`)
+
+| Function | Args | Notes |
+|---|---|---|
+| `formatString` | `value` | Interpolates `${/absolute/path}`, `${relative/path}` and `${call(arg:...)}` expressions; escape a literal `${` as `\${` |
+| `formatNumber` | `value`, optional `decimals`, `grouping` | Uses the catalog's `locale` |
+| `formatCurrency` | `value`, `currency`, optional `decimals`, `grouping` | `1234.5` + `USD` → `$1,234.50` in `en-US` (tested) |
+| `formatDate` | `value`, `format` | `format` is a date pattern |
+| `pluralize` | `value`, `other`, optional `zero`, `one`, `two`, `few`, `many` | Plural category for the locale |
+
+The locale is the one passed to `basicCatalog(locale: ...)`, `en-US` by default.
+
+### Logic (return `boolean`)
+
+| Function | Args |
+|---|---|
+| `and` | `values`: a list |
+| `or` | `values`: a list |
+| `not` | `value` |
+
+`and`, `or` and `not` read plain truthiness, so a bound boolean (`{"path": "/agree"}`) or a validation call both work as operands.
+
+### Navigation (return `void`)
+
+| Function | Args | Behaviour |
+|---|---|---|
+| `openUrl` | `url` | Hands a validated `http`, `https`, `mailto` or `tel` URL to the `openUrl:` callback of `basicCatalog`; rejects `javascript:`, `file:` and relative URLs; **fails if no callback was passed** |
+
+On v0.9 a bound `openUrl` call runs whenever it resolves, without a tap. See `genui-security.md` before passing a callback.
+
+## Checks: validation on inputs and buttons
+
+Inputs and Button take `checks`: a list of `{condition, message}`. A failing check on an input shows `message` under it; a failing check on a Button disables it.
+
+```json
+{"id": "email", "component": "TextField", "label": "Email", "value": {"path": "/email"},
+ "checks": [{"condition": {"call": "email", "args": {"value": {"path": "/email"}}}, "message": "Enter a valid email address."}]}
+```
+
+Validation-gated submit (tested: disabled until a valid email is typed **and** the checkbox is ticked; then the tap reaches `onAction`):
+
+```json
+{"id": "submit", "component": "Button", "variant": "primary", "child": "submit_label",
+ "checks": [{
+   "condition": {"call": "and", "args": {"values": [
+     {"call": "email", "args": {"value": {"path": "/email"}}},
+     {"path": "/agree"}
+   ]}},
+   "message": "Enter an email and accept the terms."
+ }],
+ "action": {"event": {"name": "send"}}}
+```
+
+Client checks are for the user's benefit. The agent or API that receives the action must validate the same values again: the payload came from an agent, and the request can be forged.
+
+## Formatting example
+
+```json
+{"id": "total", "component": "Text",
+ "text": {"call": "formatCurrency", "args": {"value": {"path": "/total"}, "currency": "USD"}}}
+```
+
+With `/total` = `1234.5` and the default locale this renders `$1,234.50`, and re-renders when `/total` changes.
+
+## Restricting functions
+
+Build a catalog with a filtered function list to remove a function entirely:
+
+```dart
+functions: [
+  for (final function in BasicCatalog.v0_9().functions.values)
+    if (function.name != 'openUrl') function,
+],
+```
+
+The full locked-down catalog is in `genui-security.md`.
+
+## Security rule
+
+Functions are part of the catalog contract, not an extension point for the agent. Do not add a custom function that performs I/O, navigation or anything with side effects on the agent's say-so; route such work through an action the app handles and allowlists.

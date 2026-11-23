@@ -1,248 +1,184 @@
-# GenUI Security Reference
+# A2UI Security (Flutter, v0.9)
 
-## Threat Model
+Verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Dart blocks compile in a check app; each rejection below is a `flutter test` with a positive control where one applies.
 
-GenUI payloads originate from AI agents — which are **untrusted sources**. Even though the agent is "your" agent, its output is shaped by user input (prompt injection risk) and LLM non-determinism. The security boundary is the **Catalog allowlist**.
+## Threat model
 
-Agents cannot:
-1. Execute arbitrary Dart code on the client
-2. Render widgets outside the approved Catalog
-3. Inject HTML, scripts, or event handlers (Flutter doesn't use HTML, but the principle applies to widget tree manipulation)
-4. Access client-side state, storage, or auth tokens
-5. Trigger actions not defined by the client application
+Treat any agent outside your direct control as untrusted, and a model's output as untrusted even when you run the agent: prompt injection in the conversation or in retrieved content can steer what it writes. The `a2ui_flutter` README states the same: a malicious agent can imitate a legitimate interface to deceive users, or send layouts heavy enough to degrade the app.
 
-## Security Architecture
+| Threat | Vector | Control |
+|---|---|---|
+| Component injection | A component name the app did not register | Catalog allowlist + strict `validationConfig` |
+| Catalog spoofing | `createSurface` naming a catalog the app did not register | Rejected by the processor (`A2uiError`) |
+| Protocol confusion | Messages of another version, or without an adapter | Rejected; set `defaultVersion` and keep one version |
+| Unwanted navigation | `openUrl` bound to resolve without a tap | No callback, a host allowlist, or no `openUrl` in the catalog |
+| Untrusted media | Image / Video / AudioPlayer with an attacker URL (tracking, inappropriate content) | Leave them out of the catalog, or replace them with components that allowlist hosts |
+| Resource exhaustion | Huge payloads, deep trees, many surfaces | Size limit before decoding, `maxDepth`, app-side caps |
+| Phishing UI | A surface that imitates a login or payment screen | Never collect credentials or payment details in agent-built surfaces; use app-owned screens |
+| Data exfiltration | `sendDataModel` surfaces or action contexts carrying sensitive data | No secrets in data models; the server checks what it receives |
+| Forged actions | A request that claims an action the user did not take | The server authorises every action; client checks are UX only |
+| Code execution | — | Not possible by design: no `eval`, no dynamic code; keep it that way |
 
-```
-Agent Output (untrusted)
-    |
-A2UI JSON Payload
-    |
-+--------------------------------------+
-|  SERVER-SIDE VALIDATION              |
-|  ADK service validates against       |
-|  catalog schema BEFORE streaming     |
-+--------------------------------------+
-    |
-+--------------------------------------+
-|  CLIENT-SIDE SECURITY BOUNDARY       |
-|  1. Catalog Type Allowlist           |
-|  2. Property Type Validation         |
-|  3. Input Sanitization               |
-|  4. Action Allowlist                 |
-|  5. Payload Size Limits              |
-+--------------------------------------+
-    |
-Native Flutter Widget Rendering (trusted)
-```
+## Required controls
 
-## Required Security Checks
+### 1. The catalog is the allowlist (mandatory)
 
-### 1. Catalog Type Allowlist (Mandatory)
+The processor only creates surfaces for catalogs it was constructed with and only accepts components and functions those catalogs declare (once validation is on, below). Never build widgets from agent JSON outside a catalog.
 
-Every component `type` MUST be validated against the Catalog before rendering. Unknown types are silently skipped.
+Tested: a `createSurface` naming an unregistered catalog throws and renders nothing; the host shows an error state.
+
+### 2. Turn validation on (mandatory for untrusted agents)
+
+`MessageProcessor` runs **without** a validation config by default. In that mode a component type the catalog does not declare is accepted at processing time and renders nothing (tested). Pass a config:
 
 ```dart
-// REQUIRED: Validate before rendering
-Widget renderComponent(String type, Map<String, dynamic> properties) {
-  final item = catalog.items.firstWhere(
-    (i) => i.name == type,
-    orElse: () => null,
-  );
-  if (item == null) {
-    logger.warning('GenUI: rejected unknown type "$type"');
-    return const SizedBox.shrink(); // Skip unknown types
-  }
-  return item.builder(context, properties);
-}
+import 'dart:convert';
 
-// FORBIDDEN: Rendering whatever the agent sends
-Widget renderComponent(String type, Map<String, dynamic> properties) {
-  return widgetRegistry[type]!(properties); // Agent controls rendering
-}
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:a2ui_flutter/v0_9/basic_catalog.dart';
+
+/// Only these hosts may be opened by the basic catalog's `openUrl` function.
+const Set<String> allowedLinkHosts = {'example.com', 'help.example.com'};
+
+/// A processor for an agent you do not fully control.
+MessageProcessor<ComponentImplementation> hardenedProcessor({
+  required Future<void> Function(Uri url) launch,
+}) => MessageProcessor<ComponentImplementation>(
+  catalogs: [
+    basicCatalog(
+      // On v0.9 a bound openUrl call may run without a tap: allowlist it.
+      openUrl: (Uri url) async {
+        if (url.scheme != 'https' || !allowedLinkHosts.contains(url.host)) {
+          throw ArgumentError.value(url, 'url', 'link host not allowed');
+        }
+        await launch(url);
+      },
+    ),
+  ],
+  defaultVersion: A2uiProtocolVersion.v0_9,
+  // Whole-surface payloads: every graph check on, unknown types rejected,
+  // and only the four v0.9 agent messages accepted.
+  validationConfig: const ValidationConfig(
+    maxDepth: 20,
+    allowedMessages: [
+      'createSurface',
+      'updateComponents',
+      'updateDataModel',
+      'deleteSurface',
+    ],
+  ),
+);
 ```
 
-### 2. Property Type Validation (Mandatory)
+| `ValidationConfig` field | Default | Use |
+|---|---|---|
+| `allowUnknownElements` | `false` | Keep false: unknown components (and, below v1.0, functions) are rejected |
+| `allowOrphanComponents`, `allowDanglingReferences`, `allowMissingRoot` | `false` | Graph checks; turn on only for surfaces streamed across payloads |
+| `allowedMessages` | all | Limit to the four v0.9 agent messages |
+| `maxDepth` | 50 | Deepest component chain a surface may declare |
+| `targetVersion`, `rootId` | null | Pin the version; change the root id |
 
-All property values from the agent must be validated before use:
+`ValidationConfig.strict` is every check on. **`ValidationConfig.relaxed` also sets `allowUnknownElements: true`**, so do not use it for an untrusted agent. For a surface that arrives across several payloads (parent before child), turn off only the checks that wait on later messages:
 
 ```dart
-/// Safely extracts a string property, with length limit.
-String safeString(Map<String, dynamic> props, String key, {int maxLength = 10000}) {
-  final value = props[key];
-  if (value is String) return value.substring(0, min(value.length, maxLength));
-  if (value is Map<String, dynamic>) {
-    if (value.containsKey('literalString')) {
-      final str = value['literalString'];
-      if (str is String) return str.substring(0, min(str.length, maxLength));
-    }
-  }
-  return '';
-}
-
-/// Safely extracts a list of strings, with size limit.
-List<String> safeStringList(Map<String, dynamic> props, String key, {int maxItems = 50}) {
-  final value = props[key];
-  if (value is List) {
-    return value
-        .whereType<String>()
-        .take(maxItems)
-        .toList();
-  }
-  return [];
-}
-
-/// Safely extracts a boolean property.
-bool safeBool(Map<String, dynamic> props, String key, {bool defaultValue = false}) {
-  final value = props[key];
-  if (value is bool) return value;
-  return defaultValue;
-}
-
-/// Safely extracts a number property.
-int safeInt(Map<String, dynamic> props, String key, {int defaultValue = 0, int max = 100}) {
-  final value = props[key];
-  if (value is num) return min(value.toInt(), max);
-  return defaultValue;
-}
+/// For a surface streamed across several payloads: the graph checks that
+/// wait on later messages are off, unknown components and functions are still
+/// rejected. (`ValidationConfig.relaxed` also allows unknown elements.)
+const ValidationConfig streamingValidation = ValidationConfig(
+  allowOrphanComponents: true,
+  allowDanglingReferences: true,
+  allowMissingRoot: true,
+  maxDepth: 20,
+);
 ```
 
-### 3. URL Sanitization (Mandatory)
+Tested: this config accepts a parent sent before its child; `ValidationConfig.strict` rejects the same split (control); an unknown component type is still rejected. Schema checks (required properties, types) run in every mode.
 
-Any URL from agent data must be validated before use:
+### 3. `openUrl` (mandatory decision)
+
+- Without an `openUrl:` callback the function fails: links are off. This is the safe default.
+- `a2ui_core` already rejects `javascript:`, `file:` and relative URLs and passes only `http`, `https`, `mailto` and `tel`.
+- On v0.9 a bound `openUrl` call runs **whenever it resolves**, so with a callback the agent can open a URL without the user acting. Pass a callback only for an agent you trust, and allowlist scheme and host inside it as above (the callback compiles; its host check is app code, not package behaviour).
+- Or remove the function from the catalog (next section).
+
+### 4. Locked-down catalog for untrusted agents
 
 ```dart
-/// Validates a URL from agent data — only allows http/https.
-String? sanitizeUrl(dynamic value) {
-  final urlStr = safeString({'url': value}, 'url');
-  if (urlStr.isEmpty) return null;
-  try {
-    final uri = Uri.parse(urlStr);
-    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
-    return urlStr;
-  } catch (_) {
-    return null;
+/// A v0.9 catalog without network media or links: no Image, Video,
+/// AudioPlayer or Modal, and no `openUrl` function.
+final CatalogImplementation lockedDownCatalog = CatalogImplementation(
+  id: 'https://example.com/app/v0_9/locked.json',
+  components: [
+    BasicComponents.text,
+    BasicComponents.row,
+    BasicComponents.column,
+    BasicComponents.card,
+    BasicComponents.list,
+    BasicComponents.divider,
+    BasicComponents.icon,
+    BasicComponents.button,
+    BasicComponents.textField,
+    BasicComponents.checkBox,
+    BasicComponents.choicePicker,
+    BasicComponents.slider,
+    BasicComponents.dateTimeInput,
+  ],
+  functions: [
+    for (final function in BasicCatalog.v0_9().functions.values)
+      if (function.name != 'openUrl') function,
+  ],
+  themeSchema: BasicComponents.api.themeSchema,
+  definitions: BasicComponents.api.definitions,
+);
+```
+
+Tested with `ValidationConfig.strict`: Text renders; an `Image` is rejected; a Button whose action is an `openUrl` function call is rejected, and the same payload is accepted against the full basic catalog (positive control). The basic Image, Video and AudioPlayer load any `http`/`https` URL, which is why they are omitted.
+
+### 5. Payload size limits (mandatory)
+
+The processor bounds depth, not bytes. Reject oversized input before `jsonDecode`:
+
+```dart
+/// Rejects a raw payload larger than [maxBytes] before it is decoded.
+Object? decodeBounded(String raw, {int maxBytes = 256 * 1024}) {
+  if (utf8.encode(raw).length > maxBytes) {
+    throw const FormatException('A2UI payload too large');
   }
+  return jsonDecode(raw);
 }
 ```
 
-### 4. Action Allowlist (Mandatory)
+The SSE and JSONL readers in `genui-a2ui-transport.md` apply the same limit per event or line. Also cap, in the app: surfaces per conversation (delete the oldest or refuse new ones) and components per surface (count `updateComponents` entries). Pick limits from real payloads plus headroom; 256 KiB per event is a starting point, not a measured value.
 
-Only actions defined by the client application can be triggered:
+### 6. Actions are requests, not commands
 
-```dart
-/// Allowed actions for the triage flow.
-const _allowedActions = {
-  'select_option',     // Dropdown selection
-  'submit_text',       // Free text submission
-  'upload_photo',      // Photo upload
-  'rate_severity',     // Star rating
-  'confirm_yes',       // Confirmation - yes
-  'confirm_no',        // Confirmation - no
-  'submit_triage',     // Final triage submission
-  'skip_question',     // Skip optional question
-  'go_back',           // Navigate to previous question
-};
+- Check `action.name` against the app's own allowlist before doing anything locally (camera, navigation, purchase).
+- Send the action to the server, which authorises it for the signed-in user. The `context` values are agent-defined and user-editable: validate them server-side.
+- Never put tokens, passwords or secrets in a data model or action context; `sendDataModel` surfaces send their whole model to the agent.
 
-void handleAction(UserAction action) {
-  if (!_allowedActions.contains(action.name)) {
-    logger.warning('GenUI: rejected unknown action "${action.name}"');
-    return;
-  }
-  // Process known action
-}
-```
+### 7. No code execution (absolute)
 
-### 5. Payload Size Limits (Mandatory)
+No `eval`, isolates spawned from agent strings, `Function.apply` on agent-named handlers, or WebViews loading agent HTML. Everything the agent can do is in the catalog.
 
-```dart
-/// Maximum limits for GenUI payloads.
-const kMaxComponents = 200;
-const kMaxPropertyLength = 10000; // characters
-const kMaxPayloadSize = 1048576; // 1MB
-const kMaxWidgets = 50; // per surface
-const kMaxDropdownOptions = 50; // per dropdown
+## Error surfacing
 
-/// Validates and truncates a surface update payload.
-SurfaceUpdate validatePayload(SurfaceUpdate update) {
-  if (update.components.length > kMaxComponents) {
-    update = update.copyWith(
-      components: update.components.sublist(0, kMaxComponents),
-    );
-    logger.warning('GenUI: payload truncated — exceeded $kMaxComponents components');
-  }
-  return update;
-}
-```
+A rejected payload throws `A2uiError` with `code` and `message`. Log both (never the full payload if it may hold user data), show the user that the assistant's response could not be displayed, and keep earlier surfaces. Never catch and continue silently.
 
-### 6. No Code Execution (Absolute Rule)
+## Server-side (agent) checks
 
-Flutter doesn't have `eval()`, but the principle still applies:
+Before streaming, the agent server should validate its own output against the catalogs the app advertised. A Dart server can use `a2ui_agent` (`A2uiRequestProcessor.parseResponse`, or the top-level `validatePayload` for one payload), which checks messages against the negotiated catalogs. Python/ADK servers: validate against the catalog JSON schema. Rate-limit per user and per conversation, and cap payload size on the server too.
 
-```dart
-// FORBIDDEN: Dynamic function execution from agent data
-Function.apply(properties['handler'], []);
-// FORBIDDEN: Dynamic widget creation from agent strings
-// FORBIDDEN: Executing agent-provided shell commands or file operations
-// FORBIDDEN: Using agent data to construct database queries
-```
+## Security checklist
 
-## App-Specific Security
-
-### Photo Upload Security
-
-- File type validation: only JPEG/PNG allowed (check magic bytes, not just extension)
-- File size limit: 10MB per photo
-- Strip EXIF location data before upload (privacy)
-- Upload to signed GCS URL, not directly to client storage
-
-### Triage Data Sanitization
-
-- Never store raw agent output in Cloud SQL — extract structured fields only
-- Agent responses are logged for debugging but never executed
-- Tenant-provided text is sanitized server-side before storage
-
-### Rate Limiting
-
-- SSE connection limited to 1 per triage session
-- Max 50 widget interactions per triage session (prevents abuse)
-- Triage sessions timeout after 10 minutes of inactivity
-
-## Rate Limits (Server-Side)
-
-A misbehaving agent can DoS the client by spamming messages. These limits belong on the server:
-
-| Limit | Recommended Cap |
-|-------|----------------|
-| Surfaces per session | ~50 |
-| User actions per second per surface | ~10 |
-| `updateDataModel` payload size | Set a max bytes limit |
-
-## Server-Side Validation Before Rendering
-
-LLM-generated GenUI payloads are not safe to render without validation. Required production loop:
-
-```
-LLM generates widget JSON
-  ↓
-Validate against catalog JSON schemas (CatalogItem.schema)
-  ↓
-[FAIL] → Return structured error to LLM → retry (max 2-3 retries)
-[PASS] → Send validated payload to Flutter client
-```
-
-Track validation failure rate per widget type — a spike indicates LLM regression or prompt drift before users notice.
-
-## Security Checklist
-
-- [ ] Catalog defines explicit allowlist of widget types
-- [ ] Unknown widget types are silently skipped (not rendered)
-- [ ] All string properties length-capped (10,000 chars)
-- [ ] All list properties size-capped (50 items)
-- [ ] URLs validated for http/https protocol only
-- [ ] No `Function.apply`, dynamic imports, or code execution from agent data
-- [ ] Actions validated against allowlist before processing
-- [ ] Photo uploads validated for type, size, and sanitized metadata
-- [ ] Payload size limits enforced (200 components, 1MB total)
-- [ ] Error boundaries prevent malformed components from crashing the app
-- [ ] Fallback to static form when GenUI fails
+- [ ] Packages pinned: `a2ui_flutter: 0.4.0`, `a2ui_core: 0.8.0`
+- [ ] `defaultVersion: A2uiProtocolVersion.v0_9`; one version end to end
+- [ ] `validationConfig` set; `allowUnknownElements` false; `ValidationConfig.relaxed` not used for untrusted agents
+- [ ] Catalog lists only the components and functions the feature needs
+- [ ] `openUrl`: no callback, or a scheme + host allowlist, or removed from the catalog
+- [ ] Image / Video / AudioPlayer omitted or replaced for untrusted agents
+- [ ] Byte limit before `jsonDecode`; surface and component caps
+- [ ] `processMessages` wrapped; `A2uiError` logged and shown
+- [ ] Action names allowlisted in the app; every action authorised server-side
+- [ ] No credentials, payment details or secrets collected in or sent through agent-built surfaces
+- [ ] Tests: unregistered catalog, unknown type, oversize payload, locked-down catalog with positive control

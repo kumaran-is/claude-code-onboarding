@@ -1,471 +1,205 @@
-# GenUI Custom Widgets — Triage Example
+# A2UI Custom Components (v0.9)
+
+Verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Both examples compile in a check app (`flutter analyze` exit 0). The Rating component was also run on an iOS simulator with a Maestro flow (positive flow exit 0; a negative flow expecting the wrong reply exits 1).
 
 ## Overview
 
-This example extends the standard GenUI widget catalog with 5 custom widget types designed for a maintenance triage flow. Each custom widget is registered as a `CatalogItem` with a JSON schema (for the AI model) and a Dart builder (for rendering).
-
-## Architecture
+A custom component is a `ComponentImplementation`: a name the agent writes, a JSON schema the processor validates against, and a builder that returns a Flutter widget. Register it in a catalog with the basic components (`genui-catalog-design.md`).
 
 ```
-widget_catalog.dart          # Catalog registration (all CatalogItems)
-    |
-widget_types.dart            # Custom widget implementations
-    |-- TriagePhotoUpload    # Camera + gallery picker
-    |-- TriageDropdown       # Native dropdown selector
-    |-- TriageFreeText       # Text input field
-    |-- TriageRating         # Star rating widget
-    |-- TriageConfirmation   # Yes/No buttons
+agent JSON ──► processor (schema check, binding resolution) ──► builder(context, node, props, buildChild) ──► Widget
+                                                                     │
+                                       user input ──► props.writable(key).set(...)  ──► data model
+                                       user tap   ──► props.action(key)()           ──► onAction / functionCall
 ```
 
-## Widget Implementations
+## The builder
 
-### 1. PhotoUpload
+`builder: (BuildContext context, ComponentNode<ComponentImplementation> node, ComponentProps props, ChildWidgetBuilder buildChild)`
 
-Camera + gallery picker for issue photos.
+| `ComponentProps` member | Returns |
+|---|---|
+| `string(key)`, `number(key)`, `boolean(key)`, `value(key)` | The resolved value (literal, binding or function result), or null |
+| `list(key)` | The resolved value as a `List<Object?>` |
+| `writable(key)` | A `WritableBinding` when the property is a `{"path"}` binding, null for a literal. `set(value)` writes the data model and throws `A2uiDataError` if the path cannot hold it |
+| `action(key)` | A `NodeAction` (`Future<void> Function([ActionDispatchOptions?])`) for an `action` property, or null |
+| `child(key)`, `children(key)` | The child `ComponentNode` (or null) / the list of child nodes; render each with `buildChild(node)` |
+| `isValid`, `validationErrors`, `validationResults` | The result of the component's `checks` |
+
+The builder runs again when a value it read changes. Keep it pure: read props, return widgets, and do I/O only in response to a user gesture.
+
+## Example 1 — Rating (input with write-back)
 
 ```dart
-// CatalogItem registration
-CatalogItem photoUploadItem() => CatalogItem(
-  name: 'photo_upload',
-  description: 'Camera and gallery picker for capturing photos of maintenance issues. '
-      'Use when visual evidence would help diagnose the problem.',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'Prompt text, e.g. "Take a photo of the leak"'),
-    'maxPhotos': JsonSchema.number(description: 'Maximum photos allowed (default: 3)'),
-    'required': JsonSchema.boolean(description: 'Whether at least one photo is required'),
-  }, required: ['label']),
-  builder: (context, properties) => TriagePhotoUpload(
-    label: properties['label'] as String? ?? 'Upload a photo',
-    maxPhotos: (properties['maxPhotos'] as num?)?.toInt() ?? 3,
-    required: properties['required'] as bool? ?? false,
-    onPhotosSelected: (photos) {
-      // Photos are handled by the triage flow, not sent to the model directly
+import 'dart:developer' as developer;
+
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:json_schema_builder/json_schema_builder.dart'
+    hide ValidationResult;
+
+/// A 1-5 star rating bound to a data model path.
+final ComponentImplementation rating = ComponentImplementation(
+  name: 'Rating',
+  schema: Schema.object(
+    description: 'A 1 to 5 star rating. Bind value to a number path.',
+    properties: {
+      'label': CommonSchemas.dynamicString,
+      'value': CommonSchemas.dynamicNumber,
     },
+    required: ['value'],
   ),
-);
-
-// Widget implementation
-class TriagePhotoUpload extends StatefulWidget {
-  final String label;
-  final int maxPhotos;
-  final bool required;
-  final ValueChanged<List<XFile>> onPhotosSelected;
-
-  const TriagePhotoUpload({
-    required this.label,
-    required this.maxPhotos,
-    required this.required,
-    required this.onPhotosSelected,
-    super.key,
-  });
-
-  @override
-  State<TriagePhotoUpload> createState() => _TriagePhotoUploadState();
-}
-
-class _TriagePhotoUploadState extends State<TriagePhotoUpload> {
-  final List<XFile> _photos = [];
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.label,
-          style: theme.textTheme.bodyLarge,
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ..._photos.map((photo) => _PhotoThumbnail(
-              file: photo,
-              onRemove: () => _removePhoto(photo),
-            )),
-            if (_photos.length < widget.maxPhotos)
-              _AddPhotoButton(onTap: _pickPhoto),
-          ],
-        ),
-        if (widget.required && _photos.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'At least one photo is required',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
+  builder: (context, node, props, buildChild) {
+    final WritableBinding<Object?>? value = props.writable('value');
+    final int current = (props.number('value') ?? 0).round().clamp(0, 5);
+    // container: true gives the rating its own semantics node; without it the
+    // label and value merge into whatever node encloses the surface.
+    return Semantics(
+      container: true,
+      label: props.string('label') ?? 'Rating',
+      value: '$current of 5',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var star = 1; star <= 5; star++)
+            IconButton(
+              tooltip: 'Rate $star',
+              icon: Icon(star <= current ? Icons.star : Icons.star_border),
+              onPressed: value == null
+                  ? null // a literal value is read-only
+                  : () {
+                      try {
+                        value.set(star);
+                      } on A2uiDataError catch (error) {
+                        developer.log(
+                          '${error.code}: ${error.message}',
+                          name: 'a2ui',
+                        );
+                      }
+                    },
             ),
-          ),
-      ],
-    );
-  }
-
-  Future<void> _pickPhoto() async {
-    // Use image_picker — standard Flutter pattern
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 1920,
-      maxHeight: 1080,
-      imageQuality: 85,
-    );
-    if (image != null && mounted) {
-      setState(() => _photos.add(image));
-      widget.onPhotosSelected(_photos);
-    }
-  }
-
-  void _removePhoto(XFile photo) {
-    setState(() => _photos.remove(photo));
-    widget.onPhotosSelected(_photos);
-  }
-}
-```
-
-### 2. Dropdown
-
-Native dropdown for multiple-choice questions.
-
-```dart
-CatalogItem dropdownItem() => CatalogItem(
-  name: 'dropdown',
-  description: 'A dropdown selector for multiple-choice questions. '
-      'Use when presenting 2-6 options for the user to choose one.',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'Question text above the dropdown'),
-    'options': JsonSchema.array(
-      items: JsonSchema.string(),
-      description: 'List of selectable options',
-    ),
-    'required': JsonSchema.boolean(description: 'Whether selection is mandatory'),
-    'placeholder': JsonSchema.string(description: 'Hint text when nothing selected'),
-  }, required: ['label', 'options']),
-  builder: (context, properties) {
-    final options = (properties['options'] as List?)?.cast<String>() ?? [];
-    if (options.isEmpty) {
-      return const Text('No options available');
-    }
-    return TriageDropdown(
-      label: properties['label'] as String? ?? 'Select an option',
-      options: options.take(20).toList(), // Cap at 20
-      required: properties['required'] as bool? ?? false,
-      placeholder: properties['placeholder'] as String?,
-    );
-  },
-);
-
-class TriageDropdown extends StatefulWidget {
-  final String label;
-  final List<String> options;
-  final bool required;
-  final String? placeholder;
-
-  const TriageDropdown({
-    required this.label,
-    required this.options,
-    this.required = false,
-    this.placeholder,
-    super.key,
-  });
-
-  @override
-  State<TriageDropdown> createState() => _TriageDropdownState();
-}
-
-class _TriageDropdownState extends State<TriageDropdown> {
-  String? _selected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(widget.label, style: theme.textTheme.bodyLarge),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: _selected,
-          hint: Text(widget.placeholder ?? 'Choose...'),
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          ),
-          items: widget.options.map((opt) => DropdownMenuItem(
-            value: opt,
-            child: Text(opt),
-          )).toList(),
-          onChanged: (value) => setState(() => _selected = value),
-          validator: widget.required
-              ? (value) => value == null ? 'Please select an option' : null
-              : null,
-        ),
-      ],
-    );
-  }
-}
-```
-
-### 3. FreeText
-
-Text input for open-ended responses.
-
-```dart
-CatalogItem freeTextItem() => CatalogItem(
-  name: 'free_text',
-  description: 'A text input field for open-ended responses. '
-      'Use for descriptions, details, or any free-form answer.',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'Question text above the field'),
-    'hint': JsonSchema.string(description: 'Placeholder text inside the field'),
-    'maxLength': JsonSchema.number(description: 'Character limit (default: 500)'),
-    'multiline': JsonSchema.boolean(description: 'Multi-line input (default: false)'),
-  }, required: ['label']),
-  builder: (context, properties) => TriageFreeText(
-    label: properties['label'] as String? ?? 'Enter details',
-    hint: properties['hint'] as String?,
-    maxLength: (properties['maxLength'] as num?)?.toInt() ?? 500,
-    multiline: properties['multiline'] as bool? ?? false,
-  ),
-);
-```
-
-### 4. Rating
-
-Star rating for urgency/severity assessment.
-
-```dart
-CatalogItem ratingItem() => CatalogItem(
-  name: 'rating',
-  description: 'A star rating widget for severity or urgency assessment. '
-      'Use when asking the user to rate something on a 1-5 scale.',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'Question text, e.g. "How urgent is this?"'),
-    'maxStars': JsonSchema.number(description: 'Number of stars (default: 5)'),
-    'required': JsonSchema.boolean(description: 'Whether rating is mandatory'),
-  }, required: ['label']),
-  builder: (context, properties) => TriageRating(
-    label: properties['label'] as String? ?? 'Rate severity',
-    maxStars: (properties['maxStars'] as num?)?.toInt() ?? 5,
-    required: properties['required'] as bool? ?? false,
-  ),
-);
-```
-
-### 5. Confirmation
-
-Yes/No buttons for binary questions.
-
-```dart
-CatalogItem confirmationItem() => CatalogItem(
-  name: 'confirmation',
-  description: 'Yes/No buttons for binary follow-up questions. '
-      'Use when the answer is one of two options.',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'The yes/no question text'),
-    'yesText': JsonSchema.string(description: 'Label for yes button (default: "Yes")'),
-    'noText': JsonSchema.string(description: 'Label for no button (default: "No")'),
-  }, required: ['label']),
-  builder: (context, properties) => TriageConfirmation(
-    label: properties['label'] as String? ?? 'Confirm',
-    yesText: properties['yesText'] as String? ?? 'Yes',
-    noText: properties['noText'] as String? ?? 'No',
-  ),
-);
-```
-
-## Connecting Widgets to the Conversation Loop
-
-When a user interacts with a triage widget (selects a dropdown option, submits text, etc.), the response must be sent back to the Conversation:
-
-```dart
-/// Wrapper that connects custom triage widgets to the Conversation.
-class TriageWidgetWrapper extends StatelessWidget {
-  final Widget child;
-  final String widgetId;
-  final TriageConversationManager conversation;
-
-  const TriageWidgetWrapper({
-    required this.child,
-    required this.widgetId,
-    required this.conversation,
-    super.key,
-  });
-
-  void _onUserResponse(String actionName, Map<String, dynamic> context) {
-    conversation.sendAction(UserAction(
-      name: actionName,
-      surfaceId: 'triage',
-      sourceComponentId: widgetId,
-      timestamp: DateTime.now().toIso8601String(),
-      context: context,
-    ));
-  }
-}
-```
-
-## Testing Custom Widgets
-
-```dart
-void main() {
-  group('TriageDropdown', () {
-    testWidgets('renders all options', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: TriageDropdown(
-            label: 'Severity',
-            options: ['low', 'medium', 'high'],
-          ),
-        ),
-      ));
-      expect(find.text('Severity'), findsOneWidget);
-      // Open dropdown
-      await tester.tap(find.byType(DropdownButtonFormField<String>));
-      await tester.pumpAndSettle();
-      expect(find.text('low'), findsOneWidget);
-      expect(find.text('medium'), findsOneWidget);
-      expect(find.text('high'), findsOneWidget);
-    });
-
-    testWidgets('handles empty options gracefully', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: TriageDropdown(
-            label: 'Severity',
-            options: [],
-          ),
-        ),
-      ));
-      // Should show fallback, not crash
-      expect(find.text('No options available'), findsOneWidget);
-    });
-  });
-}
-```
-
----
-
-## Standard A2UI v0.8 Catalog Widgets (Extended Set)
-
-These map the A2UI standard catalog to Flutter widgets. Register them in `widget_catalog.dart` alongside custom widgets.
-
-### `slider` — Numeric Range Input
-
-```dart
-CatalogItem(
-  type: 'slider',
-  schema: JsonSchema.object({
-    'label': JsonSchema.string(description: 'Display label above slider'),
-    'value': JsonSchema.object({}), // path or literalString for initial value
-    'min': JsonSchema.number(description: 'Minimum value'),
-    'max': JsonSchema.number(description: 'Maximum value'),
-    'step': JsonSchema.number(description: 'Step increment (optional)'),
-  }, required: ['label', 'min', 'max']),
-  builder: (properties, conversation, dataModel) {
-    final min = (properties['min'] as num? ?? 0).toDouble();
-    final max = (properties['max'] as num? ?? 100).toDouble();
-    final initial = (properties['value']?['literalString'] as num? ?? min).toDouble();
-    return _SliderWidget(
-      label: properties['label']?.toString() ?? '',
-      min: min,
-      max: max,
-      initialValue: initial,
-      divisions: properties['step'] != null
-          ? ((max - min) / (properties['step'] as num)).round()
-          : null,
-      onChanged: (v) => conversation.updateDataModel(
-        (properties['value']?['path'] as String? ?? '/slider'), v,
+        ],
       ),
     );
   },
-),
+);
 ```
 
-**Accessibility:** Use `Semantics(slider: true, value: '${value.round()}', label: label)`.
+The agent uses it like a basic component:
 
-### `audio_player` — Audio Playback
-
-```dart
-CatalogItem(
-  type: 'audio_player',
-  schema: JsonSchema.object({
-    'src': JsonSchema.object({}), // URL — validated before use
-    'label': JsonSchema.string(description: 'Accessible label for the player'),
-  }, required: ['src']),
-  builder: (properties, conversation, dataModel) {
-    final rawUrl = properties['src']?['literalString']?.toString() ?? '';
-    // Validate: only allow https:// URLs
-    if (!rawUrl.startsWith('https://')) {
-      debugPrint('GenUI: audio_player src blocked — non-https URL rejected');
-      return const SizedBox.shrink();
-    }
-    return _AudioPlayerWidget(url: rawUrl, label: properties['label']?.toString());
-  },
-),
+```json
+{"id": "interest", "component": "Rating", "label": "Interest", "value": {"path": "/stars"}}
 ```
 
-**Security:** Always validate `src` URL — reject non-https. Use `just_audio` or `audioplayers` package.
+A Button whose action `context` reads `{"path": "/stars"}` then receives the tapped value. Tested: tapping "Rate 5" set `/stars` to 5, and the Subscribe action's context was `{"email": "ada@example.com", "stars": 5}`. A negative control (builder without `value.set`) fails that test.
 
-### `video` — Video Playback
+## Example 2 — PhotoRequest (app-owned I/O behind an action)
+
+A component must not capture, upload or fetch on its own: the agent decides when it is shown, so any I/O in the builder would run on the agent's say-so. The component runs the agent-declared action on a tap; the app, which owns camera permission, size and type checks and the upload, answers the action and writes the result back.
 
 ```dart
-CatalogItem(
-  type: 'video',
-  schema: JsonSchema.object({
-    'src': JsonSchema.object({}), // URL — validated before use
-    'label': JsonSchema.string(description: 'Accessible label / alt text'),
-    'autoPlay': JsonSchema.boolean(description: 'Auto-start playback (default false)'),
-  }, required: ['src']),
-  builder: (properties, conversation, dataModel) {
-    final rawUrl = properties['src']?['literalString']?.toString() ?? '';
-    if (!rawUrl.startsWith('https://')) {
-      debugPrint('GenUI: video src blocked — non-https URL rejected');
-      return const SizedBox.shrink();
-    }
-    return _VideoPlayerWidget(
-      url: rawUrl,
-      label: properties['label']?.toString(),
-      autoPlay: properties['autoPlay'] as bool? ?? false,
+import 'dart:async';
+
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:json_schema_builder/json_schema_builder.dart'
+    hide ValidationResult;
+
+/// A custom component that asks for a photo. It does no I/O itself: the tap
+/// runs the agent-declared action, and the app (which owns the camera and
+/// upload code) answers that action and writes the result to the data model.
+final ComponentImplementation photoRequest = ComponentImplementation(
+  name: 'PhotoRequest',
+  schema: Schema.object(
+    description: 'Asks the user for a photo. The app captures and uploads it.',
+    properties: {
+      'label': CommonSchemas.dynamicString,
+      'photoUrl': CommonSchemas.dynamicString,
+      'onRequest': CommonSchemas.action,
+    },
+    required: ['label', 'onRequest'],
+  ),
+  builder: (context, node, props, buildChild) {
+    final String label = props.string('label') ?? 'Add a photo';
+    final String? photoUrl = props.string('photoUrl');
+    final NodeAction? request = props.action('onRequest');
+    return Semantics(
+      container: true,
+      child: OutlinedButton.icon(
+        icon: Icon(photoUrl == null ? Icons.add_a_photo : Icons.check_circle),
+        label: Text(photoUrl == null ? label : '$label (added)'),
+        // Run the action synchronously inside the tap handler.
+        onPressed: request == null ? null : () => unawaited(request()),
+      ),
     );
   },
-),
+);
+
+/// App side: handle the action, then write the uploaded URL back.
+Future<void> onPhotoRequested(
+  SurfaceModel<ComponentImplementation> surface,
+  Future<Uri?> Function() captureAndUpload,
+) async {
+  final Uri? url =
+      await captureAndUpload(); // permissions, size and type checks live here
+  if (url != null) surface.dataModel.set('/photoUrl', url.toString());
+}
 ```
 
-**Security:** Validate URL before initializing the video controller. Use `video_player` package. Never auto-play audio on first render without user consent (accessibility + UX).
+In the app's `onAction` handler, match the event name (for example `photo_requested`) against the app's allowlist, find the surface by `action.surfaceId` in `processor.model.allSurfaces`, and call `onPhotoRequested`. The same pattern fits a dropdown backed by app data, a signature pad or a document picker.
 
----
+## Accessibility (required for every custom component)
 
-## Updated Catalog Registry
+| Rule | Why |
+|---|---|
+| Wrap the component in `Semantics(container: true, label:, value:)` | Without `container: true` its label and value merged into the enclosing node; tested with a negative control |
+| Give icon-only controls a `tooltip` | It becomes the accessible name (`Rate 5`) and a stable Maestro target |
+| Touch targets ≥ 48dp | Material `IconButton` / `OutlinedButton` meet it by default; do not shrink them |
+| Announce changed values in `value`, not only in the icon state | Screen readers read `3 of 5`, not three star glyphs |
+| Use theme colours and the app's spacing tokens | No hardcoded colours or raw spacing in production components |
 
-Add to `widget_catalog.dart` alongside triage widgets:
+The host must also wrap each `A2uiSurface` in a `Semantics(container: true, explicitChildNodes: true)` boundary (`genui-state-binding.md`).
+
+## Testing custom components
+
+`flutter test` widget tests:
 
 ```dart
-// Standard A2UI extended widgets
-_buildSliderCatalogItem(),
-_buildAudioPlayerCatalogItem(),
-_buildVideoCatalogItem(),
-
-// custom triage widgets
-_buildPhotoUploadCatalogItem(),
-_buildDropdownCatalogItem(),
-_buildFreeTextCatalogItem(),
-_buildRatingCatalogItem(),
-_buildConfirmationCatalogItem(),
+testWidgets('the custom Rating is its own semantics node with label and value',
+    (tester) async {
+  final handle = tester.ensureSemantics();
+  await tester.pumpWidget(const ProbeApp()); // renders a surface using Rating
+  await tester.pumpAndSettle();
+  final node = tester.getSemantics(find.bySemanticsLabel('Interest'));
+  expect(node.label, 'Interest');
+  expect(node.value, '3 of 5');
+  handle.dispose();
+});
 ```
 
+Also test: tapping a star writes the bound path (check the next action's `context` or `surface.dataModel.get`); a literal `value` renders read-only (`onPressed` null); a missing required property is rejected by `processMessages`.
+
+Device E2E on Android/iOS uses Maestro only. This flow passed on an iOS simulator (only `appId` changed here):
+
+```yaml
+appId: com.example.app
 ---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:      # debug builds need time for the first frame
+    visible: "Subscribe"
+    timeout: 30000
+- tapOn:
+    text: "Email"         # the field's exact label
+- inputText: "ada@example.com"
+- tapOn: "Rate 5"         # the IconButton tooltip
+- assertVisible: "5 of 5"
+- tapOn: "Subscribe"
+- extendedWaitUntil:
+    visible: ".*Subscribed: ada@example.com \\(5 stars\\).*"
+    timeout: 10000
+```
 
-## Accessibility Requirements
-
-All triage widgets must meet WCAG 2.2 AA:
-
-- Touch targets >= 48dp
-- All form fields have associated labels (Semantics)
-- Dropdown uses `DropdownButtonFormField` (not `DropdownButton`) for form semantics
-- Photo upload has screen reader descriptions for all states
-- Rating widget uses `Semantics(label: 'Rate $i of ${widget.maxStars}')`
-- Confirmation buttons use semantic labels for their purpose
+On iOS, `hideKeyboard` failed with a Flutter text field; tap a target above the keyboard instead.

@@ -1,215 +1,171 @@
 ---
 name: flutter-genui
-description: "Flutter GenUI SDK — conversational AI-driven UI using A2UI protocol. Use when building GenUI renderers, widget catalogs, Conversation orchestration, DataModel binding, SurfaceController setup, or SSE-streamed agent-to-UI flows in Flutter. Covers catalog design, A2UI transport, state binding, custom widgets, and triage integration."
+description: "Flutter generative UI with the A2UI protocol v0.9 — a2ui_flutter 0.4.0 + a2ui_core 0.8.0 renderer, optional a2ui_agent 0.4.0 for apps that prompt a model themselves. Use when rendering agent-driven surfaces in Flutter, building a v0.9 catalog or custom ComponentImplementation, wiring MessageProcessor, A2uiSurface, data model bindings, user actions, SSE/JSONL transport to an agent, or migrating off the discontinued genui package."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__dart-mcp-server__dart
 metadata:
-  triggers: GenUI, gen_ui, genui, Flutter GenUI, conversational UI, A2UI Flutter, widget catalog, Catalog, CatalogItem, Conversation, DataModel, SurfaceController, A2uiTransportAdapter, triage UI, agent-driven UI Flutter, gen ui renderer
-  related-skills: flutter-mobile, google-adk, a2ui-angular, flutter-animation
+  triggers: A2UI Flutter, a2ui_flutter, a2ui_core, a2ui_agent, MessageProcessor, A2uiSurface, CatalogImplementation, ComponentImplementation, BasicComponents, basicCatalog, A2uiGenerator, ResponseStream, GenUI, genui, Flutter GenUI, generative UI Flutter, agent-driven UI Flutter, conversational UI Flutter, createSurface, updateComponents, updateDataModel
+  related-skills: flutter-mobile, a2ui-angular, google-adk, streaming-protocols, accessibility-audit
   domain: frontend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-30"
+last-reviewed: "2026-11-23"
 ---
 
-# Flutter GenUI SDK — Conversational AI-Driven UI
+# Flutter A2UI — Agent-Driven Native UI
 
-> **Tech Stack**: Flutter 3.41.x / Dart 3.10.9, `genui` package (experimental/alpha), A2UI Protocol v0.8+, Riverpod 3.x
+> **Tech Stack**: Flutter 3.41.x / Dart 3.10.x, `a2ui_flutter` **0.4.0** + `a2ui_core` **0.8.0**, A2UI protocol **v0.9** (wire value `"version": "v0.9"`), optional `a2ui_agent` **0.4.0**, Riverpod 3.x (optional)
 
-## What is GenUI?
+## What this skill covers
 
-GenUI is Flutter's official SDK for **generative UI** — it turns text-based LLM conversations into interactive native Flutter widgets at runtime. Instead of receiving walls of text from an AI agent, users interact with dynamically rendered graphical interfaces composed from a developer-defined widget catalog.
+An agent describes a UI as A2UI JSON messages; the Flutter app validates them against catalogs it registered and renders its own native widgets. The agent never sends code. `a2ui_core` processes messages and holds each surface's state, `a2ui_flutter` renders surfaces as Flutter widgets, and `a2ui_agent` is for an app (or Dart server) that calls a model itself and must teach it A2UI and parse its reply.
 
-**Key principle:** The AI agent generates structured JSON (A2UI protocol); the Flutter client validates against an approved catalog and renders native widgets. Agents never generate Dart code — they describe intent via JSON, the client renders it safely.
+**Version policy** (verified 2026-11-23 against the published package sources):
 
-**Status:** Highly experimental / alpha. API will change. Pin to a specific commit or version.
+- `genui` is discontinued on pub.dev; the `a2ui_flutter` README states that `a2ui_flutter`, `a2ui_core` and `a2ui_agent` replace it. Do not add `genui` or its A2A connector package to new code.
+- **New work targets v0.9**, matching the `a2ui-angular` skill. Import the v0.9 catalog from `package:a2ui_flutter/v0_9/basic_catalog.dart` and set `defaultVersion: A2uiProtocolVersion.v0_9`.
+- **v1.0 exists**: `package:a2ui_flutter/basic_catalog.dart` (no `v0_9/`) is the v1.0 catalog, and `VersionAdapterRegistry.standard()` holds the v0.9 and v1.0 adapters. Do not mix versions between agent, renderer and catalog.
+- Older protocol messages have no adapter: `processMessages` throws on them. See [Migrating from genui](#migrating-from-genui).
 
 ## Iron Law
 
-**GENUI PAYLOADS ARE UNTRUSTED. VALIDATE COMPONENT TYPES AGAINST THE CATALOG BEFORE RENDERING. NEVER EXECUTE AGENT-PROVIDED CODE. NEVER RENDER UNREGISTERED WIDGET TYPES.**
+**AGENT PAYLOADS ARE UNTRUSTED. RENDER ONLY CATALOGS THE APP REGISTERED, VALIDATE EVERY PAYLOAD BEFORE IT CHANGES A SURFACE, AND NEVER EXECUTE ANYTHING AN AGENT SENDS. A REJECTED PAYLOAD IS SHOWN AND LOGGED, NEVER SWALLOWED.**
 
-## Core Concepts (6 Pillars)
+## Core concepts
 
-| Concept | Class/Type | Role |
-|---------|-----------|------|
-| **Catalog** | `Catalog` (list of `CatalogItem`) | Defines which widgets the AI is allowed to use — schemas + builders |
-| **Conversation** | `Conversation` | Manages history, sends user input, invokes the model, drives the UI generation loop |
-| **A2UI Transport** | `A2uiTransportAdapter`, `A2uiMessage` | Translates streamed model output into UI commands (GenUI uses A2UI under the hood) |
-| **DataModel** | `DataModel` | Central observable state store — data binding and update flow |
-| **SurfaceController** | `SurfaceController` | Processes messages, manages surfaces, keeps generated UI in sync |
-| **CatalogItem** | `CatalogItem` | Individual widget registration — JSON schema + Dart builder function |
+| Concept | Type (package) | Role |
+|---|---|---|
+| Processor | `MessageProcessor<ComponentImplementation>` (`a2ui_core`) | Applies agent messages, owns the surfaces; `processMessages` throws `A2uiError` on a rejected message |
+| Catalog | `CatalogImplementation` / `basicCatalog()` (`a2ui_flutter`) | The allowlist: component names + schemas + builders, and the functions a surface may call |
+| Component | `ComponentImplementation(name, schema, builder)` | One component: a JSON schema and a Flutter builder |
+| Surface | `SurfaceModel` (`a2ui_core`), rendered by `A2uiSurface` | One agent-built UI with its own component tree and data model |
+| Data model | `surface.dataModel` (`DataModel`) | Per-surface JSON state; components bind to it with `{"path": "/x"}` |
+| Events | `processor.model.onSurfaceCreated` / `onSurfaceDeleted` / `onAction` / `onError` | `.subscribe(...)` returns a `Subscription` |
+| Model side | `A2uiGenerator`, `A2uiRequestProcessor`, `ResponseStream` (`a2ui_agent`) | Prompt snippet for the catalog, and a parser that turns streamed model text into `TextPart` / `A2uiPart` |
 
-## Package Structure
+## Packages
 
-| Package | Purpose |
-|---------|---------|
-| `genui` | Core framework — Catalog, Conversation, SurfaceController, rendering |
-| `genui_a2a` | A2UI protocol connector for custom agent backends (ADK, REST, etc.) |
-| `genai_primitives` | Technology-agnostic AI application types |
-| `json_schema_builder` | Dart JSON Schema validation for widget definitions |
+```yaml
+# pubspec.yaml — exact pins
+dependencies:
+  a2ui_core: 0.8.0
+  a2ui_flutter: 0.4.0
+  # Only for a custom component schema (Schema.object):
+  json_schema_builder: 0.1.7
+  # Only if the app prompts a model itself:
+  a2ui_agent: 0.4.0
+```
 
-## Prerequisites
+`a2ui_flutter` 0.4.0 requires Flutter ≥ 3.38 and Dart ≥ 3.10. Its Video and AudioPlayer components play through `video_player`, which it depends on.
 
-- Flutter >= 3.35.7 (3.41.x recommended)
-- Add to `pubspec.yaml` in the package that uses GenUI (e.g., `packages/shared_ui/`):
-  ```yaml
-  dependencies:
-    genui:
-      git:
-        url: https://github.com/flutter/genui.git
-        path: packages/genui
-    genui_a2a:
-      git:
-        url: https://github.com/flutter/genui.git
-        path: packages/genui_a2a
-  ```
+## Before writing any A2UI code
 
-## Before Writing Any GenUI Code
-
-1. **Read `reference/genui-catalog-design.md`** — how to define Catalog, CatalogItem, JSON schemas, builder functions
-2. **Read `reference/genui-conversation-orchestration.md`** — Conversation lifecycle, model adapters, streaming loop
-3. **Read `reference/genui-state-binding.md`** — DataModel, SurfaceController, reactive state, surface rendering
-4. **Read `reference/genui-a2ui-transport.md`** — A2uiTransportAdapter, A2uiMessage, SSE streaming, JSONL parsing
-5. **Read `reference/genui-functions.md`** — A2UIFunctionEvaluator, declarative functions (formatCurrency, required, email, and/or/not), integration pattern
-6. **Read `reference/genui-custom-widgets.md`** — custom widget integration, Slider/AudioPlayer/Video, custom triage widgets
-7. **Read `reference/genui-security.md`** — catalog allowlist enforcement, input sanitization, payload limits
-8. **Verify Flutter/Dart APIs** — Use `dart-mcp-server` or Context7 MCP before using any API
+1. `reference/genui-state-binding.md` — processor, surfaces, data model, rendering, the semantics boundary
+2. `reference/genui-catalog-design.md` — basic catalog, your own v0.9 catalog, schema design
+3. `reference/genui-custom-widgets.md` — `ComponentImplementation`, `ComponentProps`, write-back, actions, accessibility, tests
+4. `reference/genui-a2ui-transport.md` — v0.9 message shapes, SSE/JSONL into `processMessages`, actions back to the agent
+5. `reference/genui-conversation-orchestration.md` — agent-server and in-app-model topologies, Riverpod, fallback
+6. `reference/genui-functions.md` — the 14 v0.9 basic functions, checks, `openUrl`
+7. `reference/genui-security.md` — threat model, `ValidationConfig`, locked-down catalogs, limits
+8. Verify any API not shown in these files in the package source (`dart-mcp-server` `read_package_uris` / `rip_grep_packages`) before using it
 
 ## Process
 
-1. **Define the Catalog** — Register all allowed widget types as `CatalogItem` objects with JSON schemas and builder functions
-2. **Configure Transport** — Set up `A2uiTransportAdapter` to connect to your AI agent backend (ADK SSE endpoint)
-3. **Create Conversation** — Initialize `Conversation` with the catalog, transport adapter, and model configuration
-4. **Build Surface Rendering** — Use `SurfaceController` to process incoming A2UI messages and render surfaces
-5. **Implement DataModel Binding** — Bind widget state to `DataModel` for reactive updates
-6. **Handle User Input** — Wire user interactions back to the Conversation as structured events
-7. **Add Custom Widgets** — Register app-specific widgets (photo_upload, dropdown, rating, etc.)
-8. **Write Tests** — Unit tests for catalog validation, surface building, input handling
-9. **Verify Build** — Run `melos run test` and `flutter analyze`
+1. **Pick the topology** — an agent server streams A2UI to the app, or the app calls a model and parses its reply with `a2ui_agent` (orchestration reference).
+2. **Register catalogs** — `basicCatalog()` for v0.9, or your own `CatalogImplementation` with the basic components plus custom ones. Catalogs are the allowlist.
+3. **Create one `MessageProcessor` per conversation** with `defaultVersion: A2uiProtocolVersion.v0_9` and a `validationConfig` suited to how payloads arrive (security reference). Dispose it with the conversation.
+4. **Feed it** — decode each transport payload and call `processor.processMessages`; catch `A2uiError`, log it and show the user an error state.
+5. **Render** — subscribe to `onSurfaceCreated` / `onSurfaceDeleted`; render each surface with `A2uiSurface`, inside a `Semantics(container: true, explicitChildNodes: true)` boundary.
+6. **Handle actions** — subscribe to `onAction` (or pass `onAction:`), check the event name against the app's own allowlist, send it to the agent with the renderer capabilities and data model.
+7. **Test** — `flutter test` widget tests for render, input → data model → action context, rejection of unknown catalogs and types, semantics; Maestro for device E2E.
 
-## Reference Files
+## Example: conversational intake flow
 
-Detailed patterns are in `reference/`:
+An assistant asks follow-up questions and renders native inputs for the answers:
 
-### Core SDK
-- `genui-catalog-design.md` — Catalog, CatalogItem, JSON schema definition, builder patterns, widget registration
-- `genui-conversation-orchestration.md` — Conversation lifecycle, model adapter setup, message history, streaming loop
-- `genui-state-binding.md` — DataModel observable state, SurfaceController, surface management, reactive rendering
-- `genui-a2ui-transport.md` — A2uiTransportAdapter, A2uiMessage types, SSE/JSONL streaming, backend integration
-- `genui-functions.md` — `A2UIFunctionEvaluator`: validation (required, regex, email), formatting (formatCurrency, formatDate, pluralize), logical (and, or, not), navigation (openUrl) — full Dart implementation
+1. The user describes the request (text or voice); the app sends it to the agent with `a2uiClientCapabilities`.
+2. The agent streams v0.9 messages (`createSurface`, `updateDataModel`, `updateComponents`).
+3. The processor validates and applies them; `A2uiSurface` renders native widgets.
+4. A Button's action reaches `onAction` with its `context` resolved from the data model; the app sends it back to the agent.
+5. The agent replies with `updateDataModel` / `updateComponents` / `deleteSurface` until the intake is complete.
 
-### Integration
-- `genui-custom-widgets.md` — Custom widget registration, extended A2UI catalog (Slider, AudioPlayer, Video), custom triage widgets (photo_upload, dropdown, free_text, rating, confirmation)
-- `genui-security.md` — Catalog allowlist enforcement, untrusted payload handling, input sanitization, size limits
+**Fallback:** if the stream fails or a payload is rejected, show the error and offer a plain form so the user can still submit. Record that the request was not classified by the agent.
 
-### A2UI Protocol (shared with Angular skill)
-- See `../a2ui-angular/reference/a2ui-protocol.md` for the full A2UI protocol spec (5 message types, JSONL format)
-- See `../a2ui-angular/reference/a2ui-protocol-advanced.md` for streaming, action model, Gemini quirks
-
-## Example Integration: Conversational Triage Flow
-
-GenUI can power a **triage flow** — the conversational UI that replaces static request forms.
-
-**Flow:**
-1. User describes issue (voice/text) -> `POST /triage/start` returns `{ job_id }`
-2. Flutter opens `GET /triage/{job_id}/stream` SSE
-3. Agent streams `{ response, category, widgets[] }` via A2UI protocol
-4. `GenUIRenderer` renders widgets as native Flutter widgets
-5. User interacts -> next question streams -> repeat until triage complete
-
-**Fallback:** If GenUI/ADK unavailable -> standard form fields shown; record `needs_classification = true`
-
-**File location in monorepo:**
 ```
-packages/shared_ui/
-  lib/
-    widgets/
-      gen_ui/
-        gen_ui_renderer.dart      # SurfaceController + rendering logic
-        widget_catalog.dart       # Catalog with all registered CatalogItems
-        widget_types.dart         # Custom widget builders (PhotoUpload, etc.)
-        triage_conversation.dart  # Conversation setup for triage flow
+lib/features/<feature>/
+  a2ui/
+    app_catalog.dart          # CatalogImplementation: basic + custom components
+    custom_components.dart    # ComponentImplementation definitions
+  data/
+    agent_client.dart         # transport: request body, SSE decode, processMessages
+  presentation/
+    agent_surfaces.dart       # surface list, Semantics boundary, error state
+    intake_screen.dart
 ```
 
-## Anti-Patterns
+## Anti-patterns
 
-```dart
-// FORBIDDEN: Rendering arbitrary widget types from agent
-Widget buildFromAgent(Map<String, dynamic> spec) {
-  // Agent controls what gets rendered — XSS/injection vector
-  return widgetRegistry[spec['type']]!(spec);
-}
+| Don't | Do |
+|---|---|
+| Build widgets from agent JSON with your own `switch` on a type string | Register components in a catalog; `A2uiSurface` renders only what the catalog declares |
+| Call `processMessages` without `try`/`on A2uiError` | Catch, log `error.code` + `error.message`, show an error state |
+| Pass `openUrl:` to `basicCatalog()` for an agent you do not control | Omit it (calls fail), allowlist hosts in the callback, or drop `openUrl` from the catalog |
+| Keep the default processor config for whole-surface payloads from an untrusted agent | Pass `validationConfig` so unknown component types and functions are rejected |
+| Render `A2uiSurface` straight into a `ListView` | Wrap it in `Semantics(container: true, explicitChildNodes: true)` so each control keeps its own node |
+| Write a custom component without a `Semantics(container: true, ...)` | Give it its own semantics node with a label and value |
+| Mix v0.9 messages, a v1.0 catalog and a v1.0 agent | One version end to end: v0.9 catalog, `defaultVersion` v0.9, agent writing v0.9 |
+| Put `^` ranges or a git dependency for the A2UI packages | Pin `a2ui_flutter: 0.4.0`, `a2ui_core: 0.8.0` |
 
-// REQUIRED: Validate against Catalog before rendering
-Widget buildFromAgent(Map<String, dynamic> spec) {
-  final item = catalog.findByType(spec['type']);
-  if (item == null) {
-    logger.warning('Unknown GenUI type rejected: ${spec['type']}');
-    return const SizedBox.shrink(); // Skip unknown types
-  }
-  return item.builder(spec);
-}
-```
+## Error handling
 
-```dart
-// FORBIDDEN: Executing agent-provided code
-eval(spec['script']); // Dart doesn't have eval, but don't try alternatives
+| Failure | Behaviour |
+|---|---|
+| `processMessages` throws `A2uiError` (unknown catalog, schema failure, version without adapter) | Log `code` and `message`, show an error state on that surface or the conversation; keep earlier surfaces |
+| Transport event malformed or over the size limit | Stop the stream, show an error with a retry, never render a partial guess |
+| Connection drops mid-stream | Keep what was applied, show reconnect; resend capabilities on the new request |
+| `WritableBinding.set` throws `A2uiDataError` | Log it; the control keeps the previous value |
+| Action send fails | Show a snackbar or inline error; let the user retry |
+| Packages fail to initialise or the agent is unavailable | Fall back to a static form |
 
-// FORBIDDEN: Using dynamic widget creation from agent strings
-Function.apply(spec['handler'], []); // Never
-
-// REQUIRED: Declarative catalog-based rendering only
-```
-
-```dart
-// FORBIDDEN: Accepting unbounded payloads
-final widgets = parseWidgets(response); // No size check
-
-// REQUIRED: Enforce limits
-final widgets = parseWidgets(response);
-if (widgets.length > kMaxWidgets) {
-  widgets.removeRange(kMaxWidgets, widgets.length);
-  logger.warning('GenUI: payload truncated — exceeded $kMaxWidgets widgets');
-}
-```
-
-## Error Handling
-
-- Agent returns unknown widget type -> skip silently (log warning), render remaining widgets
-- Agent payload is malformed JSON -> show error state to user, log full error
-- Agent connection drops mid-stream -> render what was received, show reconnect option
-- User action dispatch fails -> show error snackbar, do NOT silently swallow
-- GenUI SDK unavailable or fails to initialize -> fall back to static form fields
-
-## Common Commands
+## Common commands
 
 ```bash
-# Add GenUI dependency (from packages/shared_ui/)
-# Note: GenUI is git-sourced, add to pubspec.yaml manually
-
-# Bootstrap after adding dependency
-melos bootstrap
-
-# Run tests
-melos run test
-
-# Analyze
-flutter analyze packages/shared_ui/
-
-# Run specific GenUI tests
-flutter test packages/shared_ui/test/widgets/gen_ui/
+flutter pub add a2ui_flutter:0.4.0 a2ui_core:0.8.0
+flutter analyze
+flutter test test/features/<feature>/
+maestro test .maestro/<flow>.yaml   # device E2E only (Android emulator / iOS simulator)
 ```
 
-## Documentation Sources
+Flutter Android/iOS UI and E2E automation uses Maestro only (`.claude/rules/testing-tool-selection.md`); never a browser.
+
+## Migrating from genui
+
+The only place older-protocol names belong. Every row was checked against `a2ui_flutter` 0.4.0 / `a2ui_core` 0.8.0 source.
+
+| genui / A2UI v0.8 | a2ui_flutter 0.4.0 / a2ui_core 0.8.0 on v0.9 |
+|---|---|
+| `genui`, `genui_a2a` (git or ^0.10) | `a2ui_flutter: 0.4.0` + `a2ui_core: 0.8.0` (+ `a2ui_agent: 0.4.0` if the app prompts a model) |
+| `SurfaceController` | `MessageProcessor<ComponentImplementation>` + `processor.model` events |
+| `Catalog` / `CatalogItem` | `CatalogImplementation` / `ComponentImplementation(name:, schema:, builder:)` |
+| `A2uiTransportAdapter` (`genui`), `genui_a2a` connector | The app's own transport calls `processor.processMessages(json)` |
+| `Conversation` | The app's own controller (or a Riverpod notifier) around the processor; `A2uiGenerator` + `ResponseStream` when the app calls the model |
+| `beginRendering` | `createSurface` (`surfaceId`, `catalogId`, optional `sendDataModel`) |
+| `surfaceUpdate` | `updateComponents` (`surfaceId`, flat `components` list, root id `root`) |
+| `dataModelUpdate` | `updateDataModel` (`surfaceId`, optional `path`, `value`) |
+| `explicitList` children | `children: ["a", "b"]` id list |
+| Hand-written `A2UIFunctionEvaluator` | The catalog's v0.9 functions: `BasicCatalog.v0_9().functions` |
+| `userAction` / `UserAction` | `A2uiRendererAction` from `onAction`, sent as `ActionMessage` in `RendererToAgentMessagePayload` |
+| Messages without `version` | Every message carries `"version": "v0.9"` |
+
+## Documentation sources
 
 | Source | URL / Tool | Purpose |
-|--------|-----------|---------|
-| Flutter GenUI Docs | `https://docs.flutter.dev/ai/genui` | Official overview, concepts |
-| GenUI Components | `https://docs.flutter.dev/ai/genui/components` | Catalog, CatalogItem, Conversation, DataModel, SurfaceController |
-| GenUI Get Started | `https://docs.flutter.dev/ai/genui/get-started` | Setup, initialization, first app |
-| GenUI Input Events | `https://docs.flutter.dev/ai/genui/input-events` | User interaction handling |
-| GenUI GitHub | `https://github.com/flutter/genui` | Source code, examples, packages |
-| A2UI Protocol | `https://a2ui.org/` | Underlying protocol spec |
-| A2UI GitHub | `https://github.com/google/A2UI` | Reference implementations |
-| Dart MCP | `dart-mcp-server` MCP | Dart/Flutter API verification |
-| Context7 | `Context7` MCP | Library docs fallback |
+|---|---|---|
+| `a2ui_flutter` | `https://pub.dev/packages/a2ui_flutter` | Renderer API, v0.9 section, security notes |
+| `a2ui_core` | `https://pub.dev/packages/a2ui_core` | Processor, catalogs, functions, validation |
+| `a2ui_agent` | `https://pub.dev/packages/a2ui_agent` | Prompt snippet, response parsing, streaming |
+| Source | `https://github.com/a2ui-project/a2ui` | Packages, examples, conformance tests |
+| A2UI protocol | `https://a2ui.org/` | Specification |
+| Shared protocol notes | `../a2ui-angular/reference/a2ui-protocol.md` | v0.9 message reference used by the Angular skill |
+| Dart MCP | `dart-mcp-server` | Read the resolved package source |
+| Context7 | `Context7` MCP | Fallback docs |

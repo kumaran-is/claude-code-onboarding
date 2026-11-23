@@ -1,231 +1,134 @@
-# GenUI Conversation Orchestration
+# A2UI Conversation Orchestration (Flutter, v0.9)
+
+Verified against `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0 and `a2ui_agent` 0.4.0. Dart blocks compile in a check app; the in-app model example is covered by a `flutter test` that streams a reply in 7-character chunks.
 
 ## Overview
 
-The `Conversation` class is the orchestration engine of GenUI. It manages the conversation history, sends user input to the AI model, receives structured responses, and drives the UI generation loop. It connects the `Catalog` (what widgets are available) to the `Transport` (how messages flow) to the `SurfaceController` (how UI is rendered).
+The packages provide no conversation object. The app owns the loop, and picks one of two topologies:
 
-## Conversation Lifecycle
+| Topology | Who calls the model | Packages in the app | Use when |
+|---|---|---|---|
+| **Agent server** | A backend agent (ADK, LangGraph, Dart) | `a2ui_core` + `a2ui_flutter` | Default. Keys, tools, retrieval and policy stay on the server |
+| **In-app model** | The app (for example through Firebase AI Logic) | + `a2ui_agent` | No agent server; the app prompts the model and parses A2UI from its reply |
+
+Never ship a model provider's secret API key in the app binary. The in-app topology needs a client SDK designed for that (with App Check or an equivalent), not a raw key.
+
+## Conversation lifecycle (both topologies)
 
 ```
-1. Initialize Conversation with Catalog + Transport + Model config
-    |
-2. User sends message (text or voice transcription)
-    |
-3. Conversation adds user message to history
-    |
-4. Conversation invokes the model via Transport adapter
-    |
-5. Model streams A2UI messages (surfaceUpdate, dataModelUpdate, beginRendering)
-    |
-6. SurfaceController processes each message, updates surface state
-    |
-7. Flutter widgets rebuild reactively from surface state
-    |
-8. User interacts with rendered widget (click, select, type)
-    |
-9. Interaction sent back as userAction to Conversation
-    |
-10. Conversation sends userAction to model -> back to step 5
+user text ──► request (+ a2uiClientCapabilities) ──► agent / model
+                                                        │ streams v0.9 messages (and plain text)
+     ◄── surfaces render (A2uiSurface) ◄── processor.processMessages ◄──┘
+user input ──► data model (bindings)
+user tap   ──► onAction ──► app allowlist ──► next request (action + capabilities + data model)
 ```
 
-## Setting Up a Conversation
+State the app keeps per conversation:
+
+| State | Where |
+|---|---|
+| Processor and surfaces | One `MessageProcessor`, disposed with the conversation |
+| Chat transcript (user text, assistant text, which surface belongs to which turn) | App model (list of messages with an optional `surfaceId`) |
+| Loading / error | App state; one in-flight request at a time per conversation |
+| Conversation id | Issued by the server; sent with every request |
+
+## Agent-server topology
+
+The app sends the user's text (or an action) and applies the streamed reply:
+
+1. On send: set loading, POST the text with `a2uiClientCapabilities` (see `actionRequestBody` in `genui-a2ui-transport.md` for the metadata keys).
+2. Read the response with `applyStream` (SSE) or `applyJsonl`; each payload goes to `processor.processMessages`.
+3. On `onAction`: check the name against the app's allowlist, then POST the action body; apply the reply the same way.
+4. On `A2uiError` / `FormatException` / network error: clear loading, show the error with retry, keep the surfaces already shown.
+
+## In-app model topology (`a2ui_agent`)
+
+`a2ui_agent` teaches the model the catalog (`promptSnippet`) and parses its streamed reply. With `RendererState.of(renderer)` the parsed messages are applied straight to the renderer's processor, so each message is checked and applied once:
 
 ```dart
-import 'package:genui/genui.dart';
-import 'package:genui_a2a/genui_a2a.dart';
+import 'package:a2ui_agent/a2ui_agent.dart';
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:a2ui_flutter/v0_9/basic_catalog.dart';
 
-class TriageConversationManager {
-  late final Conversation _conversation;
-  late final SurfaceController _surfaceController;
+/// For an app that calls a model itself (no agent server): teaches the model
+/// A2UI and the catalog, and parses its streamed reply straight into the
+/// renderer's processor.
+class InAppModelTurns {
+  InAppModelTurns(this.renderer, CatalogImplementation catalog)
+    : _agent =
+          A2uiGenerator(
+            catalogs: [CatalogConfig(catalog)],
+            inferenceFormatFactory: const DirectJsonFormatFactory(
+              progressiveKeys: {'text', 'label'},
+            ),
+          ).createProcessor(
+            A2uiRendererCapabilities.forCatalogIds([
+              catalog.id,
+            ], version: A2uiProtocolVersion.v0_9),
+          );
 
-  Future<void> initialize({
-    required Catalog catalog,
-    required String triageEndpoint,
-  }) async {
-    // 1. Create the transport adapter (connects to your ADK backend)
-    final transport = A2uiTransportAdapter(
-      endpoint: triageEndpoint,
-      // SSE streaming from the triage agent
-      streamMode: StreamMode.sse,
+  final MessageProcessor<ComponentImplementation> renderer;
+  final A2uiRequestProcessor _agent;
+
+  /// Append to the app's own system instructions.
+  String get promptSnippet => _agent.promptSnippet;
+
+  /// Feeds one streamed model reply. Surfaces appear in `renderer.model` as
+  /// they stream; the returned string is the reply's plain text.
+  Future<String> run(Stream<String> chunks) async {
+    final ResponseStream stream = _agent.openStream(
+      state: RendererState.of(renderer),
     );
+    final reply = StringBuffer();
+    void show(List<ResponsePart> parts) {
+      for (final part in parts) {
+        if (part case TextPart(:final String text)) reply.write(text);
+      }
+    }
 
-    // 2. Create the surface controller (manages rendered surfaces)
-    _surfaceController = SurfaceController();
-
-    // 3. Create the conversation
-    _conversation = Conversation(
-      catalog: catalog,
-      transport: transport,
-      surfaceController: _surfaceController,
-      systemPrompt: _triageSystemPrompt,
-    );
-  }
-
-  /// Send a user message and get AI response
-  Future<void> sendMessage(String text) async {
-    await _conversation.sendMessage(text);
-    // SurfaceController is automatically updated with new surfaces
-  }
-
-  /// Send a user action (widget interaction) back to the model
-  Future<void> sendAction(UserAction action) async {
-    await _conversation.sendAction(action);
-  }
-
-  /// Get the current surface state for rendering
-  SurfaceController get surfaceController => _surfaceController;
-
-  /// Dispose when done
-  void dispose() {
-    _conversation.dispose();
+    await for (final String chunk in chunks) {
+      show(stream.feed(chunk)); // throws A2uiError on a rejected block
+    }
+    show(stream.close());
+    return reply.toString();
   }
 }
 ```
 
-## Example: Triage Conversation
+Usage: `InAppModelTurns(processor, basicCatalog())`, where `processor` is the renderer's `MessageProcessor`.
 
-For a triage flow, the Conversation connects to the ADK triage agent via SSE:
+- **Formats.** `A2uiGenerator` defaults to the compact Express format (`ExpressFormatFactory`). `DirectJsonFormatFactory` makes the model write v0.9 JSON inside an `<a2ui-json>` block; `progressiveKeys` heals those string properties while they stream, so text appears as the model writes it. Tested: a reply `Here you go. <a2ui-json>[…]</a2ui-json> Done.` fed in 7-character chunks created the surface, and the returned text contained the prose but no JSON.
+- **Parts.** `feed` and `close` return `ResponsePart`s: `TextPart(text)` for prose and `A2uiPart(a2ui)` for messages. With a renderer state the messages are already applied; without one, apply each with `renderer.processMessages(AgentToRendererMessagePayload.of(message))`.
+- **Errors.** If `feed` or `close` throws, the stream has ended; the thrown `A2uiError`'s `partialResults` holds parts made ready before the failure. To keep reading after a rejected block, use `openContinuingStream`, which returns an `ErrorPart` in its place. `StreamedAnswer(processor, renderer:)` keeps text, surfaces and errors of one answer in order.
+- **Actions back to the model.** Turn an `A2uiRendererAction` into the next user turn (for example its `name` and `context` as JSON) and send it with the transcript.
+- **v0.9 limits.** Express on v0.9 cannot write a function call as a statement of its own (there is no v0.9 message for it).
 
-```dart
-// triage_conversation.dart
+## Riverpod
 
-import 'package:genui/genui.dart';
-import 'widget_catalog.dart';
+Riverpod is optional. If the app uses it:
 
-const _triageSystemPrompt = '''
-You are a maintenance triage assistant.
-Your job is to collect information about the user's maintenance issue
-using the available widget catalog.
+- Own the processor in a `Provider` with `ref.onDispose(processor.dispose)` and expose the surface list from a `Notifier` (full code in `genui-state-binding.md`).
+- Keep the conversation (transcript, loading, error) in an `AsyncNotifier` or `Notifier` that reads the processor provider and calls the transport. Expose loading and error explicitly; never return an empty transcript on failure.
+- Scope the providers to the conversation screen (or use `autoDispose`) so leaving the screen disposes the processor and cancels the stream.
 
-Rules:
-- Ask one question at a time using the most appropriate widget type
-- Start with issue description, then narrow down with follow-up widgets
-- Use photo_upload when visual evidence would help
-- Use dropdown for multiple-choice questions (2-6 options)
-- Use free_text for open-ended details
-- Use rating for severity/urgency assessment
-- Use confirmation for yes/no questions
-- After collecting enough information, provide a summary and category
-''';
+## Streaming vs whole replies
 
-/// Creates and configures the triage conversation for a tenant.
-///
-/// [jobId] — The triage job ID from `POST /triage/start`
-/// [baseUrl] — API base URL for the triage agent
-Future<TriageConversationManager> createTriageConversation({
-  required String jobId,
-  required String baseUrl,
-}) async {
-  final manager = TriageConversationManager();
-  await manager.initialize(
-    catalog: buildTriageCatalog(),
-    triageEndpoint: '$baseUrl/triage/$jobId/stream',
-  );
-  return manager;
-}
-```
+| Mode | Behaviour | Validation config |
+|---|---|---|
+| Streamed (SSE events, JSONL lines, `ResponseStream`) | Surfaces build progressively | `streamingValidation` when a parent can arrive before its child (`genui-security.md`) |
+| Whole reply (one JSON array per turn) | Surface appears at once | Strict |
 
-## Conversation with Riverpod
+## Error handling in the loop
 
-With Riverpod 3.x for state management:
+| Failure | App behaviour |
+|---|---|
+| Request fails (network, 5xx, timeout) | Clear loading, show retry; the transcript keeps the user's message |
+| Payload or block rejected (`A2uiError`) | Log `code` + `message`, show "could not display", keep earlier surfaces; offer the fallback form |
+| Model reply has text but no surface | Show the text; that is a valid turn |
+| Action not in the app's allowlist | Log it, do not act locally; forward to the agent only if the protocol requires |
+| User leaves mid-stream | Cancel the request, dispose the processor |
 
-```dart
-// triage_conversation_provider.dart
+## Fallback: static form
 
-import 'package:riverpod/riverpod.dart';
-import 'package:shared_ui/widgets/gen_ui/triage_conversation.dart';
-
-/// Provider for the triage conversation manager.
-/// Scoped to the triage screen lifecycle.
-final triageConversationProvider = AsyncNotifierProvider.autoDispose<
-    TriageConversationNotifier, TriageConversationManager>(
-  TriageConversationNotifier.new,
-);
-
-class TriageConversationNotifier
-    extends AutoDisposeAsyncNotifier<TriageConversationManager> {
-  @override
-  Future<TriageConversationManager> build() async {
-    final jobId = ref.watch(triageJobIdProvider);
-    final apiConfig = ref.watch(apiConfigProvider);
-
-    final manager = await createTriageConversation(
-      jobId: jobId,
-      baseUrl: apiConfig.baseUrl,
-    );
-
-    // Auto-dispose when provider is disposed
-    ref.onDispose(() => manager.dispose());
-
-    return manager;
-  }
-}
-```
-
-## Message History
-
-The `Conversation` maintains a history of all messages exchanged. This history is:
-- Sent to the model with each new request (for context)
-- Available for display in a chat-style UI
-- Automatically managed (no manual tracking needed)
-
-```dart
-// Access conversation history
-final history = conversation.messages;
-// Each message has:
-//   - role: 'user' | 'assistant'
-//   - content: text content
-//   - surfaces: list of rendered surfaces (for assistant messages)
-//   - timestamp: when the message was sent/received
-```
-
-## Streaming vs Non-Streaming
-
-| Mode | Use Case | Transport Config |
-|------|----------|-----------------|
-| **SSE (streaming)** | Real-time triage — widgets appear as agent generates them | `StreamMode.sse` |
-| **REST (non-streaming)** | Simple Q&A — full response at once | `StreamMode.rest` |
-| **WebSocket** | Bidirectional real-time — both directions stream | `StreamMode.websocket` |
-
-SSE is recommended for the triage flow because:
-- Agent streams follow-up questions one at a time
-- UI updates progressively as each widget arrives
-- SSE auto-reconnects on connection drop
-- Simpler than WebSocket for one-directional streaming
-
-## Error Handling in Conversation
-
-```dart
-try {
-  await conversation.sendMessage(userInput);
-} on TransportException catch (e) {
-  // Connection error — show retry option
-  logger.error('Triage transport failed', error: e);
-  // Fall back to static form (GenUI fallback requirement)
-  _showStaticFallbackForm();
-} on CatalogValidationException catch (e) {
-  // Agent sent invalid widget type — log and continue
-  logger.warning('Invalid catalog type from agent', error: e);
-  // Remaining valid widgets will still render
-} on ConversationException catch (e) {
-  // General conversation error
-  logger.error('Conversation error', error: e);
-  _showErrorState(e.message);
-}
-```
-
-## Fallback: Static Form
-
-Every AI flow must have a fallback. If GenUI fails:
-
-```dart
-/// Checks if GenUI conversation is healthy, falls back to static form if not.
-Widget buildTriageWidget(TriageConversationManager? manager) {
-  if (manager == null || manager.hasError) {
-    // Fallback: static form fields
-    // Ticket will have needs_classification = true
-    return const StaticTriageForm();
-  }
-  return GenUITriageView(manager: manager);
-}
-```
+When the agent path is unavailable (stream fails, payload rejected, feature flag off), show an app-owned form with the essential fields so the user can still complete the task. Mark the submission as not agent-classified so downstream processing can route it. Never leave the user on a spinner or an empty surface.

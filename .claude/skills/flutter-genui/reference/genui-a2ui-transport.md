@@ -1,233 +1,175 @@
-# GenUI A2UI Transport
+# A2UI Transport (v0.9)
+
+Verified against `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0 and `a2ui_agent` 0.4.0. Dart blocks compile in a check app; the SSE, JSONL and action-body functions are covered by `flutter test`.
 
 ## Overview
 
-GenUI uses A2UI under the hood as its communication protocol. The `A2uiTransportAdapter` is the bridge between the Flutter client and the AI agent backend. It handles sending user messages, receiving streamed A2UI responses, and converting between the wire format and GenUI's internal types.
-
-## A2UI Message Types (Quick Reference)
-
-| Type | Direction | Purpose |
-|------|-----------|---------|
-| `surfaceUpdate` | agent -> client | Adds/updates UI components on a named surface |
-| `dataModelUpdate` | agent -> client | Populates reactive state |
-| `beginRendering` | agent -> client | Signals surface is ready to render |
-| `deleteSurface` | agent -> client | Removes a surface |
-| `userAction` | client -> agent | Reports user interaction |
-
-For full protocol details, see `../a2ui-angular/reference/a2ui-protocol.md`.
-
-## A2uiTransportAdapter
-
-The `A2uiTransportAdapter` from the `genui_a2a` package connects GenUI to any A2UI-compatible backend.
-
-```dart
-import 'package:genui_a2a/genui_a2a.dart';
-
-final transport = A2uiTransportAdapter(
-  endpoint: 'https://api.your-app.com/triage/$jobId/stream',
-  streamMode: StreamMode.sse,
-  headers: {
-    'Authorization': 'Bearer $authToken',
-    'Content-Type': 'application/json',
-  },
-);
-```
-
-## SSE Streaming
-
-The triage agent streams responses via Server-Sent Events (SSE). Each SSE `data:` line contains one A2UI JSONL message.
-
-### Wire Format
+The packages ship no network transport. The app owns it:
 
 ```
-data: {"surfaceUpdate":{"surfaceId":"main","components":[...]}}
-
-data: {"dataModelUpdate":{"surfaceId":"main","contents":[{"key":"category","valueString":"plumbing"}]}}
-
-data: {"beginRendering":{"surfaceId":"main","root":"root"}}
+agent ──SSE / JSONL / WebSocket──► app transport ──decode + size check──► processor.processMessages(json)
+agent ◄──HTTP POST (action + capabilities + data model)── app ◄── onAction / outboundListener
 ```
 
-### Extended SSE Payload
+- **Agent → app**: decode each event or line and pass it to `processor.processMessages`. It accepts a lone envelope, a list of envelopes, the `{"messages": [...]}` wrapper, or parsed `AgentToRendererMessage` objects.
+- **App → agent**: user actions and errors, wrapped in `RendererToAgentMessagePayload`, plus the renderer's capabilities and (for surfaces that asked) its data model.
+- **Model text → messages**: only when the app calls a model itself; `a2ui_agent`'s `ResponseStream` parses the model's reply (see `genui-conversation-orchestration.md`).
 
-Your app can extend the standard A2UI payload with triage-specific fields:
+## v0.9 message reference
+
+Every message carries `"version": "v0.9"` and exactly one of these keys:
+
+| Message | Body | Effect |
+|---|---|---|
+| `createSurface` | `surfaceId`, `catalogId`, optional `theme`, optional `sendDataModel` | New surface bound to one registered catalog |
+| `updateComponents` | `surfaceId`, `components: [{id, component, ...props}]` | Adds or replaces components by id; the tree starts at id `root` |
+| `updateDataModel` | `surfaceId`, optional `path`, optional `value` | Writes the data model (no `path`: whole model; no `value`: delete) |
+| `deleteSurface` | `surfaceId` | Removes the surface; an unknown id is a no-op |
 
 ```json
-{
-  "surfaceUpdate": {
-    "surfaceId": "triage",
-    "components": [
-      {
-        "id": "root",
-        "component": {
-          "type": "Column",
-          "children": {"explicitList": ["question-text", "widget-1"]}
-        }
-      },
-      {
-        "id": "question-text",
-        "component": {
-          "type": "Text",
-          "literalString": "Is the water dripping or flooding?",
-          "usageHint": "body"
-        }
-      },
-      {
-        "id": "widget-1",
-        "component": {
-          "type": "dropdown",
-          "label": {"literalString": "Severity"},
-          "options": ["dripping", "flooding", "other"],
-          "required": true
-        }
-      }
-    ]
-  }
-}
+[
+  {"version": "v0.9", "createSurface": {"surfaceId": "signup", "catalogId": "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json", "sendDataModel": true}},
+  {"version": "v0.9", "updateDataModel": {"surfaceId": "signup", "value": {"email": ""}}},
+  {"version": "v0.9", "updateComponents": {"surfaceId": "signup", "components": [
+    {"id": "root", "component": "Column", "children": ["title", "email", "submit"]},
+    {"id": "title", "component": "Text", "text": "Newsletter", "variant": "h3"},
+    {"id": "email", "component": "TextField", "label": "Email", "value": {"path": "/email"},
+     "checks": [{"condition": {"call": "email", "args": {"value": {"path": "/email"}}}, "message": "Enter a valid email address."}]},
+    {"id": "submit_label", "component": "Text", "text": "Subscribe"},
+    {"id": "submit", "component": "Button", "variant": "primary", "child": "submit_label",
+     "action": {"event": {"name": "subscribe", "context": {"email": {"path": "/email"}}}}}
+  ]}}
+]
 ```
 
-### Custom SSE Transport (If genui_a2a Doesn't Fit)
+Every message in a payload is parsed before any is applied, so a malformed envelope rejects the whole payload. Messages are then applied in order; one that fails validation leaves its surface as it was and throws, and the messages before it stay applied. Full protocol notes shared with the Angular skill: `../../a2ui-angular/reference/a2ui-protocol.md`.
 
-If the `genui_a2a` package doesn't match your backend's SSE format, implement a custom transport:
+## Agent → app: Server-Sent Events
+
+Each SSE event's `data:` lines hold one JSON array of messages. Reject oversized events before decoding:
 
 ```dart
-import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 
-/// Custom SSE transport for the triage agent.
-class TriageTransport {
-  final String endpoint;
-  final Map<String, String> headers;
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
 
-  TriageTransport({required this.endpoint, required this.headers});
-
-  /// Streams A2UI messages from the triage agent SSE endpoint.
-  Stream<A2uiMessage> streamTriage(String userMessage) async* {
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(
-        '$endpoint?message=${Uri.encodeComponent(userMessage)}',
-      ));
-      request.headers.addAll({
-        ...headers,
-        'Accept': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-      });
-
-      final response = await client.send(request);
-      final lineStream = response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
-
-      await for (final line in lineStream) {
-        if (!line.startsWith('data: ')) continue;
-        final jsonStr = line.substring(6).trim();
-        if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
-
-        try {
-          final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
-          // Normalize Gemini quirk: missing surfaceUpdate wrapper
-          final normalized = _normalizeGeminiOutput(parsed);
-          yield A2uiMessage.fromJson(normalized);
-        } on FormatException catch (e) {
-          // Malformed JSON — skip this line, continue stream
-          logger.warning('GenUI: malformed SSE data', error: e);
-        }
+/// Decodes a Server-Sent Events body in which each event's `data:` lines hold
+/// one JSON array of v0.9 messages. Rejects an event larger than
+/// [maxEventChars] before decoding it.
+Stream<Object?> a2uiPayloads(
+  Stream<List<int>> body, {
+  int maxEventChars = 256 * 1024,
+}) async* {
+  final data = StringBuffer();
+  await for (final line
+      in body.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.startsWith('data:')) {
+      if (data.isNotEmpty) data.write('\n');
+      data.write(line.substring(5).trimLeft());
+      if (data.length > maxEventChars) {
+        throw FormatException('A2UI event exceeds $maxEventChars characters');
       }
-    } finally {
-      client.close();
+    } else if (line.isEmpty && data.isNotEmpty) {
+      final String event = data.toString();
+      data.clear();
+      yield jsonDecode(event);
     }
   }
+  if (data.isNotEmpty) yield jsonDecode(data.toString());
+}
 
-  /// Gemini sometimes omits the outer "surfaceUpdate" key.
-  Map<String, dynamic> _normalizeGeminiOutput(Map<String, dynamic> parsed) {
-    if (parsed.containsKey('surfaceId') &&
-        parsed.containsKey('components') &&
-        !parsed.containsKey('surfaceUpdate')) {
-      return {'surfaceUpdate': parsed};
-    }
-    return parsed;
+/// Applies each payload of [body] to [processor]. A malformed or rejected
+/// payload ends the stream with an error the caller must show.
+Future<void> applyStream(
+  MessageProcessor<ComponentImplementation> processor,
+  Stream<List<int>> body,
+) async {
+  await for (final Object? payload in a2uiPayloads(body)) {
+    processor.processMessages(payload); // throws A2uiError on a bad message
   }
 }
 ```
 
-## Handling Gemini Output Quirks
+`body` is the byte stream of the HTTP response (for example `StreamedResponse.stream` from `package:http`). The caller wraps `applyStream` in `try`, catches `FormatException` and `A2uiError`, logs them and shows an error with a retry. Tested: a valid event creates the surface; a 300 000-character event throws `FormatException` and is never decoded.
 
-Two known issues when using Gemini models as the agent backend:
+## Agent → app: JSONL
 
-### Quirk 1: Missing `surfaceUpdate` Wrapper
-
-Gemini sometimes returns the surface payload without the outer key. Normalize on the backend (Python) AND add client-side resilience:
+One message envelope per line:
 
 ```dart
-// Client-side: if no beginRendering received but 'root' component exists
-if (surface.rootComponentId.isEmpty &&
-    surface.componentMap.containsKey('root')) {
-  surface.rootComponentId = 'root';
-}
-```
-
-### Quirk 2: Concatenated JSON Objects
-
-Gemini may concatenate multiple JSON objects on one line. The backend MUST handle this with `json.JSONDecoder.raw_decode()` (see `../a2ui-angular/reference/a2ui-protocol.md` for the Python implementation).
-
-## Connection Lifecycle
-
-```
-1. Conversation.sendMessage() called
-    |
-2. Transport opens SSE connection to backend
-    |
-3. Backend streams A2UI JSONL messages
-    |
-4. Each message parsed and forwarded to SurfaceController
-    |
-5. Stream ends (server closes or sends [DONE])
-    |
-6. Connection closed, surface state is final
-    |
-7. User interacts -> Conversation.sendAction()
-    |
-8. Transport sends userAction as POST request
-    |
-9. Backend responds with new SSE stream -> back to step 3
-```
-
-## Reconnection and Timeout
-
-```dart
-// Configure transport with timeout and retry
-final transport = TriageTransport(
-  endpoint: triageEndpoint,
-  headers: authHeaders,
-);
-
-// In the conversation manager, handle reconnection:
-Future<void> sendMessageWithRetry(String text, {int maxRetries = 2}) async {
-  for (var attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      await _conversation.sendMessage(text);
-      return; // Success
-    } on TransportException catch (e) {
-      if (attempt == maxRetries) {
-        logger.error('Triage transport failed after $maxRetries retries', error: e);
-        _showStaticFallbackForm();
-        return;
-      }
-      // Wait before retry (exponential backoff)
-      await Future.delayed(Duration(seconds: 1 << attempt));
+/// JSONL: one v0.9 message envelope per line. Blank lines are skipped.
+Future<void> applyJsonl(
+  MessageProcessor<ComponentImplementation> processor,
+  Stream<List<int>> body, {
+  int maxLineChars = 256 * 1024,
+}) async {
+  await for (final line
+      in body.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.trim().isEmpty) continue;
+    if (line.length > maxLineChars) {
+      throw FormatException('A2UI line exceeds $maxLineChars characters');
     }
+    processor.processMessages(jsonDecode(line)); // a lone envelope is accepted
   }
 }
 ```
 
-## Backend Contract (ADK Triage Agent)
+When components arrive across several lines (parent before child), a strict `validationConfig` rejects the dangling reference; use the streaming config in `genui-security.md`.
 
-The Flutter client expects the ADK triage agent to:
+## App → agent: actions, capabilities and data model
 
-1. Accept `POST /triage/start` with `{ description: string }` -> return `{ job_id: string }`
-2. Accept `GET /triage/{job_id}/stream` -> return SSE stream of A2UI JSONL messages
-3. Accept `POST /triage/{job_id}/action` with `UserAction` -> return SSE stream of follow-up
-4. Stream `[DONE]` event when conversation turn is complete
-5. Return standard A2UI message types only (surfaceUpdate, dataModelUpdate, beginRendering)
-6. Use only widget types registered in the client's Catalog
+A user action reaches `processor.model.onAction` (or the `onAction:` constructor callback) as an `A2uiRendererAction` with `name`, `surfaceId`, `sourceComponentId`, `timestamp`, the resolved `context`, and optional `catalogId` / `metadata`. Report it to the agent with the renderer's v0.9 capabilities:
+
+```dart
+/// The JSON body that reports a user action to the agent, with the renderer's
+/// v0.9 capabilities and the data model of surfaces created with
+/// `sendDataModel: true`.
+Map<String, Object?> actionRequestBody(
+  MessageProcessor<ComponentImplementation> processor,
+  A2uiRendererAction action,
+) {
+  const A2uiProtocolVersion v0_9 = A2uiProtocolVersion.v0_9;
+  return {
+    'a2ui': RendererToAgentMessagePayload([
+      ActionMessage(version: v0_9.jsonValue, action: action),
+    ]).toJson(),
+    'metadata': {
+      'a2uiClientCapabilities': processor
+          .getRendererCapabilities(const CapabilitiesOptions(versions: [v0_9]))
+          .toJson(),
+      'a2uiClientDataModel': ?processor.getRendererDataModel(version: v0_9),
+    },
+  };
+}
+```
+
+- `a2uiClientCapabilities` tells the agent which catalogs this renderer supports. Send it on the first request of a conversation and on every reconnect. `a2ui_agent`'s `readRendererCapabilities` reads this key for v0.9.
+- `a2uiClientDataModel` is null when no surface asked for `sendDataModel`; the `?` null-aware map entry (Dart 3.8+) omits the key then.
+- The envelope shape (`a2ui` + `metadata`) is this app's contract with its own agent server; agree it with the server team. The A2UI parts are `RendererToAgentMessagePayload(...).toJson()` and the two metadata keys.
+- **Check `action.name` against the app's own allowlist** before acting on it locally (opening a camera, navigating). Forwarding an unknown name to the agent is harmless; acting on it is not.
+- For one outbound channel, construct the processor with `outboundListener:` and `unifiedOutbound: true`: the listener then receives every `RendererToAgentMessage` (actions, errors, function traffic). `unifiedOutbound` without `outboundListener` throws `ArgumentError`.
+
+## Connection lifecycle
+
+| State | App does |
+|---|---|
+| Request sent | Show a loading indicator on the conversation, not over existing surfaces |
+| Streaming | Apply each payload as it arrives; surfaces update progressively |
+| Stream ends | Clear the loading state |
+| Payload rejected (`A2uiError`) | Stop applying that stream, log `code` + `message`, show an error with retry; keep surfaces already applied |
+| Network error / timeout | Show reconnect; on retry send capabilities again |
+| Conversation closed | Cancel the HTTP stream, `processor.dispose()` |
+
+Set a connect timeout and an idle timeout (no event for N seconds) on the HTTP client; an agent that stops mid-stream must not leave the UI spinning. Retry with backoff and a cap; never retry a request whose action had side effects unless the server makes it idempotent.
+
+## Backend contract (agent server)
+
+Agree with the agent team:
+
+1. The endpoint and stream format (SSE with one JSON array per event, or JSONL with one envelope per line).
+2. That the agent writes `"version": "v0.9"` on every message and only `catalogId`s the app advertised in `a2uiClientCapabilities`.
+3. The action request body (above) and how the agent correlates it with the conversation (a conversation id the server issues; never a user-supplied identifier the server trusts).
+4. Server-side limits: maximum payload size, components per surface, surfaces per conversation, and rate limits. Enforce them on the server and again in the app.
+
+Python agents built with Google ADK: see the `google-adk` skill. A Dart server can use `a2ui_agent` (`A2uiGenerator.createProcessor` with the capabilities the app sent) to prompt the model and validate its output before streaming it.

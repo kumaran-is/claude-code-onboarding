@@ -1,6 +1,6 @@
 # Health Endpoint Patterns
 
-Every deployed service MUST expose health endpoints (liveness; readiness when it has dependencies; Python: `/health/live` + `/health/ready` below). This is required by:
+Every deployed service MUST expose health endpoints (liveness; readiness when it has dependencies; NestJS, plain Node and Python use `/health/live` + `/health/ready` below). This is required by:
 - Cloud Run health check configuration
 - Docker HEALTHCHECK instruction
 - Load balancer health probes
@@ -8,65 +8,100 @@ Every deployed service MUST expose health endpoints (liveness; readiness when it
 
 ---
 
-## NestJS 11.x — Health Controller
+## NestJS 11.x — Liveness and Readiness (`@nestjs/terminus` 12.2.0)
+
+Executed 2026-11-23 with `@nestjs/common`/`core`/`platform-fastify` 11.2.11, `@nestjs/terminus` 12.2.0, TypeScript 5.9.3 strict. Plain Node (no Nest) and MCP servers: `../../mcp-builder/reference/production-runtime-shutdown-health.md`.
 
 ```typescript
 // src/health/health.controller.ts
-import { Controller, Get } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { Controller, Get, Inject, Injectable, Logger } from "@nestjs/common";
+import { HealthCheck, HealthCheckService, HealthIndicatorService } from "@nestjs/terminus";
 
-@Controller('health')
-export class HealthController {
+/** The slice of PrismaClient the readiness check needs (a real PrismaClient satisfies it). */
+export interface SqlPingClient {
+  $queryRawUnsafe: (query: string) => Promise<unknown>;
+}
+export const DB_CLIENT = Symbol("DB_CLIENT");
+
+/** SQL ping that reports up/down WITHOUT the driver's error message (hosts, ports) in the response. */
+@Injectable()
+export class DatabaseHealthIndicator {
+  private readonly logger = new Logger(DatabaseHealthIndicator.name);
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly indicator: HealthIndicatorService,
+    @Inject(DB_CLIENT) private readonly db: SqlPingClient,
   ) {}
 
-  @Get()
-  async check() {
-    const dbConnected = this.dataSource.isInitialized;
-
-    if (!dbConnected) {
-      throw new Error('Database not connected');
+  async ping(key: string, timeoutMs: number) {
+    const session = this.indicator.check(key);
+    try {
+      await Promise.race([
+        this.db.$queryRawUnsafe("SELECT 1"),
+        new Promise((_, reject) => setTimeout(() => { reject(new Error("readiness timeout")); }, timeoutMs).unref()),
+      ]);
+      return session.up();
+    } catch (err: unknown) {
+      this.logger.warn(`readiness check ${key} failed: ${err instanceof Error ? err.name : "unknown"}`);
+      return session.down();
     }
-
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: dbConnected ? 'ok' : 'error',
-      version: process.env['APP_VERSION'] ?? 'unknown',
-    };
   }
 }
-```
 
-For `@nestjs/terminus` (recommended for production):
-```typescript
-// src/health/health.controller.ts
-import { Controller, Get } from '@nestjs/common';
-import {
-  HealthCheck,
-  HealthCheckService,
-  TypeOrmHealthIndicator,
-} from '@nestjs/terminus';
-
-@Controller('health')
+@Controller("health")
 export class HealthController {
   constructor(
-    private health: HealthCheckService,
-    private db: TypeOrmHealthIndicator,
+    private readonly health: HealthCheckService,
+    private readonly database: DatabaseHealthIndicator,
   ) {}
 
-  @Get()
+  /** Liveness: no dependency calls and no HealthCheckService (that reports shutting_down -> 503 after SIGTERM). */
+  @Get("live")
+  live(): { status: "ok" } {
+    return { status: "ok" };
+  }
+
+  /** Readiness: bounded dependency checks; 503 when one is down or once shutdown has begun. */
+  @Get("ready")
   @HealthCheck()
-  check() {
-    return this.health.check([
-      () => this.db.pingCheck('database'),
-    ]);
+  ready() {
+    return this.health.check([() => this.database.ping("database", 1_000)]);
   }
 }
 ```
+
+```typescript
+// src/health/health.module.ts — PrismaService is the composition-style service from the nestjs-api skill (`readonly client`)
+import { Module } from "@nestjs/common";
+import { TerminusModule } from "@nestjs/terminus";
+import { PrismaService } from "./database/prisma.service.js";
+import { DB_CLIENT, DatabaseHealthIndicator, HealthController } from "./health.controller.js";
+
+@Module({
+  // After SIGTERM every @HealthCheck() endpoint answers 503 "shutting_down" for this long, then Nest closes.
+  imports: [TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 5_000 })],
+  controllers: [HealthController],
+  providers: [
+    DatabaseHealthIndicator,
+    { provide: DB_CLIENT, inject: [PrismaService], useFactory: (prisma: PrismaService) => prisma.client },
+  ],
+})
+export class HealthModule {}
+```
+
+In `main.ts`, call `app.enableShutdownHooks()`. Without it, Terminus never learns about SIGTERM and readiness keeps answering 200 while the app shuts down.
+
+Executed results:
+
+| State | `GET /health/ready` | `GET /health/live` |
+|-------|---------------------|--------------------|
+| healthy | 200 `{"status":"ok", … "database":{"status":"up"}}` | 200 |
+| database down (driver error contained an IP) | 503 `{"status":"error", … "database":{"status":"down"}}`, no message or IP in the body | 200 |
+| after SIGTERM (within `gracefulShutdownTimeoutMs`) | 503 `{"status":"shutting_down", …}` | 200 |
+| process exit | exit code 143 (Nest re-raises the signal) | |
+
+- **Liveness does not use `HealthCheckService`.** Any `@HealthCheck()` endpoint returns 503 `shutting_down` once shutdown starts, which is right for readiness and wrong for liveness.
+- **Why a custom indicator instead of `PrismaHealthIndicator`:** in 12.2.0, `PrismaHealthIndicator.pingCheck` tries the MongoDB `$runCommandRaw` first and falls back to SQL only on a specific error. Its down response includes the driver's error message; with a client that lacked `$runCommandRaw` the body carried `prismaClient.$runCommandRaw is not a function` (executed). The 20-line indicator above pings with SQL, bounds the wait, and returns only up/down. If you do use the built-in one, use `.withTimeout(ms)`; the `timeout` option is deprecated.
+- TypeORM's `TypeOrmHealthIndicator` (shown in the previous version of this page) does not apply: the workspace stack is Prisma.
 
 ---
 
@@ -200,12 +235,16 @@ Flags verified against `gcloud run deploy --help` (SDK 560). `--startup-probe` a
 
 ## Verify Step
 
-After adding health endpoint:
+After adding health endpoints, check each probe and the shutdown flip:
 ```bash
-# Local verification:
-curl http://localhost:3000/health            # NestJS
-curl http://localhost:8080/actuator/health   # Spring Boot
-curl http://localhost:8000/health            # FastAPI
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health/live    # NestJS / Node: 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health/ready   # 200 healthy, 503 dependency down
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/actuator/health/liveness   # Spring Boot (probes enabled)
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/health/ready   # FastAPI
 
-# Expected: HTTP 200 with JSON body containing "status": "ok"
+# Shutdown: send SIGTERM to the process (by PID, not a pattern match), then within the drain window:
+kill -TERM "$PID"; curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health/ready   # expect 503
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/health/live                         # expect 200
 ```
+
+Negative control: stop the database (or point the URL at a closed port) and confirm readiness returns 503 while liveness stays 200, and that the 503 body contains no host, port or driver message.

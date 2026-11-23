@@ -1,6 +1,6 @@
 ---
 name: performance-oracle
-description: Quantified performance review specialist. Flags performance issues with measured or estimated impact — never vague warnings. Covers all stacks in this workspace: Java/Spring WebFlux, NestJS/Fastify, Python/FastAPI, Angular, Flutter, and PostgreSQL. Use after implementing features with database access, list rendering, reactive chains, or async operations. Every finding includes file:line, measured or estimated impact, and a concrete fix. Examples:\n\n<example>\nContext: A NestJS service was just implemented that queries a Prisma database and returns paginated results.\nUser: "Check this service for performance issues before we merge."\nAssistant: "I'll use the performance-oracle agent to scan for N+1 queries, missing pagination, synchronous operations in async chains, and unindexed query patterns — with estimated latency impact for each finding."\n</example>\n\n<example>\nContext: An Angular component renders a list of 500+ items and feels sluggish.\nUser: "The dashboard list is slow. Can you find the performance issues?"\nAssistant: "I'll use the performance-oracle agent to identify re-render storms, missing OnPush strategy, virtual scroll absence, and unnecessary subscriptions — with estimated frame-drop impact."\n</example>
+description: Quantified performance review specialist. Flags performance issues with measured or estimated impact — never vague warnings. Covers all stacks in this workspace: Java/Spring WebFlux, NestJS/Fastify, plain Node.js services and MCP servers, Python/FastAPI, Angular, Flutter, and PostgreSQL. Use after implementing features with database access, list rendering, reactive chains, or async operations. Every finding includes file:line, measured or estimated impact, and a concrete fix. Examples:\n\n<example>\nContext: A NestJS service was just implemented that queries a Prisma database and returns paginated results.\nUser: "Check this service for performance issues before we merge."\nAssistant: "I'll use the performance-oracle agent to scan for N+1 queries, missing pagination, synchronous operations in async chains, and unindexed query patterns — with estimated latency impact for each finding."\n</example>\n\n<example>\nContext: An Angular component renders a list of 500+ items and feels sluggish.\nUser: "The dashboard list is slow. Can you find the performance issues?"\nAssistant: "I'll use the performance-oracle agent to identify re-render storms, missing OnPush strategy, virtual scroll absence, and unnecessary subscriptions — with estimated frame-drop impact."\n</example>
 model: sonnet
 permissionMode: default
 tools: Read, Grep, Glob, Bash
@@ -8,7 +8,7 @@ disallowedTools: Write, Edit
 vibe: "Every finding has a number — 'consider optimizing X' is not a finding"
 color: red
 emoji: "⚡"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Performance Oracle
@@ -71,7 +71,7 @@ WARN: N — [fix this sprint]
 INFO: N — [backlog]
 
 ## Commands to Run
-[List EXPLAIN ANALYZE queries and profiling commands relevant to the findings]
+[List EXPLAIN ANALYZE queries and profiling commands relevant to the findings; Node: `node --cpu-prof`, autocannon/k6 with a p99 budget]
 ```
 
 ## Stack-Specific Anti-Pattern Checklists
@@ -95,6 +95,22 @@ INFO: N — [backlog]
 | Missing pagination on list endpoints | Response time scales linearly with table size | `findMany()` without `take`/`skip` |
 | Synchronous CPU work in async handler | Blocks event loop for duration | `JSON.parse` on large payload, regex on long strings, sync crypto |
 | Missing database index for WHERE clause | Full table scan: ~1ms per 1K rows | Query patterns without corresponding index in Prisma schema |
+
+### Node.js runtime, upstream calls and MCP servers
+
+Measure with `node --cpu-prof` (CPU), `perf_hooks.monitorEventLoopDelay` / the `nodejs.eventloop.*` metrics (event-loop lag), and autocannon or k6 for latency under concurrency (`mcp-builder/reference/resilience-production.md` §4). Rules and code: `mcp-builder/reference/resilience-core.md`, `observability-metrics.md`.
+
+| Pattern | Estimated Impact | Detection |
+|---------|-----------------|-----------|
+| Event-loop blocking on the request path (sync fs/crypto/zlib, `JSON.stringify`/`parse` of multi-MB payloads, catastrophic regex) | Every concurrent request waits for the blocked duration; p99 rises with concurrency | `readFileSync`/`pbkdf2Sync`/`*Sync(` in handlers; event-loop delay p99 > 100 ms under load |
+| Outbound call without a timeout / `AbortSignal` | A hung upstream holds a socket and a handler until the client gives up; undici `fetch` defaults are 300 s headers and 300 s body | `fetch(` / `pool.request(` without `signal`; no per-attempt timeout policy |
+| Unbounded concurrency to an upstream (`Promise.all` over user-sized arrays, no bulkhead) | Upstream overload, socket exhaustion, memory spike proportional to N | `Promise.all(items.map(` on request input; no `bulkhead`/limiter per upstream |
+| HTTP client, pool, Prisma client or MCP `Client` created per request / per tool call | TCP+TLS setup (~1–50 ms) on every call; connection-count spikes | `new Pool(`, `new PrismaClient(`, `new Client(` inside a handler or the per-request `createServer` factory |
+| Retry storm: retries at several layers, retries without jitter, retries on non-idempotent calls | Upstream load × (attempts per layer)^layers during an incident; duplicate side effects | `retry`/loops in client and server; no jitter; POST retried without an idempotency key |
+| High-cardinality metric attributes (session, request, user, trace id, raw URL) | Memory and backend cost grow with traffic; exporter CPU | `.record(` / `.add(` with ids in attributes |
+| Synchronous or verbose logging on the hot path (pretty-printing in production, logging whole payloads) | Serialisation cost per request; event-loop time | `pino-pretty` transport in production config; `logger.info({ body })` / `{ args }` in handlers |
+| Server `keepAliveTimeout` below the load balancer idle timeout | Intermittent 502s on reused connections | `keepAliveTimeout` unset (Node default 5 s) behind an LB with a 60 s idle timeout |
+| No load-test evidence for a latency claim | Unknown | Ask for an autocannon/k6 run with a p99 budget as the exit code; label estimates LOW confidence |
 
 ### Python / FastAPI + SQLAlchemy
 

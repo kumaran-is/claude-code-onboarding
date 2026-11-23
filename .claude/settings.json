@@ -4,7 +4,6 @@
   "permissions": {
     "allow": [
       "Bash(npm *)",
-      "Bash(npx *)",
       "Bash(flutter *)",
       "Bash(dart *)",
       "Bash(./mvnw *)",
@@ -19,7 +18,6 @@
       "Bash(git commit *)",
       "Bash(git fetch *)",
       "Bash(git pull *)",
-      "Bash(git push *)",
       "Bash(git merge *)",
       "Bash(git stash *)",
       "Bash(git tag *)",
@@ -30,15 +28,10 @@
       "Bash(git rev-parse *)",
       "Bash(git cherry-pick *)",
       "Bash(git worktree *)",
-      "Bash(gh *)",
-      "Bash(docker *)",
-      "Bash(docker-compose *)",
       "Bash(ls *)",
       "Bash(cat *)",
       "Bash(cp *)",
       "Bash(mv *)",
-      "Bash(curl *)",
-      "Bash(wget *)",
       "Bash(find *)",
       "Bash(grep *)",
       "Bash(mkdir *)",
@@ -50,8 +43,6 @@
       "Bash(awk *)",
       "Bash(uv *)",
       "Bash(pip *)",
-      "Bash(python *)",
-      "Bash(python3 *)",
       "Bash(pytest *)",
       "Bash(ruff *)",
       "Bash(mypy *)",
@@ -59,22 +50,40 @@
       "mcp__voicemode__service",
       "Bash(voicemode *)",
       "mcp__chrome-devtools__*",
-      "mcp__firebase__*",
       "mcp__dart-mcp-server__*",
       "mcp__angular-cli__*",
-      "mcp__docker__*",
-      "mcp__Claude_in_Chrome__*",
-      "mcp__Claude_Preview__*",
       "mcp__context7__*",
       "mcp__langchain-docs__*",
       "mcp__xcodebuild__*",
-      "mcp__mcp-registry__*"
+      "mcp__firebase__firebase_get_environment",
+      "mcp__firebase__firebase_get_project",
+      "mcp__firebase__firebase_list_projects",
+      "mcp__firebase__developerknowledge_search_documents",
+      "mcp__firebase__developerknowledge_get_documents",
+      "mcp__firebase__developerknowledge_answer_query",
+      "mcp__stripe__search_stripe_documentation",
+      "mcp__stripe__stripe_api_search",
+      "mcp__stripe__stripe_api_details",
+      "mcp__stripe__stripe_api_read",
+      "mcp__stripe__get_stripe_account_info",
+      "mcp__stripe__stripe_implementation_planner"
     ],
     "ask": [
       "Bash(git reset *)",
       "Bash(git clean *)",
       "Bash(git restore *)",
-      "Bash(rm *)"
+      "Bash(rm *)",
+      "Bash(npx *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(docker *)",
+      "Bash(docker-compose *)",
+      "Bash(gh *)",
+      "Bash(git push *)",
+      "mcp__stripe__stripe_api_write",
+      "mcp__stripe__send_stripe_feedback"
     ],
     "deny": [
       "Bash(git push --force *)",
@@ -86,8 +95,25 @@
       "Bash(chmod 777 *)",
       "Bash(eval *)",
       "Bash(ssh *)",
-      "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.local)",
+      "Read(./**/.env.*.local)",
+      "Read(./**/.env.development)",
+      "Read(./**/.env.dev)",
+      "Read(./**/.env.production)",
+      "Read(./**/.env.prod)",
+      "Read(./**/.env.staging)",
+      "Read(./**/.env.stage)",
+      "Read(./**/.env.test)",
+      "Read(./**/.env.qa)",
+      "Read(./**/.env.uat)",
+      "Read(./**/.env.preview)",
+      "Read(./**/.env.ci)",
+      "Read(./**/.env.secret)",
+      "Read(./**/.env.secrets)",
+      "Read(./**/.env.backup)",
+      "Read(./**/.env.bak)",
+      "Read(./**/.env.old)",
       "Read(./secrets/**)",
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
@@ -112,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-disk-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-bash-disk-guard.sh",
             "timeout": 10
           }
         ]
@@ -122,7 +148,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-bash-guard.sh",
             "timeout": 10
           }
         ]
@@ -132,7 +158,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-zsh-split-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-bash-zsh-split-guard.sh",
             "timeout": 5
           }
         ]
@@ -142,7 +168,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-bash-destructive-restore-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-bash-destructive-restore-guard.sh",
             "timeout": 10
           }
         ]
@@ -152,7 +178,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-edit-protect-sensitive.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-edit-protect-sensitive.sh",
             "timeout": 10
           }
         ]
@@ -162,7 +188,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-unicode-injection.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-unicode-injection.sh",
             "timeout": 10
           }
         ]
@@ -172,18 +198,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-prompt-injection.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-prompt-injection.sh",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-lessons-injector.sh",
-            "timeout": 5
           }
         ]
       },
@@ -192,7 +208,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/block-raw-scaffold.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-raw-scaffold.sh",
             "timeout": 5
           }
         ]
@@ -201,7 +217,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hookify/hooks/pretooluse.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hookify/hooks/pretooluse.py",
             "timeout": 10
           }
         ]
@@ -211,7 +227,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-browser-tool-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-browser-tool-advisory.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-edit-lessons-dedup.sh",
             "timeout": 5
           }
         ]
@@ -223,7 +249,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-format.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-format.sh",
             "timeout": 30
           }
         ]
@@ -233,7 +259,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-typecheck.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-typecheck.sh",
             "timeout": 30
           }
         ]
@@ -243,7 +269,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-web-security-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-web-security-advisory.sh",
             "timeout": 10
           }
         ]
@@ -253,7 +279,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-python-lint-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-python-lint-advisory.sh",
             "timeout": 30
           }
         ]
@@ -263,7 +289,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-python-log-pii-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-python-log-pii-advisory.sh",
             "timeout": 15
           }
         ]
@@ -273,12 +299,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-flutter-ui-network-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-flutter-ui-network-advisory.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-flutter-catch-wipe-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-flutter-catch-wipe-advisory.sh",
             "timeout": 10
           }
         ]
@@ -288,7 +314,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-secrets-scan.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-secrets-scan.sh",
             "timeout": 10
           }
         ]
@@ -298,7 +324,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-ai-patterns.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-ai-patterns.sh",
             "timeout": 10
           }
         ]
@@ -308,7 +334,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-changelog-version-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-changelog-version-guard.sh",
             "timeout": 10
           }
         ]
@@ -318,7 +344,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/output-secrets-scanner.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/output-secrets-scanner.sh",
             "timeout": 10
           }
         ]
@@ -328,7 +354,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/output-llm-quota-guard.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/output-llm-quota-guard.sh",
             "timeout": 10
           }
         ]
@@ -338,7 +364,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-validate-structured-data.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-validate-structured-data.sh",
             "timeout": 10
           }
         ]
@@ -347,7 +373,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hookify/hooks/posttooluse.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hookify/hooks/posttooluse.py",
             "timeout": 10
           }
         ]
@@ -357,7 +383,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit-genui-advisory.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-genui-advisory.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-ts-log-pii-advisory.sh",
             "timeout": 10
           }
         ]
@@ -368,7 +404,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-secret-scan.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-secret-scan.sh",
             "timeout": 15
           }
         ]
@@ -377,7 +413,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-lessons-reminder.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-lessons-reminder.sh",
             "timeout": 10
           }
         ]
@@ -386,7 +422,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-ralph-loop.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-ralph-loop.sh",
             "timeout": 10
           }
         ]
@@ -395,7 +431,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-notify-completion.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-notify-completion.sh",
             "timeout": 5
           }
         ]
@@ -404,7 +440,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hookify/hooks/stop.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hookify/hooks/stop.py",
             "timeout": 10
           }
         ]
@@ -415,7 +451,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-correction-detector.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-correction-detector.sh",
             "timeout": 5
           }
         ]
@@ -424,7 +460,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/prompt-secret-scan.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/prompt-secret-scan.sh",
             "timeout": 5
           }
         ]
@@ -433,7 +469,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hookify/hooks/userpromptsubmit.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hookify/hooks/userpromptsubmit.py",
             "timeout": 5
           }
         ]
@@ -444,7 +480,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
             "timeout": 10
           }
         ]
@@ -453,7 +489,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-claudemd-scan.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-claudemd-scan.sh",
             "timeout": 10
           }
         ]
@@ -462,7 +498,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-mcp-governance.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-mcp-governance.sh",
             "timeout": 10
           }
         ]
@@ -473,11 +509,52 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stopfailure-api-error-notice.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stopfailure-api-error-notice.sh",
             "timeout": 10
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-lessons-injector.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
+  },
+  "skillOverrides": {
+    "asc-cli-usage": "name-only",
+    "asc-crash-triage": "name-only",
+    "asc-id-resolver": "name-only",
+    "asc-release-flow": "name-only",
+    "asc-signing-setup": "name-only",
+    "asc-submission-health": "name-only",
+    "asc-testflight-orchestration": "name-only",
+    "gpd-betagroups": "name-only",
+    "gpd-build-lifecycle": "name-only",
+    "gpd-cli-usage": "name-only",
+    "gpd-id-resolver": "name-only",
+    "gpd-release-flow": "name-only",
+    "gpd-submission-health": "name-only",
+    "three-dart-animation": "name-only",
+    "three-dart-fundamentals": "name-only",
+    "three-dart-geometry": "name-only",
+    "three-dart-loaders": "name-only",
+    "three-dart-materials": "name-only",
+    "threejs-animation": "name-only",
+    "threejs-fundamentals": "name-only",
+    "threejs-geometry": "name-only",
+    "threejs-interaction": "name-only",
+    "threejs-lighting": "name-only",
+    "threejs-loaders": "name-only",
+    "threejs-materials": "name-only",
+    "threejs-postprocessing": "name-only",
+    "threejs-shaders": "name-only",
+    "threejs-textures": "name-only"
   }
 }

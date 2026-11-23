@@ -1,248 +1,154 @@
 # Claude Code Configuration Security Audit
 
-Manual security checklist for auditing `.claude/` directory configurations. Run this before committing any changes to CLAUDE.md, settings.json, hooks, agent files, or MCP configs.
+Canonical checklist for auditing a workspace's Claude Code configuration: `settings.json`
+permissions, hooks, agents, `.mcp.json`, `CLAUDE.md` and rules. Run it before committing any
+`.claude/` or `.mcp.json` change.
 
-Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tailored to this workspace.
+Derive the current state with the commands in §6 every time. Do not keep a copy of the allow list
+or hook list in this file: copies drift and then hide the gaps they were meant to show.
 
----
-
-## When to Run This Audit
-
-- After modifying `settings.json` (permissions, hooks, MCP servers)
-- After adding or modifying a hook script in `.claude/hooks/`
-- After adding or modifying an agent in `.claude/agents/`
-- After modifying `CLAUDE.md` or any rules file in `.claude/rules/`
-- Before committing `.claude/` changes to the repository
+Adapted from the AgentShield scan categories (github.com/affaan-m/agentshield).
 
 ---
 
-## 1 — settings.json Security Checks
+## 1 — `settings.json` permissions
 
-### Bash Allow List
-- [ ] No `Bash(*)` wildcard — wildcards grant unrestricted shell execution
-- [ ] Each allowed command is the minimum scope needed (e.g., `Bash(git log *)` not `Bash(git *)`)
-- [ ] No `Bash(eval *)` in allow list — evaluates arbitrary strings as shell code
-- [ ] No `Bash(curl * | bash)` or pipe-to-shell patterns
-- [ ] Sensitive destructive commands in `deny` list, not omitted from `allow`
+An `allow` rule runs without a prompt, so every allow rule is an execution grant. Judge each
+pattern by the worst command it admits, not the one it was added for.
 
-**Current workspace allow list audit targets** (review each of these specifically):
+| Allow pattern | Worst case it admits | Severity | Prefer |
+|---|---|---|---|
+| `Bash(*)`, `dangerouslyAllowAll` | anything | CRITICAL | named commands |
+| `Bash(npx *)`, `Bash(uvx *)` | download and run any package version | HIGH | `ask`, or exact commands (`Bash(npx tsc --noEmit)`) |
+| `Bash(curl *)`, `Bash(wget *)` | exfiltrate files, fetch payloads | HIGH | `ask`; WebFetch for docs |
+| `Bash(python *)`, `Bash(node *)` | `-c` / `-e` arbitrary code | HIGH | named scripts (`Bash(python3 .claude/scripts/x.py *)`) |
+| `Bash(docker *)` | `docker run -v /:/host --privileged` (host root) | HIGH | `ask` |
+| `Bash(gh *)` | `gh api -X DELETE`, `gh repo delete`, secret writes | HIGH | read verbs only (`gh pr view *`, `gh run view *`) |
+| `Bash(git push *)` | push to protected branches, `+refspec` force push | MEDIUM | `ask`; keep the PreToolUse guard |
+| `Bash(npm *)`, `Bash(pip *)`, `Bash(uv *)` | install-time scripts from any package | MEDIUM | lockfile installs (`npm ci`, `uv sync --locked`) |
+| `Bash(sed *)`, `Bash(awk *)`, `Bash(find *)`, `Bash(cp *)`, `Bash(mv *)` | `sed -i` / `find -exec` / overwrite of hooks and settings | MEDIUM | `ask`, or rely on Edit/Write (which hooks inspect) |
+| `Bash(git rebase *)` | `--exec <cmd>` | LOW | `ask` |
+| `mcp__<server>__*` on a write-capable server | deploy, delete, create projects | HIGH | list the read tools by name |
+| `mcp__<server>__*` for a server absent from `.mcp.json` | dead rule that activates when a same-named server appears | MEDIUM | remove |
 
-| Pattern | Risk | Notes |
-|---------|------|-------|
-| `Bash(npm *)` | MEDIUM | `npm install <pkg>` could install malicious packages |
-| `Bash(npx *)` | HIGH | `npx -y <pkg>` auto-installs and executes arbitrary packages |
-| `Bash(curl *)` | HIGH | Can exfiltrate data or download malicious payloads |
-| `Bash(wget *)` | HIGH | Same risk as curl |
-| `Bash(git push *)` | MEDIUM | Broad — force push to any remote is allowed except `--force` to origin/main |
-| `Bash(docker *)` | MEDIUM | `docker run` can execute arbitrary images |
-| `Bash(python *)` / `Bash(python3 *)` | MEDIUM | Can execute arbitrary Python code from disk |
-| `Bash(pip *)` | MEDIUM | Can install packages from PyPI including malicious ones |
-| `Bash(cat *)` | LOW | Can read any file not in deny list |
-| `Bash(find *)` | LOW | `find ... -exec` can execute arbitrary commands |
-| `Bash(mv *)` / `Bash(cp *)` | LOW | Can overwrite sensitive files if path is not controlled |
-| `Bash(git rebase *)` | LOW | `--exec` flag allows arbitrary command execution |
+`deny` rules are prefix matches and are easy to step around: `Bash(git push --force *)` does not
+match `git push origin main --force` or `git push origin +main`. Treat `deny` as a speed bump and
+enforce the real rule in a PreToolUse hook (exit 2). Check also:
 
-**Specific gaps to verify:**
-- `Bash(npx *)` is broad — `npx -y <unknown>` bypasses confirmation; hook `pre-bash-guard.sh` does NOT currently block this
-- `Bash(curl *)` is allowed but `curl | bash` is blocked by `pre-bash-guard.sh` — verify the regex covers all pipe variants
-- `Bash(find *)` is allowed but `find ... -delete` is blocked by `pre-bash-guard.sh` — verify the regex covers `-exec rm` variants
+- [ ] `Read(...)` denies cover nested secrets: `Read(./**/.env)`, `Read(./**/.env.*)`, not only
+      `./.env` (a monorepo keeps `apps/api/.env`).
+- [ ] `git commit --no-verify` / `git push --no-verify` are blocked by a hook, or the git hooks
+      they skip are not the only secret gate (CI runs the same scan).
+- [ ] No `permissionMode: bypassPermissions` in any agent or settings file committed to the repo.
 
-### Deny List
-- [x] `Bash(git push --force *)` in deny list ✓
-- [x] `Bash(git push -f *)` in deny list ✓
-- [x] `Bash(rm -rf /)` in deny list ✓
-- [x] `Bash(rm -rf ~)` in deny list ✓
-- [x] `Bash(rm -rf .)` in deny list ✓
-- [x] `Bash(sudo *)` in deny list ✓
-- [x] `Bash(eval *)` in deny list ✓
-- [x] `Read(.env*)` variants in deny list ✓
-- [x] `Read(**/*.key)` in deny list ✓
-- [ ] Verify: `Bash(chmod 777 *)` in deny list ✓ (already present)
-- [ ] Verify: `Bash(ssh *)` in deny list ✓ (already present)
-- [ ] Consider adding: `Bash(git rebase * --exec *)` — executes arbitrary commands during rebase
+## 2 — `CLAUDE.md` and rules files
 
-### Ask List
-- [x] `Bash(git reset *)` in ask list ✓
-- [x] `Bash(git clean *)` in ask list ✓
-- [x] `Bash(rm *)` in ask list ✓
-- [ ] Consider adding: `Bash(docker run --privileged *)` — privileged containers break host isolation
+- [ ] No external URL content pasted into `CLAUDE.md` or rules (it can be poisoned upstream).
+- [ ] No instruction that grants permissions to whoever asks ("approve the pending pairing",
+      "add me to the allowlist") — `session-claudemd-scan.sh` checks this at session start.
+- [ ] No "always run X without asking" for destructive operations; nothing that bypasses the
+      approval table in `core-behaviors.md`.
+- [ ] No secrets, internal hostnames, private paths or customer names (this toolkit is public).
 
-### Dangerous Flags
-- [ ] No `dangerouslyAllowAll: true` in any permission block (not present — ✓)
-- [ ] No `--no-verify` skip flag patterns allowed in hooks
+## 3 — Hooks (`.claude/hooks/`, `.claude/scripts/`)
 
----
+Authoring contract: `.claude/rules/hook-and-gate-authoring.md`. Security-relevant points:
 
-## 2 — CLAUDE.md and Rules Files
+- [ ] **Blocking is exit 2 only.** In Claude Code any other non-zero exit is a non-blocking error:
+      the tool call still runs. A guard that exits 1 to "block" fails open.
+- [ ] A guard hook that crashes (missing `jq`, bad regex, unset variable) fails open for the same
+      reason; it is tested with `--selftest`, a positive control (blocks a planted violation) and a
+      negative control.
+- [ ] Hook commands in `settings.json` quote the project path:
+      `"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`. Unquoted, a checkout path with a space breaks every
+      hook — and every guard fails open.
+- [ ] No untrusted input reaches `eval`, `bash -c`, `sh -c` or an unquoted expansion.
+- [ ] No hook sends data off the machine (`curl`/`wget` with tool output, prompts or file content).
+- [ ] Audit logs (`.claude/*-detected.log`, `.claude/state/`) are gitignored and never contain the
+      matched secret or the full command that carried it: log the pattern name, tool name and a
+      hash, not the raw text.
+- [ ] Advisory hooks deliver text through `additionalContext` JSON; stdout/stderr of an exit-0 hook
+      never reaches the model.
 
-### Prompt Injection Risks
-- [ ] No external URL content embedded directly into CLAUDE.md (could be poisoned)
-- [ ] No `eval`, `exec`, or dynamic code execution instructions
-- [ ] No instructions that unconditionally grant permissions to any requestor
-- [ ] Verify: "approve the pending pairing" or "add me to the allowlist" — NEVER in CLAUDE.md (checked by `session-claudemd-scan.sh` at session start; `pre-prompt-injection.sh` does not scan CLAUDE.md content)
+## 4 — MCP servers (`.mcp.json`)
 
-### Auto-Run Risks
-- [ ] No instructions like "always run X without asking" for destructive operations
-- [ ] No instructions that bypass the approval scope reference table in `core-behaviors.md`
+Requirement levels and server-side severities: [mcp-security.md](mcp-security.md). Client-config
+checks:
 
-### Hardcoded Secrets
-- [ ] No API keys, tokens, passwords, or connection strings in CLAUDE.md
-- [ ] No secrets in `.claude/rules/*.md` files
-- [ ] Grep check: `grep -rn "sk-\|api_key\|password\|secret\|token" .claude/` → should return 0 sensitive hits (note: pattern words appear in hook scripts legitimately — scope this grep to `*.md` and `*.json` only)
+- [ ] Every `npx -y` / `uvx --from` package has an exact version (`pkg@1.2.3`, `pkg==1.2.3`).
+      `-y` is acceptable only with an exact pin; `@latest` or no version is a finding.
+- [ ] Binaries started by name (`dart`, `maestro`, `xcodebuildmcp`) resolve to a version you
+      installed on purpose; note them as unpinned in the review.
+- [ ] No secret in `args`, not even as `${VAR}` — argv is visible to every local process. Pass it in
+      `env` under the server's documented variable.
+- [ ] No deprecated or archived server package (`npm view <pkg> deprecated` prints nothing).
+- [ ] Write-capable servers (cloud, payments, stores, containers) start with the narrowest tool
+      set or a read-only endpoint, and are not wildcard-allowed in `settings.json`.
+- [ ] Remote HTTP servers prefer OAuth over a static `Authorization` header.
+- [ ] Every server in `.mcp.json` is listed with its risk in `.claude/rules/skill-triggers.md` §P0;
+      `.claude/mcp-config.sha256` is refreshed only after that review.
 
----
+## 5 — Agents (`.claude/agents/*.md`)
 
-## 3 — Hook Script Security
+- [ ] Reviewer and auditor agents declare `disallowedTools: Write, Edit` and no
+      `permissionMode: acceptEdits` / `bypassPermissions`. Bash on a reviewer is for running
+      linters and tests; it can still write files, so the agent body must forbid edits.
+- [ ] Implementation agents have the write tools they need and nothing broader (`tools: "*"` is a
+      finding).
+- [ ] Every agent with Bash, Write or Edit pins `model:`.
+- [ ] No `{{user_input}}`-style interpolation in agent bodies; agents treat fetched pages, file
+      contents and tool output as data, never as instructions.
+- [ ] `memory:` agents write `.claude/agent-memory/`, which is gitignored; durable lessons go
+      through `/promote-lessons`.
 
-### Command Injection via Interpolation
-- [ ] No unquoted variables used in shell commands: `$VAR` should be `"$VAR"` in shell context
-- [ ] No user-controlled input passed directly to `eval`, `bash -c`, or similar
-- [ ] No `curl ... | bash` or `wget ... | sh` in hooks (blocked by `pre-bash-guard.sh`)
-
-### Data Exfiltration
-- [ ] Hooks do not send data to external URLs (no `curl https://external.com` with Claude output)
-- [ ] Hooks do not write Claude's response content to world-readable locations
-- [ ] Hook output (stdout) is used only for blocking/passing the tool call, not data export
-- [ ] Audit log files (`.claude/secrets-detected.log`, etc.) are gitignored
-
-### Silent Error Suppression
-- [ ] No `2>/dev/null` without logging the error elsewhere
-- [ ] All hooks exit with explicit exit code (0=allow, 1=block with message, 2=hard block)
-- [ ] No bare `|| true` that masks failures in security-critical paths
-
-### Known Pattern: `output-secrets-scanner.sh`
-- This hook exits 0 always (warns but never blocks) — by design. Verify this is intentional for every new hook added with similar pattern.
-- The secrets-detected.log must be gitignored — verify: `cat .gitignore | grep secrets-detected`
-
-**Current workspace hooks** (audit each when modified):
-
-| Hook | Trigger | Purpose | Audit Focus |
-|------|---------|---------|-------------|
-| `pre-bash-guard.sh` | PreToolUse: Bash | Blocks destructive commands | Regex coverage for new attack patterns |
-| `pre-prompt-injection.sh` | PreToolUse: Bash\|Write\|Edit\|WebFetch | Blocks escape sequences and NUL bytes; advises on injection phrases | Advisory-only phrase list; no false blocks on grep/tests/commits (`--selftest`) |
-| `pre-unicode-injection.sh` | PreToolUse: Edit\|Write | Blocks unicode/homoglyph injection | Coverage of new unicode attack vectors |
-| `pre-edit-protect-sensitive.sh` | PreToolUse: Write\|Edit | Blocks writes to sensitive files | Sensitive file pattern completeness |
-| `pre-lessons-injector.sh` | PreToolUse: Agent | Injects lessons into sub-agents | Verify no sensitive data in lessons.md |
-| `block-raw-scaffold.sh` | PreToolUse: Bash | Blocks `flutter create`, `ng new` etc. | Pattern list for new scaffold commands |
-| `output-secrets-scanner.sh` | PostToolUse: Bash\|Read\|WebFetch | Scans output for secrets | Pattern list for new secret formats |
-| `post-edit-secrets-scan.sh` | PostToolUse: Write\|Edit | Scans written files for secrets | Pattern list completeness |
-| `post-edit-ai-patterns.sh` | PostToolUse: Write\|Edit | Detects anti-patterns in AI-generated code | Pattern list currency |
-| `post-edit-typecheck.sh` | PostToolUse: Write\|Edit | Type checking | Does not exfiltrate code |
-| `post-edit-format.sh` | PostToolUse: Write\|Edit | Code formatting | Does not exfiltrate code |
-| `post-validate-structured-data.sh` | PostToolUse: Write\|Edit | Validates JSON/YAML/TOML | Does not execute content |
-| `prompt-secret-scan.sh` | UserPromptSubmit | Scans user prompts for secrets | Pattern completeness |
-| `session-claudemd-scan.sh` | SessionStart | Scans CLAUDE.md for injection | Pattern completeness |
-| `session-start.sh` | SessionStart | Session initialization | Verify no network calls |
-| `stop-secret-scan.sh` | Stop | Final secret scan | Pattern completeness |
-| `stop-lessons-reminder.sh` | Stop | Lessons reminder | Informational only |
-| `stop-ralph-loop.sh` | Stop | Ralph loop cleanup | Verify no orphan processes |
-| `stop-notify-completion.sh` | Stop | Completion notification | Verify notification target is local only |
-
----
-
-## 4 — MCP Server Configuration
-
-### Supply Chain Risks
-- [ ] No `npx -y <unknown-package>` — `-y` auto-installs without confirmation
-- [ ] All MCP server packages are from verified publishers (check npm registry)
-- [ ] Pin MCP server versions where possible (e.g., `@playwright/mcp@0.0.26` not `@playwright/mcp@latest`)
-
-### Hardcoded Secrets in MCP Config
-- [ ] No API keys hardcoded in MCP server `env:` blocks in settings
-- [ ] Secrets passed via environment variable references, not literal values
-- [ ] No secret in `args`, not even as a `${VAR}` reference: it is expanded into argv, which `ps` shows to any local user. Pass it in `env` (most servers read a named env var; check the server's source)
-- [ ] No deprecated or archived server package (`npm view <pkg> deprecated` prints nothing). Detail: [mcp-security.md §4](mcp-security.md#4-mcp-client-configuration-mcpjson-settings)
-
-### Unnecessary Access
-- [ ] Each MCP server has the minimum required permissions
-- [ ] MCP servers that access the filesystem are scoped to specific paths
-
-**Current workspace MCP server allow-list** (from `settings.json` — verify each is still needed):
-
-| Permission Pattern | MCP Server | Risk Level | Notes |
-|-------------------|-----------|-----------|-------|
-| `mcp__chrome-devtools__*` | Chrome DevTools | MEDIUM | Wildcard — all Chrome DevTools tools allowed; can control browser |
-| `mcp__firebase__*` | Firebase MCP | HIGH | Wildcard — includes write operations (create project, deploy rules) |
-| `mcp__dart-mcp-server__*` | Dart MCP | MEDIUM | Wildcard — includes `launch_app`, `run_tests`, `create_project` |
-| `mcp__angular-cli__*` | Angular CLI MCP | LOW | Read-heavy; wildcard still allows any Angular CLI operation |
-| `mcp__docker__*` | Docker MCP | HIGH | Wildcard — includes container execution operations |
-| `mcp__Claude_in_Chrome__*` | Claude in Chrome | MEDIUM | Wildcard — browser automation |
-| `mcp__Claude_Preview__*` | Claude Preview | MEDIUM | Wildcard — unknown scope; verify what tools this exposes |
-| `mcp__context7__*` | Context7 | LOW | Documentation lookup only |
-| `mcp__langchain-docs__*` | LangChain Docs | LOW | Documentation lookup only |
-| `mcp__xcodebuild__*` | XcodeBuild MCP | MEDIUM | Wildcard — includes device/simulator control, app launch |
-| `mcp__mcp-registry__*` | MCP Registry | MEDIUM | Can discover and potentially install new MCP servers |
-| `mcp__voicemode__converse` | Voicemode | LOW | Specific tool only — not wildcard |
-| `mcp__voicemode__service` | Voicemode | LOW | Specific tool only — not wildcard |
-
-**High-priority review:** `mcp__firebase__*` and `mcp__docker__*` are wildcards on servers with write/execution capabilities. Consider scoping to specific tools needed.
-
----
-
-## 5 — Agent Files (`.claude/agents/*.md`)
-
-### Unrestricted Tool Access
-- [ ] No agent has `allowed-tools: "*"` or equivalent wildcard
-- [ ] Agents that only READ have no Write/Edit/Bash tools
-- [ ] Review agents have read-only tools; implementation agents have write tools
-
-### Prompt Injection Surface
-- [ ] Agent descriptions do not include instructions that could be overridden by malicious task input
-- [ ] Agent system prompts do not contain `{{user_input}}` style interpolation
-- [ ] No agent unconditionally trusts content from external sources (web fetch results, file contents)
-
-### Model Specification
-- [ ] Every agent specifies a `model:` field (missing = inherits parent, could be unintended)
-- [ ] High-privilege agents (those with Bash/Write access) use explicit model pinning
-
----
-
-## 6 — Quick Grep Audit Commands
-
-Run these before committing any `.claude/` changes:
+## 6 — Commands that derive the current state
 
 ```bash
-# Secrets in config files (scope to md and json only to avoid false positives from hook scripts)
-grep -rn "sk-\|api_key\s*=\|password\s*=\|ANTHROPIC_API_KEY\s*=" .claude/ \
-  --include="*.md" --include="*.json"
+# Allow / ask / deny rules as they are now
+jq -r '.permissions | to_entries[] | .key as $k | .value[] | "\($k)\t\(.)"' .claude/settings.json
 
-# Wildcard Bash allow
-grep -n "Bash(\*)" .claude/settings.json
+# Broad execution grants (review every hit against the §1 table)
+jq -r '.permissions.allow[]' .claude/settings.json \
+  | grep -E '^Bash\((\*|npx|uvx|curl|wget|python3?|node|docker|gh|sed|awk|find|cp|mv) ' 
 
-# Wildcard MCP allow (new wildcards added)
-grep -n "mcp__.*\\\*" .claude/settings.json
+# Wildcard MCP grants and whether the server still exists in .mcp.json
+jq -r '.permissions.allow[] | select(startswith("mcp__"))' .claude/settings.json
+jq -r '.mcpServers | keys[]' .mcp.json
 
-# npx without version pin in MCP configs
-grep -rn "npx -y\|npx.*latest" .claude/settings.json
+# MCP launch lines: unpinned packages and secrets in argv
+jq -r '.mcpServers | to_entries[] | "\(.key)\t\(.value.command // .value.url) \((.value.args // []) | join(" "))"' .mcp.json
 
-# eval usage in hooks
-grep -rn "\beval\b" .claude/hooks/
+# Hook commands with an unquoted project path
+jq -r '.. | objects | select(has("command")) | .command' .claude/settings.json | grep -v '^"\$CLAUDE_PROJECT_DIR"' 
 
-# Unquoted variables in hooks (potential injection — review each hit manually)
-grep -rn '\$[A-Z_][A-Z_0-9]*[^"]' .claude/hooks/*.sh 2>/dev/null | grep -v "^#" | head -30
+# Guard hooks that "block" with exit 1 (fails open)
+grep -nE 'exit 1|sys\.exit\(1\)' .claude/hooks/pre-*
 
-# Hooks making external network calls
-grep -rn "curl\|wget" .claude/hooks/*.sh | grep -v "pre-bash-guard\|# "
+# Reviewer agents with edit-capable permission modes
+grep -lE '^permissionMode: *(acceptEdits|bypassPermissions)' .claude/agents/*.md
 
-# Verify secrets-detected.log is gitignored
-grep "secrets-detected" .gitignore || echo "WARNING: .claude/secrets-detected.log may not be gitignored"
+# Secrets in config and docs (hook scripts legitimately contain the patterns)
+git grep -nIE 'sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}' -- '*.md' '*.json' '*.yaml'
+
+# Runtime logs are ignored and untracked
+git check-ignore -v .claude/secrets-detected.log .claude/state/x .claude/agent-memory/x/MEMORY.md
+git ls-files .claude | grep -E '\.log$|/state/|agent-memory'
 ```
 
----
+## Severity reference
 
-## Severity Reference
-
-| Finding | Severity | Action |
-|---------|----------|--------|
-| Hardcoded secret in any `.claude/` file | CRITICAL | Remove immediately, rotate secret, audit git history |
-| `Bash(*)` wildcard in allow list | CRITICAL | Replace with specific command patterns |
-| `mcp__<server>__*` wildcard on write-capable server (firebase, docker) | HIGH | Scope to specific tools needed |
-| Command injection in hook (unquoted `$VAR` in shell exec context) | HIGH | Quote all variables |
-| `npx -y <unknown>` in MCP config | HIGH | Pin version or remove |
-| Hook makes external network call with tool output | HIGH | Remove exfiltration path |
-| `dangerouslyAllowAll: true` in permissions | CRITICAL | Remove immediately |
-| Silent error suppression in hook (`2>/dev/null` with no log) in security-critical path | MEDIUM | Add error logging before suppression |
-| Agent with no `model:` spec and Bash/Write access | MEDIUM | Pin model explicitly |
-| Audit log file not gitignored | MEDIUM | Add to `.gitignore` |
-| External URL embedded in CLAUDE.md or rules file | LOW | Replace with local documentation |
-| Hook pattern list stale (new attack vectors not covered) | LOW | Update pattern lists quarterly |
+| Finding | Severity |
+|---|---|
+| Hardcoded secret in any tracked file | CRITICAL — remove, rotate, purge history |
+| `Bash(*)`, `dangerouslyAllowAll`, committed `bypassPermissions` | CRITICAL |
+| Guard hook that blocks with exit 1, or crashes open | HIGH |
+| Unprompted package execution or network egress (`npx *`, `curl *`, `python *`, `docker *`) | HIGH |
+| Wildcard MCP grant on a write-capable server | HIGH |
+| Secret in MCP `args`; deprecated MCP package with credentials | HIGH |
+| Hook sends tool output off the machine | HIGH |
+| Unquoted `$CLAUDE_PROJECT_DIR` in hook commands | MEDIUM |
+| Audit log stores the matched secret or full command | MEDIUM |
+| Nested `.env` not covered by `Read` deny | MEDIUM |
+| Reviewer agent with `acceptEdits` | MEDIUM |
+| Stale `mcp__*` allow rule for a server not in `.mcp.json` | MEDIUM |
+| Unpinned binary MCP server | LOW |

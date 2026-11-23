@@ -97,7 +97,7 @@ Level = the keyword in the cited page. "Practice" = not in the MCP specification
 
 ## 4. MCP client configuration (`.mcp.json`, settings)
 
-Complements `claude-config-security.md` §4 (supply chain, permission wildcards).
+Complements [claude-config-security.md](claude-config-security.md) §4 (MCP launch lines, pins) and §1 (wildcard `mcp__*` permission grants).
 
 | Finding | Severity | Fix |
 |---|---|---|

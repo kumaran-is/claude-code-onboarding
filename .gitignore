@@ -19,6 +19,15 @@ Thumbs.db
 .claude/settings.local.json
 .claude/temp/
 .claude/ralph-loop.local.md
+# security-guidance plugin: per-developer overrides (project files stay committed)
+.claude/claude-security-guidance.local.md
+.claude/security-patterns.local.yaml
+.claude/security-patterns.local.yml
+.claude/security-patterns.local.json
+# Subagent `memory:` notes are written from whatever project the agent worked on.
+# Durable knowledge is promoted through /promote-lessons; raw notes are never committed.
+.claude/agent-memory/
+.claude/agent-memory-local/
 
 # Runtime state and retired logging systems — never commit prompt logs or generated state
 .claude/state/

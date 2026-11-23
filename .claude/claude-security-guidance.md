@@ -1,102 +1,86 @@
 # Security Guidance — claude-code-onboarding
 
-This file is loaded by the security-guidance plugin's model-backed reviews.
-It describes project-specific threat model and stack rules to apply on top of
-the built-in vulnerability checklist.
-
----
+Loaded by the `security-guidance` plugin into its model-backed diff review (user → project →
+`.local.md`, 8 KB combined; keep this file short so user-wide rules are not truncated).
+Project-specific rules on top of the plugin's built-in checklist. Full review method:
+`.claude/skills/security-reviewer/reference/security-review-checklist.md`.
 
 ## Stack
 
-- **Java 21 / Spring Boot 3.5 WebFlux** — reactive, R2DBC, no blocking calls allowed
-- **NestJS 11 / Fastify** — TypeScript, Prisma ORM, JWT auth, class-validator DTOs
-- **Python 3.14 / FastAPI** — Pydantic v2, async SQLAlchemy, uv-managed deps
-- **Angular 21** — SPA, RxJS, standalone components, daisyUI
-- **Flutter 3.41** — Riverpod, Firebase Auth, cross-platform iOS + Android
-- **PostgreSQL** — Row-Level Security enabled; Firebase Firestore for mobile real-time
+Java 21 / Spring Boot 3.5 WebFlux (R2DBC) · NestJS 11 / Fastify / Prisma · Python 3.14 / FastAPI /
+SQLAlchemy async · Angular 21 and React 19 SPAs · Flutter 3.41 (Firebase Auth, Firestore) ·
+PostgreSQL with RLS · LangChain/LangGraph and Google ADK agents · MCP servers.
 
----
+## Authorization (server-side, every stack)
 
-## Mandatory Rules
+- Authentication is not authorization. Every read and write is scoped to the caller: tenant and
+  user ids come from the verified token, never the request body, path, tool arguments or model
+  output. Foreign objects return 404. Client route guards and hidden buttons are UX only.
+- Spring WebFlux: every route outside `/actuator/health` and `/actuator/info` is covered by a
+  `SecurityWebFilterChain` rule or `@PreAuthorize`; the full actuator never sits on the public port.
+- NestJS: authentication is a global `APP_GUARD`; routes opt out with `@Public()`. `@Public()` on a
+  route that writes state or returns user data IS a finding. Per-route opt-in guards are a finding.
+- FastAPI: protected routes depend on the auth dependency; admin routes add
+  `Depends(require_role(Role.ADMIN))` before any database access.
+- Firestore rules: `request.auth != null` alone is not authorization. Writes check ownership or a
+  role claim (`request.auth.uid == resource.data.ownerId`, custom claims); a rule that lets a user
+  read another user's document by guessing its id is an IDOR.
 
-### Auth & Authorization
+## AI, agents and MCP
 
-- Every Spring WebFlux route not under `/actuator/health` or `/actuator/info` must be
-  behind `@PreAuthorize` or a `SecurityWebFilterChain` rule. Actuator endpoints MUST
-  have management-port isolation or IP allowlist — never expose full actuator on the
-  public port.
-- Every NestJS controller route that is not decorated with `@Public()` must have
-  `@UseGuards(JwtAuthGuard)` applied at route or controller level. `@Public()` on
-  any route that writes state or returns user data IS a finding.
-- Every FastAPI router that handles `/admin` paths must call `require_role("admin")`
-  before any database read or write.
-- Firebase Firestore security rules must never allow `write: true` without `request.auth != null`.
+- Model output, retrieved documents and tool results are untrusted data. They never decide
+  authorization, never reach `eval`/`exec`/`new Function`/a shell, and are never concatenated into
+  system instructions.
+- Side-effecting tools need a deterministic server-side check (and human approval when
+  destructive); LLM guardrails and classifiers are signals, not the authorization decision.
+- Retrieval filters by tenant and permission inside the query, not after it.
+- MCP servers: validate token audience; never pass the client's token upstream; tenant from the
+  token, never tool arguments. Secrets never go in `.mcp.json` `args`.
 
-### Logging & PII
+## Logging and PII
 
-- Do not log `user_id`, `customer_id`, `account_number`, `email`, `phone`, or any
-  field whose name contains `token`, `secret`, `password`, or `key` at INFO or above.
-- In Spring WebFlux, structured MDC fields must be cleared in a `doFinally` operator —
-  missing cleanup leaks context across reactive threads.
-- In FastAPI, never log `request.headers["authorization"]` or raw Bearer tokens.
-- In Flutter, never log `FirebaseAuth.instance.currentUser.email` or any field from
-  the user profile in production release builds.
+- Never log tokens, passwords, API keys, `Authorization` headers, raw prompts/completions or
+  `str(exc)` built from request data. Email, phone and account numbers are not logged at INFO or
+  above; log an opaque internal id instead.
+- Spring WebFlux: an MDC value put in a reactive chain is removed in `doFinally`; a missing
+  removal leaks one request's context into another on the shared event-loop thread.
+- Flutter: no user profile fields or `exception.toString()` in release-build logs or Crashlytics.
 
-### Cryptography
+## Cryptography
 
-- Use `crypto.timingSafeEqual` (Node.js) or `hmac.compare_digest` (Python) for token
-  comparison — never `===` or `==`.
-- Never use `AES/ECB` in Spring or Python — use `AES/GCM/NoPadding` or `AES-CBC` with HMAC.
-- Flutter: never store JWTs or API keys in `SharedPreferences`. Use `flutter_secure_storage`.
-- NestJS: bcrypt cost must be >= 12. Never `bcrypt.compareSync` on the async request path.
+- Token/HMAC comparison: `crypto.timingSafeEqual` (Node), `hmac.compare_digest` (Python),
+  `MessageDigest.isEqual` (Java); never `===`/`==`/`equals`.
+- No `AES/ECB`; use AES-GCM. No `crypto.createCipher` (removed in Node 22) — `createCipheriv`.
+- Passwords: argon2id or bcrypt cost ≥ 12; never `bcrypt.compareSync`/`hashSync` on a request path.
+- Flutter: JWTs and keys in `flutter_secure_storage`, never `SharedPreferences`.
 
-### Input & Injection
+## Injection and unsafe sinks
 
-- NestJS: all DTOs that flow into Prisma must be decorated with `class-validator`
-  decorators. Raw `prisma.$queryRaw` with template-literal user input is SQL injection.
-- Spring WebFlux: `r2dbcTemplate.execute(String sql)` with string-concatenated user
-  input is SQL injection — use `DatabaseClient` with bind parameters.
-- FastAPI: `text()` in SQLAlchemy with f-string user interpolation is SQL injection.
-- Angular: `DomSanitizer.bypassSecurityTrustHtml()` / `bypassSecurityTrustUrl()` with
-  user-supplied input is an XSS sink — must be flagged.
-- Flutter `WebView`: `evaluateJavascript` with user content injected is an XSS sink.
+- NestJS: `$queryRaw` as a tagged template binds values; `$queryRawUnsafe` or `Prisma.raw` with
+  user input is SQL injection. DTOs carry `class-validator` decorators.
+- Spring: `DatabaseClient.sql(...)` built by string concatenation is SQL injection — use `.bind`.
+- FastAPI: SQLAlchemy `text()` with f-string or `+` interpolation is SQL injection.
+- Angular `bypassSecurityTrust*`, React `dangerouslySetInnerHTML`, `[innerHTML]`/`innerHTML =` on
+  user, CMS or model content without DOMPurify are XSS sinks. Rules and severities:
+  `security-reviewer/reference/web-frontend-security.md`.
+- Flutter `WebViewController.runJavaScript*` (legacy `evaluateJavascript`) with interpolated user or
+  agent content is script injection.
 
-### Reactive / Async Safety (Spring WebFlux)
+## SSRF
 
-- Any call to `.block()`, `.blockFirst()`, `.blockLast()`, or `blockingGet()` inside a
-  reactive chain is a blocking-thread violation — flag as HIGH.
-- `Mono.fromCallable` wrapping JDBC (not R2DBC) inside a reactive pipeline without
-  `subscribeOn(Schedulers.boundedElastic())` is a blocking call on the event loop thread.
+Spring `WebClient`, FastAPI `httpx`/`requests`, NestJS `fetch`/`axios` on a URL derived from user,
+tool or model input need a scheme + host allowlist, resolved-address checks and redirect
+re-validation.
 
-### SSRF
+## Flutter mobile
 
-- Spring WebFlux `WebClient.get().uri(userInput)` without allowlist validation is SSRF.
-- FastAPI `httpx.get(url)` or `requests.get(url)` where `url` is derived from a request
-  parameter without scheme+host allowlist is SSRF.
-- NestJS `axios.get(url)` where `url` is user-controlled is SSRF.
+- `badCertificateCallback` returning `true` disables TLS verification — HIGH.
+- A dio `onError` interceptor that calls `handler.resolve(...)` with a fallback response for
+  401/403/5xx swallows the error — flag it (`handler.next(e)` and `handler.reject(e)` propagate).
+- No service, HMAC or private keys in Dart code or `--dart-define`.
 
-### Flutter Mobile
+## Supply chain
 
-- `HttpClient.badCertificateCallback` set to `(_, __, ___) => true` disables TLS — HIGH.
-- `dio` with `onError: (DioException e, handler) => handler.next(e)` swallowing auth
-  errors is a silent failure — flag it.
-- Firebase rules that allow reading another user's document by guessing UID are IDOR.
-
-### Dependency & Supply Chain
-
-- Never install packages from non-official registries without explicit user approval.
-- `npm audit --audit-level=high` failures are blockers before any commit.
-- Python: `pip install` from a VCS URL (git+https://) in production requirements is elevated risk.
-
----
-
-## Review Checklist Additions (appended to built-in)
-
-- [ ] Spring: no `.block()` calls on the event-loop thread
-- [ ] NestJS: every non-public route has `@UseGuards`
-- [ ] FastAPI: admin routes call `require_role("admin")`
-- [ ] Angular: no `bypassSecurityTrustHtml` with user input
-- [ ] Flutter: no secrets in `SharedPreferences`; no `badCertificateCallback = true`
-- [ ] Firestore rules: `request.auth != null` on all write paths
-- [ ] No `crypto.createCipher` (removed in Node 22) — use `createCipheriv`
-- [ ] Token comparison uses timing-safe equals, not `===`
+- Packages only from the official registries, exact versions pinned, lockfiles committed.
+- `npm audit --audit-level=high` / `pip-audit` / dependency-check failures block a merge.
+- `pip install git+https://...` in production requirements is elevated risk.

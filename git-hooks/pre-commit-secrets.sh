@@ -4,7 +4,7 @@
 # Patterns: OpenAI, Anthropic, GitHub tokens, AWS, GCP/Firebase,
 #           database URLs, private keys, JWTs, generic api_key/secret/token.
 #
-# Bypass (emergencies only): git commit --no-verify
+# Never bypass with --no-verify: whitelist a false positive, remove and rotate a real secret.
 
 set -euo pipefail
 
@@ -136,8 +136,7 @@ detect_secrets() {
         echo "  3. Store in .env (gitignored) — never commit .env files"
         echo "  4. Add false-positive values to WHITELIST in .git/hooks/pre-commit"
         echo
-        echo -e "${YELLOW}Emergency bypass (use with caution):${NC}"
-        echo "  git commit --no-verify"
+        echo "  A real secret: remove it from the commit and rotate it. Do not bypass this hook."
         echo
         exit 1
     fi

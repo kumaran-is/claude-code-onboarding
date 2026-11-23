@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Security Review Skill
@@ -45,7 +45,7 @@ Read [reference/security-review-checklist.md](reference/security-review-checklis
 | [reference/agent-guardrails-checklist.md](reference/agent-guardrails-checklist.md) | 12-layer AI agent guardrail pipeline, prompt injection defense, output validation, async audit logging, Constitutional AI — agent-specific security controls | Any LangGraph agent, agentic AI service, or AI feature with tool use |
 | [reference/web-frontend-security.md](reference/web-frontend-security.md) | Browser-side rules for Angular 21 / React SPAs and static sites: XSS sinks, CSP + critical-CSS trade-off (tested), Trusted Types, token storage and API-origin allowlist (tested), Angular XSRF scope (tested), guards vs authorization, open-redirect-safe `returnUrl` (tested), OAuth PKCE, uploads, iframes/postMessage, public bundles, headers, privacy-aware logging; severity summary | Any change to `*.ts`/`*.tsx`/`*.html` in a web app, `index.html`, `angular.json`, hosting config or auth/session code |
 | [reference/mcp-security.md](reference/mcp-security.md) | MCP spec MUST vs recommended practice, MCP server and tool-execution severities, `.mcp.json` review | Any MCP server, MCP tool or `.mcp.json` change |
-| [reference/claude-config-security.md](reference/claude-config-security.md) | Manual security audit checklist for `.claude/` config (settings.json, hooks, agents, MCP servers, CLAUDE.md) — workspace-specific allow/deny/ask list review, hook injection surface, MCP supply chain risks | Before committing any `.claude/` directory changes |
+| [reference/claude-config-security.md](reference/claude-config-security.md) | Claude Code config audit: allow-rule worst cases, deny-rule bypasses, guard hooks that fail open (exit codes, unquoted paths), MCP pins and argv secrets, agent permission modes; commands that derive the current state | Before committing any `.claude/` or `.mcp.json` change |
 
 ## Error Handling
 

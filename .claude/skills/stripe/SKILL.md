@@ -20,71 +20,21 @@ last-reviewed: "2026-03-30"
 
 ## MCP Server
 
-The Stripe MCP server is configured in `.mcp.json` using the official `@stripe/mcp` npm package (stdio transport).
+`.mcp.json` runs the official `@stripe/mcp@0.3.4` package (stdio). Stripe has deprecated it in favour of the hosted server, so prefer that when you can:
 
-**Setup command (already configured in .mcp.json):**
 ```bash
-claude mcp add stripe -- npx -y @stripe/mcp --tools=all --api-key=${STRIPE_SECRET_KEY}
+claude mcp add --transport http stripe https://mcp.stripe.com   # OAuth, no key in config
 ```
 
-**Alternative — Remote HTTP mode (OAuth, no API key in config):**
-```bash
-claude mcp add --transport http stripe https://mcp.stripe.com
-```
+**Accepted arguments (0.3.4 package source):** `--api-key` and `--stripe-account` only. `--tools` has been removed: it prints a warning and has no effect, and any other argument is an error. Pass the key through the `STRIPE_SECRET_KEY` env var, never `--api-key` (argv shows up in the process list).
 
-**Configuration flags:**
-- `--tools=all` — enable all 27 tools (default)
-- `--tools=customers.create,customers.read,...` — restrict to specific tools
-- `--api-key=<key>` — Stripe secret key (prefer Restricted API Key `rk_*`)
-- `--stripe-account=<acct_id>` — operate on a Stripe Connect connected account
+**The key is the tool allowlist.** What the server can do is set by a Restricted API Key (`rk_test_…`) that grants only the resources the task needs: Dashboard → Developers → API keys → Restricted keys. Use test mode for development.
+
+**Tools exposed (check `/mcp` for the current list):** `search_stripe_documentation`, `get_stripe_account_info`, `stripe_api_search`, `stripe_api_details`, `stripe_api_read`, `stripe_implementation_planner`, `stripe_analytics`, `stripe_api_write`, `send_stripe_feedback`.
+
+**Claude Code permissions (`.claude/settings.json`):** the read-only tools are allowed. `stripe_api_write` and `send_stripe_feedback` are always **ask**. `stripe_analytics` falls through to the default prompt.
 
 **Fallback:** `context7` MCP → resolve `stripe` library docs.
-
-### Available MCP Tools (27 total)
-
-**Read-Only / Low-Risk (11 tools):**
-
-| Tool | Description |
-|------|-------------|
-| `fetch_stripe_resources` | Retrieve Stripe objects by ID |
-| `get_stripe_account_info` | Retrieve account information |
-| `list_coupons` | List coupons |
-| `list_customers` | List customers |
-| `list_disputes` | List disputes |
-| `list_prices` | List prices |
-| `list_products` | List products |
-| `list_setup_intents` | List SetupIntents |
-| `retrieve_balance` | Retrieve account balance |
-| `search_stripe_documentation` | Search Stripe knowledge base and docs |
-| `search_stripe_resources` | Search Stripe resources (customers, charges, etc.) |
-
-**Create Operations (5 tools):**
-
-| Tool | Description |
-|------|-------------|
-| `create_coupon` | Create a coupon |
-| `create_customer` | Create a customer |
-| `create_price` | Create a price |
-| `create_product` | Create a product |
-| `update_dispute` | Update a dispute |
-
-**Modify / Higher-Risk Operations (11 tools):**
-
-| Tool | Description |
-|------|-------------|
-| `cancel_subscription` | Cancel a subscription |
-| `create_invoice` | Create an invoice |
-| `create_invoice_item` | Create an invoice item |
-| `create_payment_link` | Create a payment link |
-| `create_refund` | Create a refund |
-| `finalize_invoice` | Finalize an invoice |
-| `list_charges` | List charges |
-| `list_invoices` | List invoices |
-| `list_payment_intents` | List PaymentIntents |
-| `list_subscriptions` | List subscriptions |
-| `update_subscription` | Update a subscription |
-
-**Tool permissions are controlled by your Restricted API Key (RAK).** Create one at the Stripe Dashboard → Developers → API Keys → Restricted Keys. Only grant the permissions each service actually needs.
 
 ## Context
 

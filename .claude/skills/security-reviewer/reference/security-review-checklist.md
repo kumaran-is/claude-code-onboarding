@@ -23,6 +23,7 @@
 - **Client-side guards are UX, NOT security.** Angular route guards, Flutter widget visibility checks, and UI-level role hiding do NOT enforce authorization. All authorization MUST be enforced server-side. Anyone can call your API directly.
 - No IDOR -- users cannot access other users' resources by changing IDs: object fetches carry the caller's scope (organization/owner) in the query, foreign objects return 404 (not 403), and the actor id comes from the verified token, never the request body (`python-dev/reference/fastapi-authorization-boundaries.md`)
 - Side-effect endpoints (send, charge, publish, delete) are reachable only by the identity that owns the action, not by any authenticated user; denials are audit-logged without echoing submitted values
+- Firestore / Firebase rules check ownership or a role claim (`request.auth.uid == resource.data.ownerId`); `request.auth != null` alone lets any signed-in user read or write every document
 - Rate limiting on auth endpoints (login, register, password reset)
 - Session management secure (httpOnly, secure, sameSite cookies)
 - **Prefer managed auth providers** (Firebase Auth, Auth0, Clerk) over custom JWT implementations for production apps. Custom auth with bcrypt+Passport is acceptable for learning/demo projects only. Managed providers handle token rotation, MFA, account recovery, and security patches automatically.
@@ -120,6 +121,16 @@ Requirement levels (spec MUST vs practice) and severities S1–S13 / T1–T8: `m
 - Destructive tools require a server-verified approval; annotations (`destructiveHint`, `readOnlyHint`) are hints, not controls
 - MCP client config: no secrets in `args`, no deprecated/archived server packages, versions pinned
 
+### 11. AI Features and Agents (CRITICAL/HIGH, when applicable)
+Canonical checklist: `agent-guardrails-checklist.md`; RAG retrieval isolation: `rag-security-reviewer` skill; full AI review: `ai-security-reviewer` agent. Minimum checks:
+- Model output, retrieved text and tool results are data: never the authorization decision, never passed to `eval`/`exec`/`new Function`/a shell, never concatenated into system instructions
+- Tenant and user scope injected server-side from the verified token; model-supplied ids ignored
+- Side-effecting tools have a deterministic server-side check and, when destructive, human approval
+- LLM guardrails and classifiers are an extra block, never a substitute for authorization
+
+### 12. Claude Code Configuration (HIGH, when `.claude/` or `.mcp.json` changes)
+`claude-config-security.md`: permission allow rules, guard hooks that fail open, MCP pins and argv secrets, agent permission modes.
+
 ## Anti-Patterns to Always Flag
 
 - Hardcoded secrets or credentials
@@ -133,6 +144,7 @@ Requirement levels (spec MUST vs practice) and severities S1–S13 / T1–T8: `m
 - Race conditions in financial operations (check-then-act without locks)
 - Disabled security features in production (debug mode, permissive CORS)
 - Logging passwords, tokens, or API keys
+- LLM or classifier output used as the authorization decision; model output executed as code
 
 ## Common False Positives
 

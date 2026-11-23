@@ -169,12 +169,11 @@
     "stripe": {
       "type": "stdio",
       "disabled": false,
-      "description": "Stripe MCP server (@stripe/mcp 0.3.4, stdio). The key is read from the STRIPE_SECRET_KEY env var, never passed as an argument (argv is visible in the process list); use a restricted test-mode key. Stripe has deprecated this package (no further security fixes) in favour of the hosted server at https://mcp.stripe.com with OAuth: migrate when you can. Narrow --tools=all to the tools you need.",
+      "description": "Stripe MCP server (@stripe/mcp 0.3.4, stdio). The key is read from the STRIPE_SECRET_KEY env var, never passed as an argument (argv is visible in the process list). Tool scope is set by the key, not by flags: 0.3.4 ignores --tools (removed upstream), so use a Restricted API Key (rk_test_...) granting only the resources you need. Claude Code permissions allow only the read tools; stripe_api_write and send_stripe_feedback always ask. Stripe has deprecated this package (no further security fixes) in favour of the hosted server at https://mcp.stripe.com with OAuth: migrate when you can.",
       "command": "npx",
       "args": [
         "-y",
-        "@stripe/mcp@0.3.4",
-        "--tools=all"
+        "@stripe/mcp@0.3.4"
       ],
       "env": {
         "STRIPE_SECRET_KEY": "${STRIPE_SECRET_KEY}"

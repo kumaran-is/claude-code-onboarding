@@ -43,15 +43,15 @@ patterns:
       - "**/src/**/*.controller.ts"
     reminder: "⚠️ Security Warning: @Public() removes JWT auth on this route. Verify this
       route does not write state, return user-specific data, or perform privileged operations.
-      If it does, remove @Public() and add @UseGuards(JwtAuthGuard) instead."
+      If it does, remove @Public() so the global APP_GUARD authenticates it again."
 
   - rule_name: nestjs_prisma_raw_query
-    regex: "prisma\\.\\$queryRaw(?:Unsafe)?`[^`]*\\$\\{"
+    regex: "\\$(?:queryRaw|executeRaw)Unsafe\\(|Prisma\\.raw\\("
     paths:
       - "**/src/**/*.ts"
-    reminder: "⚠️ Security Warning: Template-literal interpolation into prisma.$queryRaw is
-      SQL injection. Use prisma.$queryRaw with Prisma.sql tagged template (which parameterizes
-      values automatically), or use the Prisma ORM query builder."
+    reminder: "⚠️ Security Warning: $queryRawUnsafe / $executeRawUnsafe / Prisma.raw send the
+      string as SQL, so user input in it is SQL injection. Use the $queryRaw tagged template
+      (each ${value} becomes a bound parameter) or the Prisma query builder."
 
   - rule_name: nestjs_bcrypt_sync_on_request
     regex: "bcrypt\\.compareSync|bcrypt\\.hashSync"
@@ -129,12 +129,13 @@ patterns:
       Use flutter_secure_storage instead, which uses Keychain (iOS) and Keystore (Android)."
 
   - rule_name: flutter_evaluate_javascript_user_input
-    regex: "evaluateJavascript\\("
+    regex: "(?:runJavaScript(?:ReturningResult)?|evaluateJavascript)\\("
     paths:
       - "**/*.dart"
-    reminder: "⚠️ Security Warning: WebViewController.evaluateJavascript() with user-supplied
-      content is an XSS sink. Never interpolate user data into the JavaScript string.
-      If you need to pass data to the WebView, use postMessage with a defined message schema."
+    reminder: "⚠️ Security Warning: WebViewController.runJavaScript() (legacy
+      evaluateJavascript) with interpolated user or agent content is script injection. Never
+      build the JavaScript string from data; pass data as jsonEncode(...) through a
+      JavaScriptChannel message with a defined schema."
 
   - rule_name: flutter_firebase_uid_guessable_query
     regex: "\\.doc\\([^)]*uid[^)]*\\+[^)]*|where.*uid.*[^=!<>]=(?!=)"
@@ -154,8 +155,8 @@ patterns:
       - "**/flyway/**"
     reminder: "⚠️ Security Warning: Disabling Row Level Security on a table removes
       tenant isolation. Verify this is intentional and the table contains no per-tenant
-      or per-user data. If RLS must be bypassed temporarily, use SET LOCAL row_security = off
-      inside an explicit transaction instead of a schema-level ALTER."
+      or per-user data. A maintenance job that must see every row runs as a dedicated role
+      with BYPASSRLS; the table keeps RLS enabled."
 
   - rule_name: postgres_superuser_grant
     regex: "(?i)GRANT\\s+(?:ALL|SUPERUSER|CREATEROLE|CREATEDB)"

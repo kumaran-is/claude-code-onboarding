@@ -1,6 +1,6 @@
 ---
 name: angular-ui-patterns
-description: "Angular 21.x UI/UX state patterns — loading states (show only when no data), error hierarchy (inline→toast→banner→full-screen), empty states, button loading, form patterns with validation, dialog/modal patterns. Load when building any Angular UI component that handles async data or user actions."
+description: "Angular 21.x UI/UX state patterns — canonical load-state union derived from resources (error → hasValue → value), typed API error model, 401 vs 403 UX, error hierarchy (inline→toast→banner→full-screen), empty states, button in-flight guards, typed reactive forms with server errors, confirmation dialogs that stay open while a mutation runs. Load when building any Angular UI component that handles async data or user actions."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
 metadata:
   triggers: Angular loading state, Angular error state, Angular empty state, Angular skeleton, Angular spinner, Angular form validation, Angular button loading, Angular dialog, Angular async UI, Angular UX patterns
@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
@@ -28,19 +28,21 @@ Load this skill when:
 
 ## Five Non-Negotiable Principles
 
-1. **Never show stale UI** — Loading states only when actually loading, never over existing data
-2. **Always surface errors** — Users must know when something fails; never swallow silently
-3. **Optimistic updates** — Make the UI feel instant; roll back on failure
-4. **Progressive disclosure** — Use `@defer` to show content as available
-5. **Graceful degradation** — Partial data is better than no data
+1. **One derived load state** — derive loading / empty / ready / error with `computed()` from the resource (check `error()` before `value()`); never hand-sync flags. Loading indicators only when there is no data to show
+2. **Always surface errors** — log through `Logger` AND show the user; never swallow, never `console.*`, never fallback or mock data
+3. **401 ≠ 403** — 401: sign in again without a loop; 403: "not authorised". Client guards are UX; the server authorizes
+4. **Guard every mutation** — in-flight early return + disabled trigger; read with resources, mutate with `HttpClient`, then `reload()`
+5. **Progressive disclosure** — use `@defer` for non-critical content; partial data beats a blank page, but never fake data
+
+> `resource` / `rxResource` / `httpResource` are **EXPERIMENTAL in Angular 21.x**. Signal Forms are EXPERIMENTAL; typed reactive forms are the 21.x production default.
 
 ---
 
 ## Pattern Selector
 
 What are you building?
-- Async list/page → load `reference/loading-control-flow.md`
-- Error handling → load `reference/error-handling.md`
+- Async list/page → load `reference/loading-control-flow.md` (canonical load-state union)
+- Error handling, 401/403 → load `reference/error-handling.md` (canonical `ApiError` / `toApiError`)
 - Button with loading → load `reference/button-empty-states.md`
 - Form with validation → load `reference/form-dialog-patterns.md`
 - Reviewing for mistakes → load `reference/anti-patterns.md`
@@ -64,39 +66,52 @@ Before completing any UI component:
 
 ### UI States
 
-- [ ] Error state handled and shown to user
-- [ ] Loading state shown only when no data exists
+- [ ] Load state derived with `computed()`: `error()` checked before `value()` (or `hasValue()` guard)
+- [ ] Error state shown to user; 403 rendered as "not authorised", 401 as "sign in again"
+- [ ] Loading state shown only when no data exists (`'reloading'` keeps data)
 - [ ] Empty state provided for collections (`@empty` block)
-- [ ] Buttons disabled during async operations
-- [ ] Buttons show loading indicator when appropriate
+- [ ] Mutation handlers return early while in flight; trigger disabled and shows progress
 
 ### Data & Mutations
 
-- [ ] All async operations have error handling
-- [ ] All user actions have feedback (toast/visual)
-- [ ] Optimistic updates rollback on failure
+- [ ] Every catch logs via `Logger` and shows feedback (no `console.*`, no fallback data)
+- [ ] Reads via resource; mutations via `HttpClient` then `reload()`; 409 → reload and say so
+- [ ] Optimistic updates roll back on failure
 
-### Accessibility
+### Accessibility (WCAG 2.2 AA — checklist owned by the `accessibility-audit` skill)
 
-- [ ] Loading states announced to screen readers
-- [ ] Error messages linked to form fields
-- [ ] Focus management after state changes
+- [ ] Loading states announced (`role="status"`), failures announced (`role="alert"`)
+- [ ] Error messages linked to fields (`aria-describedby`, `aria-invalid`)
+- [ ] Focus moved deliberately after state changes; dialogs focus their first control after render
 
 ---
 
 ## daisyUI Integration
 
 This skill provides the doctrine. Use these daisyUI classes from `angular-spa` skill:
-- Loading: `class="loading loading-spinner loading-lg"`
+- Loading: `<span class="loading loading-spinner loading-lg" aria-hidden="true"></span>` inside a `role="status"` container with visible or `sr-only` text
 - Alert: `class="alert alert-error"` / `class="alert alert-success"`
-- Button loading: `class="btn btn-primary loading"`
+- Button loading: `<span class="loading loading-spinner loading-sm">` inside a disabled `btn`
 - Skeleton: `class="skeleton h-4 w-full"`
-- Empty state: `class="hero min-h-32"`
+- Empty state: a `card` or plain `div` with a heading, one sentence and the primary action (no `hero` layout needed)
+
+Render order, timing thresholds (skeleton delay, minimum display), stale-while-error and offline
+states follow the framework-neutral standard: `../design-system/reference/interaction-contracts.md`
+§6b. Error with data keeps the content and adds an inline error; "empty" only after a settled load;
+skeletons carry `aria-hidden="true"` inside an `aria-busy="true"` region. Optimistic updates only for
+reversible, low-risk actions.
 
 ---
 
+## Documentation Sources
+
+Verify Angular APIs with the `angular-cli` MCP: `search_documentation` with `version: 21`, and
+`get_best_practices` **with the workspace path** (without it the tool returns the latest-major guide —
+v22 guidance that is wrong for 21.2). Context7 remains a fallback for other libraries.
+
 ## Related Skills
 
-- `angular-spa` — workspace skill: daisyUI components, TailwindCSS tokens, conventions
-- `angular` — core API reference for signals and control flow
-- `angular-best-practices` — performance rules that complement these UI patterns
+- `angular-spa` — workspace skill: daisyUI components, TailwindCSS tokens, conventions; `reference/web-security.md` (interceptor, refresh, guards, returnUrl); `reference/testing-vitest.md` (testing these states)
+- `angular` — API reference: `references/signals-core.md` (resource options and stability), `references/signal-forms.md`
+- `angular-best-practices` — review checklist and performance priorities
+- `accessibility-audit` — WCAG 2.2 AA checklist and automated checks

@@ -1,49 +1,159 @@
 # Loading State Patterns & Control Flow
 
-## Loading State Patterns
+Canonical home for the **load-state union**: how a page turns an async read into exactly one of
+loading / empty / ready / error. Resource API details (options, stability) live in
+`angular/references/signals-core.md`; error typing and 401/403 copy live in `error-handling.md`.
 
-### The Golden Rule
+> `resource`, `rxResource` and `httpResource` are **EXPERIMENTAL in Angular 21.x** (`@experimental` in the
+> 21.2 `.d.ts`). Pin the Angular version and re-check the API on every upgrade.
 
-**Show loading indicator ONLY when there's no data to display.**
+## The Golden Rule
+
+**Show a loading indicator only when there is no data to display.** A background refresh keeps the
+current data on screen.
+
+## Derive One Load State With `computed()`
+
+Never keep hand-set `loading` / `error` / `items` flags in sync. Derive one discriminated union from the
+resource, in this order:
+
+1. **`error()` first** — `value()` throws while the resource is in the error state.
+2. **`hasValue()`** — false on the first load and while idle; it narrows `value()` to non-`undefined`.
+3. **`value()`** — now safe; split empty vs ready.
 
 ```typescript
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { ApiErrorKind, toApiError } from '../core/http/api-error'; // see error-handling.md
+import { ErrorState } from '../shared/components/error-state';       // see error-handling.md
+
+interface Item { readonly id: string; readonly name: string }
+
+type LoadState =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'ready'; readonly items: readonly Item[] }
+  | { readonly kind: 'error'; readonly error: ApiErrorKind };
+
 @Component({
+  selector: 'app-item-list-page',
+  imports: [ErrorState],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (error()) {
-      <app-error-state [error]="error()" (retry)="load()" />
-    } @else if (loading() && !items().length) {
-      <app-skeleton-list />
-    } @else if (!items().length) {
-      <app-empty-state message="No items found" />
-    } @else {
-      <app-item-list [items]="items()" />
+    @switch (state().kind) {
+      @case ('loading') { <div class="skeleton h-8 w-full" role="status" aria-label="Loading items"></div> }
+      @case ('empty') { <p>No items yet.</p> }
+      @case ('ready') {
+        @if (items.isLoading()) { <progress class="progress" aria-label="Refreshing"></progress> }
+        <ul>
+          @for (item of readyItems(); track item.id) { <li>{{ item.name }}</li> }
+        </ul>
+      }
+      @case ('error') {
+        <app-error-state [message]="errorMessage()" [retryable]="retryable()" (retry)="items.reload()" />
+      }
     }
   `,
 })
-export class ItemListComponent {
-  private store = inject(ItemStore);
+export class ItemListPage {
+  private readonly http = inject(HttpClient);
+  /** Route param bound by withComponentInputBinding(). */
+  readonly folder = input<string>();
 
-  items = this.store.items;
-  loading = this.store.loading;
-  error = this.store.error;
+  // EXPERIMENTAL (21.x). params() returning undefined → status 'idle', no request is made.
+  readonly items = rxResource({
+    params: () => this.folder() || undefined,
+    stream: ({ params }) =>
+      this.http.get<Item[]>(`/api/folders/${encodeURIComponent(params)}/items`),
+  });
+
+  readonly state = computed<LoadState>(() => {
+    const err = this.items.error();                       // 1. error first
+    if (err) return { kind: 'error', error: toApiError(err).kind };
+    if (!this.items.hasValue()) return { kind: 'loading' }; // 2. nothing to show yet
+    const items = this.items.value();                     // 3. safe now
+    return items.length ? { kind: 'ready', items } : { kind: 'empty' };
+  });
+
+  protected readonly readyItems = computed(() => {
+    const s = this.state();
+    return s.kind === 'ready' ? s.items : [];
+  });
+  protected readonly errorMessage = computed(() => {
+    const s = this.state();
+    if (s.kind !== 'error') return '';
+    return s.error === 'forbidden' ? 'You are not authorised to view these items.' : 'Items could not be loaded.';
+  });
+  protected readonly retryable = computed(() => {
+    const s = this.state();
+    return s.kind === 'error' && s.error !== 'forbidden' && s.error !== 'unauthenticated';
+  });
 }
 ```
+
+Verified against Angular 21.2.26 with Vitest: `value()` throws after a 403; `params` returning `undefined`
+leaves `status()` at `'idle'` with no request; `reload()` keeps `state()` at `ready` while `status()` is
+`'reloading'`.
+
+### `loading` vs `reloading` — choose on purpose
+
+| `status()` | Trigger | `value()` | UI |
+|---|---|---|---|
+| `'idle'` | `params` returned `undefined` | `undefined` | Prompt ("Pick a folder"), no spinner |
+| `'loading'` | `params` changed (new folder, new filter) | cleared | Skeleton |
+| `'reloading'` | `reload()` with same params | kept | Keep the list, show a thin progress bar |
+| `'error'` | loader/stream failed | throws | Error state (see `error-handling.md`) |
+| `'resolved'` / `'local'` | loaded / `set()` locally | value | Data |
+
+If a params change must keep the previous page visible (pagination), keep a snapshot with
+`linkedSignal` instead of letting the list blank.
+
+### Stale-while-error (refresh fails while data is on screen)
+
+A resource that errors drops its value (`value()` throws), so the union above would replace a
+populated list with a full error page. The framework-neutral standard
+(`../../design-system/reference/interaction-contracts.md` §6b) says: error **with** data keeps the
+content and adds an inline, non-blocking error; "empty" only after a settled load. Keep the last good
+value in a `linkedSignal`:
+
+```typescript
+readonly users = rxResource({ stream: () => this.api.list({ filter: '', offset: 0 }) });
+/** Last successfully loaded page; survives a later error. */
+readonly lastGood = linkedSignal<Page<User> | undefined, Page<User> | undefined>({
+  source: () => (this.users.hasValue() ? this.users.value() : undefined),
+  computation: (next, previous) => next ?? previous?.value,
+});
+// Template: @if (users.error() && lastGood()) { <div role="alert" class="alert alert-warning">
+//   Showing earlier results — refresh failed. <button (click)="users.reload()">Retry</button></div> }
+//   then render lastGood()?.items.
+```
+
+Verified (Vitest, 21.2.26): after a successful load and a 503 on `reload()`, the list stays on screen
+with the inline alert. Clear `lastGood` when params change to a different entity (different user,
+different tenant) — stale data from another context is worse than a spinner. Skeletons carry
+`aria-hidden="true"` inside an `aria-busy="true"` region; timing thresholds are in §6b.
+
+### Reads vs mutations
+
+Read with a resource; mutate with `HttpClient` (`firstValueFrom(...)`) and then call `reload()`. A resource
+aborts its in-flight request when params change, so it must never carry a mutation. On a **409** from a
+mutation, call `reload()` and show the other actor's state. The mutation flow with an in-flight guard is in
+`form-dialog-patterns.md`.
+
+### Extract at the third use
+
+Write the `state` computed inline in the first two pages. When a third page copies it, extract a typed
+helper (for example `toLoadState(resource)`) into `shared/` — the Rule of Three in `code-standards.md`.
 
 ### Loading State Decision Tree
 
 ```
-Is there an error?
-  → Yes: Show error state with retry option
-  → No: Continue
-
-Is it loading AND we have no data?
-  → Yes: Show loading indicator (spinner/skeleton)
-  → No: Continue
-
-Do we have data?
-  → Yes, with items: Show the data
-  → Yes, but empty: Show empty state
-  → No: Show loading (fallback)
+error()?                       → error state (retry only if retryable)
+!hasValue() and status idle?   → prompt, no request
+!hasValue()?                   → skeleton / spinner
+value() empty?                 → empty state
+otherwise                      → data (thin progress bar while 'reloading')
 ```
 
 ### Skeleton vs Spinner
@@ -63,11 +173,9 @@ Do we have data?
 
 ```html
 @if (user(); as user) {
-<span>Welcome, {{ user.name }}</span>
-} @else if (loading()) {
-<app-spinner size="small" />
+  <span>Welcome, {{ user.name }}</span>
 } @else {
-<a routerLink="/login">Sign In</a>
+  <a routerLink="/login">Sign in</a>
 }
 ```
 
@@ -75,14 +183,9 @@ Do we have data?
 
 ```html
 @for (item of items(); track item.id) {
-<app-item-card [item]="item" (delete)="remove(item.id)" />
+  <app-item-card [item]="item" (delete)="remove(item.id)" />
 } @empty {
-<app-empty-state
-  icon="inbox"
-  message="No items yet"
-  actionLabel="Create Item"
-  (action)="create()"
-/>
+  <app-empty-state title="No items yet" actionLabel="Create item" (action)="create()" />
 }
 ```
 
@@ -95,12 +198,15 @@ Do we have data?
 
 <!-- Non-critical content deferred -->
 @defer (on viewport) {
-<app-comments [postId]="postId()" />
+  <app-comments [postId]="postId()" />
 } @placeholder {
-<div class="h-32 bg-gray-100 animate-pulse"></div>
+  <div class="skeleton h-32 w-full"></div>
 } @loading (minimum 200ms) {
-<app-spinner />
+  <span class="loading loading-spinner" role="status" aria-label="Loading comments"></span>
 } @error {
-<app-error-state message="Failed to load comments" />
+  <app-error-state message="Comments could not be loaded." />
 }
 ```
+
+`@defer`'s `@error` covers a failed **chunk** load only; data errors inside the deferred component still
+need that component's own load state.

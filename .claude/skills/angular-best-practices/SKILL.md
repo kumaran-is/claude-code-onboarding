@@ -1,48 +1,58 @@
 ---
 name: angular-best-practices
-description: "Impact-prioritized Angular 21.x best practices — CRITICAL: OnPush+Signals, async waterfalls, bundle optimization. HIGH: rendering performance, SSR hydration. MEDIUM: template optimization, state management. LOW: memory management. Load when reviewing Angular code, writing components, or optimizing performance."
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__angular-cli__get_best_practices
+description: "Impact-prioritized Angular 21.x review checklist — CRITICAL: OnPush+Signals on the zoneless default, async waterfalls, bundle optimization. HIGH: rendering performance, SSR hydration. MEDIUM: template optimization, state management. LOW: memory management. Load when reviewing Angular code, writing components, or optimizing performance."
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation
 metadata:
-  triggers: Angular performance, Angular optimization, Angular OnPush, Angular bundle, Angular lazy loading, Angular SSR, Angular memory leak, Angular trackBy, Angular virtual scroll, Angular review
+  triggers: Angular performance, Angular optimization, Angular OnPush, Angular bundle, Angular lazy loading, Angular SSR, Angular memory leak, Angular track, Angular virtual scroll, Angular review
   related-skills: angular-spa, angular, angular-ui-patterns
   domain: frontend
   role: specialist
   scope: review
   output-format: checklist
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 ## Iron Law
 
-**LOAD `angular-spa` FIRST for TailwindCSS 4.x + daisyUI workspace conventions. This skill provides ranked best practices for review and optimization — not implementation templates.**
+**LOAD `angular-spa` FIRST for TailwindCSS 4.x + daisyUI workspace conventions. This skill is the ranked review checklist — not the API reference (`angular`) and not implementation templates (`angular-spa`).**
+
+## Documentation Sources
+
+Verify every Angular API against the `angular-cli` MCP before citing it in a review:
+- `search_documentation` with `version: 21` — check the page's experimental banner.
+- `get_best_practices` **with `workspacePath`** (an `angular.json` folder inside the client's project).
+  Without it the tool returns the latest-major guide (v22 guidance, e.g. a different default change-detection strategy) — wrong for 21.2.
+
+Context7 is a fallback for non-Angular libraries.
+
+**Version facts for 21.2** (checked against `@angular/*@21.2` `.d.ts` and v21 docs):
+zoneless is the default; `ChangeDetectionStrategy.OnPush` is still explicit (the 21.2 default is `Eager`; `Default` is a deprecated alias);
+`resource` / `rxResource` / `httpResource` and Signal Forms are **EXPERIMENTAL**; `standalone: true` is the
+default and must not be written.
 
 ---
 
 ## When to Apply
 
-Reference these guidelines when:
-
-- Writing new Angular components or pages
-- Implementing data fetching patterns
-- Reviewing code for performance issues
-- Refactoring existing Angular code
+- Reviewing a PR that touches Angular components, routes, services or templates
+- Writing new components or data fetching
 - Optimizing bundle size or load times
-- Configuring SSR/hydration
+- Configuring SSR / hydration (details: `angular/references/ssr-hydration.md`)
 
 ---
 
 ## Priority Matrix
 
-| Priority | Category              | Impact     | Focus                           |
-| -------- | --------------------- | ---------- | ------------------------------- |
-| 1        | Change Detection      | CRITICAL   | Signals, OnPush, Zoneless       |
-| 2        | Async Waterfalls      | CRITICAL   | RxJS patterns, SSR preloading   |
-| 3        | Bundle Optimization   | CRITICAL   | Lazy loading, tree shaking      |
-| 4        | Rendering Performance | HIGH       | @defer, trackBy, virtualization |
-| 5        | Server-Side Rendering | HIGH       | Hydration, prerendering         |
-| 6        | Template Optimization | MEDIUM     | Control flow, pipes             |
-| 7        | State Management      | MEDIUM     | Signal patterns, selectors      |
-| 8        | Memory Management     | LOW-MEDIUM | Cleanup, subscriptions          |
+| Priority | Category              | Impact     | Focus                                   |
+| -------- | --------------------- | ---------- | --------------------------------------- |
+| 1        | Change Detection      | CRITICAL   | Signals, OnPush, zoneless default       |
+| 2        | Async Waterfalls      | CRITICAL   | Resources, flattening, SSR preloading   |
+| 3        | Bundle Optimization   | CRITICAL   | Lazy loading, tree shaking              |
+| 4        | Rendering Performance | HIGH       | @defer, track, virtualization           |
+| 5        | Server-Side Rendering | HIGH       | Hydration, prerendering                 |
+| 6        | Template Optimization | MEDIUM     | Control flow, pipes                     |
+| 7        | State Management      | MEDIUM     | Signal services, scoped stores          |
+| 8        | Memory Management     | LOW-MEDIUM | Cleanup, subscriptions                  |
 
 ---
 
@@ -51,118 +61,93 @@ Reference these guidelines when:
 ### Use OnPush Change Detection
 
 ```typescript
-// ✅ CORRECT - OnPush with Signals
+// ✅ CORRECT - OnPush with Signals (explicit in 21.x)
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div>{{ count() }}</div>`,
 })
-export class CounterComponent {
-  count = signal(0);
+export class Counter {
+  readonly count = signal(0);
 }
 
-// ❌ WRONG - Default change detection
+// ❌ WRONG - Default change detection, mutable field
 @Component({
-  template: `<div>{{ count }}</div>`, // Checked every cycle
+  template: `<div>{{ count }}</div>`,
 })
-export class CounterComponent {
+export class Counter {
   count = 0;
 }
 ```
 
 ### Prefer Signals Over Mutable Properties
 
-```typescript
-// ✅ CORRECT - Signals trigger precise updates
-@Component({
-  template: `
-    <h1>{{ title() }}</h1>
-    <p>Count: {{ count() }}</p>
-  `,
-})
-export class DashboardComponent {
-  title = signal("Dashboard");
-  count = signal(0);
-}
+Template state lives in `signal()` / `computed()` / `input()`. Under zoneless change detection a plain
+field mutated from a timer or a promise never re-renders.
 
-// ❌ WRONG - Mutable properties require zone.js checks
-@Component({
-  template: `
-    <h1>{{ title }}</h1>
-    <p>Count: {{ count }}</p>
-  `,
-})
-export class DashboardComponent {
-  title = "Dashboard";
-  count = 0;
-}
-```
+### Zoneless Is the Default — Do Not Add Providers
 
-### Enable Zoneless for New Projects
+Angular 21 apps are zoneless by default: no `zone.js` polyfill, no change-detection provider in
+`app.config.ts`. Review findings:
 
-```typescript
-// main.ts - Zoneless Angular (v20+)
-bootstrapApplication(AppComponent, {
-  providers: [provideZonelessChangeDetection()],
-});
-```
+- `provideZoneChangeDetection(...)` present → the app opted back into zone.js; flag unless justified.
+- `provideZonelessChangeDetection()` in a 21.x app → redundant (it was the v20 opt-in); remove.
+- `NgZone.onStable` / `onMicrotaskEmpty` / `isStable` → never fire / always true under zoneless; replace
+  with `afterNextRender` / `afterEveryRender`. `NgZone.run` / `runOutsideAngular` remain compatible.
+- Reactive-forms `setValue` / `patchValue` from code do not schedule change detection; the template must
+  read a signal (or call `markForCheck`).
 
-**Benefits:**
-
-- No zone.js patches on async APIs
-- Smaller bundle (~15KB savings)
-- Clean stack traces for debugging
-- Better micro-frontend compatibility
+Details: `angular/SKILL.md` (Zoneless section).
 
 ---
 
 ## 2. Async Operations & Waterfalls (CRITICAL)
 
-### Eliminate Sequential Data Fetching
+### Eliminate Nested Subscriptions
 
 ```typescript
-// ❌ WRONG - Nested subscriptions create waterfalls
+// ❌ WRONG - Nested subscriptions: waterfall, leaks, no cancellation
 this.route.params.subscribe((params) => {
-  // 1. Wait for params
-  this.userService.getUser(params.id).subscribe((user) => {
-    // 2. Wait for user
-    this.postsService.getPosts(user.id).subscribe((posts) => {
-      // 3. Wait for posts
-    });
+  this.userService.getUser(params['id']).subscribe((user) => {
+    this.postsService.getPosts(user.id).subscribe((posts) => { /* … */ });
   });
 });
 
-// ✅ CORRECT - Parallel execution with forkJoin
-forkJoin({
-  user: this.userService.getUser(id),
-  posts: this.postsService.getPosts(id),
-}).subscribe((data) => {
-  // Fetched in parallel
-});
+// ✅ CORRECT - Route param as input() + a resource: latest id wins, stale requests cancelled,
+// no manual subscribe. rxResource is EXPERIMENTAL in 21.x.
+export class PostsPage {
+  private readonly http = inject(HttpClient);
+  readonly id = input.required<string>(); // provideRouter(routes, withComponentInputBinding())
+  readonly posts = rxResource({
+    params: () => this.id(),
+    stream: ({ params }) =>
+      this.http.get<Post[]>(`/api/users/${encodeURIComponent(params)}/posts`),
+  });
+}
 
-// ✅ CORRECT - Flatten dependent calls with switchMap
-this.route.params
-  .pipe(
-    map((p) => p.id),
-    switchMap((id) => this.userService.getUser(id)),
-  )
-  .subscribe();
+// ✅ CORRECT - Independent reads in parallel
+forkJoin({ user: this.users.get(id), posts: this.posts.list(id) });
 ```
+
+A stream that must stay imperative (websocket, polling) is subscribed in an injection context with
+`takeUntilDestroyed()`. One-shot mutations use `firstValueFrom(...)` and complete on their own.
 
 ### Avoid Client-Side Waterfalls in SSR
 
 ```typescript
-// ✅ CORRECT - Use resolvers or blocking hydration for critical data
-export const route: Route = {
-  path: "profile/:id",
-  resolve: { data: profileResolver }, // Fetched on server before navigation
-  component: ProfileComponent,
-};
+// ✅ CORRECT - Resolver runs before activation (on the server during SSR); lazy component
+export const routes: Routes = [
+  {
+    path: 'profile/:id',
+    resolve: { profile: profileResolver },
+    loadComponent: () => import('./profile/profile-page').then((m) => m.ProfilePage),
+  },
+];
+// ProfilePage: readonly profile = input.required<Profile>(); // bound by withComponentInputBinding()
 
-// ❌ WRONG - Component fetches data on init
-class ProfileComponent implements OnInit {
+// ❌ WRONG - Component starts fetching only after its JS loads and renders
+class ProfilePage implements OnInit {
   ngOnInit() {
-    // Starts ONLY after JS loads and component renders
-    this.http.get("/api/profile").subscribe();
+    this.http.get('/api/profile').subscribe();
   }
 }
 ```
@@ -174,27 +159,15 @@ class ProfileComponent implements OnInit {
 ### Lazy Load Routes
 
 ```typescript
-// ✅ CORRECT - Lazy load feature routes
+// ✅ CORRECT - Lazy load every route-level component
 export const routes: Routes = [
-  {
-    path: "admin",
-    loadChildren: () =>
-      import("./admin/admin.routes").then((m) => m.ADMIN_ROUTES),
-  },
-  {
-    path: "dashboard",
-    loadComponent: () =>
-      import("./dashboard/dashboard.component").then(
-        (m) => m.DashboardComponent,
-      ),
-  },
+  { path: 'admin', loadChildren: () => import('./admin/admin.routes').then((m) => m.ADMIN_ROUTES) },
+  { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then((m) => m.Dashboard) },
 ];
 
-// ❌ WRONG - Eager loading everything
-import { AdminModule } from "./admin/admin.module";
-export const routes: Routes = [
-  { path: "admin", component: AdminComponent }, // In main bundle
-];
+// ❌ WRONG - Eagerly imported route component lands in the main bundle
+import { AdminPage } from './admin/admin-page';
+export const routes: Routes = [{ path: 'admin', component: AdminPage }];
 ```
 
 ### Use @defer for Heavy Components
@@ -202,36 +175,42 @@ export const routes: Routes = [
 ```html
 <!-- ✅ CORRECT - Heavy component loads on demand -->
 @defer (on viewport) {
-<app-analytics-chart [data]="data()" />
+  <app-analytics-chart [data]="data()" />
 } @placeholder {
-<div class="chart-skeleton"></div>
+  <div class="skeleton h-64 w-full"></div>
 }
 
-<!-- ❌ WRONG - Heavy component in initial bundle -->
+<!-- ❌ WRONG - Heavy component in the initial bundle -->
 <app-analytics-chart [data]="data()" />
 ```
 
-### Avoid Barrel File Re-exports
+### Barrels: Library Public API Yes, Intra-App Barrels No
 
 ```typescript
-// ❌ WRONG - Imports entire barrel, breaks tree-shaking
-import { Button, Modal, Table } from "@shared/components";
+// ✅ CORRECT - A shared library exposes ONE public API file (index.ts / public-api.ts) and is
+// imported by package name; its package.json declares "sideEffects": false.
+import { Button, Modal } from '@acme/shared-ui';
 
-// ✅ CORRECT - Direct imports
-import { Button } from "@shared/components/button/button.component";
-import { Modal } from "@shared/components/modal/modal.component";
+// ✅ CORRECT - Inside an app, import the file directly
+import { OrderTable } from './orders/order-table';
+
+// ❌ WRONG - Intra-app "index.ts re-export everything" barrels: cycles, slower builds, accidental eager imports
+import { OrderTable, OrderForm, OrderChart } from './orders';
 ```
+
+Whether a given barrel defeats tree-shaking depends on side effects in the re-exported modules —
+UNVERIFIED for any specific library; measure with `ng build --stats-json` before claiming bundle savings.
 
 ### Dynamic Import Third-Party Libraries
 
 ```typescript
-// ✅ CORRECT - Load heavy library on demand
-async loadChart() {
+// ✅ CORRECT - Load a heavy library on demand
+async loadChart(): Promise<void> {
   const { Chart } = await import('chart.js');
-  this.chart = new Chart(this.canvas, config);
+  this.chart = new Chart(this.canvas().nativeElement, config);
 }
 
-// ❌ WRONG - Bundle Chart.js in main chunk
+// ❌ WRONG - Static import puts it in the main chunk
 import { Chart } from 'chart.js';
 ```
 
@@ -239,114 +218,62 @@ import { Chart } from 'chart.js';
 
 ## 4. Rendering Performance (HIGH)
 
-### Always Use trackBy with @for
+### Track by a Stable Identity in @for
 
 ```html
 <!-- ✅ CORRECT - Efficient DOM updates -->
 @for (item of items(); track item.id) {
-<app-item-card [item]="item" />
+  <app-item-card [item]="item" />
 }
 
-<!-- ❌ WRONG - Entire list re-renders on any change -->
+<!-- ❌ WRONG - $index on a list that reorders/filters re-creates DOM -->
 @for (item of items(); track $index) {
-<app-item-card [item]="item" />
+  <app-item-card [item]="item" />
 }
 ```
 
 ### Use Virtual Scrolling for Large Lists
 
-Use `CdkVirtualScrollViewport` with `itemSize` for lists >50 items. See [references/extended-patterns.md](references/extended-patterns.md) for the full example.
+Use `CdkVirtualScrollViewport` with `itemSize` for lists >50 items. See [references/extended-patterns.md](references/extended-patterns.md).
 
-### Prefer Pure Pipes Over Methods
+### Prefer Pure Pipes and computed() Over Template Methods
 
-Use `@Pipe({ pure: true })` — memoized and called only when inputs change. Never call methods in templates — they run every change detection cycle. See [references/extended-patterns.md](references/extended-patterns.md) for examples.
-
-### Use computed() for Derived Data
-
-Use `computed()` instead of getters — cached until signal dependencies change. See [references/extended-patterns.md](references/extended-patterns.md) for before/after examples.
+Template method calls run on every check of the view; a pure pipe or `computed()` is memoized. See [references/extended-patterns.md](references/extended-patterns.md).
 
 ---
 
 ## 5. Server-Side Rendering (HIGH)
 
-### Configure Incremental Hydration
+Canonical guide: `angular/references/ssr-hydration.md`. Review points:
 
-```typescript
-// app.config.ts
-import {
-  provideClientHydration,
-  withIncrementalHydration,
-} from "@angular/platform-browser";
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    provideClientHydration(withIncrementalHydration(), withEventReplay()),
-  ],
-};
-```
-
-### Defer Non-Critical Content
-
-```html
-<!-- Critical above-the-fold content -->
-<app-header />
-<app-hero />
-
-<!-- Below-fold deferred with hydration triggers -->
-@defer (hydrate on viewport) {
-<app-product-grid />
-} @defer (hydrate on interaction) {
-<app-chat-widget />
-}
-```
-
-### Use TransferState for SSR Data
-
-```typescript
-@Injectable({ providedIn: "root" })
-export class DataService {
-  private http = inject(HttpClient);
-  private transferState = inject(TransferState);
-  private platformId = inject(PLATFORM_ID);
-
-  getData(key: string): Observable<Data> {
-    const stateKey = makeStateKey<Data>(key);
-
-    if (isPlatformBrowser(this.platformId)) {
-      const cached = this.transferState.get(stateKey, null);
-      if (cached) {
-        this.transferState.remove(stateKey);
-        return of(cached);
-      }
-    }
-
-    return this.http.get<Data>(`/api/${key}`).pipe(
-      tap((data) => {
-        if (isPlatformServer(this.platformId)) {
-          this.transferState.set(stateKey, data);
-        }
-      }),
-    );
-  }
-}
-```
+- Hydration on: `provideClientHydration(...)` in `app.config.ts`.
+- Incremental hydration (`withIncrementalHydration()`, stable in 21.x) **enables event replay itself** —
+  `withEventReplay()` next to it is redundant.
+- Hydrate triggers are `hydrate on …`, `hydrate when …`, `hydrate never`; each `@defer` block is separate
+  (`@defer (hydrate on viewport) { … } @placeholder { … }`).
+- `HttpClient` GET/HEAD responses are transferred to the client automatically by `provideClientHydration()`;
+  hand-written `TransferState` for HttpClient calls is redundant. A double fetch usually means hydration is
+  missing, the request carries auth headers, or server and client use different origins.
+- Incremental hydration reduces JS on load; it does not fix slow TTFB (server/data latency).
 
 ---
 
 ## 6. Template Optimization (MEDIUM)
 
-### Use New Control Flow Syntax
+### Use Built-in Control Flow
 
 ```html
-<!-- ✅ CORRECT - New control flow (faster, smaller bundle) -->
-@if (user()) {
-<span>{{ user()!.name }}</span>
+<!-- ✅ CORRECT -->
+@if (user(); as user) {
+  <span>{{ user.name }}</span>
 } @else {
-<span>Guest</span>
-} @for (item of items(); track item.id) {
-<app-item [item]="item" />
+  <span>Guest</span>
+}
+
+@for (item of items(); track item.id) {
+  <app-item [item]="item" />
 } @empty {
-<p>No items</p>
+  <p>No items</p>
 }
 
 <!-- ❌ WRONG - Legacy structural directives -->
@@ -357,56 +284,63 @@ export class DataService {
 ### Avoid Complex Template Expressions
 
 ```typescript
-// ✅ CORRECT - Precompute in component
-class Component {
-  items = signal<Item[]>([]);
-  sortedItems = computed(() =>
-    [...this.items()].sort((a, b) => a.name.localeCompare(b.name))
+// ✅ CORRECT - Precompute in the component
+class ItemList {
+  readonly items = signal<Item[]>([]);
+  readonly sortedItems = computed(() =>
+    [...this.items()].sort((a, b) => a.name.localeCompare(b.name)),
   );
 }
-
-// Template
-@for (item of sortedItems(); track item.id) { ... }
-
-// ❌ WRONG - Sorting in template on every render
-@for (item of items() | sort:'name'; track item.id) { ... }
+// Template: @for (item of sortedItems(); track item.id) { … }
 ```
 
 ---
 
 ## 7. State Management (MEDIUM)
 
-> See [references/extended-patterns.md](references/extended-patterns.md) for full examples (selectors, feature-scoped stores).
+The stack uses **signal services**, not a store library (no NgRx). Rules:
 
-**Key rules:**
-- Use `store.selectSignal(selector)` — subscribes only to the slice that changed, not entire state
-- `@Injectable()` without `providedIn: 'root'` for feature-scoped stores provided at component level
+- Private writable `signal()`, public read-only via `asReadonly()` or `computed()` for derived values.
+- Feature-scoped state: `@Injectable()` (no `providedIn: 'root'`) provided in the feature route or page
+  component — it is created and destroyed with that feature.
+- Derived state is `computed()` / `linkedSignal()`; never mirror state with `effect()`.
+- Server state is read through resources (experimental in 21.x) and mutated through `HttpClient` + `reload()`.
+
+Examples: [references/extended-patterns.md](references/extended-patterns.md). Adopting a store library is an
+architecture decision (ADR), not a review fix.
 
 ---
 
 ## 8. Memory Management (LOW-MEDIUM)
 
-> See [references/extended-patterns.md](references/extended-patterns.md) for full examples (takeUntilDestroyed, toSignal).
+- Prefer no manual subscription: resources, `toSignal()`, the `async` pipe.
+- Long-lived streams subscribed imperatively → `takeUntilDestroyed()` in an injection context (or pass
+  `destroyRef`); no `ngOnDestroy` bookkeeping.
+- `toSignal` / `toObservable` / `effect` / `takeUntilDestroyed()` called inside a method throw **NG0203**
+  unless given an `injector` — create them in field initializers or the constructor.
+- One-shot `HttpClient` calls complete by themselves; a blanket "never `.subscribe()`" rule is a false positive there.
 
-**Key rules:**
-- Use `takeUntilDestroyed(this.destroyRef)` — auto-unsubscribes on component destroy, no manual `ngOnDestroy`
-- Prefer `toSignal(obs$)` over manual subscribe/unsubscribe entirely
+Examples: [references/extended-patterns.md](references/extended-patterns.md).
 
 ---
 
 ## Quick Reference Checklists
 
-> See [references/extended-patterns.md](references/extended-patterns.md) for the full New Component, Performance Review, and SSR checklists.
+> Full New Component, Performance Review and SSR checklists: [references/extended-patterns.md](references/extended-patterns.md).
 
 **New component minimum:**
 - [ ] `changeDetection: ChangeDetectionStrategy.OnPush`
-- [ ] `standalone: true`
+- [ ] No `standalone: true` (the default since v19) and no `NgModule`
+- [ ] `input()` / `output()` / `model()`, `inject()`, signal queries
 - [ ] `@for` with `track item.id` (not `$index`)
+- [ ] Async data has loading / empty / error / ready states (`angular-ui-patterns`)
+- [ ] Accessibility meets WCAG 2.2 AA (`accessibility-audit` skill owns the checklist)
 
 ---
 
 ## Related Skills
 
-- `angular-spa` — workspace skill: TailwindCSS 4.x, daisyUI 5.5.5, conventions
-- `angular` — core API reference: signals, standalone, routing patterns
-- `angular-ui-patterns` — UI state patterns: loading, error, empty states
+- `angular` — API reference: signals and resources (`references/signals-core.md`), Signal Forms, routing/DI, SSR (`references/ssr-hydration.md`)
+- `angular-spa` — workspace conventions, templates, `reference/web-security.md`, `reference/testing-vitest.md`
+- `angular-ui-patterns` — canonical load-state union, typed API errors, 401/403 UX, dialogs
+- `accessibility-audit` — WCAG 2.2 AA checklist and automated checks

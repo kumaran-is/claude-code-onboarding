@@ -1,6 +1,7 @@
 # Angular Best Practices — Extended Patterns
 
-Detailed code examples moved from `../SKILL.md` for reference.
+Detailed examples for `../SKILL.md`. Angular 21.2: zoneless default, OnPush explicit, `standalone`
+implicit, resources and Signal Forms EXPERIMENTAL.
 
 ---
 
@@ -9,60 +10,57 @@ Detailed code examples moved from `../SKILL.md` for reference.
 ### Virtual Scrolling for Large Lists
 
 ```typescript
-import { CdkVirtualScrollViewport, CdkFixedSizeVirtualScroll } from '@angular/cdk/scrolling';
+import { CdkFixedSizeVirtualScroll, CdkVirtualForOf, CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 
 @Component({
-  imports: [CdkVirtualScrollViewport, CdkFixedSizeVirtualScroll],
+  selector: 'app-large-list',
+  imports: [CdkVirtualScrollViewport, CdkFixedSizeVirtualScroll, CdkVirtualForOf],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <cdk-virtual-scroll-viewport itemSize="50" class="viewport">
-      <div *cdkVirtualFor="let item of items" class="item">
-        {{ item.name }}
-      </div>
+    <cdk-virtual-scroll-viewport itemSize="50" class="h-96">
+      <!-- *cdkVirtualFor is the CDK API; @for does not virtualize -->
+      <div *cdkVirtualFor="let item of items(); trackBy: trackById" class="h-[50px]">{{ item.name }}</div>
     </cdk-virtual-scroll-viewport>
-  `
+  `,
 })
-export class LargeListComponent { }
+export class LargeList {
+  readonly items = input.required<readonly Item[]>();
+  protected readonly trackById = (_: number, item: Item) => item.id;
+}
 ```
 
 ### Pure Pipes Over Methods
 
 ```typescript
-// ✅ CORRECT - Pure pipe, memoized
-@Pipe({ name: 'filterActive', standalone: true, pure: true })
-export class FilterActivePipe implements PipeTransform {
-  transform(items: Item[]): Item[] {
-    return items.filter(i => i.active);
+// ✅ CORRECT - Pure pipe (pipes are pure and standalone by default)
+@Pipe({ name: 'activeOnly' })
+export class ActiveOnlyPipe implements PipeTransform {
+  transform(items: readonly Item[]): Item[] {
+    return items.filter((i) => i.active);
   }
 }
+// Template: @for (item of items() | activeOnly; track item.id) { … }
 
-// Template
-@for (item of items() | filterActive; track item.id) { ... }
-
-// ❌ WRONG - Method called every change detection cycle
-@for (item of getActiveItems(); track item.id) { ... }
+// ❌ WRONG - Method re-runs every time the view is checked
+// @for (item of getActiveItems(); track item.id) { … }
 ```
 
 ### computed() for Derived Data
 
 ```typescript
-// ✅ CORRECT - Computed, cached until dependencies change
-export class ProductStore {
-  products = signal<Product[]>([]);
-  filter = signal('');
-
-  filteredProducts = computed(() => {
+// ✅ CORRECT - Cached until a dependency changes
+export class ProductFilter {
+  readonly products = signal<Product[]>([]);
+  readonly filter = signal('');
+  readonly filteredProducts = computed(() => {
     const f = this.filter().toLowerCase();
-    return this.products().filter(p =>
-      p.name.toLowerCase().includes(f)
-    );
+    return this.products().filter((p) => p.name.toLowerCase().includes(f));
   });
 }
 
-// ❌ WRONG - Recalculates every access
+// ❌ WRONG - Getter recalculates on every access
 get filteredProducts() {
-  return this.products.filter(p =>
-    p.name.toLowerCase().includes(this.filter)
-  );
+  return this.products().filter((p) => p.name.toLowerCase().includes(this.filter()));
 }
 ```
 
@@ -70,113 +68,98 @@ get filteredProducts() {
 
 ## State Management (MEDIUM) — Extended Examples
 
-### Selectors to Prevent Re-renders
+### Signal Service With Read-Only Exposure
 
 ```typescript
-// ✅ CORRECT - Selective subscription
-@Component({
-  template: `<span>{{ userName() }}</span>`,
-})
-class HeaderComponent {
-  private store = inject(Store);
-  // Only re-renders when userName changes
-  userName = this.store.selectSignal(selectUserName);
-}
+@Injectable({ providedIn: 'root' })
+export class SessionPrefs {
+  private readonly _theme = signal<'light' | 'dark'>('light');
+  readonly theme = this._theme.asReadonly(); // not computed(() => this._theme())
 
-// ❌ WRONG - Subscribing to entire state
-@Component({
-  template: `<span>{{ state().user.name }}</span>`,
-})
-class HeaderComponent {
-  private store = inject(Store);
-  // Re-renders on ANY state change
-  state = toSignal(this.store);
+  toggleTheme(): void {
+    this._theme.update((t) => (t === 'light' ? 'dark' : 'light'));
+  }
 }
 ```
 
-### Colocate State with Features
+### Colocate State With Features
 
 ```typescript
-// ✅ CORRECT - Feature-scoped store
+// ✅ CORRECT - Feature-scoped: created and destroyed with the page
 @Injectable() // NOT providedIn: 'root'
-export class ProductStore { }
+export class ProductFilters {
+  readonly query = signal('');
+}
 
 @Component({
-  providers: [ProductStore], // Scoped to component tree
+  selector: 'app-product-page',
+  providers: [ProductFilters],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `…`,
 })
-export class ProductPageComponent {
-  store = inject(ProductStore);
+export class ProductPage {
+  protected readonly filters = inject(ProductFilters);
 }
 
-// ❌ WRONG - Everything in global store
+// ❌ WRONG - One root service holding every feature's state
 @Injectable({ providedIn: 'root' })
-export class GlobalStore {
-  // Contains ALL app state - hard to tree-shake
-}
+export class GlobalState { /* all app state */ }
+```
+
+### Derive, Don't Mirror
+
+```typescript
+// ❌ WRONG - effect() copying state: extra pass, circular-update and ExpressionChanged risk
+effect(() => this.selected.set(this.items()[0]));
+
+// ✅ CORRECT - writable value that resets when the source changes
+readonly selected = linkedSignal(() => this.items()[0]);
 ```
 
 ---
 
 ## Memory Management (LOW-MEDIUM) — Extended Examples
 
-### takeUntilDestroyed for Subscriptions
+### takeUntilDestroyed for Long-Lived Streams
 
 ```typescript
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-@Component({...})
-export class DataComponent {
-  private destroyRef = inject(DestroyRef);
+@Component({ selector: 'app-live-feed', template: `…` })
+export class LiveFeed {
+  private readonly feed = inject(FeedSocket);
+  readonly last = signal<FeedEvent | null>(null);
 
   constructor() {
-    this.data$.pipe(
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(data => this.process(data));
+    // Injection context (constructor): takeUntilDestroyed() finds DestroyRef itself.
+    this.feed.events$.pipe(takeUntilDestroyed()).subscribe((e) => this.last.set(e));
   }
 }
 
-// ❌ WRONG - Manual subscription management
-export class DataComponent implements OnDestroy {
-  private subscription!: Subscription;
-
-  ngOnInit() {
-    this.subscription = this.data$.subscribe(...);
-  }
-
-  ngOnDestroy() {
-    this.subscription.unsubscribe(); // Easy to forget
-  }
+// ❌ WRONG - Manual Subscription + ngOnDestroy bookkeeping
+export class LiveFeed implements OnInit, OnDestroy {
+  private sub?: Subscription;
+  ngOnInit() { this.sub = this.feed.events$.subscribe(/* … */); }
+  ngOnDestroy() { this.sub?.unsubscribe(); }
 }
 ```
+
+Outside an injection context (e.g. inside a method), pass the `DestroyRef`:
+`takeUntilDestroyed(this.destroyRef)` with `private readonly destroyRef = inject(DestroyRef)`.
 
 ### Prefer Signals Over Subscriptions
 
 ```typescript
-// ✅ CORRECT - No subscription needed
-@Component({
-  template: `<div>{{ data().name }}</div>`,
-})
-export class MyComponent {
-  data = toSignal(this.service.data$, { initialValue: null });
-}
-
-// ❌ WRONG - Manual subscription
-@Component({
-  template: `<div>{{ data?.name }}</div>`,
-})
-export class MyComponent implements OnInit, OnDestroy {
-  data: Data | null = null;
-  private sub!: Subscription;
-
-  ngOnInit() {
-    this.sub = this.service.data$.subscribe((d) => (this.data = d));
-  }
-
-  ngOnDestroy() {
-    this.sub.unsubscribe();
-  }
+// ✅ CORRECT - No subscription to manage
+@Component({ selector: 'app-account', template: `{{ account()?.name }}` })
+export class Account {
+  private readonly api = inject(AccountApi);
+  readonly account = toSignal(this.api.current$, { initialValue: null });
 }
 ```
+
+`toSignal` / `toObservable` must run in an injection context (field initializer or constructor). Called
+from a method they throw NG0203 — verified on Angular 21.2.
 
 ---
 
@@ -185,24 +168,25 @@ export class MyComponent implements OnInit, OnDestroy {
 ### New Component Checklist
 
 - [ ] `changeDetection: ChangeDetectionStrategy.OnPush`
-- [ ] `standalone: true`
-- [ ] Signals for state (`signal()`, `input()`, `output()`)
+- [ ] No `standalone: true`, no `NgModule`, no `CommonModule`
+- [ ] Signals for state (`signal()`, `computed()`, `input()`, `output()`, `model()`)
 - [ ] `inject()` for dependencies
-- [ ] `@for` with `track` expression using a unique identifier (not `$index`)
+- [ ] `@for` with `track` on a unique identifier (not `$index`)
+- [ ] Async data shows loading / empty / error / ready (`angular-ui-patterns`)
+- [ ] Errors logged through `Logger` and shown to the user — no `console.*`, no fallback data
 
 ### Performance Review Checklist
 
 - [ ] No methods called in templates — use pure pipes or `computed()`
 - [ ] Large lists (>50 items) use `CdkVirtualScrollViewport`
 - [ ] Heavy components wrapped in `@defer`
-- [ ] All feature routes use `loadChildren` or `loadComponent`
-- [ ] Third-party heavy libraries use dynamic `import()`
-- [ ] No barrel file re-exports in shared modules
+- [ ] Every route-level component uses `loadComponent` / `loadChildren`
+- [ ] Heavy third-party libraries use dynamic `import()`
+- [ ] No intra-app barrel re-exports; shared libraries expose one public API file
 
-### SSR Checklist
+### SSR Checklist (details: `angular/references/ssr-hydration.md`)
 
-- [ ] `withIncrementalHydration()` configured in `app.config.ts`
+- [ ] `provideClientHydration(...)` configured; `withIncrementalHydration()` if `hydrate` triggers are used (it enables event replay — no separate `withEventReplay()`)
 - [ ] Critical above-the-fold content renders without `@defer`
-- [ ] Non-critical below-fold content uses `@defer (hydrate on viewport)`
-- [ ] Interactive-only widgets use `@defer (hydrate on interaction)`
-- [ ] Server-fetched data uses `TransferState` to avoid double fetch
+- [ ] Below-fold content uses `@defer (hydrate on viewport)`; interactive-only widgets `hydrate on interaction`
+- [ ] No hand-written `TransferState` for `HttpClient` GET/HEAD calls (transferred automatically); requests with auth headers are not cached by default

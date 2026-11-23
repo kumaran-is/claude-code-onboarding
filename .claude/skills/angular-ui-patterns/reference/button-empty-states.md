@@ -21,28 +21,33 @@
 **CRITICAL: Always disable triggers during async operations.**
 
 ```typescript
-// CORRECT - Button disabled while loading
+// CORRECT - Button disabled while saving AND the handler guards re-entry
 @Component({
   template: `
-    <button
-      [disabled]="saving()"
-      (click)="save()"
-    >
+    <button type="button" [disabled]="saving()" (click)="save()">
       @if (saving()) {
-        <app-spinner size="sm" /> Saving...
+        <span class="loading loading-spinner loading-sm" aria-hidden="true"></span> Saving…
       } @else {
         Save
       }
     </button>
   `
 })
-export class SaveButtonComponent {
-  saving = signal(false);
+export class SaveButton {
+  private readonly api = inject(SettingsApi);
+  private readonly toast = inject(ToastService);
+  private readonly logger = inject(Logger);
+  readonly saving = signal(false);
 
-  async save() {
+  async save(): Promise<void> {
+    if (this.saving()) return; // disabled is not a guard: Enter keys and programmatic calls still arrive
     this.saving.set(true);
     try {
-      await this.service.save();
+      await firstValueFrom(this.api.save());
+      this.toast.success('Settings saved.');
+    } catch (err) {
+      this.logger.error('save settings failed', err);
+      this.toast.error('Settings could not be saved. Try again.');
     } finally {
       this.saving.set(false);
     }
@@ -88,7 +93,7 @@ Every list/collection MUST have an empty state:
       <h3>{{ title() }}</h3>
       <p>{{ description() }}</p>
       @if (actionLabel()) {
-        <button (click)="action.emit()" class="btn-primary">
+        <button type="button" (click)="action.emit()" class="btn btn-primary">
           {{ actionLabel() }}
         </button>
       }

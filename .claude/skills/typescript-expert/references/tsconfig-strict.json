@@ -1,6 +1,6 @@
 {
     "$schema": "https://json.schemastore.org/tsconfig",
-    "display": "Strict TypeScript 5.x",
+    "display": "Strict TypeScript 5.9 (single-project app or library; Angular/Vite solution layouts: see SKILL.md)",
     "compilerOptions": {
         // =========================================================================
         // STRICTNESS (Maximum Type Safety)
@@ -11,6 +11,7 @@
         "noPropertyAccessFromIndexSignature": true,
         "exactOptionalPropertyTypes": true,
         "noFallthroughCasesInSwitch": true,
+        "noImplicitReturns": true,
         "forceConsistentCasingInFileNames": true,
         // =========================================================================
         // MODULE SYSTEM (Modern ESM)
@@ -31,9 +32,6 @@
             "DOM",
             "DOM.Iterable"
         ],
-        "declaration": true,
-        "declarationMap": true,
-        "sourceMap": true,
         // =========================================================================
         // PERFORMANCE
         // =========================================================================
@@ -42,7 +40,7 @@
         // =========================================================================
         // PATH ALIASES
         // =========================================================================
-        "baseUrl": ".",
+        // `paths` resolve relative to this file; `baseUrl` is not needed (and is deprecated from TypeScript 6).
         "paths": {
             "@/*": [
                 "./src/*"
@@ -64,12 +62,12 @@
         // JSX (for React projects)
         // =========================================================================
         // "jsx": "react-jsx",
+        // "types": ["vite/client"],   // Vite: import.meta.env and asset imports
         // =========================================================================
         // EMIT
         // =========================================================================
         "noEmit": true, // Let bundler handle emit
-        // "outDir": "./dist",
-        // "rootDir": "./src",
+        // Library that emits: remove noEmit, add "declaration": true, "declarationMap": true, "outDir": "./dist"
         // =========================================================================
         // DECORATORS (if needed)
         // =========================================================================
@@ -87,6 +85,8 @@
         "build",
         "coverage",
         "**/*.test.ts",
-        "**/*.spec.ts"
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx"
     ]
 }

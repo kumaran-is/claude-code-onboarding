@@ -2,47 +2,61 @@
 
 ## Loading States
 
-```typescript
-// ❌ WRONG - Spinner when data exists (causes flash on refetch)
-@if (loading()) {
-  <app-spinner />
-}
+```html
+<!-- ❌ WRONG — spinner over existing data (flashes on every refresh) -->
+@if (items.isLoading()) { <app-spinner /> }
 
-// CORRECT - Only show loading without data
-@if (loading() && !items().length) {
-  <app-spinner />
+<!-- ❌ WRONG — reads value() before error(): value() throws in the error state -->
+@for (item of items.value(); track item.id) { … }
+
+<!-- ✅ CORRECT — one derived load state (loading-control-flow.md) -->
+@switch (state().kind) {
+  @case ('loading') { <app-skeleton-list /> }
+  @case ('error') { <app-error-state … /> }
+  …
 }
 ```
+
+- ❌ Hand-set `loading` / `error` / `items` signals updated inside a `subscribe` — derive them from a resource.
+- ❌ `effect()` that copies resource state into other signals — use `computed()` / `linkedSignal()`.
+- ❌ Showing a skeleton during `'reloading'` — keep the data and show a thin progress bar.
 
 ## Error Handling
 
 ```typescript
-// ❌ WRONG - Error swallowed
+// ❌ WRONG — error swallowed (and console.* is banned in production code)
 try {
-  await this.service.save();
+  await firstValueFrom(this.api.save(dto));
 } catch (e) {
-  console.log(e); // User has no idea!
+  console.log(e);
 }
 
-// CORRECT - Error surfaced
+// ❌ WRONG — fallback/mock data hides the failure
+catchError(() => of([]))
+
+// ✅ CORRECT — log through Logger AND surface to the user
 try {
-  await this.service.save();
-} catch (e) {
-  console.error("Save failed:", e);
-  this.toast.error("Failed to save. Please try again.");
+  await firstValueFrom(this.api.save(dto));
+} catch (err) {
+  this.logger.error('save failed', err);
+  this.toast.error('Changes could not be saved. Try again.');
 }
 ```
+
+- ❌ Treating 403 as 401 (redirect to login) — 403 is "not authorised" (`error-handling.md`).
+- ❌ `@if (retry.observed)` — `OutputEmitterRef` has no `observed`; use a `retryable` input.
 
 ## Button States
 
 ```html
-<!-- ❌ WRONG - Button not disabled during submission -->
-<button (click)="submit()">Submit</button>
+<!-- ❌ WRONG — not disabled during submission -->
+<button type="button" (click)="submit()">Submit</button>
 
-<!-- CORRECT - Disabled and shows loading -->
-<button (click)="submit()" [disabled]="loading()">
-  @if (loading()) {
-  <app-spinner size="sm" />
-  } Submit
+<!-- ✅ CORRECT — disabled, shows progress; the handler ALSO returns early while in flight -->
+<button type="button" (click)="submit()" [disabled]="saving()">
+  {{ saving() ? 'Saving…' : 'Submit' }}
 </button>
 ```
+
+A disabled button alone is not a guard: Enter-key submits and programmatic calls still run. Start the handler
+with `if (this.saving()) return;`.

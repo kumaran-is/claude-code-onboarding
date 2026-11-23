@@ -346,6 +346,8 @@ const user = await api.request("/users/:id", "GET", {
 // Type: User
 ```
 
+The `response` types above are compile-time promises only: the implementation must parse each body with a schema before returning it (see "Boundaries" in `../SKILL.md`), otherwise any payload is accepted.
+
 ### Pattern 3: Builder Pattern with Type Safety
 
 ```typescript
@@ -536,7 +538,7 @@ type Success<T> = {
   data: T;
 };
 
-type Error = {
+type Failure = { // not `Error`: that name would shadow the global Error class
   status: "error";
   error: string;
 };
@@ -545,32 +547,35 @@ type Loading = {
   status: "loading";
 };
 
-type AsyncState<T> = Success<T> | Error | Loading;
+type AsyncState<T> = Success<T> | Failure | Loading;
 
-function handleState<T>(state: AsyncState<T>): void {
+function assertNever(x: never): never {
+  throw new Error(`Unhandled variant: ${JSON.stringify(x)}`);
+}
+
+function describeState<T>(state: AsyncState<T>, show: (data: T) => string): string {
   switch (state.status) {
     case "success":
-      console.log(state.data);  // Type: T
-      break;
+      return show(state.data);  // Type: T
     case "error":
-      console.log(state.error);  // Type: string
-      break;
+      return state.error;       // Type: string
     case "loading":
-      console.log("Loading...");
-      break;
+      return "Loading...";
+    default:
+      return assertNever(state); // a new variant without a case fails to compile
   }
 }
 
-// Type-safe state machine
+// Type-safe state machine (data stays `unknown` until a schema parses it)
 type State =
   | { type: "idle" }
   | { type: "fetching"; requestId: string }
-  | { type: "success"; data: any }
+  | { type: "success"; data: unknown }
   | { type: "error"; error: Error };
 
 type Event =
   | { type: "FETCH"; requestId: string }
-  | { type: "SUCCESS"; data: any }
+  | { type: "SUCCESS"; data: unknown }
   | { type: "ERROR"; error: Error }
   | { type: "RESET" };
 

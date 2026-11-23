@@ -366,7 +366,23 @@ Never return 403 when the token is missing — that is 401.
 
 ## Error Response Format
 
-Consistent across all 3 stacks. Matches RFC 9457 (Problem Details) where used.
+Each service declares **one** error body shape in its OpenAPI spec and uses it for every error, including
+framework 404/405/422 and the catch-all 500. Two shapes are in use in this toolkit's references, and they are
+**not** the same wire format:
+
+| Shape | Where the references use it | Human-readable text | Field errors |
+|-------|----------------------------|---------------------|--------------|
+| RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, `instance`) | Spring `ProblemDetail` (`java-spring-api`), NestJS `ProblemDetailsFilter` (`nestjs-api`) | `detail` | extension member (e.g. `errors`) |
+| The envelope below (`application/json`) | FastAPI (`python-dev/reference/fastapi-error-handling.md`) | `message` | `details` |
+
+Rules for every stack:
+- Clients branch on the HTTP status (and a machine `code` when present), never on the text.
+- A client that may call services of both shapes reads human text from `detail`, else `message`
+  (`angular-ui-patterns/reference/error-handling.md` `toApiError` does this), and shows it only when it is a string.
+- 5xx bodies stay opaque (no exception text, stack or SQL) in either shape.
+- When you add a machine code or request id to RFC 9457, add them as extension members (`code`, `requestId`).
+
+The envelope:
 
 ```json
 {

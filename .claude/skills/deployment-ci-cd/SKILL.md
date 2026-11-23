@@ -37,9 +37,13 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 |-------|-------|------|--------|
 | **NestJS** | Docker multi-stage | Vitest | Cloud Run (canary → prod) |
 | **Spring Boot** | Maven + Docker | JUnit | Cloud Run (health check gate) |
-| **Python/FastAPI** | Docker + uv | pytest | Cloud Run Functions |
+| **Python/FastAPI** | Docker + uv (`--locked`, `reference/python-ci-supply-chain.md`) | pytest | Cloud Run service; Cloud Run Functions only for single-purpose event handlers |
 | **Angular** | `npm ci` + `ng build` (production is the default; `--prod` was removed), Node pinned via `.nvmrc` | `ng test` (Vitest, the v21 default) + Playwright E2E | Static hosting: preview → promote same files → post-deploy header check (`reference/web-frontend-delivery.md`) |
-| **Flutter** | `flutter build apk/ipa` | `flutter test` | Firebase App Distribution / App Store |
+| **React** | `npm ci` + `npm run build` (`tsc -b && vite build`), Node pinned via `.nvmrc` | `vitest run` + Playwright E2E (+ axe) | Static hosting, same flow as Angular (`reference/web-frontend-delivery.md`) |
+| **Flutter** | `flutter build appbundle/ipa` | `flutter analyze` + `flutter test`; device UI/E2E with Maestro only (missing device → BLOCKED, never a browser) | Firebase App Distribution → Google Play staged rollout / App Store (`reference/flutter-ci.md`) |
+| **MCP server (Node/Python)** | Docker, non-root pinned image | protocol conformance, tool contracts, authn/authz negative cases | Cloud Run service (`reference/node-ci-and-observability.md`) |
+| **AI / RAG** | as the host service | deterministic + contract tests on every PR; eval tiers gate promotion | Eval-gated canary for prompt/model changes (`reference/llmops-release-and-rollout.md`) |
+| **GenUI (A2UI)** | as each renderer | contract schema + fixtures, declared-platform parity | with the host apps (`reference/genui-contract-ci.md`) |
 
 ## Key Principles
 
@@ -70,6 +74,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | `reference/health-endpoints.md` | Liveness/readiness endpoints per stack; Cloud Run probe flags |
 | `reference/env-config-validation.md` | Fail-fast configuration |
 | `reference/web-frontend-delivery.md` | Browser apps on static hosting: `npm ci` + Node pin, runtime `config.json` validated at boot (fail closed), hashed-immutable vs `no-cache` caching, previews, promote/rollback, private source maps, post-deploy header check script, error monitoring, OTel browser (experimental) + `traceparent` CORS |
+| `reference/flutter-ci.md` | Flutter PR gate (GitHub Actions example): SDK pinned via `flutter-version-file`, `--enforce-lockfile`, codegen before analyze, format/analyze/test/release build, separate advisory Maestro device job, signing only in the release workflow |
 | `reference/genui-contract-ci.md` | GenUI A2UI v0.9 contract CI (GitHub Actions example): path-filtered catalog schema + fixtures, action payload compatibility, protocol version, declared-platform parity, tsc/analyze/unit, security negative controls, Playwright + axe (web), hook selftest, link check |
 
 ## Production Readiness Checklist
@@ -113,6 +118,7 @@ Before any production deploy, verify ALL of the following. If any item is NO →
 
 ### Security
 - [ ] `security-reviewer` agent verdict: no CRITICAL or HIGH findings
+- [ ] Code-review verdict per the Review Severity Policy (`.claude/rules/verification-and-reporting.md`): no CRITICAL; each HIGH fixed or justified in the PR; MEDIUM/LOW tracked as advisories
 - [ ] All API endpoints require authentication (no accidental public exposure)
 - [ ] CORS policy explicitly configured (not wildcard `*` in production)
 - [ ] Secrets stored in Secret Manager, not Cloud Run env vars directly

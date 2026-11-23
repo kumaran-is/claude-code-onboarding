@@ -1,6 +1,6 @@
 ---
 name: mcp-tool-validator
-description: Validate MCP (Model Context Protocol) server tools end-to-end after code changes. Use this skill whenever the user is building, modifying, or deploying an MCP server and needs to verify that all registered tools actually work — not just that the server starts. Triggers on mentions of "MCP server", "MCP tools", "tool validation", "tools/list", "tools/call", or any task where Docker rebuild + health check is followed by a need to confirm tool behavior. Also triggers when the user wants an automated feedback loop that detects tool failures, fixes code, redeploys, and re-tests until green before raising a PR. Do NOT use for general API testing, unit tests, or non-MCP servers.
+description: "Validate every tool of an MCP server end-to-end after a change (tools/list, tools/call, rebuild, health check, fix-and-retest loop) before a PR. Use when building, modifying or deploying an MCP server. Not for non-MCP APIs or unit tests; MCP server design lives in mcp-builder."
 metadata:
   triggers: MCP server, MCP tools, tool validation, tools/list, tools/call, validate MCP tools, MCP redeploy and re-test
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep

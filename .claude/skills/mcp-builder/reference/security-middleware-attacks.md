@@ -255,12 +255,15 @@ export async function safeFetch(rawUrl: string, policy: SafeFetchPolicy = defaul
 
 Tests: blocked — `127.0.0.1`, `169.254.169.254`, `localhost`, `[::ffff:127.0.0.1]`, `2130706433` (decimal), redirect-to-private, `user:pass@` URLs; allowed — the stand-in public host. The sandbox lets one loopback port stand in for a public host; everything else uses the production rule.
 
+Object-storage keys and file paths the model supplies need their own allowlist: a list of permitted prefixes checked after normalising the path (no `..`, no leading `/`), with an **empty list denying everything**. That default is the opposite of the optional host allowlist above, so name the two settings differently and test the empty case (RECOMMENDED PRACTICE; SOURCE-PROVEN in a production MCP gateway).
+
 ## 5. Tool results and resources are untrusted data
 
 Everything a tool returns (fetched pages, documents, tickets, emails, another server's output) may contain instructions aimed at the model. Controls are structural:
 
 - Return data, not instructions: structured output with an `outputSchema`, fields such as `trust: 'untrusted'` and `source`; the client places it in tool-result content, never in the system prompt.
 - Validate tool output against its schema on the client (spec: clients SHOULD validate structured results) and drop unknown fields before they reach code.
+- Read tools return a projection, not the upstream body: parse the backend response with an output `z.object` naming only the fields the model needs, inside the handler's error path. `z.object(...).parse()` drops unrecognized keys by default, so a field the backend adds later (an owner email, internal notes) never reaches the model; key-name redaction alone misses fields with innocuous names (zod 4.6.7, tested in a sandbox: extra keys stripped, `.strict()` rejects them with `unrecognized_keys`).
 - Nothing read from a tool result grants authority: recipients, URLs, amounts and ids that drive a side effect come from verified state or an allowlist, and destructive follow-ups still need §2 approval.
 - Regex "prompt injection detectors" are a signal for logging and review, not a boundary: the old pattern list missed paraphrases ("disregard what you were told earlier") and non-English text, and flagged benign text ("act as a liaison", `{"tool": "hammer"}`) (characterization tests). Do not reject or rewrite inputs on that signal alone.
 - HTML stripping or DOMPurify on JSON-RPC arguments is not an injection defense; schema validation (types, enums, lengths, `.strict()`) is. Output encoding belongs to whichever UI renders the data.

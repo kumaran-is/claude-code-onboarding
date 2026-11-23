@@ -1,6 +1,6 @@
 ---
 name: docker
-description: Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify/Node 24.
+description: "Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify/Node 24."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Dockerfile, docker-compose, containerize, docker build, multi-stage build, docker image, container, dockerignore, docker run, docker scout

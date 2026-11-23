@@ -190,6 +190,7 @@ Server rule (implemented above): if `_meta.traceparent` is present, it becomes t
 - Why `_meta` and not only the HTTP `traceparent` header: stdio has no headers, and an HTTP client library's own instrumentation may start a different trace for the transport request than the one the agent is in (SOURCE-PROVEN in an agent-to-MCP integration).
 - Client side, inject explicitly: `const meta: Record<string, string> = {}; propagation.inject(context.active(), meta);` then pass `_meta: meta` in the request params.
 - Validate before trusting: `propagation.extract` ignores a malformed `traceparent`; never echo `_meta` content into logs.
+- Outbound: inject `traceparent` and request-id headers only into clients for your own internal services. Third-party model, cloud and payment SDK clients get none: the ids correlate your traffic for an outside party and some APIs reject unknown headers. Build the internal-auth headers and the trace headers in one helper so a new internal client gets both and an external one gets neither (RECOMMENDED PRACTICE; SOURCE-PROVEN pattern).
 
 ## 5. Sampling
 

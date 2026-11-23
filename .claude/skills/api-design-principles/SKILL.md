@@ -64,6 +64,7 @@ Read `reference/rest-design-principles.md` for detailed patterns covering:
 - **Caching** — Cache-Control, ETags, conditional GET (304) — all 3 stacks
 - **Idempotency keys** — mutation safety for payment and order endpoints — all 3 stacks
 - **Bulk operations** — batch endpoints with 207 Multi-Status partial failure — all 3 stacks
+- **Collection read fan-out (N+1 across the network)** — see `reference/collection-read-fanout.md`
 - CORS configuration — all 3 stacks
 - Health and monitoring endpoints
 
@@ -78,6 +79,7 @@ Once the design is finalized, hand off to `openapi-spec-generation` to generate 
 | File | Content | Load When |
 |------|---------|-----------|
 | `reference/rest-design-principles.md` | URL structure, HTTP methods, pagination, caching, idempotency, bulk ops, CORS — examples for FastAPI, NestJS, Spring WebFlux | Designing new endpoints or reviewing REST compliance |
+| `reference/collection-read-fanout.md` | N+1 across network, ORM, cache and model calls: pre-flight questions, set-based reads, scope-preserving batching, single-flight, pagination completeness, request-budget tests with controls | Designing or reviewing any endpoint, screen or read model that returns a collection |
 | `assets/api-design-checklist.md` | 60-item pre-implementation checklist (REST only) with stack-specific items for all 3 backends | Before starting any new endpoint or reviewing an existing API |
 
 ## Error Handling

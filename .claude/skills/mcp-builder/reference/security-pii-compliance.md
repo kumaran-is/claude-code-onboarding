@@ -118,7 +118,8 @@ Tested: the owner resolves its token; another principal presenting the same toke
 - [ ] Per-tool scopes via `scopeChallenge`; tool allowlist per principal; tenant and subject only from the verified token
 - [ ] Destructive tools need a server-verified approval bound to the exact call; annotations are hints only
 - [ ] Every URL-fetching path uses the SSRF guard (library IP classification, resolve-then-pin, per-hop redirect checks, caps)
-- [ ] Tool results marked untrusted and schema-validated; no authority derived from tool output
+- [ ] Tool results marked untrusted and schema-validated; read tools return an allowlist projection, never the raw upstream body; no authority derived from tool output
+- [ ] Storage/path arguments checked against a prefix allowlist where an empty list denies all
 - [ ] Per-principal and per-tenant rate limits and quotas in a shared store
 - [ ] Errors return stable codes, no upstream messages; logs on stderr, redacted, audit before effect
 - [ ] Secrets from the secret store or environment, never argv; startup fails when one is missing

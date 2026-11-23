@@ -2,7 +2,7 @@
 name: claude-actions-auditor
 description: Audits GitHub Actions workflows for security vulnerabilities in Claude Code Action integrations. Detects 9 attack vectors where attacker-controlled GitHub event data reaches Claude running in CI/CD — including env var intermediaries, direct expression injection, PR target misuse, dangerous sandbox configs, and wildcard allowlists. Use when reviewing .github/workflows/ files that invoke anthropics/claude-code-action, before adding Claude Code Action to a repo, or after a security review request on CI/CD pipelines.
 allowed-tools: Read, Glob, Bash
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 metadata:
   triggers: claude code action, github actions security, workflow audit, CI/CD security, prompt injection, agentic CI, actions vulnerability
   related-skills: security-reviewer, sast-configuration, threat-modeling
@@ -246,6 +246,14 @@ Look for: `allowed_non_write_users: "*"` or `allowed_bots: "*"`. This lets any G
 with:
   allowed_non_write_users: "*"  # any GitHub user can trigger Claude
 ```
+
+### Baseline hardening (report as Low unless it amplifies a vector above)
+
+RECOMMENDED PRACTICE (GitHub Actions security hardening guide), checked on every workflow that runs Claude:
+- Third-party actions, including `anthropics/claude-code-action`, pinned to a full commit SHA with the tag in a comment; a moving tag (`@v1`, `@main`) lets the action's publisher change the code that receives your secrets.
+- Top-level `permissions:` set to the least the job needs (`contents: read` by default); write scopes granted per job.
+- `actions/checkout` with `persist-credentials: false` unless a later step pushes, so the token is not left in `.git/config` for Claude's Bash tool to read.
+- The API key comes from `secrets.*` (or OIDC to a cloud provider), never from a repository variable or the workflow file.
 
 ## Step 5: Report Findings
 

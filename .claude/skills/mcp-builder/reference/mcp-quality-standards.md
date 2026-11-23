@@ -11,7 +11,7 @@
 - Implement token refresh with `refresh_token` grant type
 - Use Redis-backed token storage for production (TTL-based expiry)
 - Require `code_challenge` with S256 method for all authorization requests
-- See [production-deployment.md](production-deployment.md) for full OAuth implementation
+- See [security-core.md](security-core.md) for full OAuth implementation
 
 **API Keys**:
 - Store API keys in environment variables, never in code

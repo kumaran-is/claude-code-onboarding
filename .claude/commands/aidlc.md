@@ -1,3 +1,8 @@
+---
+description: "AI-DLC adaptive workflow (inception, construction, operations) with approval gates and an audit log under aidlc-docs/. Active only when invoked; CLAUDE.md rules still apply."
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
+---
+
 # AI-DLC Workflow
 
 > This workflow is active ONLY when explicitly invoked via `/aidlc`.

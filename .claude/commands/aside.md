@@ -1,3 +1,9 @@
+---
+description: "Answer a side question without losing task state: freeze the current task, answer, then resume exactly where you left off."
+argument-hint: '"[question]"'
+allowed-tools: Read, Glob, Grep
+---
+
 # /aside — Answer a Side Question Without Losing Task State
 
 Freeze current task state, answer the side question, then resume exactly where you left off.

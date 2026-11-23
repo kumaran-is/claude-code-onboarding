@@ -1,3 +1,8 @@
+---
+description: "Generate or refresh token-lean architecture snapshots in docs/CODEMAPS/ via the doc-updater agent."
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+---
+
 # /update-codemaps — Generate Token-Lean Architecture Snapshots
 
 Generates and updates `docs/CODEMAPS/` — compact, <1000-token snapshots of each service layer. Used to orient sub-agents and new sessions without loading entire codebases.

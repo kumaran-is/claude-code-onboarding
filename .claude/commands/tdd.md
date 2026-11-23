@@ -1,3 +1,9 @@
+---
+description: "Test-driven development mode: dispatches tdd-guide to enforce Red-Green-Refactor on the current task."
+argument-hint: '"[class or feature]"'
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
+---
+
 # /tdd — Test-Driven Development Mode
 
 Invokes the `tdd-guide` agent to enforce Red-Green-Refactor methodology on the current task.

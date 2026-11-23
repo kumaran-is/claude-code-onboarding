@@ -1,3 +1,8 @@
+---
+description: "Multi-stack test coverage report: run coverage for each detected stack and list files below 80%, worst first."
+allowed-tools: Read, Bash, Glob, Grep
+---
+
 # /test-coverage — Multi-Stack Test Coverage Report
 
 Detect which stacks are present and run coverage for each. Lists files below 80% threshold sorted worst-first.

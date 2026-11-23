@@ -1,3 +1,8 @@
+---
+description: "Generate a new skill from git history patterns, matching the writing-skills spec."
+allowed-tools: Read, Write, Glob, Grep, Bash
+---
+
 # /skill-create — Generate a New Skill from Git History
 
 Analyzes git log to detect patterns, then generates a new skill file that matches the workspace's `writing-skills` spec.

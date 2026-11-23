@@ -1,3 +1,9 @@
+---
+description: "Named checkpoints for long sessions: create, verify, list or compare snapshots of session state."
+argument-hint: '"create|verify|list <name>"'
+allowed-tools: Read, Write, Bash, Glob
+---
+
 # /checkpoint — Named Checkpoints for Long Sessions
 
 Save named snapshots of session state so you can compare before/after or roll back context.

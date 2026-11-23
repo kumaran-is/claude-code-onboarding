@@ -1,3 +1,9 @@
+---
+description: "Scan skills for behavioral patterns repeated across 2+ skills and propose promoting them to rules."
+argument-hint: '"[skill-name filter]"'
+allowed-tools: Read, Glob, Grep, Write, Edit, Agent
+---
+
 # /rules-distill — Distill Skill Patterns Into Rules
 
 Scan all skills for repeated behavioral patterns and promote high-value ones to rules.

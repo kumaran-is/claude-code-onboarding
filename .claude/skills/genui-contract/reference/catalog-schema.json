@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://catalogs.example.com/genui/canonical/v1/catalog-schema.json",
+  "title": "Canonical GenUI catalog document schema",
+  "description": "Validates the canonical catalog document (root) and, through $defs/componentInstance, a single A2UI v0.9 component instance against that catalog.",
+  "type": "object",
+  "required": [
+    "$schema",
+    "$id",
+    "catalogId",
+    "components",
+    "functions",
+    "$defs",
+    "x-genui"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "$id": {
+      "type": "string",
+      "format": "uri"
+    },
+    "catalogId": {
+      "type": "string",
+      "pattern": "^https://[a-z0-9.-]+/.+/v[0-9]+/catalog\\.json$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "components": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "ActionCard",
+          "DataSummaryTable",
+          "ApprovalForm",
+          "SelectionList",
+          "DetailPanel",
+          "StatusIndicator",
+          "InputForm",
+          "ConfirmationDialog"
+        ]
+      },
+      "minProperties": 8,
+      "additionalProperties": {
+        "$ref": "#/$defs/componentDefinition"
+      }
+    },
+    "functions": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "openUrl",
+            "regex"
+          ]
+        }
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "properties"
+        ]
+      }
+    },
+    "$defs": {
+      "type": "object",
+      "required": [
+        "anyComponent",
+        "anyFunction",
+        "theme",
+        "ServerEvent"
+      ]
+    },
+    "x-genui": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "protocolVersion",
+        "acceptedWireVersions",
+        "limits",
+        "forbiddenStringPatterns",
+        "actions"
+      ],
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "protocolVersion": {
+          "const": "v0.9"
+        },
+        "acceptedWireVersions": {
+          "const": [
+            "v0.9"
+          ]
+        },
+        "platforms": {
+          "description": "Optional. Platforms that must have a renderer for every catalog component. /audit-a2ui-parity fails a declared platform that is missing and reports an undeclared one as NOT RUN.",
+          "type": "array",
+          "items": {
+            "enum": [
+              "angular",
+              "react",
+              "flutter"
+            ]
+          },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "maxMessageBytes",
+            "maxComponentsPerSurface",
+            "maxDepth",
+            "maxStringLength"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "forbiddenStringPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "regex"
+          },
+          "minItems": 1
+        },
+        "actions": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z]+\\.[a-z_]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/actionDefinition"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "componentDefinition": {
+      "type": "object",
+      "required": [
+        "allOf",
+        "unevaluatedProperties",
+        "x-genui"
+      ],
+      "properties": {
+        "unevaluatedProperties": {
+          "const": false
+        },
+        "x-genui": {
+          "type": "object",
+          "required": [
+            "schemaVersion",
+            "allowedActions",
+            "a11y",
+            "fallback"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "allowedActions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "a11y": {
+              "type": "object",
+              "required": [
+                "role",
+                "labelSource"
+              ]
+            },
+            "fallback": {
+              "enum": [
+                "reject-surface",
+                "render-error-placeholder",
+                "render-text-label"
+              ]
+            },
+            "dataBinding": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "actionDefinition": {
+      "type": "object",
+      "required": [
+        "description",
+        "sideEffect",
+        "risk",
+        "requiresIdempotencyKey",
+        "requiresHumanApproval",
+        "payloadSchema"
+      ],
+      "properties": {
+        "sideEffect": {
+          "type": "boolean"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "requiresIdempotencyKey": {
+          "type": "boolean"
+        },
+        "requiresHumanApproval": {
+          "type": "boolean"
+        },
+        "payloadSchema": {
+          "type": "object",
+          "required": [
+            "type",
+            "additionalProperties"
+          ],
+          "properties": {
+            "additionalProperties": {
+              "const": false
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sideEffect": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requiresIdempotencyKey": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "risk": {
+                "const": "high"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requiresHumanApproval": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "componentInstance": {
+      "description": "One component instance from an updateComponents message, validated against the canonical catalog.",
+      "$ref": "https://catalogs.example.com/genui/canonical/v1/catalog.json#/$defs/anyComponent"
+    }
+  }
+}

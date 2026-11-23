@@ -2,6 +2,8 @@
 name: threejs-lighting
 allowed-tools: Read, Glob
 description: Three.js lighting - light types, shadows, environment lighting. Use when adding lights, configuring shadows, setting up IBL, or optimizing lighting performance.
+metadata:
+  triggers: three.js lights, shadows, environment lighting, IBL, lighting performance
 ---
 
 # Three.js Lighting

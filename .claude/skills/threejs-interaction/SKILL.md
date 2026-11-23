@@ -2,6 +2,8 @@
 name: threejs-interaction
 allowed-tools: Read, Glob
 description: Three.js interaction - raycasting, controls, mouse/touch input, object selection. Use when handling user input, implementing click detection, adding camera controls, or creating interactive 3D experiences.
+metadata:
+  triggers: three.js raycasting, OrbitControls, camera controls, click detection 3D, object selection, touch input 3D
 ---
 
 # Three.js Interaction

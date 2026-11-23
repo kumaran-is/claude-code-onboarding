@@ -2,6 +2,8 @@
 name: threejs-geometry
 allowed-tools: Read, Glob
 description: Three.js geometry creation - built-in shapes, BufferGeometry, custom geometry, instancing. Use when creating 3D shapes, working with vertices, building custom meshes, or optimizing with instanced rendering.
+metadata:
+  triggers: three.js geometry, BufferGeometry, custom mesh, vertices, InstancedMesh, instanced rendering
 ---
 
 # Three.js Geometry

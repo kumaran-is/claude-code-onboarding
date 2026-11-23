@@ -2,6 +2,8 @@
 name: threejs-loaders
 allowed-tools: Read, Glob
 description: Three.js asset loading - GLTF, textures, images, models, async patterns. Use when loading 3D models, textures, HDR environments, or managing loading progress.
+metadata:
+  triggers: GLTFLoader, load 3D model, texture loader, HDR environment, loading progress three.js
 ---
 
 # Three.js Loaders

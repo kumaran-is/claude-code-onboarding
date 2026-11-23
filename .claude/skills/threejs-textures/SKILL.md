@@ -2,6 +2,8 @@
 name: threejs-textures
 allowed-tools: Read, Glob
 description: Three.js textures - texture types, UV mapping, environment maps, texture settings. Use when working with images, UV coordinates, cubemaps, HDR environments, or texture optimization.
+metadata:
+  triggers: three.js texture, UV mapping, cubemap, environment map, HDR texture, texture optimization
 ---
 
 # Three.js Textures

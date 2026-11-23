@@ -2,6 +2,8 @@
 name: three-dart-fundamentals
 allowed-tools: Read, Glob
 description: three_dart scene setup, WebGL renderer in Flutter, Scene, PerspectiveCamera, WebGLRenderer, Object3D hierarchy, animation loop. Use when setting up 3D scenes in Flutter with three_dart, creating cameras, configuring renderers, or managing 3D object transforms in a Flutter app.
+metadata:
+  triggers: three_dart, Flutter 3D scene, three_dart renderer, PerspectiveCamera Flutter, Object3D Flutter
 ---
 
 # three_dart Fundamentals

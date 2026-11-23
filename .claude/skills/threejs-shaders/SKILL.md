@@ -2,6 +2,8 @@
 name: threejs-shaders
 allowed-tools: Read, Glob
 description: Three.js shaders - GLSL, ShaderMaterial, uniforms, custom effects. Use when creating custom visual effects, modifying vertices, writing fragment shaders, or extending built-in materials.
+metadata:
+  triggers: GLSL, ShaderMaterial, uniforms, vertex shader, fragment shader, custom shader effect
 ---
 
 # Three.js Shaders

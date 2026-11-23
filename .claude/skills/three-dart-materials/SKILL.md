@@ -2,6 +2,8 @@
 name: three-dart-materials
 allowed-tools: Read, Glob
 description: three_dart materials — MeshStandardMaterial, MeshBasicMaterial, MeshPhongMaterial, ShaderMaterial, transparency, wireframe in Flutter. Use when applying materials to 3D objects in Flutter three_dart scenes.
+metadata:
+  triggers: three_dart material, MeshStandardMaterial Flutter, ShaderMaterial Flutter, transparency Flutter 3D, wireframe Flutter
 ---
 
 # three_dart Materials

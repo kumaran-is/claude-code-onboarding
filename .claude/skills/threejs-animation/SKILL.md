@@ -2,6 +2,8 @@
 name: threejs-animation
 allowed-tools: Read, Glob
 description: Three.js animation - keyframe animation, skeletal animation, morph targets, animation mixing. Use when animating objects, playing GLTF animations, creating procedural motion, or blending animations.
+metadata:
+  triggers: three.js animation, AnimationMixer, skeletal animation, morph targets, play GLTF animation, blend animations
 ---
 
 # Three.js Animation

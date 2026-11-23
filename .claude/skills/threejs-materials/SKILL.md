@@ -2,6 +2,8 @@
 name: threejs-materials
 allowed-tools: Read, Glob
 description: Three.js materials - PBR, basic, phong, shader materials, material properties. Use when styling meshes, working with textures, creating custom shaders, or optimizing material performance.
+metadata:
+  triggers: three.js material, PBR material, MeshStandardMaterial, ShaderMaterial, material performance
 ---
 
 # Three.js Materials

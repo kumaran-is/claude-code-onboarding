@@ -2,6 +2,8 @@
 name: three-dart-loaders
 allowed-tools: Read, Glob
 description: three_dart loaders — GLTFLoader, loading GLTF/GLB models, textures, async patterns, Flutter asset loading. Use when loading 3D models, textures, or external assets into a Flutter three_dart scene.
+metadata:
+  triggers: three_dart loader, GLTFLoader Flutter, load GLB Flutter, load 3D model Flutter, texture loading Flutter
 ---
 
 # three_dart Loaders

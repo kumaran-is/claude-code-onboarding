@@ -2,6 +2,8 @@
 name: three-dart-geometry
 allowed-tools: Read, Glob
 description: three_dart geometry — BoxGeometry, SphereGeometry, BufferGeometry, custom geometry, instancing in Flutter. Use when creating 3D shapes, building custom meshes, or using instanced rendering in a Flutter three_dart scene.
+metadata:
+  triggers: three_dart geometry, BoxGeometry Flutter, BufferGeometry Flutter, custom mesh Flutter, instancing Flutter
 ---
 
 # three_dart Geometry

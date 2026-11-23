@@ -2,6 +2,8 @@
 name: three-dart-animation
 allowed-tools: Read, Glob
 description: three_dart animation — AnimationMixer, AnimationClip, AnimationAction, keyframe tracks, procedural animation in Flutter. Use when animating 3D objects, playing GLTF animations, or blending animations in a Flutter three_dart scene.
+metadata:
+  triggers: three_dart animation, AnimationMixer, AnimationClip, GLTF animation Flutter, blend animations Flutter 3D
 ---
 
 # three_dart Animation

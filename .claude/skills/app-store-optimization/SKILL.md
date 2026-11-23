@@ -1,6 +1,6 @@
 ---
 name: app-store-optimization
-description: Complete App Store Optimization (ASO) toolkit for keyword research, metadata optimization, competitor analysis, A/B test planning, review sentiment analysis, ASO health scoring, and launch readiness for Apple App Store and Google Play Store. Load BEFORE the iOS or Android release workflow to optimize the store listing. Triggers: "ASO", "app store optimization", "keyword research", "app store listing", "metadata optimize", "competitor analysis", "app store keywords", "ASO score", "review sentiment", "localization strategy", "store listing", "A/B test icon", "launch checklist ASO".
+description: "App Store / Google Play listing optimisation (ASO): keyword research, metadata, competitor and review analysis, A/B test planning, ASO score, launch checklist. Use before a store release or when the user says ASO, store listing or app keywords. Not for uploading builds (asc-release-flow, gpd-release-flow)."
 allowed-tools: Bash, Read, Write
 metadata:
   triggers: ASO, app store optimization, keyword research, app store listing, metadata optimize, competitor analysis, app store keywords, ASO score, review sentiment, localization strategy, store listing, A/B test icon, launch checklist ASO, app description, app title optimize

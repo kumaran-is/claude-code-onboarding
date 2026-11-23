@@ -1,6 +1,6 @@
 ---
 name: gpd-build-lifecycle
-description: Track build processing, upload status, and release management for Google Play using gpd publish commands. Use when uploading an Android AAB, waiting on build processing, checking release state on a track, using internal app sharing for fast distribution, halting a bad rollout, or rolling back a production release. Triggers: "upload AAB", "build lifecycle", "gpd upload", "release status", "internal app sharing", "halt rollout", "rollback release", "gpd build", "track status".
+description: "Google Play AAB upload, build processing, track status, internal app sharing, rollout halt and rollback with the gpd CLI. Use when tracking an Android build after upload."
 allowed-tools: Bash, Read
 metadata:
   triggers: upload AAB, build lifecycle, gpd upload, release status, internal app sharing, halt rollout, rollback release, gpd build, track status, build processing

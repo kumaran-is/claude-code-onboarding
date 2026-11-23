@@ -1,6 +1,6 @@
 ---
 name: asc-id-resolver
-description: Resolve App Store Connect IDs (app IDs, build IDs, version IDs, group IDs, tester IDs, submission IDs) from human-friendly names using asc CLI commands. Use when commands require IDs, when you only know the app name or bundle ID, or when you need to look up build numbers, TestFlight group names, or tester emails. Triggers: "resolve ID", "find app ID", "get build ID", "asc ID", "bundle ID lookup", "group ID", "tester ID", "version ID".
+description: "Resolve App Store Connect IDs (app, build, version, group, tester, submission) from names or bundle IDs with the asc CLI. Use when an asc command needs an ID you do not have."
 allowed-tools: Bash, Read
 metadata:
   triggers: resolve ID, find app ID, get build ID, asc ID, bundle ID lookup, group ID, tester ID, version ID, App Store Connect ID

@@ -1,6 +1,6 @@
 ---
 name: gpd-betagroups
-description: Orchestrate Google Play beta testing groups, tester management, and build distribution using gpd CLI. Use when managing internal or beta testers, adding or listing tester groups, distributing builds to testing tracks, promoting builds between internal/alpha/beta tracks, or rolling out to production from beta. Triggers: "beta testers", "internal testing", "testing track", "gpd testers", "beta rollout", "promote track", "internal track", "beta group", "add tester", "Google Play beta".
+description: "Google Play testers, tester groups and internal/alpha/beta track distribution with the gpd CLI. Use when managing Android beta testers or promoting between testing tracks."
 allowed-tools: Bash, Read
 metadata:
   triggers: beta testers, internal testing, testing track, gpd testers, beta rollout, promote track, internal track, beta group, add tester, Google Play beta, distribute build

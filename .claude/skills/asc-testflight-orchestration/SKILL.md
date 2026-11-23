@@ -1,6 +1,6 @@
 ---
 name: asc-testflight-orchestration
-description: Orchestrate TestFlight beta distribution, groups, testers, and What to Test notes using asc CLI. Use when rolling out beta builds, creating TestFlight groups, adding or inviting testers, distributing builds to groups, setting What to Test notes, or exporting TestFlight configuration. Triggers: "TestFlight", "beta testers", "beta group", "distribute beta", "testflight group", "add tester", "invite tester", "What to Test", "beta distribution", "asc testflight".
+description: "TestFlight groups, testers, build distribution and What to Test notes with the asc CLI. Use when rolling out an iOS beta or managing testers."
 allowed-tools: Bash, Read
 metadata:
   triggers: TestFlight, beta testers, beta group, distribute beta, testflight group, add tester, invite tester, What to Test, beta distribution, asc testflight, roll out beta

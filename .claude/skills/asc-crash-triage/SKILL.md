@@ -1,6 +1,6 @@
 ---
 name: asc-crash-triage
-description: Triage TestFlight crashes, beta feedback, and performance diagnostics using asc CLI. Use when investigating TestFlight crash reports, analyzing beta tester feedback, reviewing performance diagnostics (app hangs, disk writes, launch time), building a crash summary by signature, filtering crashes by device or OS version, or downloading performance metrics. Triggers: "TestFlight crashes", "crash report", "beta feedback", "app hangs", "performance diagnostics", "crash triage", "disk writes", "launch diagnostics", "asc crashes", "asc feedback".
+description: "Triage TestFlight crashes, beta feedback and performance diagnostics (hangs, disk writes, launch time) with the asc CLI. Use when investigating iOS beta crash reports or tester feedback."
 allowed-tools: Bash, Read
 metadata:
   triggers: TestFlight crashes, crash report, beta feedback, app hangs, performance diagnostics, crash triage, disk writes, launch diagnostics, asc crashes, asc feedback, crash summary

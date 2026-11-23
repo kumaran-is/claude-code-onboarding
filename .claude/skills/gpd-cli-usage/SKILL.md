@@ -1,6 +1,6 @@
 ---
 name: gpd-cli-usage
-description: Guidance for using the Google Play Developer CLI (gpd) — flags, output formats, authentication, pagination, safety conventions, and command discovery. Use when asked to run or design gpd commands, set up service account auth, configure GPD_SERVICE_ACCOUNT_KEY, understand gpd output formats, or learn gpd flag conventions. Triggers: "gpd command", "gpd CLI", "Google Play CLI", "gpd auth", "gpd flags", "gpd output", "Play Developer CLI", "GPD_SERVICE_ACCOUNT_KEY".
+description: "How to run the Google Play Developer `gpd` CLI: service-account auth (GPD_SERVICE_ACCOUNT_KEY), flags, output, pagination, safety conventions. Use when designing or debugging any gpd command. Load before the other gpd-* skills."
 allowed-tools: Bash, Read
 metadata:
   triggers: gpd command, gpd CLI, Google Play CLI, gpd auth, gpd flags, gpd output, Play Developer CLI, GPD_SERVICE_ACCOUNT_KEY, gpd help, gpd pagination

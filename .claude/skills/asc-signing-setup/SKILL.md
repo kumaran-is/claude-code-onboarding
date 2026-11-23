@@ -1,6 +1,6 @@
 ---
 name: asc-signing-setup
-description: Set up bundle IDs, capabilities, signing certificates, and provisioning profiles with the asc CLI. Use when onboarding a new iOS or macOS app, rotating expired certificates, creating provisioning profiles, configuring app capabilities (iCloud, push, etc.), or troubleshooting code signing failures. Triggers: "bundle ID", "signing certificate", "provisioning profile", "code signing", "asc certificates", "asc profiles", "capabilities", "signing assets", "rotate cert".
+description: "Bundle IDs, capabilities, certificates and provisioning profiles with the asc CLI. Use when onboarding an Apple app, rotating certificates or fixing code-signing failures."
 allowed-tools: Bash, Read
 metadata:
   triggers: bundle ID, signing certificate, provisioning profile, code signing, asc certificates, asc profiles, capabilities, signing assets, rotate cert, onboard app, iOS signing

@@ -1,6 +1,6 @@
 ---
 name: gpd-id-resolver
-description: Resolve Google Play identifiers (package names, track names, version codes, product IDs, subscription IDs, base plan IDs, offer IDs, permission IDs) using gpd CLI commands. Use when gpd commands require IDs or exact values, when you only know an app name or bundle, or when you need to look up track names, tester groups, or monetization product IDs. Triggers: "resolve ID", "package name", "track name", "version code", "product ID", "subscription ID", "Google Play ID", "gpd identifier".
+description: "Resolve Google Play identifiers (package, track, version code, product, subscription, base plan, offer) with the gpd CLI. Use when a gpd command needs an exact ID or value."
 allowed-tools: Bash, Read
 metadata:
   triggers: resolve ID, package name, track name, version code, product ID, subscription ID, Google Play ID, gpd identifier, tester group, offer ID, base plan ID

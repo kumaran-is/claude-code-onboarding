@@ -1,6 +1,6 @@
 ---
 name: asc-submission-health
-description: Preflight App Store submissions, submit builds, and monitor review status with asc CLI. Use when shipping to App Store review, troubleshooting review submission failures, checking encryption compliance, verifying version metadata, monitoring review status, cancelling a submission, or fixing "Version is not in valid state" errors. Triggers: "App Store submission", "submit for review", "submission health", "preflight check", "review status", "encryption compliance", "submission failed", "version not valid state", "asc submit", "review rejection".
+description: "Preflight, submit and monitor App Store review with the asc CLI: encryption compliance, version metadata, review status, \"Version is not in valid state\". Use before or after an App Store submission."
 allowed-tools: Bash, Read
 metadata:
   triggers: App Store submission, submit for review, submission health, preflight check, review status, encryption compliance, submission failed, version not valid state, asc submit, review rejection, content rights

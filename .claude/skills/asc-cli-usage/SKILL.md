@@ -1,6 +1,6 @@
 ---
 name: asc-cli-usage
-description: Guidance for using the asc CLI in App Store Connect automation (flags, output formats, pagination, auth, discovery, timeouts). Use when asked to run or design asc commands, interact with App Store Connect via CLI, set up authentication, configure environment variables, or understand asc output formats. Triggers: "asc command", "asc CLI", "App Store Connect CLI", "asc auth", "asc flags", "asc pagination", "asc output".
+description: "How to run the App Store Connect `asc` CLI: auth, flags, output formats, pagination, timeouts. Use when designing or debugging any asc command. Load before the other asc-* skills."
 allowed-tools: Bash, Read
 metadata:
   triggers: asc command, asc CLI, App Store Connect CLI, asc auth, asc flags, asc pagination, asc output, asc help, asc env vars

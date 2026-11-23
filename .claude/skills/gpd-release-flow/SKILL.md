@@ -1,6 +1,6 @@
 ---
 name: gpd-release-flow
-description: End-to-end release workflows for Google Play using gpd publish commands, tracks, staged rollouts, edit lifecycle, and track promotions. Use when uploading an Android AAB to Google Play, publishing to internal/alpha/beta/production tracks, running a staged rollout, promoting between tracks, using the edit lifecycle for multi-step releases, or halting and rolling back a production release. Triggers: "Google Play release", "upload AAB", "gpd publish", "staged rollout", "production release", "promote track", "edit lifecycle", "Play Store release", "internal track", "beta to production".
+description: "End-to-end Google Play release with the gpd CLI: AAB upload, edit lifecycle, track publishing, staged rollout, promotion, halt and rollback. Use when shipping an Android build. Not for App Store (asc-release-flow)."
 allowed-tools: Bash, Read
 metadata:
   triggers: Google Play release, upload AAB, gpd publish, staged rollout, production release, promote track, edit lifecycle, Play Store release, internal track, beta to production

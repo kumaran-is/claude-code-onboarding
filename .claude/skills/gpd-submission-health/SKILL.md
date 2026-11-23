@@ -1,6 +1,6 @@
 ---
 name: gpd-submission-health
-description: Preflight Google Play releases, validate edits, and verify listing completeness with gpd CLI. Use when shipping to production, troubleshooting a failed Play Store release, validating edit lifecycle before commit, checking release status and version code, verifying screenshots and store listing metadata, uploading deobfuscation mapping, or diagnosing policy declaration issues. Triggers: "Play Store submission", "production release check", "gpd preflight", "submission health", "edit validate", "release not valid", "missing screenshots", "policy declaration", "deobfuscation mapping".
+description: "Preflight Google Play releases with the gpd CLI: edit validation, version code, listing and screenshot completeness, deobfuscation mapping, policy declarations. Use before a production release or after a failed one."
 allowed-tools: Bash, Read
 metadata:
   triggers: Play Store submission, production release check, gpd preflight, submission health, edit validate, release not valid, missing screenshots, policy declaration, deobfuscation mapping, gpd submit

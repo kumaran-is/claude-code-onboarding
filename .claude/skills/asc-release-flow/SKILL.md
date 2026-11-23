@@ -1,6 +1,6 @@
 ---
 name: asc-release-flow
-description: End-to-end release workflows for TestFlight and App Store using asc publish, builds, versions, and submit commands. Use when uploading a build to App Store Connect, distributing to TestFlight beta testers, submitting to App Store review, managing iOS/macOS/visionOS/tvOS releases, or running multi-platform releases. Triggers: "upload build", "distribute TestFlight", "submit to App Store", "asc publish", "release flow", "App Store submission", "TestFlight distribute", "upload IPA", "upload PKG".
+description: "End-to-end iOS/macOS/tvOS/visionOS release with the asc CLI: upload IPA/PKG, TestFlight distribution, App Store submission. Use when shipping an Apple build. Not for Google Play (gpd-release-flow)."
 allowed-tools: Bash, Read
 metadata:
   triggers: upload build, distribute TestFlight, submit to App Store, asc publish, release flow, App Store submission, TestFlight distribute, upload IPA, upload PKG, iOS release, macOS release

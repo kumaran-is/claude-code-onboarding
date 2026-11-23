@@ -15,13 +15,12 @@ Detect which stacks are present and run coverage for each. Lists files below 80%
 Detected by: `pom.xml` containing `spring-boot`
 
 ```bash
-./mvnw test jacoco:report -q
-# Report: target/site/jacoco/index.html
-# Console summary:
-./mvnw jacoco:report -q && cat target/site/jacoco/jacoco.csv | \
-  awk -F',' 'NR>1 {missed=$4+$6; total=missed+$5+$7; if(total>0) pct=int((total-missed)*100/total); else pct=0; print pct"% "$2"/"$3}' | \
-  sort -n | head -20
+./mvnw test jacoco:report -q > /tmp/cov-java.log 2>&1; echo "COVERAGE EXIT:$?"   # non-zero → FAIL; show tail of the log
+# Files below threshold (display only, reads the CSV the run produced):
+awk -F',' 'NR>1 {missed=$4+$6; total=missed+$5+$7; pct=(total>0)?int((total-missed)*100/total):0; if(pct<80) print pct"% "$2"/"$3}' \
+  target/site/jacoco/jacoco.csv | sort -n | head -20
 ```
+No `jacoco-maven-plugin` in `pom.xml` → BLOCKED (say so), never 0%.
 
 ### Python / FastAPI (Python 3.14)
 Detected by: `pyproject.toml` or `requirements.txt` containing `fastapi`
@@ -40,22 +39,38 @@ A coverage percentage is a diagnostic, not a proof of quality: measure hand-writ
 Detected by: `package.json` containing `@nestjs/core`
 
 ```bash
-npm run test:cov -- --silent 2>&1 | tail -40
-# Files below threshold (vitest):
-npm run test:cov -- --silent 2>&1 | \
-  awk '/^\|/{gsub(/\|/,""); if($2+0 < 80) print $2"% "$1}' | sort -n
+npm run test:cov > /tmp/cov-node.log 2>&1; echo "COVERAGE EXIT:$?"   # vitest run --coverage; thresholds in vitest.config fail the run
+tail -40 /tmp/cov-node.log
 ```
+Missing `@vitest/coverage-v8` or no `test:cov` script → BLOCKED. Thresholds belong in `vitest.config.*` (`coverage.thresholds`), so the exit code is the verdict; the table is display only.
+
+### Angular (21.x, `@angular/build:unit-test`)
+Detected by: `angular.json`
+
+```bash
+npx ng test --watch=false --coverage > /tmp/cov-ng.log 2>&1; echo "COVERAGE EXIT:$?"
+tail -40 /tmp/cov-ng.log
+```
+Source: `.claude/skills/angular-spa/reference/testing-vitest.md`.
+
+### React (Vite + Vitest)
+Detected by: `package.json` containing `react` and `vitest` (no `angular.json`, no `@nestjs/core`)
+
+```bash
+npx vitest run --coverage > /tmp/cov-react.log 2>&1; echo "COVERAGE EXIT:$?"
+tail -40 /tmp/cov-react.log
+```
+Missing `@vitest/coverage-v8` → BLOCKED. Coverage is unit/component only; E2E (Playwright) is not counted here — see `.claude/rules/testing-tool-selection.md`.
 
 ### Flutter (Dart 3.10.9)
 Detected by: `pubspec.yaml` containing `flutter:`
 
 ```bash
-flutter test --coverage -q 2>&1 | tail -20
-# Generate LCOV report:
-genhtml coverage/lcov.info -o coverage/html --quiet
-# Files below threshold:
-lcov --summary coverage/lcov.info 2>&1 | grep -E "lines|functions"
+flutter test --coverage > /tmp/cov-flutter.log 2>&1; echo "COVERAGE EXIT:$?"   # writes coverage/lcov.info
+tail -20 /tmp/cov-flutter.log
+lcov --summary coverage/lcov.info   # lcov not installed → report the summary as NOT RUN, the test result still stands
 ```
+Unit and widget coverage only. Device UI/E2E flows run with Maestro and are not part of this number.
 
 ## Output Format
 
@@ -88,7 +103,7 @@ Files below 80% (sorted worst-first):
 ✅ Overall: 82% (threshold: 80%)
 
 ## Summary
-- Stacks checked: 4
+- Stacks checked: 4 (one status line each: PASS / FAIL / BLOCKED / NOT RUN)
 - Passing (≥80%): 3
 - Failing (<80%): 1 (Python API)
 - Critical files below 100%: [list any auth/crypto/payment files not at 100%]
@@ -105,10 +120,14 @@ Generate missing tests for worst-coverage files:
 - 80% is the minimum; auth/crypto/payment code requires 100%
 - Sort worst-coverage files first — highest ROI to fix
 - Do NOT auto-generate tests — report only, human decides
-- If a stack build fails before coverage runs, report: "STACK BUILD FAILED — fix build errors first"
-- If no test infrastructure detected for a stack, report: "No test runner detected — run `/scaffold-{stack}` to set up testing"
+- Status per stack is PASS / FAIL / BLOCKED / NOT RUN from each command's OWN exit code (`cmd > log 2>&1; echo $?`), never from `cmd | tail` (that reports `tail`'s status)
+- Zero executed tests is FAIL, even when the runner exits 0
+- If a stack build fails before coverage runs: FAIL — "STACK BUILD FAILED — fix build errors first"
+- If no test runner or coverage provider is installed: BLOCKED — name what is missing
 
 ## Related
+
+Use instead when: `/verify full` — pass/fail of build and tests without coverage; `/tdd` — write the missing tests test-first.
 
 - `/tdd` — test-first implementation when coverage is below threshold
 - Agent: `.claude/agents/tdd-guide.md` — Red-Green-Refactor enforcement

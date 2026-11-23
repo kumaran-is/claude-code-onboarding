@@ -98,4 +98,6 @@ Remediation priority: [CRITICAL findings first, then HIGH, then MEDIUM]
 Total findings: [N] (CRITICAL: [n], HIGH: [n], MEDIUM: [n])
 ```
 
+Use instead when: `/security-sast` — Semgrep/ESLint across the whole stack; `/audit-security` — the full audit with the Lock Document. A clean grep is evidence only with a positive control (a planted sink the same pattern flags).
+
 $ARGUMENTS

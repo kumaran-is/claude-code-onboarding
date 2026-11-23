@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob
 # Setup Team Memory — claude-mem + claude-mem-sync
 
 One-shot installer and verifier for your team memory stack.
-Reference doc: `docs/tools/claude-mem-team-memory.md`
+Reference doc: `docs/workflows/setup-team-memory.md`
 
 ---
 
@@ -225,12 +225,10 @@ The plugin ships as TypeScript source — build and link the CLI after install:
 
 ```bash
 cd ~/.claude/plugins/marketplaces/claude-mem-sync
-echo "Installing deps..."
-bun install 2>&1 | tail -3
-echo "Building..."
-bun run build 2>&1 | tail -5
-echo "Linking CLI..."
-npm link 2>&1
+# Each step's OWN exit code (a pipe into tail would report tail's status); stop at the first non-zero
+bun install > /tmp/mem-sync-install.log 2>&1; echo "INSTALL EXIT:$?"; tail -3 /tmp/mem-sync-install.log
+bun run build > /tmp/mem-sync-build.log 2>&1; echo "BUILD EXIT:$?"; tail -5 /tmp/mem-sync-build.log
+npm link > /tmp/mem-sync-link.log 2>&1; echo "LINK EXIT:$?"; tail -3 /tmp/mem-sync-link.log
 ```
 
 Verify:
@@ -562,7 +560,7 @@ If overall verdict is READY, print:
    git push origin develop
 
 2. SHARE this doc with all 4 teammates:
-   docs/tools/claude-mem-team-memory.md
+   docs/workflows/setup-team-memory.md
    → Each teammate runs: /setup-team-memory
 
 3. AFTER your first week of coding, share your observations:
@@ -579,7 +577,7 @@ If overall verdict is READY, print:
 6. MONTHLY (optional):
    mem-sync distill --project your-project   # extract rules → .claude/rules/
 
-Full reference: docs/tools/claude-mem-team-memory.md
+Full reference: docs/workflows/setup-team-memory.md
 ══════════════════════════════════════════════════════════
 ```
 

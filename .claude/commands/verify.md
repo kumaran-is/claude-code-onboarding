@@ -444,7 +444,7 @@ Python — 2 failures:
 ## Final Verdict: ❌ FAIL (2 of 6 stacks failing)
 ```
 
-**Binary rule:** If ANY stack fails → overall verdict is FAIL. No partial credit.
+**Binary rule:** If ANY stack fails → overall verdict is FAIL. No partial credit. `/verify` reports build/test PASS/FAIL only; review-finding severities (CRITICAL → BLOCK, HIGH → NEEDS_REVIEW) follow the Review Severity Policy in `.claude/rules/verification-and-reporting.md`.
 
 ## pre-commit Checks
 
@@ -465,3 +465,7 @@ If any matches: list them. These are not blocking (human decides) but must be ac
 - If a stack build tool is missing (`mvnw`, `flutter`, `node_modules`, etc.) → report BLOCKED with "install X" — never PASS
 - A check with nothing configured (no lint script, no E2E config) is NOT RUN with its reason, never PASS
 - Do NOT interpret test failure messages — show raw output, human diagnoses
+
+## Related
+
+Use instead when: `/ship` — release readiness (runs this gate plus release builds and the security Lock Document check); `/test-coverage` — coverage percentages per stack; `/validate-changes` — advisory LLM judgement of the staged diff (never a substitute for this gate); `/status-check` — feature-level WORKS / BROKEN report backed by this evidence.

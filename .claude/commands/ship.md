@@ -30,7 +30,8 @@ Before running any stack checks, verify a security approval exists for the curre
 
 ```bash
 COMMIT=$(git rev-parse --short HEAD)
-ls docs/approvals/security-*-${COMMIT}.md 2>/dev/null && echo "LOCK: found" || echo "LOCK: missing"
+LOCK=$(find docs/approvals -maxdepth 1 -name "security-*-${COMMIT}.md" 2>/dev/null | head -1)   # no bare glob: zsh aborts on no match
+[ -n "$LOCK" ] && echo "LOCK: found $LOCK" || echo "LOCK: missing"
 ```
 
 **If missing:** STOP. Do not proceed with the ship check.
@@ -45,61 +46,29 @@ If this is a staging deploy and you intentionally want to skip the security gate
 pass --skip-security-lock with explicit justification.
 ```
 
+`--skip-security-lock` is staging-only: the report shows `Security lock: SKIPPED — <justification>`, and a production target can never be READY TO SHIP without the Lock Document.
+
 **If found:** continue to Step 2.
 
 ## Step 2 — Blockers (must all pass)
 
 Every command below records its OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`, then `tail` the log); `cmd | tail; echo $?` reports `tail`'s status and turns a failure into a pass.
 
-### Java / Spring Boot
+### All stacks — the `/verify pre-pr` gate
+Run every block of [`/verify`](verify.md) for the detected stacks with `MODE=pre-pr` (Spring, Python, Node — NestJS / TypeScript Node / MCP servers, Web — Angular and React, Flutter). `verify.md` is the single source of the gate commands; copy its per-check lines into the report rather than re-running different commands here. Any `FAIL` or `BLOCKED` makes the verdict **NOT READY**; `NOT RUN` is listed with its reason and never counted as passed; a detected stack or app the gate did not run is a blocker.
+
+### Ship-only additions (release artefacts and stricter checks `/verify` does not run)
 ```bash
-./mvnw test -q > /tmp/mvn-test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/mvn-test.log
+# Java / Spring Boot — packaged artefact
 ./mvnw package -DskipTests -q > /tmp/mvn-pkg.log 2>&1; echo "PACKAGE EXIT:$?"; tail -10 /tmp/mvn-pkg.log
-./mvnw dependency-check:check -q > /tmp/mvn-dc.log 2>&1; echo "DEPCHECK EXIT:$?"; grep -E "CRITICAL|HIGH|CVE" /tmp/mvn-dc.log | head -20   # plugin not configured → BLOCKED
-```
-
-### Node.js — NestJS, TypeScript Node services and MCP servers
-Run the Node block from [`/verify`](verify.md) ("Node.js" section) from the repo root with `MODE=pre-pr`: per package root it runs `tsc -p tsconfig.json --noEmit` (covers specs, which the Nest build config excludes), lint, `vitest run` / `jest --ci` with executed tests > 0, `npm run build`, the MCP server gate for MCP packages (real SDK client: negotiated spec revision, `tools/list`, tool-schema checks) and `npm audit --audit-level=high`, each with its own exit code. Copy its `NODE ...` and `MCP ...` lines into the Tests / Type check / Lint / Build / CVE audit rows. No `--passWithNoTests`: zero executed tests is a FAIL, and `npm test` without a countable runner is BLOCKED. Any `FAIL` or `BLOCKED` makes the verdict **NOT READY**; `NOT RUN` (no linter, no build script) is listed with its reason and never counted as passed. Before a release of an MCP server, also review `.mcp.json` hygiene from `session-mcp-governance.sh` (unpinned packages, secrets in args).
-
-### Web apps — Angular and React
-Run the web block from [`/verify`](verify.md) ("Web apps" section) from the repo root with `MODE=pre-pr`: per app root it runs type-check, lint, unit tests (`ng test --watch=false` on Angular 21's Vitest builder, `vitest run` for React), production build, Playwright E2E when configured, and `npm audit --audit-level=high`, each with its own exit code. Copy its `WEB ... : PASS|FAIL|BLOCKED|NOT RUN` lines into the report. A detected app that the block did not run is a blocker, not a pass; `NOT RUN` (no linter, no E2E config) is listed with its reason and never counted as passed. Any web check reported `FAIL` or `BLOCKED` makes the verdict **NOT READY**.
-
-### Python / FastAPI
-Capture each tool's own exit code (a pipe into `tail` reports `tail`'s status). Report `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` / `NOT APPLICABLE` per check.
-
-```bash
-uv lock --check; echo "LOCK EXIT:$?"
-uv run pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -20 /tmp/pytest.log
-uv run python scripts/check_executed.py /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # executed > 0; all-skipped exits 0 in pytest
+# Python — static types (no --ignore-missing-imports default: it hides missing stubs; use per-package overrides)
 uv run mypy . > /tmp/mypy.log 2>&1; echo "MYPY EXIT:$?"; tail -10 /tmp/mypy.log
-uv run ruff check . > /tmp/ruff.log 2>&1; echo "RUFF EXIT:$?"; tail -10 /tmp/ruff.log
-uv run ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
-uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /dev/null; echo "EXPORT EXIT:$?"
-uv run pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -20 /tmp/audit.log
-```
-
-- `pip-audit` prints name / version / advisory ID / fix versions and NO severity, so grepping it for `CRITICAL|HIGH` is always empty (a false green). Exit 0 = PASS; exit 1 = findings = FAIL unless each ID is accepted explicitly (`--ignore-vuln <ID>`, with reason and expiry); exit 2 = BLOCKED. `pip audit` is not a command.
-- Do not add `--ignore-missing-imports` to mypy as a default: it hides missing stubs; configure per-package overrides in `pyproject.toml`.
-- Canonical audit/CI details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
-
-### Flutter
-Capture each command's own exit code (a pipe into `tail` hides it). Report every check as `PASS` / `FAIL` /
-`BLOCKED` (could not run — say why) / `NOT RUN` (skipped — say why) / `NOT APPLICABLE`; only `PASS` counts toward
-READY TO SHIP. Proportional validation by change type:
-[flutter-testing-traps.md §10](../skills/flutter-mobile/reference/flutter-testing-traps.md).
-
-```bash
-dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
-flutter analyze > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -20 /tmp/analyze.log   # 0 issues, incl. info
-flutter test --coverage > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/test.log
+# Flutter — release build for each shipped platform (run LAST, after version bump and changelog are final)
 flutter build apk --release > /tmp/build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/build.log
 ```
-
-- Flutter mobile UI/E2E gates run with Maestro only (`.claude/rules/testing-tool-selection.md`); a missing Maestro/device is BLOCKED, not a browser substitute
-- Run heavy gates (device/E2E, release builds) LAST, after version bump and changelog are final — a later edit voids them.
-- Checks that cannot run here (iOS build on Linux, offline behaviour on a simulator) are `BLOCKED`, never `PASS`.
-- Zero findings from a scan/grep is evidence only if a known-bad input proved the same scan can fire (positive control).
-- Run against COMMITTED work: a diff-aware check on uncommitted changes sees nothing and passes vacuously.
+- Flutter mobile UI/E2E gates run with Maestro only (`.claude/rules/testing-tool-selection.md`); a missing Maestro/device is BLOCKED, never a browser substitute. An iOS build on a non-macOS host is BLOCKED.
+- Before releasing an MCP server, also review `.mcp.json` hygiene from `session-mcp-governance.sh` (unpinned packages, secrets in args).
+- Zero findings from a scan is evidence only with a positive control; a diff-aware check on uncommitted work is vacuous.
 
 ## Step 3 — High Priority (should pass)
 
@@ -196,6 +165,8 @@ Recommended:   X/4 passed
 Verdict: ✅ READY TO SHIP  |  ❌ NOT READY — fix blockers first
 ─────────────────────────────────────────────────
 
+Review findings (from `/review-code`, `/audit-security` or reviewer agents) follow the Review Severity Policy in `.claude/rules/verification-and-reporting.md`: any unresolved CRITICAL → NOT READY; each HIGH needs a fix or a written PR justification listed here, otherwise NOT READY; MEDIUM/LOW are listed as advisories and never block.
+
 Action Items (if NOT READY):
 1. [Most critical fix]
 2. [Second priority]
@@ -223,6 +194,8 @@ Action Items (if NOT READY):
 - A clean `/ship` does not replace `/audit-security` for major releases
 
 ## Related Commands
+
+Use instead when: `/verify` — the build/test gate alone, during development (this command runs it plus release checks); `/pr-risk` — review-effort scoring of a diff; `/create-pr` — PR body and `gh` command.
 
 - `/audit-security` — deep OWASP security audit
 - `/validate-changes` — LLM-as-a-Judge review of staged diff

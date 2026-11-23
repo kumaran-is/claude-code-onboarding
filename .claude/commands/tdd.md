@@ -74,3 +74,5 @@ When `/tdd` is invoked, the `tdd-guide` agent:
 - Agent: `.claude/agents/tdd-guide.md`
 - Command: `/test-coverage` — run after TDD cycle to verify overall coverage
 - Skill: `.claude/skills/test-driven-development/SKILL.md`
+
+Use instead when: `/test-coverage` — measure coverage gaps without writing tests; `/verify` — run the existing gate.

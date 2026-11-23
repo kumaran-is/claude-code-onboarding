@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Scope: `$ARGUMENTS` (default: entire project if no argument provided).
 
+This command CHANGES code. Use instead when: `/audit-security` — assess and approve without changing anything; `/security-sast`, `/security-dependencies`, `/xss-scan` — a single scan. Its Phase 4 validation must re-run the scans with their own exit codes; it does not replace `/audit-security` for the Lock Document.
+
 ## Phase 1: Assessment
 
 ### Step 1 -- Initial vulnerability scan

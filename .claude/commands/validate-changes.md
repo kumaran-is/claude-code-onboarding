@@ -78,6 +78,9 @@ How to proceed?
 
 ## When to use
 
+Advisory only: `output-evaluator` is an LLM judge (probabilistic). An APPROVE never replaces `/verify` exit codes or reviewer-agent verdicts; use `/review-code` for stack reviewers and `/verify pre-commit` for the deterministic gate.
+
+
 - After significant code changes before committing
 - Changes touching security-sensitive code (auth, tokens, DB)
 - Before pushing to a shared branch

@@ -52,7 +52,7 @@ mcp__context7__resolve-library-id       → flutter, riverpod
 
 **Token mapping:**
 ```
-Background color   → colorScheme.surface / .background / .surfaceVariant
+Background color   → colorScheme.surface / .surfaceContainerLow…Highest (.background/.surfaceVariant are deprecated)
 Primary accent     → colorScheme.primary / .secondary / .tertiary
 Card background    → colorScheme.surfaceContainer / .surfaceContainerHigh
 Heading text       → textTheme.headlineLarge/Medium/Small
@@ -74,7 +74,7 @@ Gap between items  → AppSpacing.xs (4) / AppSpacing.sm (8)
 - Use `ConsumerWidget` if the screen needs Riverpod state
 - Use `StatelessWidget` if pure display (no async data)
 
-**Screenshot element → Flutter widget mapping:**
+**Screenshot element → Flutter widget mapping** (Flutter 3.50.x: Material widgets come from `package:material_ui/material_ui.dart`):
 
 | Screenshot element | Flutter implementation |
 |---|---|

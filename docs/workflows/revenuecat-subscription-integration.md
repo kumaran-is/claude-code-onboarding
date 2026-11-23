@@ -58,7 +58,7 @@ Use `list_offerings` to see current offerings
 3. Identify user after authentication (`Purchases.logIn(userId)`)
 4. Check entitlements (`Purchases.getCustomerInfo()`)
 5. Build paywall screen from `Purchases.getOfferings()`
-6. Handle purchase flow (`Purchases.purchasePackage(package)`)
+6. Handle purchase flow (`Purchases.purchase(PurchaseParams.package(package))`; `purchasePackage` is deprecated in purchases_flutter 11.x)
 7. Log out on sign-out (`Purchases.logOut()`)
 
 **Riverpod pattern**:

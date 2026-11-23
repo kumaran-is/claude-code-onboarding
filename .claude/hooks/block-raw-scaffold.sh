@@ -16,6 +16,16 @@
 # - Every authorized call is appended to .claude/state/scaffold-audit.log (gitignored).
 # Anything else that matches a raw creator is blocked (exit 2).
 #
+# Inert heredoc bodies: the body of `cat [>|>>] FILE <<'DELIM'` / `tee [-a] FILE <<'DELIM'` is data written to a
+# file, so it is not scanned (report appends and notes that mention a creator used to be blocked). Only that exact
+# shape, alone on its line, with a QUOTED delimiter (no $(...) or backtick expansion in the body) is exempt. A body
+# fed to a shell or an interpreter (bash/sh/python/node <<, cat <<X | bash, $(cat <<X)), an unquoted delimiter, or a
+# missing terminator is scanned as before (fail closed).
+#
+# Write advisory (PreToolUse Write, register the matcher as "Bash|Write"): creating a NEW angular.json, or a new
+# src/main.ts, src/app/app.config.ts, tsconfig.app.json or tsconfig.spec.json inside an Angular workspace, prints
+# a CLI-first reminder as additionalContext. Advisory only: exit 0, silent for existing files (overwrites/Edits).
+#
 # Test: bash .claude/hooks/block-raw-scaffold.sh --selftest
 
 LOG_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude/state"
@@ -28,6 +38,7 @@ RULES=(
   'scaffold-python-api#django-admin[[:space:]]+startproject#django-admin startproject#Python / Django'
   'scaffold-spring-api#(spring[[:space:]]+init|mvn[[:space:]]+archetype:generate)#spring init / mvn archetype:generate#Java / Spring Boot'
   'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+vite(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-vite(@[^[:space:]]+)?|([^[:space:]]*/)?create-vite(@[^[:space:]]+)?)#npm create vite / npx create-vite#React (Vite)'
+  'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+(next-app|react-router)(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-(next-app|react-router)(@[^[:space:]]+)?|([^[:space:]]*/)?create-(next-app|react-router)(@[^[:space:]]+)?)#npm create next-app / create-react-router#React full-stack (Next.js, React Router framework mode)'
 )
 
 block() { # $1 matched label, $2 scaffold command, $3 tech
@@ -43,8 +54,37 @@ EOF
   exit 2
 }
 
+strip_inert_heredocs() { # stdin: command text -> stdout: same text with inert heredoc bodies removed (see header)
+  python3 -c '
+import re, sys
+text = sys.stdin.read()
+lines = text.split("\n")
+file_arg = r"[^\s;&|<>`$()]+"
+head = re.compile(r"^[ \t]*(?:cat(?:[ \t]+>>?[ \t]*" + file_arg + r")?|tee(?:[ \t]+-a)?[ \t]+" + file_arg + r")"
+                  r"[ \t]*<<(-?)[ \t]*([\x27\x22])([A-Za-z_][A-Za-z0-9_]*)\2"
+                  r"(?:[ \t]*>>?[ \t]*" + file_arg + r")?[ \t]*$")
+out, i = [], 0
+while i < len(lines):
+    m = head.match(lines[i])
+    out.append(lines[i])
+    i += 1
+    if not m:
+        continue
+    term = re.compile(r"^" + ("\t*" if m.group(1) else "") + re.escape(m.group(3)) + r"$")
+    j = i
+    while j < len(lines) and not term.match(lines[j]):
+        j += 1
+    if j == len(lines):          # no terminator: keep everything (fail closed)
+        continue
+    i = j                         # drop the body, keep the terminator line
+sys.stdout.write("\n".join(out))
+'
+}
+
 evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 otherwise.
-  local cmd="$1" rule name rx label tech lead remaining
+  local cmd="$1" rule name rx label tech lead remaining stripped
+  # Inert heredoc bodies are data, not commands. Any failure keeps the original text (fail closed).
+  stripped=$(printf '%s' "$cmd" | strip_inert_heredocs 2>/dev/null) && [ -n "$stripped" ] && cmd="$stripped"
   for rule in "${RULES[@]}"; do
     IFS='#' read -r name rx label tech <<<"$rule"
     # A creator counts as a command whether or not VAR=value assignments precede it (FOO=1 flutter create ...).
@@ -66,6 +106,30 @@ evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 
   if printf '%s' "$cmd" | grep -qE '(npx[[:space:]]+react-native[[:space:]]+init|npx[[:space:]]+create-expo-app|npx[[:space:]]+@react-native-community/cli[[:space:]]+init)([[:space:]]|$)'; then
     echo "WARNING: raw React Native project creation; consider the mobile-developer skill first (no scaffold command exists)." >&2
   fi
+  return 0
+}
+
+ANGULAR_CLI_FIRST_MSG="Angular scaffolding is CLI-first: create workspaces with /scaffold-angular-app and files with \`npm exec --no -- ng generate …\` (.claude/rules/web-frontend.md)."
+in_angular_workspace() { # $1 dir: an ancestor (or itself) holds angular.json or a package.json with @angular/core
+  local d="$1"
+  while [ -n "$d" ] && [ "$d" != "/" ] && [ "$d" != "." ]; do
+    [ -f "$d/angular.json" ] && return 0
+    [ -f "$d/package.json" ] && grep -qE '"@angular/core"[[:space:]]*:' "$d/package.json" && return 0
+    d=$(dirname "$d")
+  done
+  return 1
+}
+write_advisory() { # $1 tool name, $2 file path. Prints PreToolUse additionalContext JSON or nothing. Always returns 0.
+  local tool="$1" f="$2" dir hit=0
+  [ "$tool" = Write ] && [ -n "$f" ] || return 0
+  [ -e "$f" ] && return 0                                  # overwrite of an existing file: not a scaffold
+  case "$f" in
+    */angular.json|angular.json) hit=1 ;;
+    */src/main.ts|*/src/app/app.config.ts|*/tsconfig.app.json|*/tsconfig.spec.json|src/main.ts|src/app/app.config.ts|tsconfig.app.json|tsconfig.spec.json)
+      dir=$(dirname "$f"); in_angular_workspace "$dir" && hit=1 ;;
+  esac
+  [ "$hit" -eq 1 ] || return 0
+  MSG="$ANGULAR_CLI_FIRST_MSG ($f)" python3 -c 'import json,os;print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":os.environ["MSG"]}}))'
   return 0
 }
 
@@ -104,12 +168,56 @@ selftest() {
   chk "positive: local .bin/create-vite is blocked"                      2 './node_modules/.bin/create-vite web'
   chk "positive: create-vite in a subshell is blocked"                   2 '(cd /tmp && npx create-vite web)'
   chk "positive: create-vite in command substitution is blocked"         2 'echo $(npx create-vite web)'
-  chk "positive: npx -y @angular/cli new is blocked"                     2 'npx -y @angular/cli@21.2.30 new web'
+  chk "positive: npx -y @angular/cli new is blocked"                     2 'npx -y @angular/cli@22.3.0 new web'
+  chk "negative: the exact documented angular 22 scaffold is allowed"    0 'CC_SCAFFOLD=scaffold-angular-app npx @angular/cli@22.3.0 new web --style=css --ssr=false --skip-git --defaults'
+  chk "positive: npm exec @angular/cli@22.3.0 new without marker blocked" 2 'npm exec --yes -- @angular/cli@22.3.0 new web --defaults'
   chk "negative: text that only mentions create-vite"                    0 'grep -rn "create-vite" docs'
+  chk "positive: npm exec create-next-app is blocked"                    2 'npm exec --yes -- create-next-app@16.4.6 web --ts --app --yes'
+  chk "positive: npx create-react-router is blocked"                     2 'npx create-react-router@8.5.2 web --yes'
+  chk "positive: npm create next-app is blocked"                         2 'npm create next-app@16.4.6 web'
+  chk "positive: pnpm create react-router is blocked"                    2 'pnpm create react-router@8.5.2 web'
+  chk "positive: local .bin/create-next-app is blocked"                  2 './node_modules/.bin/create-next-app web'
+  chk "negative: authorized next scaffold is allowed"                    0 'CC_SCAFFOLD=scaffold-react-app npm exec --yes -- create-next-app@16.4.6 web --ts --app --yes'
+  chk "negative: authorized react-router scaffold is allowed"            0 'CC_SCAFFOLD=scaffold-react-app npm exec --yes -- create-react-router@8.5.2 web --yes'
+  chk "adversarial: angular marker does not authorize create-next-app"   2 'CC_SCAFFOLD=scaffold-angular-app npx create-next-app@16.4.6 web'
+  chk "negative: next build/start are untouched"                         0 'npx next build && npm run start'
+  chk "negative: text that only mentions create-next-app"                0 'grep -rn "create-next-app" docs'
   chk "negative: vite build/dev commands are untouched"                  0 'npx vite build && npm run dev && npx vitest run'
   chk "negative: unrelated flutter commands are untouched"               0 'flutter pub get && flutter test && flutter analyze'
   chk "negative: text that only mentions flutter create"                 0 'grep -rn "flutter create" docs'
   chk "negative: ordinary commands are untouched"                        0 'ls -la && git status'
+  # inert heredoc bodies (report appends, notes) are not commands; anything executable still is
+  chk "negative: cat >> report <<'EOF' body mentioning flutter create"   0 "$(printf 'cat >> report.md <<%s\nflutter create was blocked\nEOF' "'EOF'")"
+  chk "negative: cat > notes <<\"EOF\" body with npm create vite"        0 "$(printf 'cat > notes.md <<"EOF"\nnpm create vite@9.3.4 web\nEOF')"
+  chk "negative: tee -a log <<'EOF' body with create-next-app"          0 "$(printf 'tee -a log.md <<%s\nnpx create-next-app@16.4.6 web\nEOF' "'EOF'")"
+  chk "adversarial: cat <<'EOF' | bash body is executed"                 2 "$(printf 'cat <<%s | bash\nflutter create x\nEOF' "'EOF'")"
+  chk "adversarial: bash <<'EOF' body is executed"                       2 "$(printf 'bash <<%s\nflutter create x\nEOF' "'EOF'")"
+  chk "adversarial: python heredoc body stays scanned"                   2 "$(printf 'python3 - <<%s\nflutter create x\nPY' "'PY'")"
+  chk "adversarial: unquoted delimiter (expansion) stays scanned"        2 "$(printf 'cat > a.md <<EOF\nflutter create x\nEOF')"
+  chk "adversarial: \$(cat <<'EOF') fed to bash -c stays scanned"        2 "$(printf 'bash -c "$(cat <<%s\nflutter create x\nEOF\n)"' "'EOF'")"
+  chk "adversarial: creator after the terminator is blocked"             2 "$(printf 'cat > a.md <<%s\nhi\nEOF\nflutter create x' "'EOF'")"
+  chk "adversarial: missing terminator keeps the body scanned"           2 "$(printf 'cat > a.md <<%s\nflutter create x' "'EOF'")"
+  chk "adversarial: cat <<'EOF' > a.sh && sh a.sh stays scanned"         2 "$(printf 'cat <<%s > a.sh && sh a.sh\nflutter create x\nEOF' "'EOF'")"
+  # Write advisory (CLI-first reminder for hand-created Angular workspace files)
+  local w; w=$(mktemp -d); mkdir -p "$w/demo/src/app/features/x" "$w/ws"; printf '{}' > "$w/ws/angular.json"
+  wchk() { # label expect(advise|silent) tool path
+    local out rc; out=$(write_advisory "$3" "$4"); rc=$?
+    if [ "$rc" -ne 0 ]; then echo "  FAIL $1 (exit $rc)"; fail=1; return; fi
+    case "$2" in
+      advise) printf '%s' "$out" | grep -q 'CLI-first' && echo "  ok   $1" || { echo "  FAIL $1 (no advisory)"; fail=1; } ;;
+      silent) [ -z "$out" ] && echo "  ok   $1" || { echo "  FAIL $1 (unexpected: $out)"; fail=1; } ;;
+    esac
+  }
+  wchk "advisory: Write of new demo/angular.json"                        advise Write "$w/demo/angular.json"
+  printf '{}' > "$w/demo/angular.json"
+  wchk "advisory: Write of new src/main.ts in an Angular workspace"      advise Write "$w/demo/src/main.ts"
+  wchk "advisory: Write of new tsconfig.spec.json in an Angular workspace" advise Write "$w/ws/tsconfig.spec.json"
+  wchk "silent: Edit of an existing angular.json"                        silent Edit  "$w/ws/angular.json"
+  wchk "silent: Write over an existing angular.json"                     silent Write "$w/ws/angular.json"
+  wchk "silent: Write of a feature file"                                 silent Write "$w/demo/src/app/features/x/x.ts"
+  mkdir -p "$w/vite/src"; printf '{"dependencies":{"react":"19.3.1"}}' > "$w/vite/package.json"
+  wchk "silent: new tsconfig.app.json in a React (non-Angular) project"  silent Write "$w/vite/tsconfig.app.json"
+  rm -rf "$w"
   # the audit trail records authorized calls
   ( evaluate 'CC_SCAFFOLD=scaffold-flutter-app flutter create audited_app' ) >/dev/null 2>&1
   if grep -q 'scaffold-flutter-app | CC_SCAFFOLD' "$t/scaffold-audit.log" 2>/dev/null; then echo "  ok   authorized call is written to the audit log"; else echo "  FAIL audit log entry missing"; fail=1; fi
@@ -123,6 +231,24 @@ selftest() {
 if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 INPUT=$(cat)
+TOOL=$(printf '%s' "$INPUT" | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('tool_name', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
+if [ "$TOOL" = Write ]; then
+  FILE=$(printf '%s' "$INPUT" | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
+  write_advisory Write "$FILE"
+  exit 0
+fi
 COMMAND=$(printf '%s' "$INPUT" | python3 -c "
 import sys, json
 try:

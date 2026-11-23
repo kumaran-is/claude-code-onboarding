@@ -18,7 +18,7 @@ QUIET=0
 # explanatory (a line saying the shape is wrong: not / never / no / reports / instead is skipped).
 #   ${ARGUMENTS:-x}             Claude Code substitutes $ARGUMENTS textually and never applies the default
 #   gate | tail ...; echo $?    $? is tail's/head's status, so a failing gate reads as 0
-#   flutter pub audit           not a pub subcommand: prints help and exits 0
+#   flutter pub audit           not a pub subcommand (3.44: help + exit 0; 3.50.1: exit 64)
 #   semgrep scan/--config without --error   exits 0 even with findings
 # ---------------------------------------------------------------------------
 broken_shapes() {
@@ -35,7 +35,7 @@ broken_shapes() {
       if (cand == "") next
       if (cand ~ /\$\{ARGUMENTS:-/) printf "%d\t${ARGUMENTS:-...} default is never applied by Claude Code; use \"$ARGUMENTS\" and test it\n", NR
       if (cand ~ /[|][[:space:]]*(tail|head)[^;&|]*;[[:space:]]*echo[^;]*[$][?]/) printf "%d\tgate piped into tail/head before echo $? (reads the pager status, not the gate); write to a log, read $?, then tail the log\n", NR
-      if (cand ~ /flutter[[:space:]]+pub[[:space:]]+audit/) printf "%d\tflutter pub audit is not a command (prints help, exits 0)\n", NR
+      if (cand ~ /flutter[[:space:]]+pub[[:space:]]+audit/) printf "%d\tflutter pub audit is not a command (no advisory scan runs)\n", NR
       if (cand ~ /(^|[^[:alnum:]_-])semgrep[[:space:]]+(scan|--config)/ && cand !~ /--error/) printf "%d\tsemgrep without --error exits 0 on findings\n", NR
     }' "$1"
 }

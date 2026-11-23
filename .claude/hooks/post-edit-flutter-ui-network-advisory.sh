@@ -64,7 +64,7 @@ selftest() {
   mkdir -p "$tmp/lib/features/a/presentation" "$tmp/lib/features/a/data"
   printf "import 'package:dio/dio.dart';\nclass S {}\n" > "$tmp/lib/features/a/presentation/bad.dart"
   printf "// online-only: live session\nimport 'package:firebase_auth/firebase_auth.dart';\n" > "$tmp/lib/features/a/presentation/exempt.dart"
-  printf "import 'package:flutter/material.dart';\nclass S {}\n" > "$tmp/lib/features/a/presentation/clean.dart"
+  printf "import 'package:material_ui/material_ui.dart';\nclass S {}\n" > "$tmp/lib/features/a/presentation/clean.dart"
   printf "import 'package:dio/dio.dart';\nclass R {}\n" > "$tmp/lib/features/a/data/repo.dart"
   printf "import 'package:dio/dio.dart';\n" > "$tmp/lib/features/a/presentation/bad.g.dart"
   probe() { # label file expect(advise|silent)

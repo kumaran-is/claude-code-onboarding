@@ -18,6 +18,8 @@
 #       network` (command is `requests`), installing playwright-cli from @playwright/mcp (package is @playwright/cli),
 #       or Browser-Use tool names the configured MCP server does not expose (it exposes browser_exec,
 #       browser_screenshot, browser_login, browser_feedback). Lines that say the old form does not exist are allowed.
+#   R6  Flutter-context files (MOBILE_CONTEXT without the React Native skill/agent) must not recommend another device
+#       UI/E2E driver (Detox, Appium, Patrol, Espresso, XCUITest, flutter_driver) unless the line carries a guard word.
 #
 # Usage: lint-testing-tools.sh [--root <repo>] [--selftest]      Exit 0 = clean, 1 = violations.
 set -uo pipefail
@@ -48,6 +50,9 @@ BROWSER_ASSETS = [
 ]
 MUST_LINK_CANON = ["CLAUDE.md", ".claude/skills/flutter-mobile/SKILL.md",
                    ".claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md", ".claude/rules/skill-triggers.md"]
+FLUTTER_CONTEXT = [p for p in MOBILE_CONTEXT if "mobile-developer" not in p]
+OTHER_E2E = re.compile(r"\b(detox|appium|patrol|espresso|xcuitest|flutter_driver)\b", re.I)
+GUARD_R6 = re.compile(GUARD.pattern.replace("|detox", ""), re.I)
 R4_SKIP = {CANON, ".claude/scripts/lint-testing-tools.sh", ".claude/hooks/pre-browser-tool-advisory.sh"}
 R4_SKIP_DIRS = (".claude/skills/ui-ux-pro-max/", ".git/", "node_modules/")
 STALE = [
@@ -121,6 +126,11 @@ def lint(root):
                 if rx.search(line):
                     bad.append(f"R5 {r}:{n}: {why}: {line.strip()[:110]}")
                     break
+    # R6
+    for f in files(root, FLUTTER_CONTEXT):
+        for n, line in enumerate(open(f, errors="ignore"), 1):
+            if OTHER_E2E.search(line) and not GUARD_R6.search(line):
+                bad.append(f"R6 {rel(root, f)}:{n}: Flutter file recommends a non-Maestro device E2E tool: {line.strip()[:110]}")
     return bad
 
 
@@ -155,6 +165,8 @@ def selftest():
             ("R5", "docs/r5e.md", "call mcp__browser-use__fill with the email\n"),
             ("R5", ".claude/skills/x/SKILL.md", "playwright-cli -s=qa network\n"),
             ("R4", ".claude/agents/x.md", "Drive the iOS simulator with Chrome DevTools\n"),
+            ("R6", ".claude/skills/mobile-design/reference/z.md", "| Browser-based E2E | Cannot test native features | Maestro MCP or Detox |\n"),
+            ("R6", ".claude/agents/flutter-mobile.md", "Write the checkout journey with Patrol\n"),
         ]
         for code, path, text in cases:
             before = {path: open(os.path.join(t, path)).read() if os.path.exists(os.path.join(t, path)) else None}
@@ -173,11 +185,13 @@ def selftest():
             "docs/g4.md|If the iOS simulator is unavailable report BLOCKED, do not substitute Chrome DevTools.\n",
             "docs/g5.md|playwright-cli -s=qa screenshot --filename shot.png; playwright-cli -s=qa requests; playwright-cli -s=qa network-state-set offline\n",
             "docs/g6.md|Use mcp__browser-use__browser_exec then mcp__browser-use__browser_screenshot. Old browser_navigate does not exist.\n",
+            ".claude/skills/flutter-mobile/reference/w.md|Never use Patrol, Appium or Detox for Flutter device flows; Maestro only.\n",
+            ".claude/skills/mobile-developer/SKILL.md|Detox drives the React Native E2E suite.\n",
         ]
         for g in guarded:
             p, text = g.split("|", 1)
             w(p, text)
-        leftover = [h for h in lint(t) if h.startswith(("R1", "R4", "R5"))]
+        leftover = [h for h in lint(t) if h.startswith(("R1", "R4", "R5", "R6"))]
         print("  ok   guarded sentences and current syntax (never / web / BLOCKED / --filename / requests / browser_exec) are allowed" if not leftover else f"  FAIL false positives: {leftover}")
         fail += bool(leftover)
     print("selftest PASS" if not fail else "selftest FAIL")

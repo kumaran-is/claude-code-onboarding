@@ -6,6 +6,58 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="${SCRIPT_DIR}/../skills"
 QUIET=0
 
+# Strict YAML parse of every frontmatter block in one python pass. Prints "path<TAB>error" per failing file and
+# "PARSED <n>" last. The awk field checks below accept frontmatter that YAML rejects (an unquoted ": " in a
+# description, a tab, a bad indent), and Claude Code then cannot read the skill's name/description.
+yaml_frontmatter_errors() { # file paths on stdin
+  python3 -c '
+import sys
+try:
+    import yaml
+except ImportError:
+    print("PYYAML_MISSING"); sys.exit(0)
+n = 0
+for path in sys.stdin.read().splitlines():
+    n += 1
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except OSError as e:
+        print(f"{path}\tunreadable: {e}"); continue
+    if not lines or lines[0].strip() != "---":
+        print(f"{path}\tno opening --- frontmatter line"); continue
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        print(f"{path}\tfrontmatter has no closing ---"); continue
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as e:
+        msg = " ".join(str(e).split())
+        print(f"{path}\tinvalid YAML: {msg[:200]}"); continue
+    if not isinstance(data, dict):
+        print(f"{path}\tfrontmatter is not a YAML mapping")
+print(f"PARSED {n}")
+'
+}
+
+if [[ "${1:-}" == "--selftest" ]]; then
+  self="${BASH_SOURCE[0]}"
+  bash -n "$self" || { echo "  FAIL does not parse"; exit 1; }
+  echo "  ok   parses (bash -n)"
+  tmp=$(mktemp -d) || exit 1
+  mkdir -p "$tmp/good" "$tmp/bad"
+  printf -- '---\nname: good\ndescription: "Use when: x happens. Covers a, b."\nmetadata:\n  triggers: x, y\nallowed-tools: Read\n---\n# Good\n\n## Iron Law\nx\n' > "$tmp/good/SKILL.md"
+  out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+  fail=0
+  if [[ $rc -eq 0 ]] && ! printf '%s' "$out" | grep -q "invalid YAML"; then echo "  ok   negative: valid frontmatter (quoted colon) passes"; else echo "  FAIL clean fixture: rc=$rc $out"; fail=1; fi
+  printf -- '---\nname: bad\ndescription: Use when: x happens\nallowed-tools: Read\n---\n# Bad\n' > "$tmp/bad/SKILL.md"
+  out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+  if [[ $rc -eq 1 ]] && printf '%s' "$out" | grep -q "bad/SKILL.md" && printf '%s' "$out" | grep -q "invalid YAML"; then echo "  ok   positive: unquoted ': ' in description fails with invalid YAML"; else echo "  FAIL planted bad YAML not caught: rc=$rc $out"; fail=1; fi
+  rm -rf "$tmp"
+  [[ $fail -eq 0 ]] && echo "selftest PASS" || echo "selftest FAIL"
+  exit $fail
+fi
+
 # Parse flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,6 +102,13 @@ while IFS= read -r skill_file; do
   fi
 done < <(find "$SKILLS_DIR" -name "SKILL.md" | sort)
 
+yaml_report=$(find "$SKILLS_DIR" -name "SKILL.md" | sort | yaml_frontmatter_errors)
+if [[ "$yaml_report" == *PYYAML_MISSING* ]]; then
+  echo "ERROR: python3 with PyYAML is required for the strict frontmatter parse (pip install pyyaml); nothing was parsed." >&2
+  exit 1
+fi
+echo "YAML frontmatter: $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') file(s) parsed strictly"
+
 # Second pass: lint each file
 while IFS= read -r skill_file; do
   skill_dir_name=$(basename "$(dirname "$skill_file")")/SKILL.md
@@ -62,6 +121,11 @@ while IFS= read -r skill_file; do
 
   errors=""
   warnings=""
+
+  yaml_err=$(printf '%s\n' "$yaml_report" | awk -F'\t' -v f="$skill_file" '$1 == f { print $2; exit }')
+  if [[ -n "$yaml_err" ]]; then
+    errors="${errors}   → ERROR: frontmatter ${yaml_err}\n"
+  fi
 
   # Check required field: name
   name_val=$(echo "$frontmatter" | awk '/^name:/{sub(/^name:[[:space:]]*/, ""); print; exit}')

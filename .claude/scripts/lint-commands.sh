@@ -13,10 +13,63 @@ COMMANDS_DIR="$DEFAULT_DIR"
 QUIET=0
 
 # ---------------------------------------------------------------------------
+# Known-broken shell shapes in command instructions. Prints "LINE<TAB>LABEL" per hit.
+# Scans fenced code (shell comments stripped) and inline `code` spans on prose lines that are not
+# explanatory (a line saying the shape is wrong: not / never / no / reports / instead is skipped).
+#   ${ARGUMENTS:-x}             Claude Code substitutes $ARGUMENTS textually and never applies the default
+#   gate | tail ...; echo $?    $? is tail's/head's status, so a failing gate reads as 0
+#   flutter pub audit           not a pub subcommand: prints help and exits 0
+#   semgrep scan/--config without --error   exits 0 even with findings
+# ---------------------------------------------------------------------------
+broken_shapes() {
+  awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    {
+      cand = ""
+      if (fence) { line = $0; sub(/(^|[[:space:]])#.*$/, "", line); cand = line }
+      else {
+        if ($0 ~ /(^|[^[:alpha:]])(not|NOT|never|no|No|reports|instead)([^[:alpha:]]|$)/) next
+        s = $0
+        while (match(s, /`[^`]+`/)) { cand = cand " " substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH) }
+      }
+      if (cand == "") next
+      if (cand ~ /\$\{ARGUMENTS:-/) printf "%d\t${ARGUMENTS:-...} default is never applied by Claude Code; use \"$ARGUMENTS\" and test it\n", NR
+      if (cand ~ /[|][[:space:]]*(tail|head)[^;&|]*;[[:space:]]*echo[^;]*[$][?]/) printf "%d\tgate piped into tail/head before echo $? (reads the pager status, not the gate); write to a log, read $?, then tail the log\n", NR
+      if (cand ~ /flutter[[:space:]]+pub[[:space:]]+audit/) printf "%d\tflutter pub audit is not a command (prints help, exits 0)\n", NR
+      if (cand ~ /(^|[^[:alnum:]_-])semgrep[[:space:]]+(scan|--config)/ && cand !~ /--error/) printf "%d\tsemgrep without --error exits 0 on findings\n", NR
+    }' "$1"
+}
+
+selftest() {
+  local self tmp out rc fail=0
+  self="$SCRIPT_DIR/$(basename "$0")"
+  if bash -n "$self" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
+  tmp=$(mktemp -d) || return 1
+  hdr='---\ndescription: Fixture command for the lint selftest only.\nallowed-tools: Bash\n---\n\nThis body is long enough to pass the body length check for a command file.\n\n'
+  run_case() { # $1 label, $2 body, $3 expected rc, $4 needle ("" = no broken-shape ERROR)
+    rm -f "$tmp"/*.md; printf '%b%s\n' "$hdr" "$2" > "$tmp/case.md"
+    out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+    if [ "$rc" -eq "$3" ] && { { [ -z "$4" ] && ! printf '%s' "$out" | grep -q 'ERROR: line'; } || { [ -n "$4" ] && printf '%s' "$out" | grep -qF -- "$4"; }; }; then echo "  ok   $1"
+    else echo "  FAIL $1 (rc=$rc: $out)"; fail=1; fi
+  }
+  run_case "positive: \${ARGUMENTS:-} in a code block" $'```bash\nTARGET="${ARGUMENTS:-.}"\n```' 1 'default is never applied'
+  run_case "positive: gate | tail; echo \$?" $'```bash\nnpm test 2>&1 | tail -20; echo "EXIT:$?"\n```' 1 'piped into tail/head'
+  run_case "positive: flutter pub audit" $'Run `flutter pub audit` for CVEs.' 1 'flutter pub audit is not a command'
+  run_case "positive: semgrep without --error" $'```bash\nsemgrep scan --config auto --json -o semgrep.json .\n```' 1 'semgrep without --error'
+  run_case "negative: correct forms and explanatory mentions pass" $'```bash\nTARGET="$ARGUMENTS"; [ -n "$TARGET" ] || TARGET="."   # `${ARGUMENTS:-.}` is never substituted\nnpm test > test.log 2>&1; echo "EXIT:$?"; tail -20 test.log\nsemgrep scan --config auto --error .\n# flutter pub audit is not a command\n```\n`cmd | tail; echo $?` reports the status of `tail`.\nThere is no `flutter pub audit` subcommand.' 0 ""
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --selftest)
+      selftest; exit $?
+      ;;
     --dir)
       COMMANDS_DIR="$2"
       shift 2
@@ -179,6 +232,16 @@ lint_file() {
       status="fail"
     fi
   fi
+
+  # ---- 4b. Known-broken shell shapes ----
+  local shape_line shape_msg
+  while IFS="	" read -r shape_line shape_msg; do
+    [[ -n "$shape_msg" ]] || continue
+    messages+=("ERROR: line ${shape_line}: ${shape_msg}")
+    status="fail"
+  done <<EOF_SHAPES
+$(broken_shapes "$abs_path")
+EOF_SHAPES
 
   # ---- 5. Build result entry ----
   # Format: status|rel_path|msg1|msg2|...

@@ -2,8 +2,8 @@ name: Context Budget Gate
 
 # Path-scoped guard for the ALWAYS-LOADED instruction corpus (CLAUDE.md + .claude/rules/*.md —
 # injected into every session AND every subagent). Fails ONLY on the genuine, silent defect: a
-# rules file exceeding Claude Code's ~150k-char single-file load limit (over the limit the file
-# silently fails to load → that governance silently stops applying). It does NOT police size or
+# rules file exceeding a 150k-char house ceiling (the exact per-file load limit is not documented;
+# the ceiling keeps each file well below any truncation risk). It does NOT police size or
 # growth — a heavy always-loaded design can be intentional. Runs only when the corpus changes,
 # so it adds zero overhead to other PRs.
 
@@ -24,11 +24,13 @@ jobs:
   context-budget:
     name: Verify rules-corpus load budget
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run context-budget check (strict)
         shell: bash
@@ -39,5 +41,5 @@ jobs:
       - name: Helpful pointer on failure
         if: ${{ failure() }}
         run: |
-          echo "::error title=Context Budget Gate::A rules file crossed the 150k-char load limit and would silently stop loading. Split it into smaller files."
+          echo "::error title=Context Budget Gate::A rules file crossed the 150k-char house ceiling. Split it into smaller files."
           echo "::notice::Run locally: bash .claude/scripts/check-context-budget.sh   (add --strict to reproduce the gate)"

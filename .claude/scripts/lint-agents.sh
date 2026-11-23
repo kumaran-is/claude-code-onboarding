@@ -16,6 +16,39 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTS_DIR="${SCRIPT_DIR}/../agents"
 QUIET=false
 
+# Strict YAML parse of agent frontmatter (ADVISORY: reported as WARN, never fails the lint yet; many
+# agent descriptions still carry unquoted ": " or multi-line <example> blocks). Same parser as lint-skills.sh.
+yaml_frontmatter_errors() { # file paths on stdin
+  python3 -c '
+import sys
+try:
+    import yaml
+except ImportError:
+    print("PYYAML_MISSING"); sys.exit(0)
+n = 0
+for path in sys.stdin.read().splitlines():
+    n += 1
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except OSError as e:
+        print(f"{path}\tunreadable: {e}"); continue
+    if not lines or lines[0].strip() != "---":
+        print(f"{path}\tno opening --- frontmatter line"); continue
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        print(f"{path}\tfrontmatter has no closing ---"); continue
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as e:
+        msg = " ".join(str(e).split())
+        print(f"{path}\tinvalid YAML: {msg[:200]}"); continue
+    if not isinstance(data, dict):
+        print(f"{path}\tfrontmatter is not a YAML mapping")
+print(f"PARSED {n}")
+'
+}
+
 # Parse arguments
 selftest() {
   local self tmp out rc fail=0
@@ -32,6 +65,9 @@ selftest() {
     else echo "  FAIL $1 (rc=$rc out=$out)"; fail=1; fi
     rm -f "$tmp"/*.md
   }
+  mk yamlbad.md 'tools: Read\n' 'Body.'; sed -i.bak 's/^description: .*/description: Use when: the lint selftest runs/' "$tmp/yamlbad.md"; rm -f "$tmp/yamlbad.md.bak"
+  check "advisory: invalid YAML frontmatter warns, exit stays 0" 0 "WARN yaml (yamlbad.md): invalid YAML"
+  mk yamlok.md 'tools: Read\n' 'Body.'; check "negative: valid frontmatter -> 0 strict-parse failures" 0 "0 of 1 agent file(s) fail a strict parse"
   check "no agent files -> fail" 1 "no agent files"
   mk good.md 'tools: Read, Grep\n' 'Body.'; check "negative: tools: grant passes" 0 "1 passed, 0 failed"
   mk legacy.md 'allowed-tools: Read, Grep\n' 'Body.'; check "positive: allowed-tools only -> fail" 1 "allowed-tools is ignored for agents"
@@ -207,6 +243,15 @@ for agent_file in "$AGENTS_DIR"/*.md; do
     done
   fi
 done
+
+yaml_report=$(ls "$AGENTS_DIR"/*.md 2>/dev/null | yaml_frontmatter_errors)
+if [[ "$yaml_report" == *PYYAML_MISSING* ]]; then
+  echo "WARN yaml: strict frontmatter parse NOT RUN (python3 with PyYAML not found)"
+else
+  yaml_bad=$(printf '%s\n' "$yaml_report" | grep -vc '^PARSED ' || true)
+  printf '%s\n' "$yaml_report" | awk -F'\t' '!/^PARSED / && NF > 1 { n = split($1, p, "/"); printf "   WARN yaml (%s): %s\n", p[n], $2 }'
+  echo "YAML frontmatter (advisory): ${yaml_bad:-0} of $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') agent file(s) fail a strict parse"
+fi
 
 echo ""
 if [[ $((passed + failed)) -eq 0 ]]; then

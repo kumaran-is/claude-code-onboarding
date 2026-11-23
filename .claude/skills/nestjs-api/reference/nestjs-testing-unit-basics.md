@@ -12,66 +12,15 @@ Unit testing setup and service test patterns for NestJS 11.x with Vitest, TypeSc
 
 ## Vitest Configuration for Unit Tests
 
-### vitest.config.ts
+### vitest.config.mts
 
-```typescript
-import { defineConfig } from 'vitest/config';
-import swc from 'unplugin-swc';
-import { resolve } from 'path';
+Use the verified unit config in `nestjs-templates-infrastructure.md` (Vitest 4.1.12, `unplugin-swc`, coverage
+`thresholds`). Two fixes to older configs found here before:
 
-export default defineConfig({
-  test: {
-    globals: true,
-    root: './',
-    environment: 'node',
-    include: ['**/*.spec.ts'],
-    exclude: ['**/*.e2e-spec.ts', 'node_modules', 'dist'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html', 'lcov'],
-      include: ['src/**/*.ts'],
-      exclude: [
-        'src/**/*.spec.ts',
-        'src/**/*.e2e-spec.ts',
-        'src/main.ts',
-        'src/**/*.module.ts',
-        'src/**/*.dto.ts',
-        'src/**/*.entity.ts',
-        'src/migrations/**',
-      ],
-      lines: 90,
-      functions: 90,
-      branches: 80,
-      statements: 90,
-    },
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
-  },
-  plugins: [
-    swc.vite({
-      module: { type: 'es6' },
-      jsc: {
-        parser: {
-          syntax: 'typescript',
-          decorators: true,
-        },
-        transform: {
-          decoratorMetadata: true,
-        },
-        target: 'es2022',
-      },
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-    },
-  },
-});
-```
+- Coverage limits live under `coverage.thresholds` (`{ lines, functions, branches, statements }`). Top-level
+  `coverage.lines` no longer exists — `tsc` reports `'lines' does not exist in type 'CoverageOptions'` and the limits
+  were never enforced.
+- `test.poolOptions` was removed in Vitest 4; use top-level `fileParallelism` / `maxWorkers`.
 
 ## Service Unit Test Pattern
 

@@ -24,7 +24,7 @@ open coverage/index.html
 npm run test:cov -- --coverage.thresholds.lines=90
 ```
 
-### Coverage Configuration in vitest.config.ts
+### Coverage Configuration in vitest.config.mts
 
 ```typescript
 export default defineConfig({
@@ -42,10 +42,8 @@ export default defineConfig({
         'src/**/*.entity.ts',
         'src/migrations/**',
       ],
-      lines: 90,
-      functions: 90,
-      branches: 80,
-      statements: 90,
+      // Vitest 1+: limits under `thresholds` (top-level `lines` etc. is a type error and is ignored)
+      thresholds: { lines: 90, functions: 90, branches: 80, statements: 90 },
     },
   },
 });
@@ -125,10 +123,10 @@ jobs:
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts",
-    "test:e2e:watch": "vitest watch --config vitest.e2e.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.mts",
+    "test:e2e:watch": "vitest watch --config vitest.e2e.config.mts",
     "test:cov": "vitest run --coverage",
-    "test:debug": "vitest --inspect-brk --inspect --logHeapUsage --threads=false"
+    "test:debug": "vitest --inspect-brk --no-file-parallelism"
   }
 }
 ```
@@ -159,7 +157,7 @@ jobs:
 | **Fastify Not Ready** | `app.getHttpServer() returns undefined` | Call `await app.init()` and `await app.getHttpAdapter().getInstance().ready()` before tests |
 | **Prisma Connection Error** | `Can't reach database server` | Check `DATABASE_URL` is set; verify Testcontainer is started; run migrations before tests |
 | **Test Timeout** | `Test timed out after 5000ms` | Increase `testTimeout` in vitest config; ensure async operations complete; check for unresolved promises |
-| **Decorator Metadata Missing** | `design:paramtypes is undefined` | Add SWC plugin to vitest config with `decoratorMetadata: true` |
+| **Decorator Metadata Missing** | injected dependency is `undefined` (e.g. `Cannot read properties of undefined (reading 'getAllAndOverride')`) | Set `emitDecoratorMetadata: true` in the tsconfig the runner reads (both `unplugin-swc` and Vite 8's Oxc transform read it); keep `unplugin-swc` as in `nestjs-config-npm-ts.md` |
 | **Module Not Found** | `Cannot find module '@/...'` | Add path alias to `resolve.alias` in vitest config matching tsconfig paths |
 | **Coverage Threshold Failed** | `Coverage for lines (85%) does not meet threshold (90%)` | Write missing tests; exclude irrelevant files in `coverage.exclude` |
 | **Database State Pollution** | Tests fail when run together but pass individually | Reset database in `beforeEach`; ensure transactions rollback; use `vi.clearAllMocks()` |
@@ -179,7 +177,7 @@ npm run test:debug users.service.spec.ts
 vitest run --testTimeout=120000
 
 # Run tests without threads for easier debugging
-vitest run --poolOptions.threads.singleThread=true
+vitest run --no-file-parallelism --maxWorkers=1
 ```
 
 ### Common Mock Issues

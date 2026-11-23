@@ -29,8 +29,9 @@ describe('Service with Prisma', () => {
   });
 
   it('should query users', async () => {
+    // A complete row from the test factory (nestjs-testing-unit-controllers.md) — no `as any`
     mockPrisma.user.findMany.mockResolvedValue([
-      { id: '1', email: 'test@example.com' } as any,
+      { ...UserFactory.make({ email: 'test@example.com' }).build(), id: '1', createdAt: new Date(), updatedAt: new Date() },
     ]);
 
     const result = await mockPrisma.user.findMany();

@@ -141,7 +141,8 @@ describe('UsersController', () => {
 
 ```typescript
 // test/factories/user.factory.ts
-import { User, Role } from '@prisma/client';
+// Prisma 7 `prisma-client` generator: types come from the generated output, not '@prisma/client'
+import type { PrismaClient, Role, User } from '../../src/generated/prisma/client';
 import { faker } from '@faker-js/faker';
 
 export class UserFactory {
@@ -161,7 +162,7 @@ export class UserFactory {
     return this.data as Omit<User, 'id' | 'createdAt' | 'updatedAt'>;
   }
 
-  async create(prisma: any): Promise<User> {
+  async create(prisma: PrismaClient): Promise<User> {
     return prisma.user.create({
       data: this.build(),
     });

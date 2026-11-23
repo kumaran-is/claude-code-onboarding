@@ -4,86 +4,45 @@ Production-ready Docker, Docker Compose, and testing configuration templates for
 
 ## Dockerfile
 
+npm-based (the stack's package manager), non-root, production dependencies only. **Docker build NOT RUN in the
+toolkit sandbox** (no Docker daemon); the same commands were run directly on Node 24 (`npm ci`, `prisma generate`,
+`npm run build`, `npm prune --omit=dev` all exit 0; `node dist/main.js` served `/health/live` 200, kept Swagger off in
+production (`/docs-json` 404) and exited 143 on SIGTERM). Pin the base image by digest in CI (`node:24-alpine@sha256:…`).
+
 ```dockerfile
-# my-service - Multi-Stage Production Dockerfile
-# Security-hardened, minimal image with non-root user
-
-# ============================================
-# Stage 1: Base with pnpm
-# ============================================
-FROM node:24-alpine AS base
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Security: create non-root user early
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nestjs
-
-# ============================================
-# Stage 2: Dependencies
-# ============================================
-FROM base AS deps
-
+# syntax=docker/dockerfile:1
+FROM node:24-alpine AS deps
 WORKDIR /app
-
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json package-lock.json ./
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
+RUN npm ci
 
-# Install dependencies (including devDependencies for build)
-RUN pnpm install --frozen-lockfile
+FROM deps AS builder
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
+# prisma.config.ts reads DATABASE_URL via env(); generate needs only a syntactically valid value
+RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma generate \
+ && npm run build \
+ && npm prune --omit=dev
 
-# ============================================
-# Stage 3: Builder
-# ============================================
-FROM base AS builder
-
+FROM node:24-alpine AS runner
+ENV NODE_ENV=production PORT=3000
 WORKDIR /app
-
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Generate Prisma client
-RUN pnpm prisma generate
-
-# Build the application
-RUN pnpm build
-
-# Remove devDependencies for production
-RUN pnpm prune --prod
-
-# ============================================
-# Stage 4: Production Runner
-# ============================================
-FROM base AS runner
-
-WORKDIR /app
-
-# Set production environment
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Security: use non-root user
-USER nestjs
-
-# Copy built application with correct ownership
-COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
-COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health/live || exit 1
-
-# Expose port
+COPY --from=builder --chown=node:node /app/package.json ./
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist ./dist
+USER node
 EXPOSE 3000
-
-# Start the application
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:3000/health/live || exit 1
+# exec form: node is PID 1 and receives SIGTERM, so enableShutdownHooks() runs
 CMD ["node", "dist/main.js"]
 ```
+
+- Migrations run as a separate release step (`npx prisma migrate deploy` in a job/init container), not at container start where several replicas would race. Note: `npm prune --omit=dev` does **not** remove the `prisma` CLI — `@prisma/client` 7.10.1 declares it as a peer, so npm keeps it.
+- `main.ts` must listen on `0.0.0.0`; Fastify's default `127.0.0.1` is unreachable from outside the container.
+- Secrets come from the platform's secret store as env vars at runtime; never `COPY .env`.
 
 ## Docker Compose (Development)
 
@@ -140,7 +99,6 @@ volumes:
 ```
 # Dependencies
 node_modules
-.pnpm-store
 
 # Build outputs
 dist
@@ -173,78 +131,32 @@ docs/
 Thumbs.db
 ```
 
-## Vitest Configuration (vitest.config.ts)
+## Vitest Configuration (vitest.config.mts)
+
+Verified with Vitest 4.1.12 + `@vitest/coverage-v8` 4.1.12: thresholds fail the run when unmet (unit-only coverage 30% vs 80% → exit 1; thresholds lowered to 25% → exit 0).
 
 ```typescript
-import { resolve } from 'path';
+import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    globals: true,
     environment: 'node',
-
-    // Allow test runs with no tests (useful in CI)
-    passWithNoTests: true,
-
+    include: ['src/**/*.spec.ts'],
+    root: './',
+    // No passWithNoTests and no retry: an empty or flaky suite must fail, not pass.
     coverage: {
       provider: 'v8',
-      thresholds: {
-        lines: 90,
-        branches: 80,
-        functions: 90,
-        statements: 90
-      },
-      exclude: [
-        '**/*.spec.ts',
-        '**/*.e2e-spec.ts',
-        '**/dto/*.ts',
-        '**/interfaces/*.ts',
-        '**/types/*.ts',
-        '**/index.ts',
-        'dist/**',
-        'coverage/**',
-        'prisma/**',
-        'test/**'
-      ],
-      reporter: ['text', 'json', 'html', 'lcov', 'cobertura']
-    },
-
-    include: [
-      'src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'
-    ],
-    exclude: [
-      'node_modules/**',
-      'dist/**',
-      '**/*.e2e-spec.ts'
-    ],
-
-    testTimeout: 10000,
-    hookTimeout: 10000,
-    teardownTimeout: 10000,
-
-    // Thread pool configuration
-    pool: 'threads',
-    poolOptions: {
-      threads: {
-        singleThread: false,
-        minThreads: 1,
-        maxThreads: 4,
-      },
-    },
-
-    // Retry flaky tests
-    retry: 2,
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-      '@common': resolve(__dirname, './src/common'),
-      '@config': resolve(__dirname, './src/config'),
-      '@core': resolve(__dirname, './src/core'),
-      '@features': resolve(__dirname, './src/features'),
-      '@auth': resolve(__dirname, './src/auth'),
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.spec.ts', 'src/generated/**', 'src/main.ts'],
+      reporter: ['text', 'lcov'],
+      thresholds: { lines: 80, branches: 70, functions: 80, statements: 80 },
     },
   },
+  plugins: [swc.vite({ module: { type: 'es6' } })],
 });
 ```
+
+- `.mts`: the package is CommonJS; a `.ts` config with ESM syntax triggers Vite 8's CommonJS warning, and `__dirname` is not defined in ESM — use `import.meta.dirname` if you need paths.
+- Vitest 4 removed `test.poolOptions`; `retry` hides flaky tests and `passWithNoTests` turns an empty suite into a pass — leave both out.
+- E2E config: `nestjs-testing-integration-setup.md`.

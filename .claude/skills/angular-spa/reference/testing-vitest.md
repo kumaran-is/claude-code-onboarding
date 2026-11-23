@@ -43,6 +43,68 @@ diff; remove every `fakeAsync`/`waitForAsync` by hand (see below). Browser mode 
 Harnesses come from `@angular/cdk`, which `ng new` does not install. Add it once, on the same minor as the
 framework: `npm install --save-dev @angular/cdk@~21.2.14` (then pin it like the other `@angular/*` packages).
 
+The component under test (`user-list.ts`): an `rxResource` list with the error → hasValue → loading order,
+a 403 shown as "not authorised" without a retry button, and Retry for other failures.
+
+```typescript
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+
+interface User {
+  id: string;
+  name: string;
+}
+interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+const USERS_URL = 'https://api.example.test/v1/users';
+
+/** HttpClient errors reach resource.error() as the HttpErrorResponse or wrapped in `cause`. */
+function httpStatus(error: unknown): number | null {
+  if (error instanceof HttpErrorResponse) return error.status;
+  const cause = (error as { cause?: unknown } | undefined)?.cause;
+  return cause instanceof HttpErrorResponse ? cause.status : null;
+}
+
+@Component({
+  selector: 'app-user-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (users.error()) {
+      <p role="alert">{{ errorMessage() }}</p>
+      @if (canRetry()) {
+        <button type="button" class="btn" (click)="users.reload()">Retry</button>
+      }
+    } @else if (users.hasValue()) {
+      <ul>
+        @for (user of users.value().items; track user.id) {
+          <li>{{ user.name }}</li>
+        }
+      </ul>
+    } @else {
+      <p aria-live="polite">Loading users…</p>
+    }
+  `,
+})
+export class UserList {
+  private readonly http = inject(HttpClient);
+  // rxResource is EXPERIMENTAL in Angular 21 (@experimental in @angular/core/rxjs-interop).
+  protected readonly users = rxResource({ stream: () => this.http.get<Page<User>>(USERS_URL) });
+  private readonly status = computed(() => httpStatus(this.users.error()));
+  // 401/403 will not change on retry: show the reason, offer no retry button.
+  protected readonly canRetry = computed(() => this.status() !== 401 && this.status() !== 403);
+  protected readonly errorMessage = computed(() =>
+    this.status() === 403 ? 'You are not authorised to view users.' : 'Users could not be loaded.',
+  );
+}
+```
+
+The spec and harness below ran green against it (`ng test`, Angular 21.2, 3 tests, exit 0); removing the
+403 message or the Retry button each fails one test (exit 1).
+
 ```typescript
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';

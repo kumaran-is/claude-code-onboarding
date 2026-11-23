@@ -1,6 +1,6 @@
 ---
 name: parallel-agents
-description: Multi-agent orchestration patterns for Claude Code's native Agent tool. Use when coordinating multiple specialized agents for comprehensive reviews, cross-domain feature implementation, or parallel analysis from multiple perspectives. Adapted to this workspace's 42 actual agents.
+description: "Patterns for dispatching several Claude Code subagents in parallel (multi-perspective review, cross-domain features, parallel analysis) using only agents that exist in .claude/agents/. Use when coordinating 2+ agents. Plan-driven sequential work → subagent-driven-development."
 allowed-tools: Read, Glob, Grep
 metadata:
   triggers: comprehensive review, multi-perspective analysis, parallel agents, orchestrate agents, coordinate agents, run multiple agents, full audit, cross-domain implementation
@@ -14,7 +14,7 @@ last-reviewed: "2026-03-15"
 
 ## Iron Law
 
-**USE THIS WORKSPACE'S ACTUAL AGENTS — never reference placeholder agents (security-auditor, backend-specialist) that don't exist here; always dispatch from the 42 agents in .claude/agents/**
+**USE THIS WORKSPACE'S ACTUAL AGENTS — never reference placeholder agents (security-auditor, backend-specialist) that don't exist here; always dispatch from the agents that exist in .claude/agents/ (check with `ls .claude/agents`)**
 
 **Explanation:** Dispatching a non-existent agent silently fails. Every agent name in this skill maps to a real .md file in .claude/agents/.
 
@@ -176,7 +176,7 @@ After all agents complete:
 ## Constraints
 
 ### MUST DO
-- Only dispatch agents that exist in `.claude/agents/` (42 agents listed in catalog above)
+- Only dispatch agents that exist in `.claude/agents/` (the catalog above is a subset; `ls .claude/agents` is authoritative)
 - Pass explicit context to every agent — agents do NOT inherit CLAUDE.md or conversation history
 - Produce a single synthesized report, not separate outputs per agent
 - Include test coverage review (pr-test-analyzer) for any code-modifying orchestration

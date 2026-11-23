@@ -1,6 +1,6 @@
 ---
 name: llm-evaluation
-description: "Metric formulas and statistics for LLM evaluation — canonical retrieval rank metrics (Recall@K, Precision@K, MRR, nDCG with worked examples), text metrics (BLEU, ROUGE, BERTScore), paired A/B tests and McNemar for prompt/model comparison, power and sample size, fail-closed regression detection, trajectory scoring. Use when computing or reviewing metric code, comparing models or prompts statistically, or sizing an eval. Eval tooling, CI tiers and golden-set process live in eval-guide."
+description: "Canonical eval metric formulas and statistics: Recall@K, Precision@K, MRR, nDCG, BLEU/ROUGE/BERTScore, paired A/B and McNemar tests, power and sample size, fail-closed regression detection, trajectory scoring. Use when writing or reviewing metric code or comparing models/prompts. Tooling and CI → eval-guide."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: BLEU, ROUGE, BERTScore, MRR, NDCG, Recall@K, Precision@K, metric formula, paired t-test, Wilcoxon, McNemar, bootstrap CI, sample size, statistical significance, A/B test prompts, compare models, regression detector, trajectory score

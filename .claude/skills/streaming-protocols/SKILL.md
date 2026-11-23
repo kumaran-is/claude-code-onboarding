@@ -222,12 +222,19 @@ data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"done"}
 
 ### A2UI over SSE
 
+One A2UI message per default `message` event (no `event:` name, so `EventSource.onmessage` receives it), an
+`id` of `<streamId>:<seq>` for resume, and a terminal `done` event. Canonical framing, resume and error codes:
+`genui-contract/reference/runtime-lifecycle.md`.
+
 ```
-event: a2ui
+id: 45d261f755a91c43:1
 data: {"version":"v0.9","createSurface":{"surfaceId":"case_1","catalogId":"..."}}
 
-event: a2ui
+id: 45d261f755a91c43:2
 data: {"version":"v0.9","updateDataModel":{"surfaceId":"case_1","path":"/status","value":"Open"}}
+
+event: done
+data: {}
 ```
 
 ### A2UI over NDJSON (replay / eval / debugging)

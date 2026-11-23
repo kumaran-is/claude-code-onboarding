@@ -1,6 +1,6 @@
 ---
 name: rag-debugger
-description: Use when a RAG system is returning bad answers — hallucinations, wrong content, missing exact terms, low recall, slow responses, stale data, citation errors, tenant data leakage, or any production retrieval failure. Walks the 9-layer diagnostic chain backward from output to root cause. Triggers on phrases like "RAG returning wrong answers", "hallucinating", "can't find document", "wrong tenant data", "low recall", "RAG is slow", "missing citations".
+description: "Diagnose bad RAG output (hallucination, missing terms, low recall, stale data, citation errors, cross-tenant leakage, latency) by walking a 9-layer chain backward from answer to root cause. Use when a RAG system returns wrong or missing answers."
 metadata:
   triggers: RAG returning wrong answers, hallucinating, can't find document, wrong tenant data, low recall, RAG is slow, missing citations
 allowed-tools: Read, Glob, Grep, Bash

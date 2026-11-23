@@ -1,6 +1,6 @@
 ---
 name: ai-audit
-description: Run a full AI Playbook audit against an existing agentic application or AI feature. Orchestrates Decision Record reverse-engineering, security review, eval audit, launch check, and consolidated remediation planning in one flow. Use when the user explicitly runs /ai-audit or says "audit my AI app", "verify my agent against the playbook", "is my existing AI code production-ready", "review my agentic system", or similar phrasing for verifying existing code (not building new).
+description: "Audit an existing AI feature or agentic app against the AI Playbook: reverse-engineered decision record, security review, eval audit, launch check, remediation plan. Use for /ai-audit or \"audit my AI app / agent\" on existing code, not for building new."
 disable-model-invocation: true
 allowed-tools: Read, Write, Glob, Grep
 last-reviewed: 2026-05-17

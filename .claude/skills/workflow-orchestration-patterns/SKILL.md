@@ -1,6 +1,6 @@
 ---
 name: workflow-orchestration-patterns
-description: "Durable workflow orchestration with Temporal for distributed systems across Java 21, Python 3.14, and NestJS 11.x. Covers Workflow vs Activity separation, Saga pattern, Entity workflows, Fan-out/Fan-in, determinism constraints, retry policies, and idempotency. Use when building long-running, failure-resilient distributed business processes."
+description: "Durable workflows with Temporal (Java 21, Python 3.14, NestJS): workflow vs activity, saga, entity workflows, fan-out/fan-in, determinism, retries, idempotency. Use for long-running, failure-resilient business processes. Not for LLM agent graphs (agentic-ai-dev)."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Temporal, workflow orchestration, durable execution, saga pattern, distributed transaction, long-running workflow, activity, worker, task queue, compensation, entity workflow, fan-out, fan-in, async callback

@@ -1,6 +1,6 @@
 ---
 name: ai-playbook
-description: Production-grade decision framework for building AI features, AI workflows, AI agents, and AI-augmented systems. Use this skill whenever the user is designing, building, debugging, reviewing, or deciding whether to add AI to a system — including any work involving LLM calls, embeddings, RAG, agents, tool use, prompt engineering, evals, AI security/prompt injection, model routing, fine-tuning decisions, or AI-related architectural choices. Trigger on phrases like "build an agent", "add AI to", "use an LLM for", "RAG", "should I use AI", "AI feature", "agentic", "structured output", "tool calling", "eval set", "prompt injection", "vector store". Do NOT trigger for: pure non-AI coding tasks, questions about Claude Code tooling, or conceptual AI questions without an applied design context.
+description: "Decision framework and lifecycle router for AI features, workflows and agents: whether to use AI, model routing, RAG, tools, evals, prompt-injection defence, guardrails, observability. Use when designing, building, reviewing or debugging anything that calls an LLM, embeds, retrieves or runs an agent. Not for non-AI code, Claude Code tooling questions or conceptual AI questions with no applied design."
 allowed-tools: Read
 last-reviewed: 2026-11-22
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: multi-agent-patterns
-description: Architectural reference for multi-agent system design — covers Supervisor/Orchestrator, Peer-to-Peer/Swarm, and Hierarchical patterns with token economics, context isolation strategies, consensus mechanisms, and failure mitigation. Primary use: building production LangGraph/LangChain/ADK agents and designing Claude Code agent orchestration.
+description: "Architectural reference for multi-agent system design — covers Supervisor/Orchestrator, Peer-to-Peer/Swarm, and Hierarchical patterns with token economics, context isolation strategies, consensus mechanisms, and failure mitigation. Primary use: building production LangGraph/LangChain/ADK agents and designing Claude Code agent orchestration."
 allowed-tools: Read, Glob, Grep
 metadata:
   triggers: multi-agent architecture, design multi-agent system, supervisor pattern, swarm architecture, coordinate agents, agent handoffs, parallel agent execution, context isolation, agent orchestration design

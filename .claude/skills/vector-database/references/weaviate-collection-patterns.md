@@ -5,7 +5,7 @@ Python client v4 current API (verified against weaviate-client 4.24.1 signatures
 ## Table of Contents
 1. [Client Setup](#client-setup)
 2. [Basic Collection](#basic-collection)
-3. [Named Vectors (Multi-Vector)](#named-vectors)
+3. [Named Vectors (Multi-Vector)](#named-vectors-multi-vector)
 4. [Multi-Tenancy](#multi-tenancy)
 5. [Query Patterns](#query-patterns)
 6. [Batch Ingestion](#batch-ingestion)

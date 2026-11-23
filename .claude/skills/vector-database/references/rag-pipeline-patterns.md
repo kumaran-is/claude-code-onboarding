@@ -318,9 +318,9 @@ Golden set `tests/golden/rag/<corpus>/` with ≥ 30 cases (≥ 50 recommended): 
 | `Recall@5` | ≥ 0.85 | relevant chunks in top 5 ÷ all relevant chunks for the query (coverage) |
 | `Hit@5` | ≥ 0.95 | 1 if ≥ 1 relevant chunk is in top 5, else 0 — not the same as Recall@5 |
 | `MRR@5` | ≥ 0.75 | mean of 1 / rank of the first relevant chunk (0 if none in top 5) |
-| Faithfulness / groundedness | ≥ 0.8 (higher = better) | share of answer claims supported by the cited chunks (judge-based; calibrate) |
+| Faithfulness / groundedness | ≥ 0.9 (higher = better) | share of answer claims supported by the cited chunks (judge-based; calibrate) |
 
-Thresholds name the exact metric; formulas and worked examples live in the `llm-evaluation` skill (canonical). If ADK's `hallucinations_v1` is used, it is a 0–1 score where **higher is better** and the threshold is a minimum — never gate it as `≤ 0.05`. Gate per query class/slice, not only on the aggregate. If a threshold fails, the fix is chosen by the failing slice (alpha, reranking, chunking, contextual headers), not by adding layers blindly.
+Thresholds name the exact metric; formulas and worked examples live in the `llm-evaluation` skill (canonical), and the gate values your project enforces live in one place, `eval-guide/reference/per-agent-thresholds.md` (these example values match it). If ADK's `hallucinations_v1` is used, it is a 0–1 score where **higher is better** and the threshold is a minimum — never gate it as `≤ 0.05`. Gate per query class/slice, not only on the aggregate. If a threshold fails, the fix is chosen by the failing slice (alpha, reranking, chunking, contextual headers), not by adding layers blindly.
 
 ---
 

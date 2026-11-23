@@ -1,6 +1,6 @@
 ---
 name: rag-architect
-description: Use when designing or modifying a RAG (Retrieval-Augmented Generation) pipeline — picking chunking strategy, embedding models, retrieval methods, reranking, fusion (RRF), abstention, multi-tenancy patterns, or evaluating whether RAG is the right tool at all. Triggers on phrases like "design a RAG system", "build retrieval", "RAG architecture", "should I use RAG", "chunking strategy", "hybrid retrieval", "reranker choice", "vector database", "embedding model selection".
+description: "Design or change a RAG pipeline: whether RAG fits, chunking, embedding model, retrieval method, hybrid fusion (RRF), reranking, abstention, multi-tenancy. Use for \"design a RAG system\", chunking or reranker choices. Not for vector schema/index work (vector-database) or debugging bad answers (rag-debugger)."
 metadata:
   triggers: design a RAG system, build retrieval, RAG architecture, should I use RAG, chunking strategy, hybrid retrieval, reranker choice, vector database, embedding model selection
 allowed-tools: Read, Glob, Grep
@@ -137,7 +137,7 @@ Skip agentic patterns when sub-second latency is required or query is single-sho
 4. Apply the chunking decision tree.
 5. End with the five hard rules and what to defer.
 
-Reference the full playbook at `docs/production-rag-playbook.md` for details. Cite section numbers when relevant (§19.5 for RAG-vs-tools, §10.2 for chunking tree, §17 for multi-tenancy, §40 for failure debugging).
+The § numbers in this skill (§19.5 RAG-vs-tools, §10.2 chunking tree, §17 multi-tenancy, §40 failure debugging) cite an external production RAG playbook that is not shipped in this repository. Use this skill's `references/` as the source; mark a § citation UNVERIFIED unless you can open the playbook.
 
 ## Reference Files
 

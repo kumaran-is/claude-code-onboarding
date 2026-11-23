@@ -1,6 +1,6 @@
 ---
 name: multi-agent-brainstorming
-description: Simulate a structured peer-review process using 5 constrained sequential agent roles to validate designs, surface hidden assumptions, and identify failure modes before implementation. Produces a mandatory Decision Log and APPROVED/REVISE/REJECT verdict.
+description: "Structured design peer review with five constrained sequential roles that surface assumptions and failure modes, producing a Decision Log and APPROVED / REVISE / REJECT verdict. Use to validate a design before implementation. Not for open-ended option generation (/brainstorm)."
 allowed-tools: Read, Write, Glob, Grep
 metadata:
   triggers: validate design, design review, stress test design, challenge design, pre-implementation review, adversarial design review, design validation, review before build

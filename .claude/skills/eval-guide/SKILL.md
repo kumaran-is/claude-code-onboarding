@@ -1,6 +1,6 @@
 ---
 name: eval-guide
-description: "Use when writing eval code, configuring eval infrastructure, creating golden datasets, setting up a prompt registry, authoring CI eval gates, or working with any eval tool: DeepEval, Ragas, Giskard OSS v3, Promptfoo, Langfuse, Arize Phoenix, adk eval, ADK User Simulation, Vertex GenAI Eval. Covers the eval process (pre-flight, verdict precedence, evidence accounting, judge trials), AI test layers with fake models, golden dataset discipline, CI tiers (R1-R4), prompt regression and promotion gates, and pytest harness configuration."
+description: "AI eval process and infrastructure: golden datasets, prompt registry, CI eval tiers (R1–R4), promotion gates, verdict precedence, judge trials, fake-model test layers, pytest harness; DeepEval, Ragas, Giskard, Promptfoo, Langfuse, Phoenix, adk eval, Vertex GenAI Eval. Use when writing eval code or eval CI. Metric formulas → llm-evaluation."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: deepeval, ragas, giskard, promptfoo, langfuse, phoenix, PromptRegistry, prompt registry, golden dataset, evalset, redteam, MCPUseMetric, Faithfulness, ToolCallAccuracy, hallucinations_v1, tests/golden, dataset_manifest, R1 gate, R2 nightly, R3 pre-release, R4 canary, ci tier, eval threshold, ArenaGEval, set_default_generator, promptfooconfig.yaml, Scenario, Suite, eval-reviewer, golden case, asyncio_mode, InMemoryRunner, fake model, scripted model, judge trials, median-of-3, evidence accounting, prompt regression, promotion gate, memory isolation test, prompt lifecycle

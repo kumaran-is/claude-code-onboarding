@@ -237,6 +237,16 @@ event: done
 data: {}
 ```
 
+The frames above are the v0.9 wire form. A 1.0 stream carries `"version":"1.0"` and may create a surface with its components in one `createSurface`. The version is negotiated per client, never mixed in one stream.
+
+### A2UI over AG-UI
+
+AG-UI HTTP SSE (`POST`, `Accept: text/event-stream`) carries A2UI inside `ACTIVITY_SNAPSHOT` events with
+`activityType: "a2ui-surface"`, `content.a2ui_operations` and `replace: true` (constants from `@ag-ui/a2ui-middleware`
+0.0.16). Mapping, negotiation keys and the verified transport per platform:
+`genui-contract/reference/ag-ui-transport.md`. Server lifecycle rules (disconnect cancels, one terminal frame):
+`reference/server-stream-lifecycle.md`.
+
 ### A2UI over NDJSON (replay / eval / debugging)
 
 ```jsonl

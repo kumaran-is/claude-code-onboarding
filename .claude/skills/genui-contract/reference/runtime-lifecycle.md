@@ -25,7 +25,10 @@ The server folds each surface's state in a `SurfaceStore`. That one structure or
 | Duplicate `createSurface` | Rejected; send `deleteSurface` first | Reject; do not reset the surface |
 | Duplicate `updateComponents` with the same ids | Idempotent upsert | Idempotent upsert |
 | Update before create (out of order) | Rejected (`SURFACE_NOT_FOUND`); the server orders messages per surface | Reject; never buffer and reorder (`fixtures/streams/out-of-order.jsonl`) |
-| Unknown or wrong version (`v0.8`, `1.0`, `v0.9.1`, missing) | `UNSUPPORTED_VERSION` / `MALFORMED_MESSAGE`; never best-effort | Same; stop applying the stream and show an error with retry |
+| Unknown or wrong version (`v0.8`, `v1.0` spelling, missing), or a version that differs from the stream's first message | `UNSUPPORTED_VERSION` / `MALFORMED_MESSAGE` / `MIXED_VERSIONS`; never best-effort, never translated | Same; stop applying the stream and show an error with retry |
+| 1.0 single-message init (`createSurface` with `components` + `dataModel`) | Applied atomically; the surface exists only if the whole message validates | Render once from that message; later `updateComponents` merge as usual |
+| 1.0 `updateDataModel` with `"value": null` | Deletes the key at `path` (omitting `value` is `SCHEMA_INVALID`) | Same; v0.9.x deletes by omitting `value` |
+| 1.0 `callRendererFunction` / `agentFunctionResponse` | Rejected (`FUNCTION_CALL_NOT_ALLOWED`): the catalog has only `rendererOnly` check functions and no agent functions | Report an `error` with `functionCallId` (not `surfaceId`) |
 
 Clients replay `fixtures/streams/*.jsonl` and compare against `*.expect.json` (errors per line, final state), so all three platforms behave the same.
 
@@ -116,4 +119,4 @@ Client handling of `resync`: delete every surface owned by this stream, then app
 
 ## Version policy at runtime
 
-The wire version is pinned to `v0.9` (`x-genui.acceptedWireVersions`). Any other version is rejected explicitly, on both the stream gate and the action path, and is tested for `v0.8`, `1.0` and `v0.9.1`. A v1.0 migration is a coordinated catalog and renderer release ([catalog-contract.md](catalog-contract.md)), never a per-message fallback.
+The wire version is chosen per stream from the renderer's advertised capabilities: `1.0` (target, `canonical-catalog-v1_0.json`) or `v0.9`/`v0.9.1` (compatibility, `canonical-catalog.json`). Each catalog's `acceptedWireVersions` lists what it accepts. Every message of a stream carries the same exact version; anything else is rejected explicitly on both the stream gate and the action path (`UNSUPPORTED_VERSION`, `MIXED_VERSIONS`), tested by `fixtures/invalid/wrong-version-*.json`, `fixtures/invalid-v1_0/version-mismatch.json` and `fixtures/streams-v1_0/mixed-version.jsonl`. The SSE examples above use the v0.9 path; a 1.0 stream is identical except for `"version": "1.0"` and the 1.0 payload shapes.

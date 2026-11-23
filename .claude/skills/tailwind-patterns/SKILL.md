@@ -1,11 +1,13 @@
 ---
 name: tailwind-patterns
-description: "Tailwind CSS v4 principles for Angular 21.x — CSS-first @theme configuration, container queries, OKLCH color system, Bento layout patterns, dark mode strategies, and v3→v4 migration reference. Load alongside angular-spa for full Tailwind v4 coverage."
+description: "Tailwind CSS v4 + daisyUI 5 patterns for Angular 21.x (and other web stacks) — CSS-first @theme tokens, cascade layers, container queries, OKLCH daisyUI 5 themes, dark mode via data-theme, RTL logical utilities, hover/pointer variants, and v3→v4 migration pitfalls. Load alongside angular-spa; setup (PostCSS config) lives in angular-spa/reference/tailwind-v4-config.md."
 risk: low
 source: community (adapted for Angular 21.x)
 date_added: "2026-02-27"
-updated: "2026-03-15"
-last-reviewed: "2026-03-15"
+updated: "2026-11-22"
+last-reviewed: "2026-11-22"
+metadata:
+  triggers: tailwind, tailwind v4, @theme, daisyui theme, dark mode, data-theme, container query, oklch, cascade layer, rtl utilities
 allowed-tools:
   - Read
   - Grep
@@ -43,7 +45,7 @@ Use this skill when configuring Tailwind v4, using CSS-first theme and design to
 | v3 (Legacy) | v4 (Current) |
 |-------------|--------------|
 | `tailwind.config.js` | CSS-based `@theme` directive |
-| PostCSS plugin | Oxide engine (10x faster) |
+| `tailwindcss` PostCSS plugin | `@tailwindcss/postcss` (Angular, via `.postcssrc.json`) or `@tailwindcss/vite`; Oxide engine |
 | JIT mode | Native, always-on |
 | Plugin system | CSS-native features |
 | `@apply` directive | Still works, discouraged |
@@ -70,17 +72,30 @@ Use this skill when configuring Tailwind v4, using CSS-first theme and design to
   --color-surface: oklch(0.98 0 0);
   --color-surface-dark: oklch(0.15 0 0);
 
-  /* Spacing scale */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 2rem;
+  /* Spacing: keep the single multiplier; p-4 = calc(var(--spacing) * 4) */
+  --spacing: 0.25rem;
+  --spacing-gutter: 1.5rem;   /* named extras use a prefix-free, non-size name */
 
   /* Typography */
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 ```
+
+> **Never name spacing tokens `--spacing-xs/sm/md/lg/xl`.** Tailwind 4 resolves `max-w-md` through `--spacing-md` when it exists, so `max-w-md` compiles to `max-width: var(--spacing-md)` (1rem) and every `max-w-*` container collapses (verified, Tailwind 4.3.5). Use the default multiplier and non-size names (`--spacing-gutter`).
+
+### Cascade layers: import legacy CSS into `base`
+
+Tailwind 4 emits utilities inside `@layer utilities`. Any **unlayered** rule beats every layered rule regardless of specificity, so an unlayered reset such as `* { padding: 0 }` silently disables `px-6` (verified in Chromium: computed `padding-left` was `0px`; with `layer(base)` it was `24px`).
+
+```css
+/* styles.css: every @import comes first, before @plugin, @theme or any rule */
+@import "tailwindcss";
+@import "./legacy-global.css" layer(base);
+@plugin "daisyui";
+```
+
+The same applies to Angular component host styles: a `:host { display: block }` is unlayered and wins over `hidden`. Put the responsive visibility on a wrapper (`<span class="hidden sm:inline-flex"><app-logo /></span>`), not on the host.
 
 ### When to Extend vs Override
 
@@ -149,47 +164,65 @@ Use this skill when configuring Tailwind v4, using CSS-first theme and design to
 1. Write mobile styles first (no prefix)
 2. Add larger screen overrides with prefixes
 3. Example: `w-full md:w-1/2 lg:w-1/3`
+4. Check every layout at **320 CSS px** (WCAG 1.4.10 Reflow, equal to 400 % zoom), then 375/768/1024/1440.
+
+### Hover and touch
+
+- Tailwind 4 wraps `hover:` in `@media (hover: hover)`, so it never fires on touch-only devices. Never put essential information or actions behind hover.
+- Use `pointer-coarse:` to enlarge targets on touch screens (`pointer-coarse:p-3`). Target size policy: `accessibility-audit/reference/wcag22-checklist.md` §1.
+
+### RTL-ready layout (logical utilities)
+
+Use logical utilities so the layout mirrors under `dir="rtl"`: `ms-*`/`me-*` (not `ml-*`/`mr-*`), `ps-*`/`pe-*`, `start-*`/`end-*`, `text-start`/`text-end`, `border-s`/`border-e`, `rounded-s`/`rounded-e`. Mirror directional icons with `rtl:rotate-180`. Verified (Tailwind 4.3.5, Chromium): `ms-4` under `dir="rtl"` computes to `margin-right: 16px`. Set `dir` and `lang` on `<html>`; i18n details: `design-system/reference/i18n-rtl-intl.md`.
 
 ---
 
 ## 5. Dark Mode
 
-### Configuration Strategies
+The workspace standard is **daisyUI semantic colours switched by `data-theme` on `<html>`**. v3's `darkMode: 'class' | 'media' | 'selector'` config no longer exists in v4.
 
-| Method | Behavior | Use When |
-|--------|----------|----------|
-| `class` | `.dark` class toggles | Manual theme switcher |
-| `media` | Follows system preference | No user control |
-| `selector` | Custom selector (v4) | Complex theming |
-| **daisyUI `data-theme`** | Semantic token swap | **Angular workspace standard** |
+| Mechanism | Behaviour |
+|---|---|
+| daisyUI semantic classes (`bg-base-100`, `text-base-content`) | Swap automatically with `data-theme`. **Preferred**: no per-component dark CSS |
+| Tailwind `dark:` variant, default | Follows `@media (prefers-color-scheme: dark)`: **ignores** a `data-theme` toggle (verified: compiled output is wrapped in the media query) |
+| Tailwind `dark:` variant + `@custom-variant` | Follows `data-theme`: declare it once in `styles.css` (below) |
 
-### daisyUI Dark Mode (Angular Workspace Standard)
+```css
+@import "tailwindcss";
+@plugin "daisyui" { themes: light --default, dark --prefersdark; }
+/* only if you also use dark: utilities */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+```
 
 ```typescript
-// theme.service.ts — daisyUI approach (workspace standard)
+// theme.service.ts: set the attribute on <html> via DOCUMENT (SSR-safe; a component
+// template cannot bind attributes on <html> because the root component lives in <body>)
+import { DOCUMENT, Injectable, inject } from '@angular/core';
+
+export type Theme = 'light' | 'dark';
+
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-  setTheme(theme: 'light' | 'dark'): void {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+  private readonly doc = inject(DOCUMENT);
+
+  setTheme(theme: Theme): void {
+    this.doc.documentElement.setAttribute('data-theme', theme);
+    this.doc.defaultView?.localStorage.setItem('theme', theme); // a preference only; never store sensitive data here
   }
 }
 ```
 
+**Prevent the theme flash.** The service runs after bootstrap, so the first paint uses the default theme. Add a tiny blocking script in `index.html` `<head>` that sets `data-theme` before paint. Under a strict CSP, allow it with a `'sha256-…'` hash, not `'unsafe-inline'`.
+
 ```html
-<!-- All daisyUI semantic classes switch automatically — no per-component CSS needed -->
-<div class="bg-base-100 text-base-content">
-  <!-- bg-base-100 is white in light, dark in dark theme automatically -->
-</div>
+<script>
+  var t = localStorage.getItem('theme');
+  if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+</script>
 ```
 
-### Raw Tailwind Dark Mode Pattern (non-daisyUI)
-
-| Element | Light | Dark |
-|---------|-------|------|
-| Background | `bg-white` | `dark:bg-zinc-900` |
-| Text | `text-zinc-900` | `dark:text-zinc-100` |
-| Borders | `border-zinc-200` | `dark:border-zinc-700` |
+Contrast of secondary text depends on the theme: `text-base-content/60` is the floor on `base-100`; on `base-200`/`base-300` surfaces use `/70` (measured with axe in Chromium; see `ui-standards-tokens/reference/ui-design-tokens.md`).
 
 ---
 
@@ -227,22 +260,26 @@ export class ThemeService {
 | **HSL** | Intuitive hue/saturation |
 | **RGB** | Legacy compatibility |
 
-### OKLCH for daisyUI Custom Themes
+### OKLCH for daisyUI 5 Custom Themes
+
+daisyUI 5 defines a custom theme with the `daisyui/theme` plugin. The daisyUI 4 JS-object syntax (`themes: [{ mytheme: { "primary": … } }]`) is a **build error** in v5 (`CssSyntaxError … Missed semicolon`, verified).
 
 ```css
-/* Custom daisyUI theme using OKLCH — produces better hover gradients */
-@plugin "daisyui" {
-  themes: [{
-    mytheme: {
-      "primary": "oklch(0.65 0.20 280)",   /* Brand purple */
-      "secondary": "oklch(0.70 0.15 200)", /* Teal */
-      "accent": "oklch(0.75 0.18 160)",
-      "base-100": "oklch(0.98 0 0)",
-      "base-content": "oklch(0.20 0 0)",
-    }
-  }]
+@import "tailwindcss";
+@plugin "daisyui" { themes: light --default, dark --prefersdark; }
+@plugin "daisyui/theme" {
+  name: "brand";
+  default: false;
+  prefersdark: false;
+  color-scheme: light;
+  --color-primary: oklch(0.55 0.2 250);
+  --color-primary-content: oklch(0.98 0.01 250);
+  --color-base-100: oklch(0.98 0 0);
+  --color-base-content: oklch(0.2 0 0);
 }
 ```
+
+Every `--color-X` needs its `--color-X-content` pair, and each pair must reach 4.5:1 (re-run axe `color-contrast` in light and dark for each custom theme). Activate with `data-theme="brand"`.
 
 ### Color Token Architecture
 
@@ -368,8 +405,10 @@ Before delivering any Tailwind changes:
 1. Confirm no `tailwind.config.js` was created — v4 uses `@theme {}` in CSS only
 2. Grep changed templates: `grep -n "bg-blue-\|text-blue-\|bg-red-" <file>` — zero raw primitive colors in Angular templates
 3. Grep for arbitrary values: `grep -c "\[" <file>` — minimize; each must be justified
-4. Confirm dark mode uses `data-theme` attribute swap (daisyUI), not `dark:` prefixes, unless project explicitly uses raw Tailwind dark mode
-5. Run `ng build` to confirm the Oxide compiler picks up all classes (no purged classes)
+4. Confirm dark mode uses `data-theme` (daisyUI). If `dark:` utilities exist, `styles.css` declares the `@custom-variant dark` line
+5. No `--spacing-xs/sm/md/lg/xl` tokens in `@theme`; legacy/global CSS is imported with `layer(base)`; every `@import` precedes other rules
+6. No daisyUI 4 classes (`input-bordered`, `form-control`, `label-text`, `btn … loading`, `card-bordered`, `btn-group`); v5 equivalents are `input`, `fieldset`/`fieldset-legend`, `label`, `<span class="loading loading-spinner">` inside the button, `card-border`, `join`
+7. Run `ng build` and grep the output CSS for one daisyUI class (for example `.btn-primary`). If `@plugin` appears verbatim in the output, PostCSS is misconfigured (`angular-spa/reference/tailwind-v4-config.md`)
 
 ---
 

@@ -1,9 +1,9 @@
 ---
 name: web-design-guidelines
-description: "Audit UI code against Vercel's Web Interface Guidelines — fetches live rules, reads specified files, outputs findings as file:line violations. Use when asked to review UI, check accessibility, audit design, review UX, or verify a component against web interface standards. Complements /lint-design-system (tokens) and accessibility-auditor (WCAG) with web interaction pattern compliance."
+description: "Audit UI code against Vercel's Web Interface Guidelines — fetches live rules, reads specified files, outputs findings as file:line violations. Use when asked to review UI, audit design, review UX, or verify a component against web interface standards. Complements /lint-design-system (tokens) and accessibility-auditor (WCAG) with web interaction pattern compliance."
 allowed-tools: Read, Glob, Grep, WebFetch
 metadata:
-  triggers: review UI, audit design, check accessibility, review UX, web interface guidelines, Vercel guidelines, UI compliance, design audit, UX review, check my site, check my component
+  triggers: review UI, audit design, review UX, web interface guidelines, Vercel guidelines, UI compliance, design audit, UX review, check my site, check my component
   related-skills: frontend-design, design-system, angular-spa, angular-ui-patterns, accessibility-audit
   domain: frontend
   role: specialist
@@ -87,7 +87,7 @@ This skill is the third layer of UI review — run all three for complete covera
 | Layer | Tool | What It Catches |
 |---|---|---|
 | **Layer 1 — Design tokens** | `/lint-design-system` | Hardcoded colors, raw spacing, inline typography, touch target violations |
-| **Layer 2 — WCAG accessibility** | `accessibility-auditor` agent | Contrast ratios, ARIA labels, keyboard nav, semantic HTML |
+| **Layer 2 — WCAG 2.2 AA accessibility** | `accessibility-auditor` agent | Contrast, names, keyboard, focus, target size, forms (verdicts on accessibility come only from this layer) |
 | **Layer 3 — Web interface patterns** | `web-design-guidelines` (this skill) | Loading states, empty states, error handling, interaction patterns, focus management |
 
 ## Related Skills
@@ -95,4 +95,4 @@ This skill is the third layer of UI review — run all three for complete covera
 - `frontend-design` — run BEFORE this skill to establish aesthetic direction and DFII score
 - `design-system` — token compliance enforcement (Angular + Flutter)
 - `angular-ui-patterns` — Angular-specific loading/error/empty state doctrine
-- `accessibility-audit` — WCAG 2.1 AA compliance auditor
+- `accessibility-audit` — canonical WCAG 2.2 AA checklist (accessibility requests go there, not to this skill)

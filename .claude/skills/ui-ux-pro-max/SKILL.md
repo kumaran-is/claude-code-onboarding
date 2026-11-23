@@ -46,6 +46,7 @@ Searchable design knowledge database with BM25 search engine. Contains 50+ style
 | Workspace Stack | Script Stack Flag | Notes |
 |---|---|---|
 | **Angular 21.x + Tailwind v4** | `--stack html-tailwind` | No dedicated Angular CSV — html-tailwind covers Tailwind utilities, responsive, a11y |
+| **React 19 (web)** | `--stack react` | Dedicated `stacks/react.csv` (React web patterns; load `react-spa` for implementation) |
 | **Flutter 3.41.x** | `--stack flutter` | Dedicated `flutter.csv` with Riverpod, GoRouter, PopScope, ThemeData patterns |
 | **iOS/SwiftUI** | `--stack swiftui` | SwiftUI-specific guidelines |
 
@@ -184,10 +185,10 @@ Before delivering UI code, verify:
 - [ ] Light mode text >= 4.5:1 contrast ratio
 - [ ] Glass/transparent elements visible in light mode
 - [ ] `prefers-reduced-motion` respected
-- [ ] Touch targets >= 44px (Angular) / 48dp (Flutter)
+- [ ] Touch targets ≥ 24×24 CSS px (WCAG 2.5.8 AA); house standard 44px (web) / 48dp (Flutter)
 
 ### Layout
-- [ ] Responsive at 375px, 768px, 1024px, 1440px
+- [ ] Responsive at 320px (WCAG 1.4.10 reflow floor), 375px, 768px, 1024px, 1440px
 - [ ] No horizontal scroll on mobile
 - [ ] No content hidden behind fixed navbars
 
@@ -198,7 +199,7 @@ Before delivering UI code, verify:
 | Priority | Category | Impact |
 |---|---|---|
 | 1 | Accessibility (contrast, focus, ARIA) | CRITICAL |
-| 2 | Touch & Interaction (44px targets, feedback) | CRITICAL |
+| 2 | Touch & Interaction (≥ 24px targets AA, 44px house standard; feedback) | CRITICAL |
 | 3 | Performance (image optimization, reduced-motion) | HIGH |
 | 4 | Layout & Responsive (viewport, readable font) | HIGH |
 | 5 | Typography & Color (line-height, font pairing) | MEDIUM |
@@ -215,4 +216,4 @@ Before delivering UI code, verify:
 - `flutter-mobile` — Flutter 3.41.x implementation with ThemeData tokens
 - `tailwind-patterns` — Tailwind v4 CSS-first config patterns
 - `design-system` — token enforcement for Angular + Flutter
-- `accessibility-audit` — WCAG 2.1 AA compliance audit (deeper than this skill's checklist)
+- `accessibility-audit` — canonical WCAG 2.2 AA checklist and audit (deeper than this skill's checklist)

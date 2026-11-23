@@ -60,11 +60,6 @@ CSV_CONFIG = {
         "search_cols": ["Category", "Icon Name", "Keywords", "Best For"],
         "output_cols": ["Category", "Icon Name", "Keywords", "Library", "Import Code", "Usage", "Best For", "Style"]
     },
-    "react": {
-        "file": "react-performance.csv",
-        "search_cols": ["Category", "Issue", "Keywords", "Description"],
-        "output_cols": ["Category", "Issue", "Platform", "Description", "Do", "Don't", "Code Example Good", "Code Example Bad", "Severity"]
-    },
     "web": {
         "file": "web-interface.csv",
         "search_cols": ["Category", "Issue", "Keywords", "Description"],
@@ -72,18 +67,13 @@ CSV_CONFIG = {
     }
 }
 
+# Only stacks whose CSV ships in data/stacks/. React web guidance lives in stacks/react.csv (stack search);
+# there is no separate React domain file. Add an entry only together with its data file.
 STACK_CONFIG = {
     "html-tailwind": {"file": "stacks/html-tailwind.csv"},
     "react": {"file": "stacks/react.csv"},
-    "nextjs": {"file": "stacks/nextjs.csv"},
-    "vue": {"file": "stacks/vue.csv"},
-    "nuxtjs": {"file": "stacks/nuxtjs.csv"},
-    "nuxt-ui": {"file": "stacks/nuxt-ui.csv"},
-    "svelte": {"file": "stacks/svelte.csv"},
     "swiftui": {"file": "stacks/swiftui.csv"},
-    "react-native": {"file": "stacks/react-native.csv"},
     "flutter": {"file": "stacks/flutter.csv"},
-    "shadcn": {"file": "stacks/shadcn.csv"}
 }
 
 # Common columns for all stacks
@@ -93,6 +83,17 @@ _STACK_COLS = {
 }
 
 AVAILABLE_STACKS = list(STACK_CONFIG.keys())
+
+
+def missing_data_files():
+    """Configured CSV files that do not exist. Must be empty; checked at import so a dead entry fails loudly."""
+    configured = [c["file"] for c in CSV_CONFIG.values()] + [c["file"] for c in STACK_CONFIG.values()]
+    return [f for f in configured if not (DATA_DIR / f).exists()]
+
+
+_MISSING = missing_data_files()
+if _MISSING:
+    raise RuntimeError(f"ui-ux-pro-max: configured data files are missing: {_MISSING}")
 
 
 # ============ BM25 IMPLEMENTATION ============
@@ -204,7 +205,6 @@ def detect_domain(query):
         "ux": ["ux", "usability", "accessibility", "wcag", "touch", "scroll", "animation", "keyboard", "navigation", "mobile"],
         "typography": ["font", "typography", "heading", "serif", "sans"],
         "icons": ["icon", "icons", "lucide", "heroicons", "symbol", "glyph", "pictogram", "svg icon"],
-        "react": ["react", "next.js", "nextjs", "suspense", "memo", "usecallback", "useeffect", "rerender", "bundle", "waterfall", "barrel", "dynamic import", "rsc", "server component"],
         "web": ["aria", "focus", "outline", "semantic", "virtualize", "autocomplete", "form", "input type", "preconnect"]
     }
 

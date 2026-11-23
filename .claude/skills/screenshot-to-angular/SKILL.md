@@ -127,7 +127,6 @@ import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-[name]',
-  standalone: true,
   imports: [CommonModule],
   templateUrl: './[name].component.html',
 })
@@ -151,7 +150,7 @@ export class [Name]Component {
 | Outlined button | `<button class="btn btn-outline btn-primary">` |
 | Ghost button | `<button class="btn btn-ghost">` |
 | Card | `<div class="card bg-base-100 shadow-md">` + `<div class="card-body">` |
-| Input | `<input class="input input-bordered w-full">` |
+| Input | `<input class="input w-full">` |
 | Navbar | `<div class="navbar bg-base-100">` |
 | Hero | `<div class="hero min-h-screen bg-base-200">` |
 | Badge | `<span class="badge badge-primary">` |
@@ -168,7 +167,7 @@ export class [Name]Component {
 <button class="btn btn-primary hover:btn-primary-focus transition-colors">
 
 <!-- Focus states — always include for accessibility -->
-<input class="input input-bordered focus:input-primary focus:outline-none">
+<input class="input focus:input-primary focus:outline-none">
 
 <!-- Active/pressed state -->
 <button class="btn btn-primary active:scale-95 transition-transform">

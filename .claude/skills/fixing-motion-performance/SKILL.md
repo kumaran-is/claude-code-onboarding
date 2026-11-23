@@ -287,18 +287,32 @@ Angular 21.x has native View Transition support via the router.
 - Treat size changes in view transitions as potentially layout-triggering
 
 ```typescript
-// angular router — enable view transitions
-bootstrapApplication(AppComponent, {
+// app.config.ts: enable view transitions, skipped under reduced motion
+import { ApplicationConfig } from '@angular/core';
+import { provideRouter, withViewTransitions } from '@angular/router';
+import { routes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(routes, withViewTransitions({
       onViewTransitionCreated: ({ transition }) => {
-        // Cancel if interrupted by rapid navigation
-        if (transition.skipTransition) return;
-      }
-    }))
-  ]
-});
+        // skipTransition is a method; calling it skips the animation, navigation still completes
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) transition.skipTransition();
+      },
+    })),
+  ],
+};
 ```
+
+## 8b. Reduced Motion (High)
+
+Reduced motion removes movement, not meaning.
+
+- Gate each animation: `motion-safe:animate-…` / `motion-reduce:transition-none` in Tailwind, or `@media (prefers-reduced-motion: no-preference) { … }` around the keyframes. Avoid a global `* { animation-duration: 0.01ms !important }` hammer: it also breaks code that waits for `animationend`/`transitionend` timing and removes meaningful state changes.
+- Keep opacity changes and final-state geometry; drop translation, scaling, parallax and auto-playing loops.
+- Skeletons keep their shape and lose the shimmer (daisyUI 5 `.skeleton` already stops animating under `reduce`; `.loading` spinners are gated behind `no-preference`).
+- Wrap animation engines (Lottie and similar) in one shared component with a mandatory static fallback for reduced motion and for load failure.
+- WCAG: anything moving for more than 5 s needs a pause control (2.2.2, A); nothing flashes more than 3 times per second (2.3.1, A). 2.3.3 Animation from Interactions is AAA: treat it as a goal, not an AA gate.
 
 ---
 
@@ -368,4 +382,4 @@ flipTransition(el: HTMLElement): void {
 - `angular-spa` — Angular component patterns; `reference/animations.md` covers timing standards and keyframes
 - `web-performance-optimization` — Core Web Vitals, bundle size, lazy loading (loading performance, not animation runtime)
 - `tailwind-patterns` — Tailwind v4 `@theme` config and utility patterns
-- `accessibility-audit` — WCAG 2.1 `prefers-reduced-motion` compliance (complements this skill's performance rules)
+- `accessibility-audit` — WCAG 2.2 motion criteria (2.2.2 Pause/Stop/Hide and 2.3.1 Three Flashes are A; 2.3.3 Animation from Interactions is AAA) and `prefers-reduced-motion` checks

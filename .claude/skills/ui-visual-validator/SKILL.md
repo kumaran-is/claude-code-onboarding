@@ -80,7 +80,7 @@ Run through ALL 13 items before declaring a UI change complete:
 - [ ] **3. Measurement validation** — For rotation/position/size changes: verified through actual visual measurement (not assumed from code)?
 
 ### Visual Quality
-- [ ] **4. Responsive breakpoints** — Verified at 375px, 768px, 1024px, 1440px?
+- [ ] **4. Responsive breakpoints** — Verified at 320px (WCAG 1.4.10 reflow floor = 400 % zoom), 375px, 768px, 1024px, 1440px?
 - [ ] **5. Dark/light mode** — Both themes validated (if applicable)?
 - [ ] **6. Loading and transition states** — Skeleton/spinner shown correctly? Transitions smooth?
 - [ ] **7. Error and edge cases** — Empty states, error states, disabled states all verified?
@@ -88,7 +88,7 @@ Run through ALL 13 items before declaring a UI change complete:
 ### Accessibility (Visual)
 - [ ] **8. Color contrast** — WCAG 4.5:1 minimum for normal text verified visually?
 - [ ] **9. Focus indicators** — Visible focus rings on interactive elements?
-- [ ] **10. Touch targets** — Interactive elements >= 44px (Angular) / 48dp (Flutter)?
+- [ ] **10. Touch targets** — Interactive elements ≥ 24×24 CSS px (WCAG 2.5.8 AA); house standard 44px (web) / 48dp (Flutter)?
 
 ### Design System
 - [ ] **11. Token compliance** — No hardcoded colors visible that should use semantic tokens?
@@ -116,12 +116,15 @@ import { test, expect } from '@playwright/test';
 
 test('dashboard visual regression', async ({ page }) => {
   await page.goto('/dashboard');
-  await page.waitForLoadState('networkidle');
+  // Wait for content, not 'networkidle' (discouraged: polling, SSE and analytics keep the network busy)
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
 
-  // Full page snapshot
+  // Full page snapshot. maxDiffPixelRatio = share of pixels allowed to differ (0.01 = 1 %);
+  // threshold = per-pixel colour tolerance (YIQ, default 0.2), NOT a percentage of pixels.
   await expect(page).toHaveScreenshot('dashboard.png', {
     fullPage: true,
-    threshold: 0.1, // 10% pixel difference tolerance
+    maxDiffPixelRatio: 0.01,
+    animations: 'disabled',
   });
 });
 
@@ -296,7 +299,7 @@ When performing visual analysis:
 
 - `reality-checker` agent — **run BEFORE this skill** for live browser verdict (Chrome DevTools MCP)
 - `browser-testing` skill — Chrome DevTools MCP + Browser-Use for live UI interaction
-- `accessibility-audit` skill — deeper WCAG 2.1 AA compliance (beyond visual checks)
+- `accessibility-audit` skill — canonical WCAG 2.2 AA checklist (beyond visual checks); visual checks never establish conformance
 - `web-design-guidelines` skill — Vercel Web Interface Guidelines audit (loading/error/empty state patterns)
 - `design-system` skill — token compliance enforcement
 

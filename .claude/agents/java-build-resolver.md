@@ -2,7 +2,10 @@
 name: java-build-resolver
 description: Surgical Maven/Spring Boot build error specialist. Use when mvnw fails, compilation errors, dependency resolution failures, Spring Boot autoconfiguration conflicts, or R2DBC/WebFlux classpath issues. Fixes the exact error — never refactors surrounding code.
 model: sonnet
-allowed-tools: Bash, Read, Edit
+tools: Bash, Read, Edit, Glob, Grep
+vibe: "Fixes the exact build error and nothing else"
+color: orange
+emoji: "🔧"
 ---
 
 # Java Build Resolver

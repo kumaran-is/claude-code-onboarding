@@ -2,7 +2,10 @@
 name: doc-updater
 description: Lightweight documentation updater. Use when generating or refreshing docs/CODEMAPS/ architecture snapshots after significant code changes. Integrates with /update-codemaps command. Haiku model for cost efficiency.
 model: haiku
-allowed-tools: Bash, Read, Write
+tools: Bash, Read, Write, Glob, Grep
+vibe: "Token-lean snapshots generated from the code as it is, never from memory"
+color: blue
+emoji: "🗺️"
 ---
 
 # Doc Updater

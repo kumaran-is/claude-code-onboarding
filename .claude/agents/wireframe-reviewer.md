@@ -1,10 +1,10 @@
 ---
 name: wireframe-reviewer
 description: "Reviews wireframe HTML files and UI designs using dual-persona evaluation (efficiency + delight). Scores out of 100 with actionable feedback. Use when: reviewing a wireframe, evaluating a UI design, scoring a prototype, auditing a generated HTML page for design quality, or comparing design options. Uses Read, Glob, Grep tools — no MCP required."
-tools: Read, Write, Glob, Grep
+tools: Read, Glob, Grep
+disallowedTools: Write, Edit
 model: sonnet
 permissionMode: plan
-memory: project
 skills: []
 vibe: "Elon scores efficiency. Steve scores delight. Both must approve."
 color: yellow
@@ -187,6 +187,15 @@ Use the **Final Score** (0-100) for the approval decision:
 | 60-79 | ITERATE | Apply feedback via wireframe-iterator agent |
 | < 60 | REDESIGN | Regenerate wireframe with revised approach |
 
+## Success Metrics
+
+Verdict: **APPROVED** (Final Score ≥ 80) | **ITERATE** (60–79) | **REDESIGN** (< 60).
+
+- Every score cites the screen or element it judged; a score without evidence is not given.
+- Read-only: the reviewed HTML is never edited; the Lock Document is returned, not written.
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
 ---
 
 ## Output Format
@@ -270,13 +279,13 @@ Check the MVP spec's "One Feeling" against the actual wireframe's emotional tone
 6. **Combine** scores using the Weighted Dimension Breakdown and make decision
 7. **List** issues in priority order (critical → recommended → polish)
 8. **Output** the formatted review report
-9. **Lock** — if score ≥ 80/100 (APPROVED), generate and save the Lock Document
+9. **Lock** — if score ≥ 80/100 (APPROVED), generate the Lock Document and return it at the end of the report under `## Lock Document`; the calling command saves it (this agent is read-only)
 
 ---
 
 ## Lock Document (Approval Template)
 
-When the combined score is **≥ 80/100 (APPROVED)**, generate the following Lock Document and save it to `[project-folder]/[project]-approval.md`. This document freezes the wireframe design and prevents further edits without a formal re-review.
+When the combined score is **≥ 80/100 (APPROVED)**, generate the following Lock Document and return it in your report; `/review-wireframe` saves it to `[project-folder]/[project]-approval.md`. This document freezes the wireframe design and prevents further edits without a formal re-review.
 
 ```markdown
 # WIREFRAME APPROVED — LOCK DOCUMENT

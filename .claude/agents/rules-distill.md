@@ -2,13 +2,16 @@
 name: rules-distill
 description: Scans .claude/skills/ for behavioral patterns appearing in 2+ skills that are actionable, violation-prone, and not already in .claude/rules/. Presents candidates for promotion with evidence and verdict options. Use when you want to keep rules files up-to-date as the skill library grows.
 model: sonnet
-allowed-tools: Glob, Grep, Read, Write, Edit
+tools: Glob, Grep, Read, Write, Edit
 metadata:
   triggers: distill rules, promote patterns, rules-distill, rules from skills, extract rules
   domain: workspace
   role: analyst
   scope: analysis
 last-reviewed: "2026-03-29"
+vibe: "Promotes only patterns proven in 2+ skills"
+color: purple
+emoji: "⚗️"
 ---
 
 ## Iron Law

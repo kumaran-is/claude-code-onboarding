@@ -1,6 +1,6 @@
 ---
 name: audit-a2ui-parity
-description: Deterministic parity audit of a GenUI A2UI v0.9 catalog against its Angular, React and Flutter renderers — PASS / FAIL / BLOCKED / NOT RUN per check, failing a missing platform only when the contract declares it
+description: Deterministic parity audit of a GenUI A2UI catalog (1.0 target or v0.9.x compatibility) against its Angular, React and Flutter renderers — PASS / FAIL / BLOCKED / NOT RUN per check, failing a missing platform only when the contract declares it
 argument-hint: "[path to catalog JSON, default: first **/*catalog*.json with x-genui]"
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -40,13 +40,13 @@ FAILED=0
 CATALOG="${CATALOG:-}"
 if [ -z "$CATALOG" ]; then
   for f in $(find . -name '*catalog*.json' -not -path '*/node_modules/*' -not -path '*/.dart_tool/*' -not -path '*/build/*' -not -path '*/dist/*' 2>/dev/null); do
-    if grep -q '"x-genui"' "$f"; then CATALOG="$f"; break; fi
+    if grep -qE '"(x-genui|genui_contract)"' "$f"; then CATALOG="$f"; break; fi  # v0.9: x-genui; 1.0: metadata.extensions.genui_contract
   done
 fi
-if [ -z "$CATALOG" ] || [ ! -f "$CATALOG" ]; then echo "PARITY: BLOCKED (no catalog JSON with x-genui found)"; exit 1; fi
+if [ -z "$CATALOG" ] || [ ! -f "$CATALOG" ]; then echo "PARITY: BLOCKED (no catalog JSON with x-genui / genui_contract found)"; exit 1; fi
 echo "Catalog: $CATALOG"
 read_json() { python3 -I -c 'import json,sys
-d=json.load(open(sys.argv[1])); x=d.get("x-genui",{})
+d=json.load(open(sys.argv[1])); x=d.get("x-genui") or d.get("metadata",{}).get("extensions",{}).get("genui_contract",{})
 k=sys.argv[2]
 if k=="components": print("\n".join(d.get("components",{}).keys()))
 elif k=="actions": print("\n".join(x.get("actions",{}).keys()))
@@ -55,7 +55,7 @@ elif k=="protocol": print(x.get("protocolVersion",""))' "$CATALOG" "$1"; }
 IDS=$(read_json components) || { echo "PARITY: FAIL (catalog is not valid JSON)"; exit 1; }
 ACTIONS=$(read_json actions); DECLARED=$(read_json platforms); PROTO=$(read_json protocol)
 [ -n "$IDS" ] || { echo "PARITY: FAIL (catalog has no components)"; exit 1; }
-if [ "$PROTO" = "v0.9" ]; then echo "PROTOCOL catalog: PASS (v0.9)"; else echo "PROTOCOL catalog: FAIL (x-genui.protocolVersion='$PROTO', expected v0.9)"; FAILED=1; fi
+case "$PROTO" in 1.0|v0.9) echo "PROTOCOL catalog: PASS ($PROTO)" ;; *) echo "PROTOCOL catalog: FAIL (policy protocolVersion='$PROTO', expected 1.0 or v0.9)"; FAILED=1 ;; esac
 genui_files() { # $1 root, $2 extension regex -> GenUI source files, tests excluded
   find "$1" \( -name node_modules -o -name dist -o -name build -o -name .dart_tool -o -name .angular \) -prune -o -type f -print 2>/dev/null \
     | grep -E "$2" | grep -Ei '(/a2ui/|/genui/|a2ui|genui|catalog)' | grep -Ev '(\.spec\.|\.test\.|_test\.dart|/e2e/|/test/|/__tests__/)'
@@ -91,8 +91,12 @@ for plat in angular react flutter; do
   if [ -z "$missing" ]; then echo "PARITY $plat: PASS ($n IDs/actions mapped under $root)"
   else echo "PARITY $plat: FAIL (unmapped:$missing)"; FAILED=1; fi
   # protocol drift in the same files
-  drift=$(printf '%s\n' "$files" | while IFS= read -r f; do grep -nE "@a2ui/[a-z_]+/(v1_0|v0_8)|package:genui/|package:a2ui_flutter/basic_catalog\.dart" "$f" /dev/null 2>/dev/null; done)
-  if [ -z "$drift" ]; then echo "PROTOCOL $plat: PASS (no v0.8/v1.0 entry points)"; else echo "PROTOCOL $plat: FAIL"; printf '%s\n' "$drift" | head -10; FAILED=1; fi
+  # deprecated entry points anywhere, and files that import both the 1.0 and the v0.9 entry points (mixed versions)
+  drift=$(printf '%s\n' "$files" | while IFS= read -r f; do
+    grep -nE "@a2ui/[a-z_]+/v0_8|package:genui/" "$f" /dev/null 2>/dev/null
+    if grep -qE "@a2ui/[a-z_]+/v1_0" "$f" && grep -qE "@a2ui/[a-z_]+/v0_9" "$f"; then echo "$f: imports both /v1_0 and /v0_9"; fi
+  done)
+  if [ -z "$drift" ]; then echo "PROTOCOL $plat: PASS (no v0.8 entry points, no mixed 1.0/v0.9 files)"; else echo "PROTOCOL $plat: FAIL"; printf '%s\n' "$drift" | head -10; FAILED=1; fi
 done
 echo "PARITY VERDICT: $([ "$FAILED" -eq 0 ] && echo PASS || echo FAIL)"; exit "$FAILED"
 PARITY

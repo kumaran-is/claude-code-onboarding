@@ -1,8 +1,10 @@
-# Catalog Contract: canonical A2UI v0.9 catalog
+# Catalog Contract: canonical A2UI catalog (target 1.0, compatibility v0.9.x)
+
+The contract is published as two catalog documents with identical components, actions and payload schemas: `canonical-catalog-v1_0.json` (A2UI 1.0, the target) and `canonical-catalog.json` (A2UI v0.9.x, the compatibility path). Sections 1–5 describe the v0.9 document format; §7 lists what differs in the 1.0 document and on the 1.0 wire. The validator fails when the two documents drift.
 
 Source of truth: [canonical-catalog.json](canonical-catalog.json). This page explains it. If the page and the JSON disagree, the JSON wins. Fix the page.
 
-Evidence: the format was checked against the v0.9 schemas shipped in `@a2ui/web_core@0.15.0` (`src/v0_9/schemas/`) and against the upstream `specification/v0_9/docs/a2ui_protocol.md` (SOURCE-PROVEN). The fixtures pass the vendored wire schemas through `validate_a2ui_contract.py` (DOCUMENTED AND TESTED).
+Evidence (historical, v0.9 document, before the 1.0 migration): the format was checked against the v0.9 schemas shipped in `@a2ui/web_core@0.15.0` (`src/v0_9/schemas/`) and against the upstream `specification/v0_9/docs/a2ui_protocol.md` (SOURCE-PROVEN). The fixtures pass the vendored wire schemas through `validate_a2ui_contract.py` (DOCUMENTED AND TESTED).
 
 ## 1. Catalog format
 
@@ -95,8 +97,9 @@ Registration: Angular through the `a2ui-angular` skill's v0.9 catalog, Flutter t
 - Unknown props are rejected (`SCHEMA_INVALID`, via `unevaluatedProperties: false`). They are not ignored, because ignoring them hides drift between the backend and the client.
 
 ### Version negotiation and explicit rejection
-- The client advertises `{"v0.9": {"supportedCatalogIds": ["<catalogId>"]}}` (official `client_capabilities.json`). The server emits only `version: "v0.9"` and only that catalogId.
-- Any other `version` (`v0.8`, `v0.9.1`, `1.0`, missing) is rejected with `UNSUPPORTED_VERSION` / `MALFORMED_MESSAGE`. Note that `a2ui_core 0.8.0` treats `v0.9` and `v0.9.1` as interchangeable (`messages.dart`). This contract is stricter on purpose, so every platform behaves the same. Relax it only through a contract version bump.
+- The renderer advertises what it is proven on, per version, in transport metadata: 1.0 `a2uiRendererCapabilities` `{"1.0": {"supportedCatalogIds": ["<1.0 catalogId>"]}}` (official `renderer_capabilities.json`; `@a2ui/web_core` builds it with `MessageProcessor.getRendererCapabilities({versions})`), v0.9 `{"v0.9": {"supportedCatalogIds": ["<v0.9 catalogId>"]}}` (`client_capabilities.json`). A renderer proven on both may advertise both. The agent advertises `{"1.0": {"supportedCatalogIds", "acceptsInlineCatalogs"}}` (`agent_capabilities.json`); this contract never accepts inline catalogs.
+- The agent picks ONE version per surface session: `1.0` when the renderer advertised the 1.0 catalogId, otherwise the v0.9.x path. Every message of that stream carries that exact version string; another value is `MIXED_VERSIONS`. `v0.8`, `v1.0` (non-canonical spelling: the wire value is `"1.0"`), and anything else are `UNSUPPORTED_VERSION`; a missing version is `MALFORMED_MESSAGE`.
+- `v0.9` and `v0.9.1` are wire-identical in `@a2ui/web_core` 0.16.1 (one `V0Point9Adapter`, schema enum `['v0.9','v0.9.1']`), so both are accepted on the compatibility path. The validator normalises `v0.9.1` to the vendored schema's `v0.9` const for schema validation only.
 - A `createSurface` with another `catalogId` → `UNSUPPORTED_CATALOG`. A second `createSurface` for a live surface → `DUPLICATE_SURFACE` (the spec calls this an error).
 
 ### Ordering and partial delivery
@@ -115,14 +118,18 @@ Registration: Angular through the `a2ui-angular` skill's v0.9 catalog, Flutter t
   Each failure maps to a code below and is shown to the user.
 - The size cap (`MESSAGE_TOO_LARGE`) runs on the raw bytes **before** any JSON parsing, on every platform.
 - Reason the guard is needed, found by the Angular, React and Flutter proofs of concept on 2026-11-23:
-  - In `@a2ui/web_core@0.15.0`, `STRICT_VALIDATION` checks references, cycles and depth. It does **not** validate component props and does **not** reject a message with no `version` field.
+  - In `@a2ui/web_core@0.15.0` (historical observation; the 0.16.1 LIVE run likewise accepted non-allowlisted actions, bad payloads and unsafe URLs), `STRICT_VALIDATION` checks references, cycles and depth. It does **not** validate component props and does **not** reject a message with no `version` field.
   - `a2ui_core 0.8.0` on its own accepts `<script>` and `javascript:` strings and does not apply the depth limit. It accepted, or gave the wrong error code for, 11 of the 20 `invalid/` fixtures.
 - Scope rendered DOM and semantics IDs per surface. Every surface has a `root`, so unscoped IDs collide and give controls the wrong accessible name.
 - Register catalog functions explicitly. A component that reads or writes the data model itself must resolve an action's `{path}` bindings before dispatching. If it doesn't, the server receives unresolved bindings, which is `ACTION_CONTEXT_UNRESOLVED`.
 - To fully replay the `invalid/` fixtures with their exact error codes, a client must implement all eight components. With fewer components, unrelated fixtures are rejected as `UNKNOWN_COMPONENT` instead of their intended code.
 
 ### Error codes (validator and client log vocabulary)
-`MALFORMED_MESSAGE`, `UNSUPPORTED_VERSION`, `UNSUPPORTED_CATALOG`, `UNKNOWN_COMPONENT`, `SCHEMA_INVALID`, `ACTION_NOT_ALLOWED`, `FUNCTION_ACTION_FORBIDDEN`, `UNSAFE_CONTENT`, `STRING_TOO_LONG`, `MESSAGE_TOO_LARGE`, `TOO_MANY_COMPONENTS`, `MAX_DEPTH_EXCEEDED`, `CYCLE`, `DUPLICATE_COMPONENT_ID`, `MISSING_ROOT`, `DANGLING_REFERENCE`, `SURFACE_NOT_FOUND`, `DUPLICATE_SURFACE`, `INVALID_POINTER`, `INCOMPLETE_FRAME`, `ACTION_PAYLOAD_INVALID`, `ACTION_CONTEXT_UNRESOLVED`, `NON_INTEGER_NUMBER`, `NULL_VALUE`, `BAD_TIMESTAMP`. On the wire, all of these map to the v0.9 `VALIDATION_FAILED` error. The specific code goes in the client log and the `message`.
+`MALFORMED_MESSAGE`, `UNSUPPORTED_VERSION`, `UNSUPPORTED_CATALOG`, `UNKNOWN_COMPONENT`, `SCHEMA_INVALID`, `ACTION_NOT_ALLOWED`, `FUNCTION_ACTION_FORBIDDEN`, `UNSAFE_CONTENT`, `STRING_TOO_LONG`, `MESSAGE_TOO_LARGE`, `TOO_MANY_COMPONENTS`, `MAX_DEPTH_EXCEEDED`, `CYCLE`, `DUPLICATE_COMPONENT_ID`, `MISSING_ROOT`, `DANGLING_REFERENCE`, `SURFACE_NOT_FOUND`, `DUPLICATE_SURFACE`, `INVALID_POINTER`, `INCOMPLETE_FRAME`, `ACTION_PAYLOAD_INVALID`, `ACTION_CONTEXT_UNRESOLVED`, `NON_INTEGER_NUMBER`, `NULL_VALUE`, `BAD_TIMESTAMP`.
+
+Added for 1.0: `MIXED_VERSIONS`, `FUNCTION_CALL_NOT_ALLOWED` (spec code `INVALID_FUNCTION_CALL`). On the wire, contract codes map to the `VALIDATION_FAILED` error of the stream's version. The specific code goes in the client log and the `message`.
+
+**Every renderer and every backend emitter runs this gate itself**, before the SDK (renderer) and before streaming (emitter). SDK structural validation is not a substitute: `@a2ui/web_core` 0.16.1, `@a2ui/agent` 0.2.1 `validatePayload` and `a2ui_flutter` 0.5.0 each accepted at least one of: a non-allowlisted action, a bad action payload, a `javascript:` URL, mixed versions, a v0.9 `{"path"}` binding in a 1.0 message.
 
 ## 6. Versioning and backward compatibility
 
@@ -135,9 +142,9 @@ Registration: Angular through the `a2ui-angular` skill's v0.9 catalog, Flutter t
 
 Every change updates the fixtures and golden actions in the same PR, and the validator must exit 0.
 
-## 7. Migration notes: v0.9 → v1.0 (not adopted)
+## 7. A2UI 1.0 (target) — what differs from v0.9
 
-The changes below were verified against upstream `specification/v1_0/docs/evolution_guide.md` and the `@a2ui/web_core@0.15.0` `v1_0` schemas (SOURCE-PROVEN). None of them is used by this contract.
+Verified 2026-11-23 against a2ui.org `/specification/v1.0-evolution-guide/`, the upstream `specification/v1_0/json/` schemas (vendored in `vendor/a2ui-v1_0/`, identical to `@a2ui/web_core@0.16.1` `src/v1_0/schemas/`) and the web_core 0.16.x CHANGELOG (SOURCE-PROVEN). The 1.0 catalog and fixtures use all of this.
 
 - Envelope `version` changes from `"v0.9"` to `"1.0"`. The schema files are renamed `server_to_client` → `agent_to_renderer` and `client_to_server` → `renderer_to_agent`.
 - New messages: `callRendererFunction`, `agentFunctionResponse` (agent→renderer); `callAgentFunction`, `rendererFunctionResponse` (renderer→agent).
@@ -147,7 +154,18 @@ The changes below were verified against upstream `specification/v1_0/docs/evolut
 - The `action` message gains optional `userMessage` and `metadata`. `AccessibilityAttributes` gains `live` and `hidden`. Catalogs gain `protocolVersion`, `instructions`, `allowedParents`/`allowedChildren` and a reserved `Surface` root.
 - `CheckRule.message` becomes optional, and checks can return a `ValidationResult`.
 
-Migration plan: create a new catalog (`…/v2/catalog.json`, `protocolVersion: "1.0"`), run the v1.0 fixtures beside the v0.9 ones, let renderers advertise both versions, then switch each surface individually. Mapping the `x-genui` extension blocks to v1.0 `metadata.extensions` is UNVERIFIED until it is implemented.
+Semantics changes (not renames) that this contract relies on:
+
+- **Catalog resolution:** component `@catalogId` → surface `catalogId` → error; no fallback to advertised catalogs. This contract uses one catalog per surface; a different `@catalogId` is `UNSUPPORTED_CATALOG`.
+- **Single-message surface init:** a `createSurface` may carry `components` + `dataModel`; the validator applies them atomically.
+- **Data deletion:** `updateDataModel` with `"value": null` deletes; omitting `value` is `SCHEMA_INVALID`.
+- **Literal `path`/`call` keys:** in 1.0 a `{"path": …}` object in a dynamic position is a literal, not a binding. Strict schema validation rejects it where the catalog requires a `DataBinding`; `@a2ui/web_core` 0.16.1 accepted it in a LIVE-PROTOCOL run, so the contract gate is required in front of the SDK.
+- **Functions:** `allowedCallers` (`rendererOnly` | `agentOnly` | `rendererOrAgent`) and `returnType` live in the catalog, not on the wire. Our check functions are `rendererOnly` and return `validationResult`.
+- **Bare envelope keys:** the evolution guide lets renderers accept legacy bare `accessibility`/`checks` on 1.0 components during transition. This contract does not: agents emit only `@` keys and the validator rejects bare ones.
+
+The 1.0 catalog document (`canonical-catalog-v1_0.json`) differs from the v0.9 one because the official `catalog_definition.json` closes the root and composes `ComponentCommon` at the envelope: `protocolVersion: "1.0"`; policy under `metadata.extensions.genui_contract` (root) and per component `metadata.extensions.genui_contract` (was `x-genui`); no `ComponentCommon` mixin and no per-component `unevaluatedProperties`; standard types referenced as relative `common_types.json#/$defs/...`; `$defs.theme` removed; function call schemas keyed `@call` with `returnType`/`allowedCallers` on the definition. Catalog-local property names (e.g. `InputForm.fields[].checks`, `ApprovalForm.comment`) are ordinary catalog properties and keep plain names.
+
+Rollout: keep both documents in parity; a renderer switches a surface to 1.0 only after its real package renders the `fixtures/valid-v1_0/` streams in a test (see `compatibility-matrix.md`).
 
 ## 8. Known discrepancy
 

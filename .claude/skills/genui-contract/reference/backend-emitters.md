@@ -1,4 +1,6 @@
-# Backend emitters: from agent output to validated A2UI v0.9 on the wire
+# Backend emitters: from agent output to validated A2UI on the wire (v1.0 and v0.9)
+
+> **Pins and proven wire version per platform:** see [compatibility-matrix.md](compatibility-matrix.md) (source of truth). Serve each client only the version it declares and is proven on. Every renderer and backend needs a contract gate in front of `@a2ui/web_core` (action allowlist, URL schemes, one version per stream, reject legacy `{"path"}` bindings in 1.0 with `SCHEMA_INVALID`), because web_core 0.16.1 and `@a2ui/agent` 0.2.1 accept these.
 
 An emitter is the server code between the agent and the transport. It takes candidate A2UI messages, validates them against the shared contract, folds them into surface state, records what was rendered for action binding, and frames them for SSE or AG-UI. Whatever framework produced the candidates, they never reach a client unvalidated.
 
@@ -7,7 +9,7 @@ An emitter is the server code between the agent and the transport. It takes cand
 | FastAPI emitter (contract gate, SSE framing, AG-UI framing) | **DOCUMENTED AND TESTED**: reference backend, 60 pytest passing; ruff and mypy --strict clean |
 | Google ADK hand-off | **DOCUMENTED BUT NOT TESTED** here: uses `Runner.run_async` as documented in the [google-adk](../../google-adk/SKILL.md) skill ([adk-core-patterns.md](../../google-adk/reference/adk-core-patterns.md), [adk-fastapi-integration.md](../../google-adk/reference/adk-fastapi-integration.md), ADK 1.29) |
 | LangGraph hand-off | **DOCUMENTED BUT NOT TESTED** here: uses `graph.astream(..., stream_mode="updates")` as documented in [agentic-streaming-hitl.md](../../agentic-ai-dev/reference/agentic-streaming-hitl.md) |
-| Node / TypeScript emitter | Not covered. `@a2ui/agent` 0.1.0 exists on npm but was not verified in this phase. **UNVERIFIED**; port the gate below and test it with the same fixtures |
+| Node / TypeScript emitter | **DOCUMENTED AND TESTED** (Node 26 sandbox): `@a2ui/agent` 0.2.1 + `@ag-ui/encoder` 1.0.5, 21 LIVE-PROTOCOL tests. See section 7 |
 
 ## Pinned versions (reference backend)
 
@@ -92,6 +94,50 @@ Pattern: the agent produces A2UI through a **tool** or **structured output**, no
 - Accept a `catalogId` or `version` from the model that the client did not advertise.
 - Put secrets, internal ids or exception text in any message or terminal frame.
 - Let model text become a URL, HTML, script or authorization input ([action-security.md](action-security.md)).
+
+## 7. Node / TypeScript emitter with `@a2ui/agent` 0.2.1 (v1.0 and v0.9)
+
+The Python reference above is a **v0.9** emitter. For a v1.0 emitter in Node, the official TypeScript agent SDK `@a2ui/agent` 0.2.1 targets v0.9 and v1.0 (its README). APIs below were read from the package and executed:
+
+| API | Use |
+|---|---|
+| `CatalogConfig.fromPath(path)` | Load a 1.0 catalog (the document states `protocolVersion` and `catalogId`) |
+| `CatalogConfig.fromPath(path, [], 'v0.9', catalogId)` | Load a v0.9 catalog (the v0.9 document states neither) |
+| `new A2uiGenerator([catalog])` | One generator **per protocol version**; mixing versions on one generator is an error |
+| `readRendererCapabilities(metadata, '1.0' \| 'v0.9')` | Read the client's declared capabilities; throws `A2uiCatalogError` when malformed |
+| `generator.createProcessor(caps)` → `processor.catalogs` | Catalogs negotiated for this client |
+| `validatePayload(processor.catalogs, messages)` | Stateless structural check before streaming; throws `A2uiValidationError` |
+| `processor.parseResponse(text)` / `processor.openStream()` | Parse model output (Direct JSON or Express format) into validated messages |
+| `RendererToAgentMessageProcessor` | v1.0 only: checks inbound `action`, `error`, `callAgentFunction` messages ("A message whose `version` isn't `'1.0'` is an `A2uiValidationError`") |
+
+Wire shapes the emitter writes (verified by `validatePayload` against the shared catalogs):
+
+```js
+// 1.0: one message may create the surface with its components (and dataModel) inline
+[{ version: '1.0', createSurface: { surfaceId, catalogId: CATALOG_1_0, components } }]
+// v0.9: create first, then components
+[{ version: 'v0.9', createSurface: { surfaceId, catalogId: CATALOG_0_9 } },
+ { version: 'v0.9', updateComponents: { surfaceId, components } }]
+```
+
+```js
+import { EventEncoder } from '@ag-ui/encoder';
+import { EventType } from '@ag-ui/core';
+import { validatePayload } from '@a2ui/agent';
+import { A2UIActivityType, A2UI_OPERATIONS_KEY } from '@ag-ui/a2ui-middleware';
+
+validatePayload(negotiated.processor.catalogs, ops);   // fail closed: RUN_ERROR, never a partial surface
+const encoder = new EventEncoder({ accept: req.headers.accept });
+res.writeHead(200, { 'content-type': encoder.getContentType(), 'cache-control': 'no-store' });
+res.write(encoder.encode({ type: EventType.RUN_STARTED, threadId, runId }));
+res.write(encoder.encode({ type: EventType.ACTIVITY_SNAPSHOT, messageId: `a2ui-surface-${runId}`,
+  activityType: A2UIActivityType, content: { [A2UI_OPERATIONS_KEY]: ops }, replace: true }));
+res.end(encoder.encode({ type: EventType.RUN_FINISHED, threadId, runId }));
+```
+
+`validatePayload` is structural only: it accepted an off-allowlist action name, a `javascript:` URL and a v0.9 binding inside a 1.0 message ([action-security.md](action-security.md#catalog-validation-is-not-authorization)). Keep the policy gate from section 2 (allowlist, forbidden patterns, depth, size) in front of it.
+
+Supply chain: `@a2ui/agent` 0.2.1 was published on 2026-11-23 by the a2ui-project maintainers (repository `github.com/a2ui-project/a2ui`). It has npm registry signatures but no SLSA provenance attestation, unlike `@ag-ui/*` 1.0.5. Pin it exactly. `npm audit` (2026-11-23) reports GHSA-mrhx-c7xc-m3w5 (high, `zod` < 4.6.6) through `@a2ui/web_core` 0.16.1, which bundles `zod` 3.25.76; no fixed version is available. Pin a top-level `zod` of 4.6.7 or later for your own code and track the advisory.
 
 ## Running the reference
 

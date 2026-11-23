@@ -1,0 +1,1472 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json",
+  "protocolVersion": "1.0",
+  "title": "Canonical GenUI catalog (A2UI v1.0)",
+  "description": "Framework-neutral A2UI v0.9 catalog of eight business components. Platforms map each component name to their own component or widget. A2UI v1.0 form, derived semantically from the v0.9 catalog.",
+  "catalogId": "https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json",
+  "metadata": {
+    "extensions": {
+      "genui_contract": {
+        "contractVersion": "1.0.0",
+        "protocolVersion": "1.0",
+        "acceptedWireVersions": [
+          "1.0"
+        ],
+        "platforms": [
+          "angular",
+          "react",
+          "flutter"
+        ],
+        "limits": {
+          "maxMessageBytes": 262144,
+          "maxComponentsPerSurface": 200,
+          "maxDepth": 8,
+          "maxStringLength": 10000
+        },
+        "forbiddenStringPatterns": [
+          "(?i)^\\s*javascript:",
+          "(?i)^\\s*vbscript:",
+          "(?i)^\\s*data:text/html",
+          "(?i)<\\s*script"
+        ],
+        "actionTransport": {
+          "idempotencyKey": "The client adapter generates one UUIDv4 per user intent for actions with requiresIdempotencyKey and sends it beside the A2UI message (e.g. an Idempotency-Key header or transport metadata), never inside action.context.",
+          "authorization": "Every action is authorised server-side from the authenticated session; nothing in context grants permission."
+        },
+        "actions": {
+          "item.open": {
+            "description": "Open the referenced item in the host app (navigation only).",
+            "sideEffect": false,
+            "risk": "low",
+            "requiresIdempotencyKey": false,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                }
+              },
+              "required": [
+                "itemId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "item.dismiss": {
+            "description": "Dismiss a suggested item for this user.",
+            "sideEffect": true,
+            "risk": "low",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "itemId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                }
+              },
+              "required": [
+                "itemId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "approval.approve": {
+            "description": "Approve a pending request. The server re-checks that the caller may approve requestId.",
+            "sideEffect": true,
+            "risk": "high",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": true,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                },
+                "comment": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "requestId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "approval.reject": {
+            "description": "Reject a pending request with a reason.",
+            "sideEffect": true,
+            "risk": "high",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": true,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "requestId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "requestId",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "selection.submit": {
+            "description": "Submit the ids the user selected from a SelectionList.",
+            "sideEffect": true,
+            "risk": "medium",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "listId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                },
+                "selectedIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "listId",
+                "selectedIds"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "form.submit": {
+            "description": "Submit InputForm values. Keys are the form's field names; the server validates each value again.",
+            "sideEffect": true,
+            "risk": "medium",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "formId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                },
+                "values": {
+                  "type": "object",
+                  "maxProperties": 20,
+                  "propertyNames": {
+                    "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+                  },
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "boolean"
+                    ],
+                    "maxLength": 10000
+                  }
+                }
+              },
+              "required": [
+                "formId",
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "form.cancel": {
+            "description": "The user abandoned the form. No data is sent.",
+            "sideEffect": false,
+            "risk": "low",
+            "requiresIdempotencyKey": false,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "formId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                }
+              },
+              "required": [
+                "formId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dialog.confirm": {
+            "description": "The user confirmed the operation the dialog describes. The server executes the operation it stored under dialogId, never one named in the payload.",
+            "sideEffect": true,
+            "risk": "high",
+            "requiresIdempotencyKey": true,
+            "requiresHumanApproval": true,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "dialogId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                }
+              },
+              "required": [
+                "dialogId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dialog.cancel": {
+            "description": "The user dismissed the dialog.",
+            "sideEffect": false,
+            "risk": "low",
+            "requiresIdempotencyKey": false,
+            "requiresHumanApproval": false,
+            "payloadSchema": {
+              "type": "object",
+              "properties": {
+                "dialogId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                }
+              },
+              "required": [
+                "dialogId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "ActionCard": {
+      "type": "object",
+      "description": "A titled card with a short body and up to three action buttons.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "ActionCard"
+            },
+            "title": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "subtitle": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "body": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 2000
+                  }
+                }
+              ]
+            },
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "variant": {
+                    "enum": [
+                      "primary",
+                      "secondary"
+                    ]
+                  },
+                  "action": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/ServerEvent"
+                      },
+                      {
+                        "properties": {
+                          "event": {
+                            "properties": {
+                              "name": {
+                                "enum": [
+                                  "item.open",
+                                  "item.dismiss"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "component",
+            "title"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [
+              "item.open",
+              "item.dismiss"
+            ],
+            "a11y": {
+              "role": "article (web) / container semantics (Flutter); each action is a button",
+              "labelSource": "accessibility.label, else title",
+              "buttonLabelSource": "actions[].label"
+            },
+            "fallback": "render-error-placeholder"
+          }
+        }
+      }
+    },
+    "DataSummaryTable": {
+      "type": "object",
+      "description": "A read-only table of rows bound from the data model. Cells render as plain text, never HTML.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "DataSummaryTable"
+            },
+            "caption": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "columns": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+                  },
+                  "header": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "format": {
+                    "enum": [
+                      "text",
+                      "integer",
+                      "decimal",
+                      "date",
+                      "status"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "header"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "rows": {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            },
+            "maxRows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "component",
+            "caption",
+            "columns",
+            "rows"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [],
+            "dataBinding": {
+              "rows": "JSON Pointer to an array of flat objects keyed by columns[].key; rows beyond maxRows (default 50) are not rendered and a 'showing N of M' note is shown"
+            },
+            "a11y": {
+              "role": "table with caption and column headers (web <table>/<th scope=col>; Flutter Table inside Semantics)",
+              "labelSource": "caption"
+            },
+            "fallback": "render-error-placeholder"
+          }
+        }
+      }
+    },
+    "ApprovalForm": {
+      "type": "object",
+      "description": "Shows a pending request and lets a human approve or reject it with an optional comment.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "ApprovalForm"
+            },
+            "title": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "summary": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 4000
+                  }
+                }
+              ]
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+            },
+            "riskLevel": {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "comment": {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            },
+            "approveAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "approval.approve"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "rejectAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "approval.reject"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "component",
+            "title",
+            "summary",
+            "requestId",
+            "riskLevel",
+            "approveAction",
+            "rejectAction"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [
+              "approval.approve",
+              "approval.reject"
+            ],
+            "dataBinding": {
+              "comment": "two-way: the comment text field writes the user's text to this JSON Pointer"
+            },
+            "a11y": {
+              "role": "form (web) / Semantics container (Flutter) with a labelled comment field and two buttons",
+              "labelSource": "accessibility.label, else title",
+              "riskAnnouncement": "riskLevel is shown as text, not colour only"
+            },
+            "fallback": "reject-surface"
+          }
+        }
+      }
+    },
+    "SelectionList": {
+      "type": "object",
+      "description": "A single- or multi-select list of options; the selection is written to the data model.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "SelectionList"
+            },
+            "label": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "listId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+            },
+            "options": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "$ref": "common_types.json#/$defs/DataBinding"
+                }
+              ]
+            },
+            "selected": {
+              "$ref": "common_types.json#/$defs/DataBinding"
+            },
+            "selectionMode": {
+              "enum": [
+                "single",
+                "multiple"
+              ]
+            },
+            "maxSelected": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "submitAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "selection.submit"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "component",
+            "label",
+            "listId",
+            "options",
+            "selected",
+            "selectionMode"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [
+              "selection.submit"
+            ],
+            "dataBinding": {
+              "selected": "two-way: JSON Pointer to an array of selected option ids",
+              "options": "literal array or JSON Pointer to an array of {id,label,description}"
+            },
+            "a11y": {
+              "role": "radiogroup (single) or group of checkboxes (multiple)",
+              "labelSource": "label"
+            },
+            "fallback": "render-error-placeholder"
+          }
+        }
+      }
+    },
+    "DetailPanel": {
+      "type": "object",
+      "description": "A read-only label/value panel; the only container in the catalog (children are component ids).",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "DetailPanel"
+            },
+            "title": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 30,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "value": {
+                    "allOf": [
+                      {
+                        "$ref": "common_types.json#/$defs/DynamicString"
+                      },
+                      {
+                        "if": {
+                          "type": "string"
+                        },
+                        "then": {
+                          "maxLength": 2000
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "children": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "$ref": "common_types.json#/$defs/ComponentId"
+              }
+            }
+          },
+          "required": [
+            "component",
+            "title",
+            "fields"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [],
+            "a11y": {
+              "role": "region with heading (web <section aria-labelledby>; Flutter Semantics(container) + header)",
+              "labelSource": "title"
+            },
+            "fallback": "render-error-placeholder"
+          }
+        }
+      }
+    },
+    "StatusIndicator": {
+      "type": "object",
+      "description": "Shows the state of a long-running operation as text plus an icon.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "StatusIndicator"
+            },
+            "label": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 120
+                  }
+                }
+              ]
+            },
+            "status": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                    "unknown"
+                  ]
+                },
+                {
+                  "$ref": "common_types.json#/$defs/DataBinding"
+                }
+              ]
+            },
+            "message": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 500
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "component",
+            "label",
+            "status"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [],
+            "dataBinding": {
+              "status": "literal or JSON Pointer to one of the status enum values; any other bound value renders as 'unknown'"
+            },
+            "a11y": {
+              "role": "status (polite live region); status is conveyed as text, never colour only",
+              "labelSource": "label"
+            },
+            "fallback": "render-text-label"
+          }
+        }
+      }
+    },
+    "InputForm": {
+      "type": "object",
+      "description": "An editable form; each field writes to its bound data-model path; submit sends the resolved values.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "InputForm"
+            },
+            "title": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 200
+                  }
+                }
+              ]
+            },
+            "formId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+            },
+            "fields": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "inputType": {
+                    "enum": [
+                      "text",
+                      "email",
+                      "integer",
+                      "multiline",
+                      "date"
+                    ]
+                  },
+                  "value": {
+                    "$ref": "common_types.json#/$defs/DataBinding"
+                  },
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "checks": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                      "$ref": "common_types.json#/$defs/CheckRule"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "inputType",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "submitLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "submitAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "form.submit"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "cancelAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "form.cancel"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "component",
+            "title",
+            "formId",
+            "fields",
+            "submitAction"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [
+              "form.submit",
+              "form.cancel"
+            ],
+            "dataBinding": {
+              "fields[].value": "two-way JSON Pointer; the submit action context binds the same paths"
+            },
+            "a11y": {
+              "role": "form; every field has a visible label (fields[].label) programmatically associated; errors announced and linked to the field",
+              "labelSource": "title"
+            },
+            "fallback": "reject-surface"
+          }
+        }
+      }
+    },
+    "ConfirmationDialog": {
+      "type": "object",
+      "description": "A modal confirmation for one operation the server already holds under dialogId.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "ConfirmationDialog"
+            },
+            "title": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 120
+                  }
+                }
+              ]
+            },
+            "message": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "maxLength": 1000
+                  }
+                }
+              ]
+            },
+            "dialogId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+            },
+            "destructive": {
+              "type": "boolean"
+            },
+            "confirmLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "cancelLabel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "confirmAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "dialog.confirm"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "cancelAction": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ServerEvent"
+                },
+                {
+                  "properties": {
+                    "event": {
+                      "properties": {
+                        "name": {
+                          "enum": [
+                            "dialog.cancel"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "component",
+            "title",
+            "message",
+            "dialogId",
+            "confirmAction",
+            "cancelAction"
+          ]
+        }
+      ],
+      "metadata": {
+        "extensions": {
+          "genui_contract": {
+            "schemaVersion": 1,
+            "allowedActions": [
+              "dialog.confirm",
+              "dialog.cancel"
+            ],
+            "a11y": {
+              "role": "alertdialog when destructive, else dialog; focus moves into the dialog, Escape cancels, focus returns to the trigger",
+              "labelSource": "title",
+              "descriptionSource": "message"
+            },
+            "fallback": "reject-surface"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "required": {
+      "type": "object",
+      "description": "Checks that the value is not null, undefined, or empty.",
+      "properties": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "The value to check."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "@call": {
+          "const": "required"
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ],
+      "returnType": "validationResult",
+      "allowedCallers": "rendererOnly"
+    },
+    "length": {
+      "type": "object",
+      "description": "Checks string length constraints.",
+      "properties": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString"
+            },
+            "min": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The minimum allowed length."
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The maximum allowed length."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "anyOf": [
+            {
+              "required": [
+                "min"
+              ]
+            },
+            {
+              "required": [
+                "max"
+              ]
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        "@call": {
+          "const": "length"
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ],
+      "returnType": "validationResult",
+      "allowedCallers": "rendererOnly"
+    },
+    "email": {
+      "type": "object",
+      "description": "Checks that the value is a valid email address.",
+      "properties": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "unevaluatedProperties": false
+        },
+        "@call": {
+          "const": "email"
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ],
+      "returnType": "validationResult",
+      "allowedCallers": "rendererOnly"
+    },
+    "numeric": {
+      "type": "object",
+      "description": "Checks numeric range constraints.",
+      "properties": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicNumber"
+            },
+            "min": {
+              "type": "number",
+              "description": "The minimum allowed value."
+            },
+            "max": {
+              "type": "number",
+              "description": "The maximum allowed value."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "anyOf": [
+            {
+              "required": [
+                "min"
+              ]
+            },
+            {
+              "required": [
+                "max"
+              ]
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        "@call": {
+          "const": "numeric"
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ],
+      "returnType": "validationResult",
+      "allowedCallers": "rendererOnly"
+    }
+  },
+  "$defs": {
+    "CatalogComponentCommon": {
+      "type": "object",
+      "properties": {}
+    },
+    "ServerEvent": {
+      "description": "A server event only. v0.9 Action also allows functionCall; this catalog forbids client-side function actions.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "enum": [
+                "approval.approve",
+                "approval.reject",
+                "dialog.cancel",
+                "dialog.confirm",
+                "form.cancel",
+                "form.submit",
+                "item.dismiss",
+                "item.open",
+                "selection.submit"
+              ]
+            },
+            "context": {
+              "type": "object",
+              "maxProperties": 20,
+              "propertyNames": {
+                "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": [
+                      "string",
+                      "integer",
+                      "boolean"
+                    ]
+                  },
+                  {
+                    "$ref": "common_types.json#/$defs/DataBinding"
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "additionalProperties": false
+    },
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/ActionCard"
+        },
+        {
+          "$ref": "#/components/DataSummaryTable"
+        },
+        {
+          "$ref": "#/components/ApprovalForm"
+        },
+        {
+          "$ref": "#/components/SelectionList"
+        },
+        {
+          "$ref": "#/components/DetailPanel"
+        },
+        {
+          "$ref": "#/components/StatusIndicator"
+        },
+        {
+          "$ref": "#/components/InputForm"
+        },
+        {
+          "$ref": "#/components/ConfirmationDialog"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "component"
+      }
+    },
+    "anyFunction": {
+      "oneOf": [
+        {
+          "$ref": "#/functions/required"
+        },
+        {
+          "$ref": "#/functions/length"
+        },
+        {
+          "$ref": "#/functions/email"
+        },
+        {
+          "$ref": "#/functions/numeric"
+        }
+      ]
+    }
+  }
+}

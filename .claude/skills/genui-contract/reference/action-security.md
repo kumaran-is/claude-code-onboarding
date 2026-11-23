@@ -1,4 +1,6 @@
-# Action security: server-side handling of A2UI v0.9 actions
+# Action security: server-side handling of A2UI actions (v1.0 and v0.9)
+
+> **Pins and proven wire version per platform:** see [compatibility-matrix.md](compatibility-matrix.md) (source of truth). Serve each client only the version it declares and is proven on. Every renderer and backend needs a contract gate in front of `@a2ui/web_core` (action allowlist, URL schemes, one version per stream, reject legacy `{"path"}` bindings in 1.0 with `SCHEMA_INVALID`), because web_core 0.16.1 and `@a2ui/agent` 0.2.1 accept these.
 
 Generated UI is untrusted input. So is every action that comes back from it: the model wrote the surface, and the client (or an attacker) wrote the request. The server decides every action from the authenticated principal and its own data. Nothing in `action.context` grants permission.
 
@@ -12,7 +14,7 @@ Every gate runs before any side effect. The first failing gate decides the respo
 |---|---|---|
 | 1 | Bearer token: identity comes from the token, never the body | 401 `UNAUTHENTICATED` / `INVALID_TOKEN` + `WWW-Authenticate` |
 | 2 | Bounded body read (16 KiB) | 413 `PAYLOAD_TOO_LARGE` |
-| 3 | JSON, `version` present and equal to `v0.9` | 400 `INVALID_JSON` / `MALFORMED_MESSAGE` / `UNSUPPORTED_VERSION` |
+| 3 | JSON, `version` present and equal to the version negotiated for this stream (`1.0` or `v0.9`) | 400 `INVALID_JSON` / `MALFORMED_MESSAGE` / `UNSUPPORTED_VERSION` |
 | 4 | Official `client_to_server.json` schema (exactly `{version, action}`) | 400 `INVALID_MESSAGE` |
 | 5 | Action name in the catalog allowlist (`x-genui.actions`) | 400 `UNKNOWN_ACTION` |
 | 6 | **Rendered by us**: this server streamed a component to this user, on that `surfaceId`/`sourceComponentId`, that declares this action | 409 `NOT_RENDERED` |
@@ -22,6 +24,27 @@ Every gate runs before any side effect. The first failing gate decides the respo
 | 10 | Human approval for `requiresHumanApproval` | 202 `confirmation_required` + a server-authored ConfirmationDialog |
 | 11 | Server re-validates every value the model offered (selection ids, form fields) | 422 `INVALID_SELECTION` / `UNKNOWN_FIELD` |
 | 12 | Execute once, audit every decision | 200 |
+
+## Catalog validation is not authorization
+
+A message that passes catalog validation tells you the renderer can draw it. It says nothing about whether this user may perform the action it offers. Run both, and never treat the first as the second.
+
+Evidence (Node 26 sandbox, `@a2ui/agent` 0.2.1 `validatePayload` against the shared 1.0 and v0.9 catalogs, **TESTED**):
+
+| Sample | Contract expects | `validatePayload` |
+|---|---|---|
+| Unknown component | `UNKNOWN_COMPONENT` | rejected |
+| Mixed versions in one payload | `MIXED_VERSIONS` | rejected |
+| 1.0 `createSurface.theme` | `SCHEMA_INVALID` | rejected |
+| Action name outside the catalog's enum | `ACTION_NOT_ALLOWED` | **accepted** |
+| `javascript:` URL in a string | `UNSAFE_CONTENT` | **accepted** |
+| v0.9 `{"path": ...}` binding inside a 1.0 message | `SCHEMA_INVALID` | **accepted** |
+
+So the SDK check is a structural gate, not a policy gate. The server still needs: its own action allowlist, the forbidden-pattern scan, and per-action authorization. In the sandbox, an action outside the allowlist that the SDK accepted was refused with `403 ACTION_UNREGISTERED`, and removing the server's tenant check made the wrong-tenant test fail (negative control).
+
+## Tenant isolation and human approval (tested shape)
+
+The sandbox shared backend (21 LIVE-PROTOCOL tests) enforces, in order: bearer identity → surface owned by the caller's tenant (`404 SURFACE_NOT_FOUND` for another tenant's surface or a missing one) → role → strict context schema (`422`) → HITL. A sensitive `form.submit` never executes: it returns an `ApprovalRequest` surface whose text the server writes. `approval.approve` must come from an approver in the same tenant who is not the requester (`403 APPROVAL_SELF`), for a pending request id the server issued (`404` for forged or other-tenant ids), and only once (`409` on replay). Removing the HITL branch or the idempotency store made their tests fail.
 
 ## Authorization comes from the server, never the model
 
@@ -54,7 +77,7 @@ This blocks actions the user was never offered, such as a hand-crafted `approval
 
 ## Idempotency
 
-The catalog marks side-effecting actions `requiresIdempotencyKey: true`. The client generates one key per user intent and sends it in the `Idempotency-Key` header. It is never put in `context`, because the v0.9 client message allows exactly two properties.
+The catalog marks side-effecting actions `requiresIdempotencyKey: true`. The client generates one key per user intent and sends it in the `Idempotency-Key` header. It is never put in `context`, because the client message allows exactly two properties (`version` and `action`; verified for v0.9, and the 1.0 action example in the a2ui.org agent-integration guide has the same shape).
 
 ```python
 scope = (principal.subject, key)

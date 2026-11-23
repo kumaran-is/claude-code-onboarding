@@ -1,6 +1,8 @@
 # Backend topologies: `shared-backend` vs `standalone-backend`
 
-Every platform renders the same canonical catalog ([canonical-catalog.json](canonical-catalog.json)). What changes between topologies is who owns the server that streams A2UI v0.9 messages and receives actions. The catalog, fixtures and action rules stay the same in both.
+> **Pins and proven wire version per platform:** see [compatibility-matrix.md](compatibility-matrix.md) (source of truth). Serve each client only the version it declares and is proven on. Every renderer and backend needs a contract gate in front of `@a2ui/web_core` (action allowlist, URL schemes, one version per stream, reject legacy `{"path"}` bindings in 1.0 with `SCHEMA_INVALID`), because web_core 0.16.1 and `@a2ui/agent` 0.2.1 accept these.
+
+Every platform renders the same canonical catalog ([canonical-catalog-v1_0.json](canonical-catalog-v1_0.json) for 1.0, [canonical-catalog.json](canonical-catalog.json) for v0.9.x). What changes between topologies is who owns the server that streams A2UI messages and receives actions. The catalog, fixtures and action rules stay the same in both. The wire version is negotiated per client: A2UI 1.0 when the client declares it, v0.9.x when the client declares only that ([ag-ui-transport.md](ag-ui-transport.md#version-and-catalog-negotiation-v10-preferred-v09x-fallback)). The same catalog exists once per wire version (same component ids and actions), because one catalog document targets exactly one protocol version.
 
 Evidence: both topologies are built from one reference app (FastAPI 0.165.0, sse-starlette 3.7.1, ag-ui-protocol 1.0.0, Python 3.14), started with `--mode shared` or `--mode standalone --client angular|react|flutter`. That app has 60 pytest tests, all passing, and the same tests pass in both modes. **DOCUMENTED AND TESTED** for the behaviour described here. The diagrams are **RECOMMENDED PRACTICE**.
 
@@ -32,7 +34,8 @@ Default to `shared-backend`. Move to `standalone-backend` only when one of the r
 1. **Credentials never reach a client.** Model keys, agent service credentials and database credentials stay in the server process, loaded from the environment or a secret manager. Clients hold only the user's own session or bearer token.
 2. **The server validates before it streams.** Each A2UI message passes `Contract.validate_server_message` (version, wire schema, catalog, forbidden patterns, depth). Each surface passes the graph check (root, dangling references, cycles) before the first byte leaves the server. See [backend-emitters.md](backend-emitters.md).
 3. **The server authorises every action.** It uses the authenticated principal, never the action `context` ([action-security.md](action-security.md)).
-4. **One wire version.** Messages carry `"version": "v0.9"`. Anything else is rejected with `UNSUPPORTED_VERSION`, never parsed best-effort.
+4. **One wire version per stream, negotiated.** A stream carries the version the client declared (`"1.0"` preferred, else `"v0.9"`). A client that declares neither gets `406`, and a message in another version is rejected (`UNSUPPORTED_VERSION` / `MIXED_VERSIONS`), never parsed best-effort or translated.
+5. **Catalog validation is not authorization.** A payload that passes the catalog can still carry an action the user may not perform ([action-security.md](action-security.md#catalog-validation-is-not-authorization)).
 
 ## `shared-backend` architecture
 
@@ -127,6 +130,18 @@ sequenceDiagram
 ```
 
 A BFF passes frames through as bytes once they are validated. If the upstream connection, a read or a status check fails, the BFF sends one terminal `error` frame. This follows rule 11 in [server-stream-lifecycle.md](../../streaming-protocols/reference/server-stream-lifecycle.md).
+
+## Independent backends: share the contract, not the code
+
+`standalone-backend` does not mean "copy the shared backend". Two teams may build their servers in different stacks and with different libraries. What they must share is the published catalog (per wire version), the action allowlist and the contract tests, never source code.
+
+Evidence (**DOCUMENTED AND TESTED**, Node 26 sandbox): a shared backend and two independent backends were run against the same contract test. Team A used `@a2ui/agent` 0.2.1 for validation and `@ag-ui/encoder` 1.0.5 for framing; team B used neither and wrote AG-UI SSE frames and A2UI messages by hand. The test parsed every stream with `@ag-ui/client` 1.0.5 `HttpAgent`, validated each surface with `validatePayload` against both catalogs (1.0 and v0.9), and compared the component and action structure across all three: 10 contract tests passed. Planting a wrong wire version (`"v1.0"` instead of `"1.0"`) or an unknown component in team B made the contract test fail.
+
+| Must match across independent backends | May differ |
+|---|---|
+| Catalog ids per version, component ids, action names and context schemas | Language, framework, SDK or none |
+| Negotiation outcome for the same declared capabilities, and the 401/403/404/406 codes | Logging, persistence, deployment |
+| AG-UI envelope: `ACTIVITY_SNAPSHOT`, `activityType: "a2ui-surface"`, `content.a2ui_operations`, `replace: true` | Internal agent logic |
 
 ## Running both topologies locally
 

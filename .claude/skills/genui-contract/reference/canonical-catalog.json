@@ -8,7 +8,8 @@
     "contractVersion": "1.0.0",
     "protocolVersion": "v0.9",
     "acceptedWireVersions": [
-      "v0.9"
+      "v0.9",
+      "v0.9.1"
     ],
     "platforms": [
       "angular",

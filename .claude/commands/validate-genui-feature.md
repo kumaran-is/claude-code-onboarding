@@ -1,6 +1,6 @@
 ---
 name: validate-genui-feature
-description: Validate a generative-UI (A2UI v0.9) feature end to end — contract schema and fixtures, per-platform type checks and tests routed by target (Playwright for web, Maestro only for Flutter mobile), action/interaction contracts, accessibility, streaming and cancel — with per-check evidence
+description: Validate a generative-UI (A2UI 1.0 target or v0.9.x compatibility) feature end to end — contract schema and fixtures, per-platform type checks and tests routed by target (Playwright for web, Maestro only for Flutter mobile), action/interaction contracts, accessibility, streaming and cancel — with per-check evidence
 argument-hint: "[feature name or path] [platforms: angular|react|flutter|all, default: declared in the contract]"
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -25,8 +25,8 @@ Do not copy the `/verify` scripts: run its Web apps and Flutter blocks (`.claude
 
 ## Checks
 
-1. **Scope** — find the catalog (`*catalog*.json` with `x-genui`), its fixtures, the declared platforms (`x-genui.platforms`) and topology, and the feature's files on each platform. A platform the contract does not declare is `NOT RUN (not declared)`.
-2. **Contract schema** — `uv run --python 3.14 .claude/skills/genui-contract/scripts/validate_a2ui_contract.py --root <dir with catalog/ and fixtures/>` (exit 0 = catalog valid, every valid fixture accepted, every invalid fixture rejected with its code, golden actions reproduced, streams replayed), plus `--selftest` to prove it can fail. Last line must read `scanned N items: PASS`. Validator missing → `BLOCKED`.
+1. **Scope** — find the catalog documents (`*catalog*.json` with `x-genui` for v0.9.x, or `metadata.extensions.genui_contract` for 1.0), its fixtures, the declared platforms (`platforms` in that policy), the wire version each platform is proven on (`compatibility-matrix.md`) and topology, and the feature's files on each platform. A platform the contract does not declare is `NOT RUN (not declared)`.
+2. **Contract schema** — `uv run --python 3.14 .claude/skills/genui-contract/scripts/validate_a2ui_contract.py --root <dir with catalog/ and fixtures/>` (exit 0 = catalog valid, every valid fixture accepted, every invalid fixture rejected with its code, golden actions reproduced, streams replayed), plus `--selftest` to prove it can fail. Last line must read `scanned N items: PASS`. Each message is checked against the version it declares (`1.0` or `v0.9`/`v0.9.1`); a feature that claims 1.0 needs `valid-v1_0/` fixtures, and a platform claiming 1.0 needs a test where its real package renders them (else `FAIL (1.0 claimed without renderer proof)`). Validator missing → `BLOCKED`.
 3. **Parity + protocol** — run `/audit-a2ui-parity` and copy its per-platform lines.
 4. **Per-platform static + unit** — the `/verify` blocks above, per touched root. Required unit cases (each is a named test; absent → `FAIL (missing test: <case>)`):
    - unknown component type → placeholder or rejected surface + logged error, no crash
@@ -49,7 +49,7 @@ log=$(mktemp); <command> > "$log" 2>&1; rc=$?; echo "<CHECK> EXIT:$rc"; [ "$rc" 
 
 ```
 ## GenUI validation — <feature> — <date>
-Contract: <catalog path> · protocol v0.9 · platforms: <declared> · topology: <shared-backend|standalone-backend>
+Contract: <catalog path(s)> · protocol <1.0 | v0.9.x per platform> · platforms: <declared> · topology: <shared-backend|standalone-backend>
 | # | Check | Angular | React | Flutter | Backend | Evidence |
 |---|---|---|---|---|---|---|
 | 2 | Contract schema | — | — | — | — | <command> → exit n; invalid fixtures rejected N/N |

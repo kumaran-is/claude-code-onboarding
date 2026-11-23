@@ -1,6 +1,6 @@
 # A2UI Security (Flutter, v0.9)
 
-Verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Dart blocks compile in a check app; each rejection below is a `flutter test` with a positive control where one applies.
+First verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Dart blocks compile in a check app; each rejection below is a `flutter test` with a positive control where one applies. Re-compiled on 2026-11-23 with `a2ui_flutter` 0.5.0, `a2ui_core` 0.9.0, `a2ui_agent` 0.5.0 and `material_ui` 1.11.1 on Flutter 3.50.1 / Dart 3.14.0 (`flutter analyze` 0 issues across every block in this skill; the widget tests pass). The 1.0 path is in `../SKILL.md` "Versioned adapter boundary".
 
 ## Threat model
 
@@ -171,7 +171,7 @@ Before streaming, the agent server should validate its own output against the ca
 
 ## Security checklist
 
-- [ ] Packages pinned: `a2ui_flutter: 0.4.0`, `a2ui_core: 0.8.0`
+- [ ] Packages pinned: `a2ui_flutter: 0.5.0`, `a2ui_core: 0.9.0` (`0.4.0` / `0.8.0` only on Flutter < 3.47)
 - [ ] `defaultVersion: A2uiProtocolVersion.v0_9`; one version end to end
 - [ ] `validationConfig` set; `allowUnknownElements` false; `ValidationConfig.relaxed` not used for untrusted agents
 - [ ] Catalog lists only the components and functions the feature needs

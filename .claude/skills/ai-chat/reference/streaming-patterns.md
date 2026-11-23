@@ -6,7 +6,7 @@ Covers: streaming message rendering, auto-scroll heuristics, stop generation, ac
 
 ---
 
-## Angular 21.x
+## Angular 22.x
 
 ### Rendering model output safely (security, read first)
 
@@ -18,9 +18,11 @@ Model text is untrusted: a prompt-injected document, tool result or user message
 - Angular's sanitizer alone is not enough for chat: it keeps `<img src>` (a model-chosen image URL can carry chat data to an attacker in its query string) and keeps blocked links as `href="unsafe:javascript:…"`. The DOMPurify policy drops both.
 - DOMPurify needs a DOM. With SSR, render chat messages only in the browser (or use a server-side DOM shim) — do not skip sanitizing on the server.
 
-Validated 2026-11-22 (Angular 21.2.26, marked 18.2.1, DOMPurify 3.5.0, Playwright 1.58.2, real Chromium): with this code, `<img src=x onerror>`, `[x](javascript:…)`, raw `<a href="javascript:…">`, `<script>` and `<svg onload>` produced no script execution and no `onerror`/`onload`/`javascript:`/`<img>`/`<svg>` in the DOM, while bold, emphasis, lists, fenced code and `https:` links rendered. Negative control: the previous `bypassSecurityTrustHtml(marked.parse(…))` version ran the `<img onerror>` handler on render and a `javascript:` link on click; the `<svg onload>` attribute survived in the DOM (execution not observed in that run), so it is unsafe either way.
+Historical evidence, not re-run on 22.3. Validated 2026-11-22 (Angular 21.2.26; marked 18.2.1, DOMPurify 3.5.0, Playwright 1.58.2, real Chromium): with this code, `<img src=x onerror>`, `[x](javascript:…)`, raw `<a href="javascript:…">`, `<script>` and `<svg onload>` produced no script execution and no `onerror`/`onload`/`javascript:`/`<img>`/`<svg>` in the DOM, while bold, emphasis, lists, fenced code and `https:` links rendered. Negative control: the previous `bypassSecurityTrustHtml(marked.parse(…))` version ran the `<img onerror>` handler on render and a `javascript:` link on click; the `<svg onload>` attribute survived in the DOM (execution not observed in that run), so it is unsafe either way.
 
 ### ChatMessage model
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // features/chat/models/chat-message.model.ts
@@ -38,15 +40,16 @@ export interface ChatMessage {
 
 ### StreamingMessageComponent
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // features/chat/components/streaming-message.component.ts
-import { Component, ChangeDetectionStrategy, input, computed, inject } from '@angular/core';
+import { Component, input, computed, inject } from '@angular/core';
 import { MarkdownService } from '../services/markdown.service';
 import { ChatMessage } from '../models/chat-message.model';
 
 @Component({
   selector: 'app-streaming-message',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="chat" [class.chat-start]="message().role === 'assistant'"
                       [class.chat-end]="message().role === 'user'">
@@ -74,9 +77,11 @@ export class StreamingMessageComponent {
 
 ### MarkdownService (marked → DOMPurify, memoized by the caller's `computed`)
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // features/chat/services/markdown.service.ts
-import { Injectable, ErrorHandler, inject } from '@angular/core';
+import { Service, ErrorHandler, inject } from '@angular/core';
 import { marked } from 'marked';
 import DOMPurify, { type Config } from 'dompurify';
 
@@ -92,7 +97,7 @@ const CHAT_HTML_POLICY: Config = {
   ALLOWED_URI_REGEXP: /^(?:https:|mailto:)/i, // drops javascript:, data:, http: and relative hrefs
 };
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class MarkdownService {
   private readonly errorHandler = inject(ErrorHandler);
 
@@ -123,6 +128,8 @@ Dependencies: `npm install -E marked@18.2.1 dompurify@3.5.0` (DOMPurify 3.x ship
 Test it the same way: a Playwright spec that renders a fixed payload message and asserts `innerHTML` contains no `onerror|onload|javascript:|<script|<svg|<img` and that no `window` flag set by a payload exists after activating every non-`https:` link. Keep a negative-control case (a component using the bypass) so the test is proven able to fail.
 
 ### Auto-Scroll Service (smart heuristic — 100px threshold)
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // features/chat/services/auto-scroll.service.ts
@@ -164,10 +171,12 @@ export class AutoScrollService {
 
 ### ChatComponent — wiring streaming + auto-scroll + stop
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // features/chat/chat.component.ts
 import {
-  Component, ChangeDetectionStrategy, signal, computed,
+  Component, signal, computed,
   viewChild, ElementRef, afterNextRender, inject, OnDestroy, ErrorHandler
 } from '@angular/core';
 import { AutoScrollService } from './services/auto-scroll.service';
@@ -179,8 +188,6 @@ import { ChatMessage } from './models/chat-message.model';
 
 @Component({
   selector: 'app-chat',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [AutoScrollService],
   imports: [StreamingMessageComponent, ChatInputComponent, TokenIndicatorComponent],
   template: `
@@ -279,19 +286,27 @@ export class ChatComponent implements OnDestroy {
 
 ---
 
-## Flutter 3.41.x (Riverpod)
+## Flutter 3.50.x (Riverpod)
+
+Pins: `flutter_riverpod` 3.5.0, `riverpod_annotation` 4.0.8 / `riverpod_generator` 4.0.10, `freezed` 4.0.3 / `freezed_annotation` 3.1.0, `flutter_markdown_plus` 1.0.12, `image_picker` 1.2.4, `material_ui` 1.11.1. `ChatState`, `ChatMessage`, `ChatRepository`, `appLoggerProvider`, `scrollNotifierProvider` (a `NotifierProvider<ScrollNotifier, int>` whose `requestScroll()` bumps the state) and `AppSpacing` are app-owned; the Flutter snippets in this skill were compiled and widget-tested on Flutter 3.50.1 against minimal versions of them.
 
 ### ChatNotifier — AsyncNotifier with stream
 
 ```dart
 // features/chat/presentation/providers/chat_notifier.dart
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../../../core/logging/app_logger.dart';
 import '../../data/repositories/chat_repository.dart';
-import '../models/chat_state.dart';
-import '../models/chat_message.dart';
+import '../../models/ai_error.dart';
+import '../../models/chat_message.dart';
+import '../../models/chat_state.dart';
+import '../../models/token_usage.dart';
+import 'scroll_notifier_provider.dart';
 
 part 'chat_notifier.g.dart';
 
+// riverpod_generator 4 drops the `Notifier` suffix: this generates `chatProvider`.
 @riverpod
 class ChatNotifier extends _$ChatNotifier {
   @override
@@ -309,36 +324,49 @@ class ChatNotifier extends _$ChatNotifier {
     _scrollToBottom(); // trigger scroll after frame
 
     try {
-      final stream = ref.read(chatRepositoryProvider).stream(
-        messages: state.messages,
-      );
+      final stream = ref
+          .read(chatRepositoryProvider)
+          .stream(messages: state.messages);
 
       await for (final chunk in stream) {
+        if (!ref.mounted) return; // provider disposed mid-stream
         state = state.copyWith(
-          messages: state.messages.map((m) =>
-            m.id == assistantMsg.id
-              ? m.copyWith(content: m.content + chunk)
-              : m
-          ).toList(),
+          messages: state.messages
+              .map(
+                (m) => m.id == assistantMsg.id
+                    ? m.copyWith(content: m.content + chunk)
+                    : m,
+              )
+              .toList(),
         );
         _scrollToBottom();
       }
 
+      if (!ref.mounted) return;
       state = state.copyWith(
-        messages: state.messages.map((m) =>
-          m.id == assistantMsg.id ? m.copyWith(isStreaming: false) : m
-        ).toList(),
+        messages: state.messages
+            .map(
+              (m) =>
+                  m.id == assistantMsg.id ? m.copyWith(isStreaming: false) : m,
+            )
+            .toList(),
         isStreaming: false,
       );
     } catch (err, stack) {
       // Log, update error state — never swallow
       ref.read(appLoggerProvider).error('ChatNotifier.send failed', err, stack);
+      if (!ref.mounted) return;
       state = state.copyWith(
-        messages: state.messages.map((m) =>
-          m.id == assistantMsg.id
-            ? m.copyWith(isStreaming: false, errorType: AiErrorType.streamFailed)
-            : m
-        ).toList(),
+        messages: state.messages
+            .map(
+              (m) => m.id == assistantMsg.id
+                  ? m.copyWith(
+                      isStreaming: false,
+                      errorType: AiErrorType.streamFailed,
+                    )
+                  : m,
+            )
+            .toList(),
         isStreaming: false,
       );
     }
@@ -348,7 +376,13 @@ class ChatNotifier extends _$ChatNotifier {
     ref.read(chatRepositoryProvider).cancelStream();
     // Keep the partial text, flagged incomplete; never act on partial structured output.
     state = state.copyWith(
-      messages: state.messages.map((m) => m.isStreaming ? m.copyWith(isStreaming: false, incomplete: true) : m).toList(),
+      messages: state.messages
+          .map(
+            (m) => m.isStreaming
+                ? m.copyWith(isStreaming: false, incomplete: true)
+                : m,
+          )
+          .toList(),
       isStreaming: false,
     );
   }
@@ -357,6 +391,9 @@ class ChatNotifier extends _$ChatNotifier {
     // Notify scroll controller widget via a scroll notifier provider
     ref.read(scrollNotifierProvider.notifier).requestScroll();
   }
+
+
+  // summarize(): context-management.md; regenerate(): feedback-loops.md
 }
 ```
 
@@ -364,9 +401,16 @@ class ChatNotifier extends _$ChatNotifier {
 
 ```dart
 // features/chat/presentation/widgets/streamed_message_widget.dart
-import 'package:flutter/material.dart';
+// flutter_markdown is discontinued; flutter_markdown_plus (1.0.12) is its named replacement.
+// It still imports package:flutter/material.dart, so this is the ONE file that keeps a
+// legacy-Material island (material_ui decision): without it MarkdownBody reads the default
+// light theme and selectable text has no legacy Material ancestor.
+// ignore: deprecated_member_use
+import 'package:flutter/material.dart' as legacy;
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../../models/chat_message.dart';
 import '../../../../core/tokens/app_spacing.dart';
 
@@ -384,35 +428,37 @@ class StreamedMessageWidget extends ConsumerWidget {
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.78,
+          maxWidth: MediaQuery.sizeOf(context).width * 0.78,
         ),
-        margin: EdgeInsets.symmetric(
+        margin: const EdgeInsets.symmetric(
           vertical: AppSpacing.xs,
           horizontal: AppSpacing.md,
         ),
-        padding: EdgeInsets.all(AppSpacing.md),
+        padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
           color: isUser
-            ? colorScheme.primaryContainer
-            : colorScheme.surfaceContainerHighest,
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // flutter_markdown handles memoization internally via StringBuffer
-            MarkdownBody(
-              data: message.content,
-              selectable: true,
+            // ignore: deprecated_member_use
+            MaterialUiCompatibilityBridge(
+              child: legacy.Material(
+                type: legacy.MaterialType.transparency,
+                child: MarkdownBody(data: message.content, selectable: true),
+              ),
             ),
             if (message.isStreaming) ...[
-              SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.xs),
               SizedBox(
                 width: AppSpacing.lg,
                 height: AppSpacing.sm,
                 child: LinearProgressIndicator(
                   color: colorScheme.primary,
-                  backgroundColor: colorScheme.surfaceVariant,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
                 ),
               ),
             ],
@@ -428,8 +474,9 @@ class StreamedMessageWidget extends ConsumerWidget {
 
 ```dart
 // features/chat/presentation/widgets/chat_message_list.dart
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../providers/scroll_notifier_provider.dart';
 import 'streamed_message_widget.dart';
 import '../../models/chat_message.dart';
@@ -452,27 +499,26 @@ class _ChatMessageListState extends ConsumerState<ChatMessageList> {
     _scrollController.addListener(_onScroll);
 
     // Listen to scroll requests from ChatNotifier
-    ref.listenManual(scrollNotifierProvider, (_, __) => _maybeScrollToBottom());
+    ref.listenManual(scrollNotifierProvider, (_, _) => _maybeScrollToBottom());
   }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    final distanceFromBottom = _scrollController.position.maxScrollExtent
-        - _scrollController.offset;
+    final distanceFromBottom =
+        _scrollController.position.maxScrollExtent - _scrollController.offset;
     _userScrolledUp = distanceFromBottom > 100;
   }
 
   void _maybeScrollToBottom() {
     if (_userScrolledUp || !_scrollController.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final disableAnimations =
-          MediaQuery.of(context).disableAnimations;
+      if (!mounted || !_scrollController.hasClients) return;
+      final disableAnimations = MediaQuery.disableAnimationsOf(context);
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: disableAnimations
-          ? Duration.zero
-          : const Duration(milliseconds: 300),
+            ? Duration.zero
+            : const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
     });
@@ -493,7 +539,7 @@ class _ChatMessageListState extends ConsumerState<ChatMessageList> {
         controller: _scrollController,
         itemCount: widget.messages.length,
         itemBuilder: (context, index) =>
-          StreamedMessageWidget(message: widget.messages[index]),
+            StreamedMessageWidget(message: widget.messages[index]),
       ),
     );
   }

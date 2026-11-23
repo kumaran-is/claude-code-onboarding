@@ -12,7 +12,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -71,9 +71,12 @@ Assert *state → visible result*, not millisecond timings. Cover: reduced-motio
 
 ```yaml
 dependencies:
-  rive: 0.14.11          # rive.app verified publisher (pub.dev, checked)
-  lottie: 3.8.2          # xaha.dev verified publisher (pub.dev, checked)
+  material_ui: 1.11.1    # Flutter >= 3.47: replaces package:flutter/material.dart
+  rive: 0.14.11          # rive.app verified publisher; native runtime rive_native 0.1.11
+  lottie: 3.8.2          # xaha.dev verified publisher; needs Flutter >= 3.47
 ```
+
+Resolved together on Flutter 3.50.1 / Dart 3.14.0 (`flutter pub get` exit 0, `flutter analyze` 0 issues). Package source on 3.50.1: lottie 3.8.2 imports only `flutter/widgets.dart`; rive 0.14.11 still imports the deprecated `flutter/material.dart` (one internal `CircularProgressIndicator`) but reads no theme. Neither picks up app colours on its own: pass them explicitly (Rive view-model colour properties, Lottie `ValueDelegate.color`). Under a `material_ui` app, a legacy `Theme.of()` returns the default light theme (widget-tested), which matters for legacy-Material plugins that do read the theme (for example `printing`'s `PdfPreview`).
 
 ---
 
@@ -88,7 +91,7 @@ lib/
 |       +-- animation_assets.dart          # Typed asset path constants
 |       +-- animation_preloader.dart       # Startup preloader (Rive + Lottie)
 |       +-- animation_service.dart         # Unified facade for DI
-|       +-- rive_controller_factory.dart   # State machine controller factory
+|       +-- rive_file_cache.dart           # Decode-once Rive File cache
 |       +-- lottie_cache_manager.dart      # Composition cache singleton
 +-- widgets/
 |   +-- animations/
@@ -107,11 +110,11 @@ lib/
 
 1. **Preload on app start** — never lazy-load `.riv` or `.json` at first render
 2. **Call `await RiveNative.init()` in `main()`** before `runApp`
-3. **Dispose every controller** — `FileLoader`, `RiveWidgetController`, `AnimationController` must all be disposed
-4. **Use `renderCache: RenderCache.raster`** for all Lottie loops
+3. **Dispose what you create** — your `FileLoader` and `AnimationController`; `RiveWidgetBuilder` disposes the `RiveWidgetController` and view-model instance it creates (do not dispose them twice)
+4. **Lottie render cache** — `RenderCache.drawingCommands` for loops (caches per-frame pictures); `RenderCache.raster` only for very short, small animations (memory grows with frames × size)
 5. **Choose renderer explicitly** — `Factory.rive` for complex vector; `Factory.flutter` for simple UI
 6. **Never hardcode asset paths** — use typed `AnimationAssets` constants class
-7. **Wrap in error boundary** — `RiveWidgetBuilder` loading/failed states for Rive; try/catch for Lottie
+7. **Visible failure state** — `RiveWidgetBuilder` `RiveFailed()` branch + `onFailed` reporting for Rive; `errorBuilder` for Lottie
 8. **Semantic labels on all animations** — `Semantics(label: '...', child: ...)`
 9. **Reduce motion** — check `MediaQuery.disableAnimationsOf(context)` and skip/pause the motion (never the function)
 10. **Test with `flutter_test`** — pump and verify state transitions; mock asset loading
@@ -124,88 +127,103 @@ lib/
 
 ### Rive — Interactive Toggle (modern API, rive 0.14.x)
 
-> NOTE: `RiveAnimation.asset` + `StateMachineController.fromArtboard` is the LEGACY API.
-> Use `FileLoader` + `RiveWidgetController` + `RiveWidgetBuilder` for all new code.
+> `RiveAnimation.asset`, `StateMachineController.fromArtboard` and `SMIBool` do not exist in rive 0.14. State machine
+> inputs (`stateMachine.boolean/number/trigger`) are `@Deprecated` in 0.14.11: drive the file through Data Binding
+> (a view model property, here `isOn`). Compiled on Flutter 3.50.1 with zero analyzer issues.
 
 ```dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:rive/rive.dart';
 
+/// Rive toggle driven by Data Binding (rive 0.14). The `.riv` file exposes a
+/// view model with a boolean property `isOn` bound to its state machine.
 class AnimatedToggle extends StatefulWidget {
+  const AnimatedToggle({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
   final ValueChanged<bool> onChanged;
-  const AnimatedToggle({super.key, required this.onChanged});
 
   @override
   State<AnimatedToggle> createState() => _AnimatedToggleState();
 }
 
 class _AnimatedToggleState extends State<AnimatedToggle> {
-  late final FileLoader _fileLoader;
-  late final RiveWidgetController _controller;
-  SMIBool? _isOnInput;
-  bool _isOn = false;
+  // The widget owns the FileLoader; RiveWidgetBuilder owns the controller
+  // and view-model instance it creates and disposes them itself.
+  late final FileLoader _fileLoader = FileLoader.fromAsset(
+    AnimationAssets.toggle,
+    riveFactory: Factory.rive,
+  );
+  ViewModelInstanceBoolean? _isOn;
 
   @override
-  void initState() {
-    super.initState();
-    _fileLoader = FileLoader.fromAsset(
-      AnimationAssets.toggle,
-      riveFactory: Factory.rive,
-    );
-    _controller = RiveWidgetController(
-      _fileLoader,
-      artboardSelector: ArtboardSelector.byName('ToggleArtboard'),
-      stateMachineSelector: StateMachineSelector.byName('Toggle'),
-    );
-    _isOnInput =
-        _controller.stateMachine('Toggle').input<bool>('isOn') as SMIBool?;
+  void didUpdateWidget(AnimatedToggle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) _isOn?.value = widget.value;
   }
 
   @override
   void dispose() {
+    _isOn = null;
     _fileLoader.dispose();
-    _controller.dispose();
     super.dispose();
   }
 
-  void _toggle() {
-    final newValue = !_isOn;
-    setState(() => _isOn = newValue);
-    _isOnInput?.change(newValue);
-    widget.onChanged(newValue);
+  void _onLoaded(RiveLoaded state) {
+    _isOn = state.viewModelInstance?.boolean('isOn');
+    _isOn?.value = widget.value;
   }
 
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Semantics(
-      label: 'Toggle button',
+      label: widget.label,
+      toggled: widget.value,
       button: true,
-      child: GestureDetector(
-        onTap: _toggle, // reduced motion removes movement, never the control
-        child: reduceMotion
-            ? _StaticToggleFallback(isOn: _isOn)
-            : SizedBox(
-                width: 64,
-                height: 32,
-                child: RiveWidgetBuilder(
+      excludeSemantics: true,
+      onTap: () => widget.onChanged(!widget.value),
+      child: InkWell(
+        onTap: () => widget.onChanged(!widget.value),
+        child: SizedBox(
+          width: 64,
+          height: 48,
+          // Reduced motion removes the movement, never the control.
+          child: reduceMotion
+              ? Switch(value: widget.value, onChanged: widget.onChanged)
+              : RiveWidgetBuilder(
                   fileLoader: _fileLoader,
+                  artboardSelector: ArtboardSelector.byName('Toggle'),
+                  stateMachineSelector: StateMachineSelector.byName('Main'),
+                  dataBind: DataBind.auto(),
+                  onLoaded: _onLoaded,
+                  onFailed: (error, stack) => FlutterError.reportError(
+                    FlutterErrorDetails(
+                      exception: error,
+                      stack: stack,
+                      library: 'rive',
+                    ),
+                  ),
                   builder: (context, state) => switch (state) {
-                    RiveLoading() => const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    RiveFailed() => const Icon(
-                        Icons.error_outline,
-                        color: Colors.red,
-                        size: 20,
-                      ),
-                    RiveLoaded() => RiveWidget(
-                        controller: _controller,
-                        fit: BoxFit.contain,
-                      ),
+                    RiveLoading() => const SizedBox.shrink(),
+                    // Visible, working fallback: the switch still toggles.
+                    RiveFailed() => Switch(
+                      value: widget.value,
+                      onChanged: widget.onChanged,
+                    ),
+                    RiveLoaded(:final controller) => RiveWidget(
+                      controller: controller,
+                      fit: Fit.contain,
+                    ),
                   },
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -214,13 +232,18 @@ class _AnimatedToggleState extends State<AnimatedToggle> {
 
 ### Lottie — Cached Empty State
 
-```dart
-import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
+`errorBuilder` shows a static icon when the asset is missing or corrupt (widget-tested on 3.50.1); playback starts and stops in `didChangeDependencies`, so reduced motion can change at runtime.
 
+```dart
+import 'package:lottie/lottie.dart';
+import 'package:material_ui/material_ui.dart';
+
+/// Decorative Lottie loop with a static reduced-motion frame. The message
+/// carries the meaning; the illustration is excluded from semantics.
 class EmptyStateAnimation extends StatefulWidget {
-  final String message;
   const EmptyStateAnimation({super.key, required this.message});
+
+  final String message;
 
   @override
   State<EmptyStateAnimation> createState() => _EmptyStateAnimationState();
@@ -228,12 +251,23 @@ class EmptyStateAnimation extends StatefulWidget {
 
 class _EmptyStateAnimationState extends State<EmptyStateAnimation>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  late final AnimationController _controller = AnimationController(vsync: this);
+  bool _loaded = false;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncPlayback();
+  }
+
+  // Start/stop outside build(): reduced motion can change at runtime.
+  void _syncPlayback() {
+    if (!_loaded) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override
@@ -244,31 +278,35 @@ class _EmptyStateAnimationState extends State<EmptyStateAnimation>
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Semantics(
-          label: 'Empty state illustration',
+        ExcludeSemantics(
           child: Lottie.asset(
-            AnimationAssets.emptyState,
-            controller: reduceMotion ? (_controller..stop()) : _controller,
-            renderCache: RenderCache.raster,
-            frameRate: FrameRate.composition,
+            AnimationAssets
+                .emptyState, // .lottie (dotLottie) decodes by default
+            controller: _controller,
             width: 240,
             height: 240,
             fit: BoxFit.contain,
+            // drawingCommands caches per-frame Pictures (CPU saving);
+            // RenderCache.raster is for very short, small animations only.
+            renderCache: RenderCache.drawingCommands,
+            frameRate: FrameRate.composition,
             onLoaded: (composition) {
-              if (!reduceMotion) {
-                _controller
-                  ..duration = composition.duration
-                  ..repeat();
-              }
+              _controller.duration = composition.duration;
+              _loaded = true;
+              _syncPlayback();
             },
+            errorBuilder: (context, error, stack) => Icon(
+              Icons.inbox_outlined,
+              size: 96,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
-        const SizedBox(height: 16),
-        Text(widget.message, style: Theme.of(context).textTheme.bodyLarge),
+        Text(widget.message, style: theme.textTheme.bodyLarge),
       ],
     );
   }
@@ -318,7 +356,7 @@ flutter:
 
 ## Related Skills
 
-- `flutter-mobile` — Flutter 3.41.x screen patterns, Riverpod, Freezed. Load alongside for full feature context.
+- `flutter-mobile` — Flutter 3.50.x screen patterns, Riverpod, Freezed. Load alongside for full feature context.
 - `mobile-design` — Load BEFORE this skill for touch psychology and MFRI scoring
 - `riverpod-patterns` — Wire animation state to Riverpod providers
 - `ui-standards-tokens` — ThemeData tokens for static fallback widgets

@@ -2,7 +2,9 @@
 
 How a Flutter app renders the framework-neutral canonical GenUI catalog (owned by the `genui-contract` skill) behind an app-owned adapter, with a conventional fallback, typed bindings, canonical action payloads and both backend topologies.
 
-Evidence (2026-11-23, Flutter 3.44.2; the kit declares Flutter 3.41.x, so re-run on your pinned SDK before relying on it; `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0, `http` 1.6.0, check app outside the repo):
+> **Package update (2026-11-23):** current pins are `a2ui_flutter` 0.5.0 / `a2ui_core` 0.9.0 (Flutter ≥ 3.47). The Dart blocks in this file compile on 0.5.0 / 0.9.0 with `material_ui` 1.11.1 on Flutter 3.50.1 (`flutter analyze` 0 issues); the fixture evidence below was measured on 0.4.0 / 0.8.0 and was not re-run (UNVERIFIED on 0.5.0). Under a `material_ui` app, render each surface inside the `A2uiMaterialBridge` from `../SKILL.md` "Material host". On 0.9.0 with the shared runtime contract, the SDK alone still accepts `javascript:` strings and extra action-payload fields, so the contract guard stays mandatory. See `../SKILL.md` "Versioned adapter boundary".
+
+Evidence (2026-11-23, Flutter 3.44.2; re-run on your pinned SDK before relying on it; `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0, `http` 1.6.0, check app outside the repo):
 
 | Check | Result |
 |---|---|

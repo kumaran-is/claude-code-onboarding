@@ -22,7 +22,7 @@ lib/
 |       +-- animation_assets.dart          # Typed asset path constants
 |       +-- animation_preloader.dart       # Startup preloader (Rive + Lottie)
 |       +-- animation_service.dart         # Unified facade for DI
-|       +-- rive_controller_factory.dart   # State machine controller factory
+|       +-- rive_file_cache.dart           # Decode-once Rive File cache
 |       +-- lottie_cache_manager.dart      # Composition cache singleton
 +-- widgets/
 |   +-- animations/
@@ -128,7 +128,7 @@ Show while compositions load. Uses ThemeData colorScheme tokens — no hardcoded
 
 ```dart
 // lib/widgets/animations/animation_placeholder.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class AnimationPlaceholder extends StatelessWidget {
   final double width;
@@ -178,8 +178,19 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
+    );
     _shimmer = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduced motion: a static placeholder, no shimmer loop.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override
@@ -274,10 +285,12 @@ abstract final class AnimationAssets {
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: 1.11.1
   rive: 0.14.11
   lottie: 3.8.2
 
 flutter:
+  uses-material-design: true
   assets:
     - assets/rive/
     - assets/lottie/
@@ -322,15 +335,15 @@ Use as PR checklist for any animation PR:
 ### Correctness
 - [ ] Engine choice follows the Rive/Lottie decision table
 - [ ] Correct artboard and state machine names (verified against Rive file)
-- [ ] `FileLoader` AND `RiveWidgetController` both disposed
+- [ ] `FileLoader` disposed by the widget that created it; the controller and view-model instance created by `RiveWidgetBuilder` are not disposed again
 - [ ] `AnimationController` (Lottie) disposed
 - [ ] Asset paths use `AnimationAssets` constants — no raw strings
-- [ ] `RiveWidgetBuilder` used (not legacy `RiveAnimation.asset`)
+- [ ] `RiveWidgetBuilder` + Data Binding used (no legacy `RiveAnimation.asset`, no deprecated `stateMachine.boolean/number/trigger` inputs)
 
 ### Performance
 - [ ] `await RiveNative.init()` in `main()` before `runApp`
 - [ ] Assets preloaded before first render
-- [ ] `RenderCache.raster` on all Lottie loops
+- [ ] Lottie loops use `RenderCache.drawingCommands` (`raster` only for very short, small animations)
 - [ ] Rive renderer declared explicitly
 - [ ] Lottie compositions cached via `LottieCacheManager` in list views
 - [ ] 3+ Rive widgets wrapped in `RivePanel(useSharedTexture: true)`
@@ -339,11 +352,12 @@ Use as PR checklist for any animation PR:
 - [ ] `Semantics` label on all animation containers
 - [ ] Reduce-motion branch implemented per decision table
 - [ ] Static fallback widget provided for all Rive interactive animations
+- [ ] Colours passed explicitly (view-model colour / `ValueDelegate.color`); neither engine reads the app theme
 
 ### Robustness
 - [ ] `RiveWidgetBuilder` `RiveFailed` state shows fallback widget
 - [ ] Network animations have placeholder + error states
-- [ ] Lottie network loads wrapped in try/catch with error widget
+- [ ] Lottie loads set `errorBuilder` (visible fallback, failure reported)
 
 ### Assets
 - [ ] `.riv` size <= 500 KB (CI enforced)

@@ -1,6 +1,6 @@
 # A2UI Conversation Orchestration (Flutter, v0.9)
 
-Verified against `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0 and `a2ui_agent` 0.4.0. Dart blocks compile in a check app; the in-app model example is covered by a `flutter test` that streams a reply in 7-character chunks.
+First verified against `a2ui_flutter` 0.4.0, `a2ui_core` 0.8.0 and `a2ui_agent` 0.4.0. Dart blocks compile in a check app; the in-app model example is covered by a `flutter test` that streams a reply in 7-character chunks. Re-compiled on 2026-11-23 with `a2ui_flutter` 0.5.0, `a2ui_core` 0.9.0, `a2ui_agent` 0.5.0 and `material_ui` 1.11.1 on Flutter 3.50.1 / Dart 3.14.0 (`flutter analyze` 0 issues across every block in this skill; the widget tests pass). The 1.0 path is in `../SKILL.md` "Versioned adapter boundary".
 
 ## Overview
 
@@ -49,7 +49,6 @@ The app sends the user's text (or an action) and applies the streamed reply:
 import 'package:a2ui_agent/a2ui_agent.dart';
 import 'package:a2ui_core/a2ui_core.dart';
 import 'package:a2ui_flutter/a2ui_flutter.dart';
-import 'package:a2ui_flutter/v0_9/basic_catalog.dart';
 
 /// For an app that calls a model itself (no agent server): teaches the model
 /// A2UI and the catalog, and parses its streamed reply straight into the

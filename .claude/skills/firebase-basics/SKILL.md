@@ -55,6 +55,13 @@ Firebase project ID should be stored in an environment variable (e.g. `FIREBASE_
 4. **Emulator for local dev:** Set `FIREBASE_AUTH_EMULATOR_HOST` and related emulator
    environment variables — without them, Admin SDK calls hit production Firebase with
    dev tokens
+   Use a `demo-*` project id (`--project demo-yourapp`): the emulators then refuse to reach
+   any real project. Flutter clients (FlutterFire firebase_auth 7.1.0 / cloud_firestore 7.2.0)
+   switch in debug builds only, right after `Firebase.initializeApp`:
+   `await FirebaseAuth.instance.useAuthEmulator(host, 9099);`
+   `FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);` (host `10.0.2.2` on the
+   Android emulator, `localhost` on the iOS simulator). Rules checks:
+   `npx -y firebase-tools@15.37.0 emulators:exec --only firestore --project demo-yourapp ./check.sh`
 
 # References
 

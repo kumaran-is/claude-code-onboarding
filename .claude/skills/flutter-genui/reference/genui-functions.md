@@ -1,6 +1,6 @@
 # A2UI Declarative Functions (v0.9)
 
-Verified against `a2ui_core` 0.8.0 (`lib/src/basic_catalog/v0_9/catalog.g.dart` and `functions.dart`). The examples below are exercised by `flutter test` in a check app.
+First verified against `a2ui_core` 0.8.0 (`lib/src/basic_catalog/v0_9/catalog.g.dart` and `functions.dart`). The examples below are exercised by `flutter test` in a check app. Re-compiled on 2026-11-23 with `a2ui_flutter` 0.5.0, `a2ui_core` 0.9.0, `a2ui_agent` 0.5.0 and `material_ui` 1.11.1 on Flutter 3.50.1 / Dart 3.14.0 (`flutter analyze` 0 issues across every block in this skill; the widget tests pass). The 1.0 path is in `../SKILL.md` "Versioned adapter boundary".
 
 ## How it works
 

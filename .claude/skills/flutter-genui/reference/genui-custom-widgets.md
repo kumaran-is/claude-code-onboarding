@@ -1,6 +1,6 @@
 # A2UI Custom Components (v0.9)
 
-Verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Both examples compile in a check app (`flutter analyze` exit 0). The Rating component was also run on an iOS simulator with a Maestro flow (positive flow exit 0; a negative flow expecting the wrong reply exits 1).
+First verified against `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. Both examples compile in a check app (`flutter analyze` exit 0). The Rating component was also run on an iOS simulator with a Maestro flow (positive flow exit 0; a negative flow expecting the wrong reply exits 1). Re-compiled on 2026-11-23 with `a2ui_flutter` 0.5.0, `a2ui_core` 0.9.0, `a2ui_agent` 0.5.0 and `material_ui` 1.11.1 on Flutter 3.50.1 / Dart 3.14.0 (`flutter analyze` 0 issues across every block in this skill; the widget tests pass). The 1.0 path is in `../SKILL.md` "Versioned adapter boundary".
 
 ## Overview
 
@@ -35,7 +35,7 @@ import 'dart:developer' as developer;
 
 import 'package:a2ui_core/a2ui_core.dart';
 import 'package:a2ui_flutter/a2ui_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart'
     hide ValidationResult;
 
@@ -103,7 +103,7 @@ import 'dart:async';
 
 import 'package:a2ui_core/a2ui_core.dart';
 import 'package:a2ui_flutter/a2ui_flutter.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart'
     hide ValidationResult;
 

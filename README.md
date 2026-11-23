@@ -3062,7 +3062,7 @@ This repo includes Claude Code hooks (`.claude/hooks/`) and a git pre-commit hoo
 
 | Hook | Location | What It Prevents |
 |------|----------|-----------------|
-| `pre-commit` | `.git/hooks/pre-commit` | Blocks commits containing 15 secret patterns: OpenAI/Anthropic API keys, GitHub tokens, AWS access keys, Firebase/GCP credentials, database URLs with passwords, private key blocks, JWTs, generic `api_key`/`secret`/`token` assignments |
+| `pre-commit` | `.git/hooks/pre-commit` | Blocks commits containing 15 secret patterns: OpenAI/Anthropic API keys, GitHub tokens, AWS access keys, Firebase/GCP credentials, database URLs with passwords, private key blocks, JWTs, generic `api_key`/`secret`/`token` assignments. Docs (`*.md`, `*.txt`, `*example*`, `*template*`, `*.sample`) are scanned for provider tokens and private key blocks only; test fixtures and snapshots are skipped. Self-test: `bash git-hooks/pre-commit-secrets.sh --selftest` |
 | `pre-commit-evaluator.sh` | `git-hooks/pre-commit-evaluator.sh` | Claude haiku scores staged diff on 4 dimensions (correctness, completeness, safety, scope). Blocks commit if overall score < threshold. Opt-in: `CLAUDE_PRECOMMIT_EVAL=1`. Threshold: `CLAUDE_PRECOMMIT_THRESHOLD` (default 7/10). |
 
 The git hook is the last line of defence before secrets enter git history. It complements `stop-secret-scan.sh` (which catches secrets in Claude's output) by catching secrets in your own edits.

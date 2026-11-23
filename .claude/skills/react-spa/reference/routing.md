@@ -1,7 +1,7 @@
 # Routing — React Router 8 (data mode)
 
-> RECOMMENDED PRACTICE. Code compiled and tested on `react-router@8.5.2` (Vitest with
-> `createMemoryRouter`, and Playwright in Chromium).
+> RECOMMENDED PRACTICE. Code compiled and tested on `react-router@8.5.2` with React 19.3.1 (Vitest with
+> `createMemoryRouter`, and Playwright in Chromium; re-run 2026-11-23 on Node 26.13.1).
 
 ## Package facts (verified 2026-11-23)
 
@@ -23,9 +23,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
+import { z } from 'zod'
 import { createQueryClient } from './app/query-client'
 import { routes } from './app/routes'
 import './index.css'
+
+// zod 4 probes `new Function` for its JIT; under a Trusted Types / no-eval CSP the probe logs a violation.
+z.config({ jitless: true })
 
 const queryClient = createQueryClient()
 const router = createBrowserRouter(routes)
@@ -40,6 +44,10 @@ createRoot(rootElement).render(
   </StrictMode>,
 )
 ```
+
+`z.config({ jitless: true })` stops zod 4 from probing `new Function` (its JIT). Under a CSP without
+`unsafe-eval`, or with Trusted Types enforced (`security.md`), that probe logs a violation even though zod
+catches it; the Playwright console-error guard caught it (`zod/v4/core/util.js` `allowsEval`).
 
 ## Route table: lazy routes, nested layout, auth middleware, error boundaries
 
@@ -75,6 +83,11 @@ export const routes: RouteObject[] = [
             lazy: () => lazyRoute(async () => (await import('@/features/projects/routes/ProjectsPage')).ProjectsPage),
             ErrorBoundary: FeatureErrorPage, // renders inside AppLayout's <main>: no second main landmark
           },
+          {
+            path: 'settings',
+            lazy: () => lazyRoute(async () => (await import('@/features/settings/routes/SettingsPage')).SettingsPage),
+            ErrorBoundary: FeatureErrorPage,
+          },
         ],
       },
       { path: '*', loader: () => { throw new Response(null, { status: 404, statusText: 'Not Found' }) } },
@@ -89,7 +102,9 @@ in parallel, but React Router writes the resolved values back onto the route obj
 route and returns 404. Either use the function form (above) or build routes with a `createRoutes()`
 function per router.
 
-`vite build` emits a separate chunk per lazy route (`LoginPage-*.js`, `ProjectsPage-*.js`).
+`vite build` emits a separate chunk per lazy route (`LoginPage-*.js`, `ProjectsPage-*.js`,
+`SettingsPage-*.js`; React 19.3.1 build, 2026-11-23). The settings route hosts the React 19 examples
+(`forms.md`, `architecture-and-state.md`, `performance.md`, `security.md`).
 
 ### A chunk that fails to load must not blank the page
 
@@ -266,7 +281,7 @@ export function AppLayout() {
     <>
       <header className="shell-header">
         <nav aria-label="Main">
-          <NavLink to="/app/projects">Projects</NavLink>
+          <NavLink to="/app/projects">Projects</NavLink> <NavLink to="/app/settings">Settings</NavLink>
         </nav>
         <span>Signed in as {session.get()?.userName}</span>
         <button type="button" onClick={signOut}>

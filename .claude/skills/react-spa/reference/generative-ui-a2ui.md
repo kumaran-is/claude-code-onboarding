@@ -1,391 +1,355 @@
-# Generative UI in React (A2UI v0.9)
+# Generative UI in React (A2UI 1.0 target, v0.9.x compatibility)
 
-> **Evidence.** The renderer-only path below was compiled and executed on 2026-11-23 in a disposable
-> React 19.3.1 + Vite 8.3.8 + TypeScript 5.9.3 app against the shared canonical-catalog fixtures and
-> a live reference backend in **both** topologies: `tsc` exit 0, `vite build` exit 0, `vitest run`
-> 30/30, Playwright + `@axe-core/playwright` 12/12 in Chromium (6 checks × 2 topologies). Negative
-> controls: allowlist removed → Vitest 1 failure; integer binding broken → 1 failure; planted type
-> error → `tsc` exit 2; 403 message removed → Playwright 2 failures; wrong guard code → 1 failure;
-> new idempotency key per retry → 1 failure; in-flight block and `disabled` removed → 1 failure. **Not run:** the CopilotKit path
-> (types read from the package only): **DOCUMENTED BUT NOT TESTED**.
+> **Evidence (2026-11-23).** Every snippet below is an excerpt of files that compiled and ran in a
+> disposable React SPA on the toolchain pinned by `/scaffold-react-app`
+> (`.claude/commands/scaffold-react-app.md`; React Compiler on) against the shared `genui-contract`
+> catalogs and samples: `tsc -b` exit 0, ESLint exit 0, `vite build` exit 0, Vitest 39/39, Playwright +
+> `@axe-core/playwright` 24/24 in Chromium at 375 and 1280 px (both wire versions).
+> Transport was mocked (`page.route`, `vi.fn`); message processing used the real packages
+> (LIVE-PROTOCOL). Negative controls: legacy-binding guard removed → 1 failure; in-flight block removed
+> → 1 failure; 1.0 stream on the v0.9 catalog → 3 failures; planted type error → `tsc` exit 2;
+> conditional hook → ESLint exit 1; low-contrast text → axe `color-contrast` failure.
+> **Not run:** a live agent or AG-UI stream, CopilotKit runtime, SSE resume and the two backend
+> topologies on 0.16.1 (they were last run on 0.15.0).
 
-The wire contract (catalog IDs, action allowlist, payload schemas, golden payloads, fixtures,
-topologies) is owned by the framework-neutral [`genui-contract`](../../genui-contract/SKILL.md) skill.
-This file covers only how a React SPA renders that contract. Never put a React component name on the
-wire; the catalog maps IDs to components.
+The wire contract (catalog IDs, action allowlist, payload schemas, samples, versions) belongs to the
+framework-neutral [`genui-contract`](../../genui-contract/SKILL.md) skill. This file covers only how a
+React SPA renders it. Never put a React component name on the wire; the catalog maps names to views.
 
 ## Choose a path
 
-| Need | Path | Packages (pin exactly) |
-|---|---|---|
-| Render agent-generated surfaces in an existing app | **A. Official renderer, no CopilotKit** (default) | `@a2ui/react@0.15.0`, `@a2ui/web_core@0.15.0` |
-| Full copilot (chat, threads, tool UIs) whose agent also emits A2UI | **B. CopilotKit** (optional) | `@copilotkit/react-core@1.90.0` (bundles `@copilotkit/a2ui-renderer@1.90.0`, `@a2ui/web_core@0.15.0`, `@ag-ui/client@1.0.5`) |
-
-Roles: A2UI is the UI payload; AG-UI is an agent event transport (needed only if you use it);
-CopilotKit is an app framework. None of B is required to render A2UI.
-
-| Package | Version | React peer | A2UI | Status |
+| Need | Path | Packages (pin exactly) | 1.0 | v0.9.x |
 |---|---|---|---|---|
-| `@a2ui/react` | 0.15.0 | `^18 \|\| ^19` | `./v0_9` (use) and `./v0_8` (legacy; still the package root export) | DOCUMENTED AND TESTED |
-| `@a2ui/web_core` | 0.15.0 | — | `./v0_9` `MessageProcessor`, `STRICT_VALIDATION`; also contains v1.0 code (not adopted) | DOCUMENTED AND TESTED |
-| `@copilotkit/react-core` | 1.90.0 | `^18 \|\| ^19` | built-in A2UI renderer, activated when the runtime has `a2ui` configured | SOURCE-PROVEN (`.d.mts`), not run |
-| `@copilotkit/a2ui-renderer` | 1.90.0 | `^18 \|\| ^19` | v0.9 default, `protocolVersion?: "v0.9" \| "1.0"` | SOURCE-PROVEN, not run |
+| Render agent surfaces in an existing app | **A. Official renderer** (default) | `@a2ui/react@0.16.1`, `@a2ui/web_core@0.16.1`, `zod@3.25.76` | **PROVEN** (render, bindings, actions, `@accessibility`) | PROVEN |
+| Copilot with the `a2ui` provider prop | **B. `@copilotkit/a2ui-renderer@1.90.0`** (bundled by `@copilotkit/react-core@1.90.0`) | as left | **PARTIAL**: renders a 1.0 stream but rejects the `@accessibility` envelope key | default (not re-run) |
+| CopilotKit "Components and surfaces" (`createGenerativeUI`, `render_ui` tool) | **C. `@copilotkit/react-core/v2/generative-ui`** | `@copilotkit/react-core@1.90.0` | Experimental upstream (spec revision `cbaa5ee`); **NOT RUN** here | rejected by design |
 
-Always import from `@a2ui/react/v0_9` and `@a2ui/web_core/v0_9`; the bare `@a2ui/react` root is the
-v0.8 API (`A2UIProvider`, `A2UIRenderer`). Never mix versions on one surface.
+Roles: A2UI is the UI payload; AG-UI (`@ag-ui/client@1.0.5`) is an agent event transport, needed only
+if you use it; CopilotKit is an app framework. None of B or C is required to render A2UI.
 
-### Dependency findings (check before adopting)
+**Why path A renders 1.0.** `@a2ui/react` exports only `./v0_8` and `./v0_9` subpaths, but since 0.13
+its **package root** is the version-agnostic runtime (`A2uiSurface`, `createComponentImplementation`),
+and since 0.16.0 it imports from `@a2ui/web_core` (not `web_core/v0_9`) so 1.0 bundles do not pull v0.9
+schemas (package CHANGELOG). The protocol version comes from the catalog: build it with
+`new Catalog(id, '1.0', …)` and the 1.0 schemas from `@a2ui/web_core/v1_0`. Import from the root for
+both versions; `@a2ui/react/v0_9` only re-exports the root.
 
-- `@a2ui/react@0.15.0` and `@a2ui/web_core@0.15.0` depend on **zod 3** (`^3.25.76`); this skill pins
-  zod 4 for forms. npm installs both (it warns `ERESOLVE overriding peer dependency`). Write catalog
-  schemas with the zod 3 copy the A2UI packages resolve; zod 4 schemas in a `Catalog` fail (tested,
-  table below).
-- `npm audit --omit=dev` (2026-11-23) on the A2UI packages alone: 4 **high** (GHSA-mrhx-c7xc-m3w5,
-  zod `<4.6.6`, memory exhaustion on oversized constrained collections; reported on zod and the three
-  A2UI packages that pull it) and 1 **moderate** (DOMPurify `<=3.4.16`, several sanitizer bypasses,
-  via `@a2ui/markdown-it@0.2.2`, which also peers `@a2ui/web_core@^0.14.0`).
+### Dependency findings
 
-  | Mitigation (tested) | Result |
-  |---|---|
-  | `"overrides": { "dompurify": "3.5.0" }` | moderate cleared; `tsc` 0, Vitest 28/28, `vite build` 0, Playwright 12/12. **Use it.** |
-  | `"overrides": { "zod": "4.6.7" }` | audit clean, but `@a2ui/web_core` fails at runtime (`TypeError: Cannot read properties of undefined (reading 'call')`), no test runs. **Do not use.** |
-  | zod 4 at the app root, zod 3 nested under A2UI | catalog schemas built with zod 4 fail `tsc` (`Property '_zod' is missing`) and 5 render tests. Catalog schemas must use the zod 3 copy. |
+- `@a2ui/react` 0.16.1 was published 2026-11-23 by the `a2ui-team` npm account with **no provenance
+  attestation**; the CopilotKit and AG-UI packages carry SLSA provenance. Pin exact versions and keep
+  the lockfile `integrity` hashes.
+- `@a2ui/*` and CopilotKit need **zod 3** (`@a2ui/react` peers `zod ^3.25.76`). Install `zod@3.25.76`
+  for an A2UI-only app; with zod 4 at the app root for forms, catalog schemas must still use the zod 3
+  copy the A2UI packages resolve.
+- `npm audit --omit=dev`: 4 high with A2UI alone; with `@copilotkit/react-core@1.90.0` added, 11 high
+  (every one traces to GHSA-mrhx-c7xc-m3w5, zod `<4.6.6`, memory exhaustion on oversized constrained
+  collections) plus 6 low (KaTeX, via CopilotKit's markdown stack). The fixed zod is 4.x, outside the
+  `^3` ranges that `@a2ui/web_core`, `@a2ui/react` and CopilotKit declare, so an `overrides` entry is
+  not a valid fix; `npm audit fix` proposes downgrades (`@a2ui/react@0.8.0`,
+  `@copilotkit/react-core@1.54.1`), which are not fixes either. The
+  `@a2ui/markdown-it` DOMPurify advisory of 0.15.0 is gone: 0.16.1 resolves `dompurify@3.5.0`, so the
+  old `overrides` entry is no longer needed. Mitigation for zod: cap every inbound message at
+  `maxMessageBytes` **before** `JSON.parse` (`ingest` below), keep the server request limit, record the
+  exception in the security review, re-run the audit on every A2UI bump.
+- `@copilotkit/react-core`, `@copilotkit/core` and `@copilotkit/a2ui-renderer` 1.90.0 each pin
+  `@a2ui/web_core` **0.15.0** exactly, so npm nests three 0.15.0 copies beside the app's 0.16.1
+  (`@ag-ui/client`/`@ag-ui/core` 1.0.5 and zod 3.25.76 dedupe to one copy). A test that spies on both
+  `MessageProcessor` classes shows the CopilotKit renderer processes messages with its **nested 0.15.0**
+  copy; the app's 0.16.1 is never called. Do not mix paths A and B on one surface.
+- Bundle: the sandbox app is 670 kB (189 kB gzip) with both catalogs; lazy-load the GenUI route.
 
-  The zod advisory stays open until A2UI ships on zod ≥ 4.6.6. Documented risk: the attack needs an
-  oversized constrained collection, so cap every inbound message at the contract's `maxMessageBytes`
-  **before** `JSON.parse` (`ingest` below), keep the server's own request limit, record the
-  exception in the security review, and re-run `npm audit --omit=dev` on every A2UI bump. Run
-  `npm install` from a clean `node_modules` after changing overrides: an in-place install left zod 4
-  at the root and broke the build.
+## A. Official renderer
 
-## A. Official renderer (no CopilotKit)
-
-Three pieces: a catalog (IDs → React), a `MessageProcessor` with `STRICT_VALIDATION`, and
-`<A2uiSurface>` per surface. Use `createBinderlessComponentImplementation` when a component reads and
-writes data-model paths itself (forms); it must then resolve an action's bindings before dispatch,
-otherwise `{path}` objects reach the server verbatim (found by test).
+### Catalog: one view per component, built for one wire version
 
 ```tsx
-import { useId, useSyncExternalStore } from 'react';
-import { z } from 'zod'; // the zod 3 copy @a2ui/web_core resolves
-import { Catalog, CommonSchemas, type ComponentContext } from '@a2ui/web_core/v0_9';
-import { EmailImplementation, LengthImplementation, NumericImplementation, RequiredImplementation } from '@a2ui/web_core/v0_9/basic_catalog';
-import { createBinderlessComponentImplementation } from '@a2ui/react/v0_9';
+import { useId } from 'react';
+import { z } from 'zod'; // zod 3: the copy @a2ui/web_core resolves
+import { createComponentImplementation, type ReactA2uiComponentProps, type ReactCatalogComponent } from '@a2ui/react';
+import { Catalog, type ComponentApi, type InferredComponentApiSchemaType, type ResolveA2uiProps } from '@a2ui/web_core';
+import * as v09 from '@a2ui/web_core/v0_9';
+import * as v10 from '@a2ui/web_core/v1_0';
 
-export const CANONICAL_CATALOG_ID = 'https://catalogs.example.com/genui/canonical/v1/catalog.json';
+export type WireVersion = 'v0.9' | '1.0';
 
-/** A server event whose name is in this component's allowlist. functionCall actions are rejected. */
-const serverEvent = <const N extends readonly [string, ...string[]]>(names: N) =>
-  z.object({
-    event: z.object({
-      name: z.enum(names),
-      context: z.record(
-        z.string().regex(/^[a-z][a-zA-Z0-9_]{0,63}$/),
-        z.union([z.string(), z.number().int(), z.boolean(), CommonSchemas.DataBinding]),
-      ).optional(),
-    }).strict(),
-  }).strict();
+/** The wire versions differ in binding syntax: {"path"} (v0.9) vs {"@path"} (1.0). */
+function schemasFor(version: WireVersion) {
+  return version === 'v0.9'
+    ? { Action: v09.ActionSchema, DynamicString: v09.DynamicStringSchema, DataBinding: v09.DataBindingSchema, CheckRule: v09.CheckRuleSchema, accessibility: v09.AccessibilityAttributesSchema }
+    : { Action: v10.ActionSchema, DynamicString: v10.DynamicStringSchema, DataBinding: v10.DataBindingSchema, CheckRule: v10.CheckRuleSchema, accessibility: v10.AccessibilityAttributesSchema };
+}
 
-const ApprovalFormApi = {
-  name: 'ApprovalForm',
+// In buildApis(version): actions must use the library's ActionSchema, or the binder does not
+// turn them into callables. Allowlists are enforced by the ingest guard, not by these schemas.
+ApprovalRequest: {
+  name: 'ApprovalRequest',
   schema: z.object({
-    accessibility: CommonSchemas.AccessibilityAttributes.optional(),
-    title: CommonSchemas.DynamicString,
-    summary: CommonSchemas.DynamicString,
-    requestId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/),
+    accessibility: s.accessibility.optional(), // v0.9 key; 1.0 sends the @accessibility envelope key
+    title: s.DynamicString,
+    summary: s.DynamicString,
+    requestId: ID,
     riskLevel: z.enum(['low', 'medium', 'high']),
-    comment: CommonSchemas.DataBinding.optional(),
-    approveAction: serverEvent(['approval.approve']),
-    rejectAction: serverEvent(['approval.reject']),
-  }).strict(),
-};
+    comment: s.DataBinding.optional(),
+    approveAction: s.Action,
+    rejectAction: s.Action,
+  }),
+},
 
-/** Subscribes to a dynamic value (literal, {path} binding or function call) and returns it. */
-function useDynamicValue(context: ComponentContext, dynamic: unknown): unknown {
-  return useSyncExternalStore(
-    (onChange) => {
-      if (dynamic === undefined) return () => undefined;
-      const sub = context.dataContext.subscribeDynamicValue(dynamic, onChange);
-      return () => sub.unsubscribe();
-    },
-    () => (dynamic === undefined ? undefined : context.dataContext.resolveDynamicValue(dynamic)),
-  );
-}
+// Named PascalCase views: eslint-plugin-react-hooks does not check hooks inside an anonymous
+// callback passed to createComponentImplementation (found by a negative control).
+type Apis = ReturnType<typeof buildApis>;
+type ViewProps<A extends ComponentApi> = ReactA2uiComponentProps<ResolveA2uiProps<InferredComponentApiSchemaType<A>>>;
 
-function dispatchResolved(context: ComponentContext, action: unknown): void {
-  const resolved = context.dataContext.resolveAction(action as Record<string, unknown>, { userActivation: true });
-  if (resolved === undefined) return;
-  void context.dispatchAction(resolved as Record<string, unknown>);
-}
-
-const asText = (value: unknown): string => (value === undefined || value === null ? '' : String(value));
-
-const ApprovalForm = createBinderlessComponentImplementation(ApprovalFormApi, ({ context }) => {
-  const parsed = ApprovalFormApi.schema.parse(context.componentModel.properties);
-  const title = asText(useDynamicValue(context, parsed.title));
-  const summary = asText(useDynamicValue(context, parsed.summary));
-  const comment = asText(useDynamicValue(context, parsed.comment));
+function ApprovalRequestView({ props }: ViewProps<Apis['ApprovalRequest']>) {
   const headingId = useId();
   const commentId = useId();
+  const busy = usePendingActions();
   return (
-    <section className="genui-form" aria-labelledby={headingId} role="form">
-      <h3 id={headingId}>{title}</h3>
-      <p>{summary}</p>
-      <p><strong>Risk:</strong> {parsed.riskLevel}</p>{/* text, never colour alone */}
-      {parsed.comment ? (
+    <section className="genui-approval" role="form" aria-labelledby={headingId}>
+      <h3 id={headingId}>{text(props.title)}</h3>
+      <p>{text(props.summary)}</p>
+      {/* Risk as text, never colour alone. */}
+      <p><strong>Risk:</strong> {props.riskLevel}</p>
+      {props.comment !== undefined ? (
         <div className="genui-field">
           <label htmlFor={commentId}>Comment</label>
-          <textarea id={commentId} maxLength={1000} value={comment}
-            onChange={(e) => parsed.comment && context.dataContext.set(parsed.comment.path, e.target.value)} />
+          <textarea id={commentId} maxLength={1000} value={text(props.comment)}
+            onChange={(e) => props.setComment(e.target.value)} />
         </div>
       ) : null}
-      <button type="button" onClick={() => dispatchResolved(context, parsed.approveAction)}>Approve</button>
-      <button type="button" onClick={() => dispatchResolved(context, parsed.rejectAction)}>Reject</button>
+      <button type="button" disabled={busy} onClick={() => void props.approveAction()}>Approve</button>
+      <button type="button" disabled={busy} onClick={() => void props.rejectAction()}>Reject</button>
     </section>
   );
-});
+}
 
-// ActionCard, InputForm and ConfirmationDialog follow the same pattern (InputForm: one <FormField>
-// per field so each field's hook call is stable; integer fields write numbers, not strings;
-// ConfirmationDialog: role="alertdialog" with dialog.confirm / dialog.cancel server events).
-export const canonicalCatalog = new Catalog(CANONICAL_CATALOG_ID, 'v0.9',
-  [ApprovalForm /*, ActionCard, InputForm, ConfirmationDialog */],
-  [RequiredImplementation, LengthImplementation, EmailImplementation, NumericImplementation]);
+export function buildCatalog(version: WireVersion): Catalog<ReactCatalogComponent> {
+  const apis = buildApis(version);
+  const ActionCard = createComponentImplementation(apis.ActionCard, ActionCardView);
+  const EditableForm = createComponentImplementation(apis.EditableForm, EditableFormView);
+  const ApprovalRequest = createComponentImplementation(apis.ApprovalRequest, ApprovalRequestView);
+  // The shared catalog declares required, length, email and numeric for field checks.
+  const functions = version === 'v0.9'
+    ? [v09.RequiredImplementation, v09.LengthImplementation, v09.EmailImplementation, v09.NumericImplementation]
+    : [...v10.V10_VALIDATION_FUNCTION_IMPLEMENTATIONS].filter((f) => ['required', 'length', 'email', 'numeric'].includes(f.name));
+  return new Catalog<ReactCatalogComponent>(CATALOG_IDS[version], version, [ActionCard, EditableForm, ApprovalRequest], functions);
+}
 ```
 
-Catalog mapping (canonical ID → React), all four tested: `ActionCard` → `<article>` + buttons;
-`InputForm` → `<form>` with labelled inputs, native `required`/`maxLength`; `ApprovalForm` →
-`role="form"` section with labelled comment and two buttons; `ConfirmationDialog` →
-`role="alertdialog"` section with confirm/cancel buttons. Unmapped IDs (`DataSummaryTable`,
-`SelectionList`, `DetailPanel`, `StatusIndicator`) are rejected as `UNKNOWN_COMPONENT` by the ingest
-guard (and by `STRICT_VALIDATION`, `allowUnknownElements: false`) until you implement them; the user
-sees an error, never a blank. Each component's controls are `disabled` while its action is in flight
-(`PendingActionsContext`, below).
+What the 0.16 binder hands a view (verified at runtime):
+
+| Schema | View receives |
+|---|---|
+| `DynamicString` (literal, binding or call) | the current value, plus a `setX` setter for two-way binding |
+| `ActionSchema` | `() => Promise<void>` that resolves the event context and dispatches |
+| a custom zod object shaped like an action | the raw object, **not** callable (`TypeError: … is not a function`) |
+| a binding nested in an array item (`fields[].value`) | the value and a `setValue` setter on that item (`field.setValue(…)`) |
+
+Catalog functions referenced by `checks` must be in the catalog, or the processor rejects the surface
+with `Unrecognized function 'required'`. Do not use the deprecated `render` / `context` API
+(`createBinderlessComponentImplementation` with `context`, deprecated in 0.16.0); use resolved props,
+setters and `useA2uiSurface()`.
+
+Mapping (all three rendered and tested): `ActionCard` → `<article>` with one button per action;
+`EditableForm` → `<form>` with one labelled input per field, native `required`/`maxLength`, integer
+fields write numbers; `ApprovalRequest` → `role="form"` section with a labelled comment and
+Approve/Reject buttons. 1.0 `@accessibility.label` lands on the `<a2ui-react-*>` host as `aria-label`
+with `role="group"`.
 
 ### Guards around the renderer
 
-`STRICT_VALIDATION` checks references, cycles and depth, but not component props or a missing
-`version` (see the contract's §5). An app-owned ingest guard runs first and throws the contract's
-error codes (`MESSAGE_TOO_LARGE`, `MALFORMED_MESSAGE`, `UNSUPPORTED_VERSION`, `UNSAFE_CONTENT`,
-`STRING_TOO_LONG`, `UNSUPPORTED_CATALOG`, `SURFACE_NOT_FOUND`, `UNKNOWN_COMPONENT`,
-`FUNCTION_ACTION_FORBIDDEN`, `ACTION_NOT_ALLOWED`, `SCHEMA_INVALID`); processor rejections map to
-`MISSING_ROOT` / `CYCLE` / `MAX_DEPTH_EXCEEDED` / `DANGLING_REFERENCE`. The server re-validates and
-authorises every action regardless.
+`STRICT_VALIDATION` checks props, references, cycles and depth. It does **not** cover the contract's
+size, string, version, catalog or action rules, and web_core 0.16.1 **accepts a v0.9 `{"path"}`
+binding inside a 1.0 message** (the shared `legacy-v0_9-binding` sample rendered until the guard
+below was added). An app-owned `ingest` runs first; the server re-validates and authorises every
+action regardless.
+
+Unknown components (shared `unknown-component` samples fed straight to the processor, no `ingest`):
+`STRICT_VALIDATION` returns a processor error naming the type, which the host shows as an alert. With
+`RELAXED_VALIDATION` (`allowUnknownElements: true`) both v0.9 and 1.0 are **silent**: no error, no
+console output, an empty surface. Keep `STRICT_VALIDATION`, and use `processMessagesWithErrors`, not
+`processMessages`, so the error reaches the UI.
 
 ```ts
-export function ingest(raw: string, ctx: IngestContext): Record<string, unknown> {
-  // Size cap on the raw bytes, BEFORE JSON.parse (a test spies on JSON.parse to prove it).
+/** 1.0 bindings are {"@path"}; web_core 0.16.1 still accepts a v0.9 {"path"} binding in a 1.0 message. */
+function rejectLegacyBindings(value: unknown): void {
+  if (Array.isArray(value)) return value.forEach(rejectLegacyBindings);
+  if (value === null || typeof value !== 'object') return;
+  const obj = value as Record<string, unknown>;
+  if ('path' in obj && !('componentId' in obj)) throw new ContractViolation('SCHEMA_INVALID', 'v0.9 {"path"} binding in a 1.0 message');
+  if ('call' in obj && !('@call' in obj)) throw new ContractViolation('SCHEMA_INVALID', 'v0.9 {"call"} in a 1.0 message');
+  Object.values(obj).forEach(rejectLegacyBindings);
+}
+
+export function ingest(raw: string, expected: WireVersion, stream: StreamState): Record<string, unknown> {
+  // Size cap on the raw bytes, before JSON.parse.
   if (new TextEncoder().encode(raw).byteLength > LIMITS.maxMessageBytes) {
     throw new ContractViolation('MESSAGE_TOO_LARGE', 'message exceeds maxMessageBytes');
   }
-  let message: unknown;
+  let parsed: unknown;
   try {
-    message = JSON.parse(raw);
-  } catch (cause) {
-    throw new ContractViolation('MALFORMED_MESSAGE', `message is not JSON: ${String(cause)}`);
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ContractViolation('MALFORMED_MESSAGE', 'message is not JSON');
   }
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) {
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new ContractViolation('MALFORMED_MESSAGE', 'message is not an object');
   }
-  const msg = message as Record<string, unknown>;
-  if (!('version' in msg)) throw new ContractViolation('MALFORMED_MESSAGE', 'message has no version');
-  if (msg.version !== 'v0.9') throw new ContractViolation('UNSUPPORTED_VERSION', `unsupported version ${String(msg.version)}`);
+  const msg = parsed as Record<string, unknown>;
+  if (typeof msg.version !== 'string') throw new ContractViolation('MALFORMED_MESSAGE', 'message has no version');
+  if (stream.version !== undefined && msg.version !== stream.version) {
+    throw new ContractViolation('MIXED_VERSIONS', `stream is ${stream.version}, message is ${msg.version}`);
+  }
+  if (!ACCEPTED[expected].includes(msg.version)) {
+    throw new ContractViolation('UNSUPPORTED_VERSION', `unsupported version ${msg.version}`);
+  }
   const bodies = BODIES.filter((b) => b in msg);
-  if (bodies.length !== 1) throw new ContractViolation('MALFORMED_MESSAGE', 'need exactly one message body');
+  if (bodies.length !== 1 || Object.keys(msg).length !== 2) {
+    throw new ContractViolation('MALFORMED_MESSAGE', 'need exactly one supported message body');
+  }
   scanStrings(msg); // UNSAFE_CONTENT (javascript:, <script, ...) and STRING_TOO_LONG
   const kind = bodies[0]!;
-  const body = msg[kind] as { surfaceId?: unknown; catalogId?: unknown; components?: unknown };
+  const body = msg[kind] as Record<string, unknown>;
+  const surfaceId = String(body.surfaceId);
   if (kind === 'createSurface') {
-    if (body.catalogId !== ctx.catalogId) throw new ContractViolation('UNSUPPORTED_CATALOG', 'unknown catalogId');
-    return msg;
+    if (body.catalogId !== CATALOG_IDS[expected]) throw new ContractViolation('UNSUPPORTED_CATALOG', 'unknown catalogId');
+    if ('components' in body) checkComponents(body.components, msg.version); // 1.0 single-message init
+  } else if (!stream.surfaces.has(surfaceId)) {
+    throw new ContractViolation('SURFACE_NOT_FOUND', 'surface not created');
   }
-  if (!ctx.hasSurface(String(body.surfaceId))) throw new ContractViolation('SURFACE_NOT_FOUND', 'surface not created');
-  if (kind === 'updateComponents' && Array.isArray(body.components)) {
-    for (const component of body.components as Record<string, unknown>[]) {
-      const spec = ctx.components[String(component.component)]; // per-component prop schema + action allowlist
-      if (!spec) throw new ContractViolation('UNKNOWN_COMPONENT', `unknown component ${String(component.component)}`);
-      const { id: _id, component: _name, ...props } = component;
-      checkActions(props, spec.actions); // FUNCTION_ACTION_FORBIDDEN, ACTION_NOT_ALLOWED
-      if (!spec.schema.safeParse(props).success) throw new ContractViolation('SCHEMA_INVALID', `invalid ${String(_name)} props`);
-    }
-  }
+  if (kind === 'updateComponents') checkComponents(body.components, msg.version);
+  stream.version ??= msg.version;
   return msg;
-}
-
-/** Validates an action emitted by the renderer before anything leaves the browser. */
-export function toOutboundAction(action: ActionPayload, newKey: () => string = () => crypto.randomUUID()): OutboundAction {
-  if (!isAllowed(action.name)) throw new ContractViolation('ACTION_NOT_ALLOWED', `action ${action.name} is not allowlisted`);
-  const spec = ACTIONS[action.name]; // per action: payload zod schema (strict) + idempotent flag
-  const parsed = spec.payload.safeParse(action.context);
-  if (!parsed.success) throw new ContractViolation('ACTION_PAYLOAD_INVALID', parsed.error.issues[0]?.message ?? 'invalid payload');
-  const { name, surfaceId, sourceComponentId, timestamp } = action;
-  return {
-    body: { version: 'v0.9', action: { name, surfaceId, sourceComponentId, timestamp, context: parsed.data } },
-    idempotencyKey: spec.idempotent ? newKey() : undefined, // header only, never in context; newKey is per intent (below)
-  };
 }
 ```
 
-Rules: no `dangerouslySetInnerHTML`, no model-supplied URLs in `href`/`src` (the canonical catalog has
-none); the model never decides authorisation (the server derives it from the session); high-risk
-actions (`approval.*`, `dialog.confirm`) only fire from an explicit user click; the token lives in
-memory and goes in `Authorization`, never in the bundle, the URL or `localStorage`.
+`ACCEPTED` is `{ 'v0.9': ['v0.9', 'v0.9.1'], '1.0': ['1.0'] }`; `checkComponents` throws
+`UNKNOWN_COMPONENT` for a name outside the catalog, `FUNCTION_ACTION_FORBIDDEN` for a `functionCall`
+action and `ACTION_NOT_ALLOWED` for an event name outside that component's allowlist. The guard
+requires `catalogId` on `createSurface` even though 1.0 makes it optional. Outbound, `toOutboundAction`
+checks the allowlist and the strict payload schema of each action (`ACTION_PAYLOAD_INVALID`) and adds
+an `Idempotency-Key` only for side-effecting actions, beside the message and never inside `context`.
 
-### Host: processor, stream, actions
+Rules: no `dangerouslySetInnerHTML`, no model-supplied URLs in `href`/`src` (the shared catalog has
+none); the model never decides authorisation; high-risk actions (`approval.*`) fire only from an
+explicit user click; tokens stay in memory or an HttpOnly cookie, never in the bundle, URL or storage.
 
-Feed per-message (`processMessagesWithErrors`) so one bad message is rejected without losing valid
-surfaces. The stream is an external system, so an effect owns it; actions go through a TanStack Query
-mutation. SSE runs over `fetch` (not `EventSource`) so it can send `Authorization`, abort via
-`AbortSignal` and resume with `Last-Event-ID`.
+### Host: processor, feed, actions
+
+One `MessageProcessor` per session with `STRICT_VALIDATION`; feed each message through `ingest` and
+`processMessagesWithErrors` so a rejection becomes an error state, never a blank. The first violation
+poisons the stream (later messages are ignored, the first error stays visible) until the user resets.
+Actions come from `processor.model.onAction`, subscribed in an effect (passing a ref into the
+constructor fails the React Compiler lint rule `react-hooks/refs`).
 
 ```tsx
-const [processor] = useState(() =>
-  new MessageProcessor<ReactCatalogComponent>([canonicalCatalog], (a) => sendRef.current(a), {
-    validationConfig: STRICT_VALIDATION,
-  }));
+const [processor, setProcessor] = useState(() => createProcessor(version));
 useEffect(() => () => processor.dispose(), [processor]);
 
 useEffect(() => {
-  const controller = new AbortController();
-  abortRef.current = controller; // a Stop button calls abort(); Reconnect bumps runId
-  const run = async () => {
-    for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt += 1) {
-      try {
-        setStatus('connecting');
-        for await (const event of readSse(endpoints, controller.signal, lastEventIdRef.current)) {
-          setStatus('streaming');
-          lastEventIdRef.current = event.id ?? lastEventIdRef.current; // a ref: survives Stop → Reconnect
-          if (event.event === 'done') break;
-          if (event.event === 'error') {
-            const code = (JSON.parse(event.data) as { code?: unknown }).code;
-            throw new StreamError(typeof code === 'string' ? code : 'UNKNOWN');
-          }
-          if (event.event === 'resync') {
-            // Resume window exceeded: drop local surfaces; a full replay follows.
-            for (const id of [...processor.getSurfaces().keys()]) {
-              processor.processMessagesWithErrors({ version: 'v0.9', deleteSurface: { surfaceId: id } });
-            }
-            continue;
-          }
-          feed(event.data); // ingest + processMessagesWithErrors; reports, never throws
-        }
-        setStatus('closed');
-        return;
-      } catch (e) {
-        if (controller.signal.aborted) return setStatus('cancelled');
-        if (e instanceof HttpError || e instanceof StreamError) { report(e); return setStatus('failed'); } // no retry
-        if (attempt === MAX_RECONNECTS) { report(e); return setStatus('failed'); }
-        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
-      }
+  const onAction = (a: ActionPayload) => {
+    if (inFlight.current) return; // double click while in flight
+    let outbound: OutboundAction;
+    try {
+      outbound = toOutboundAction(a, version);
+    } catch (e) {
+      setError(describe(e));
+      return;
     }
+    void transmit(outbound); // on failure keeps `outbound`, so Retry resends the same Idempotency-Key
   };
-  void run();
-  return () => controller.abort();
-}, [endpoints, processor, report, runId]);
+  const sub = processor.model.onAction.subscribe(onAction);
+  return () => sub.unsubscribe();
+}, [processor, transmit, version]);
+
+const feed = useCallback((raw: string) => {
+  // After a violation the stream is poisoned: ignore it until reset, keep the first error.
+  if (streamRef.current.failed) return;
+  try {
+    const msg = ingest(raw, version, streamRef.current);
+    const errors = processor.processMessagesWithErrors(msg);
+    if (errors.length > 0) {
+      fail(`SCHEMA_INVALID: ${errors.map((x) => `${x.error.code} ${x.error.message}`).join('; ')}`);
+      return;
+    }
+    const created = msg.createSurface as { surfaceId?: unknown } | undefined;
+    if (created) streamRef.current.surfaces.add(String(created.surfaceId));
+  } catch (e) {
+    fail(describe(e));
+  }
+}, [fail, processor, version]);
+
+function createProcessor(version: WireVersion) {
+  // Actions are consumed through processor.model.onAction (subscribed in an effect).
+  return new MessageProcessor<ReactCatalogComponent>([buildCatalog(version)], undefined, {
+    validationConfig: STRICT_VALIDATION,
+  });
+}
 ```
 
 Render surfaces from `processor.getSurfaces()` through `useSyncExternalStore` subscribed to
-`onSurfaceCreated`/`onSurfaceDeleted`; show `role="status"` for stream state and `role="alert"` for
-errors (403 → "You are not allowed to do that."). Never render a surface the processor rejected.
+`onSurfaceCreated`/`onSurfaceDeleted`, one `<A2uiSurface surface={surface} />` each, inside a context
+that sets `disabled` on every control while an action is in flight. Show `role="status"` for progress
+and `role="alert"` for errors (403 → "You are not allowed to do that."), with **Retry** (same
+idempotency key) after a failed action and **Clear and start over** (new processor, empty stream state)
+after a bad stream.
 
-Action responses: a `202 confirmation_required` body carries A2UI messages for a `ConfirmationDialog`
-surface; feed them through the same `ingest` + `processMessagesWithErrors` path, render the dialog
-(`role="alertdialog"`), and send `dialog.confirm` with its own `Idempotency-Key`. The server executes
-the operation it stored under `dialogId`, never one named in the payload.
+Stream transport: an effect owns it. The sandbox read NDJSON over `fetch` with an `AbortController`
+(one message per line). For SSE use `fetch` too (not `EventSource`) so it can send `Authorization`,
+abort and resume with `Last-Event-ID`; that SSE path, the 202 confirmation-dialog flow and both
+[backend topologies](../../genui-contract/reference/backend-topologies.md) were run live on 0.15.0 and
+**not re-run on 0.16.1**. Late `updateDataModel` messages overwrite what the user typed: keep inputs
+disabled until the stream reports done, or have the agent send the data model first.
 
-Idempotency key per user intent, not per call. The intent is component + action + resolved context:
-the key is created when the component first triggers it, reused when the user retries after a
-failure, and dropped after success. A changed form is a new intent with a new key, so the server
-never sees one key with two bodies. While the request is in flight the component's controls are
-disabled and a repeat trigger is ignored.
+## B. CopilotKit `a2ui` renderer
 
-```tsx
-const intentKeys = useRef(new Map<string, string>());
-const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
-const pendingRef = useRef(new Set<string>());
-const { mutateAsync } = action;
-useEffect(() => {
-  const setBusy = (key: string, busy: boolean) => {
-    if (busy) pendingRef.current.add(key);
-    else pendingRef.current.delete(key);
-    setPending(new Set(pendingRef.current));
-  };
-  sendRef.current = (a) => {
-    const componentKey = `${a.surfaceId}/${a.sourceComponentId}`;
-    if (pendingRef.current.has(componentKey)) return; // double click while in flight
-    const intent = `${componentKey}/${a.name}/${JSON.stringify(a.context)}`;
-    let outbound: OutboundAction;
-    try {
-      outbound = toOutboundAction(a, () => {
-        const existing = intentKeys.current.get(intent);
-        if (existing) return existing;
-        const created = crypto.randomUUID();
-        intentKeys.current.set(intent, created);
-        return created;
-      });
-    } catch (e) {
-      report(e);
-      return;
-    }
-    setBusy(componentKey, true);
-    mutateAsync(outbound)
-      .then(() => intentKeys.current.delete(intent))
-      .catch(report) // key kept: a retry of the same intent reuses it
-      .finally(() => setBusy(componentKey, false));
-  };
-}, [mutateAsync, report]);
-// Render: <PendingActionsContext value={pending}>{surfaces}</PendingActionsContext>; each
-// component reads it and sets `disabled` on its buttons while `${surfaceId}/${componentId}` is pending.
-```
+`@copilotkit/a2ui-renderer` works without a CopilotKit runtime: `A2UIProvider` (`catalog`, `onAction`,
+`theme`), `useA2UI().processMessages(messages)` and `<A2UIRenderer surfaceId>`. For 1.0, build the
+catalog with `createCatalog(definitions, renderers, { catalogId, protocolVersion: '1.0' })` and the
+`*SchemaV1` exports (`DynamicStringSchemaV1`, `DataBindingSchemaV1`, `ActionSchemaV1`, …); omitting
+`protocolVersion` keeps v0.9 (docs.copilotkit.ai `generative-ui/components/from-a2ui`). In the app,
+pass the same catalog to `<CopilotKit a2ui={{ catalog }}>` from `@copilotkit/react-core/v2`
+(docs.copilotkit.ai `generative-ui/a2ui`; provider not run here).
 
-Late data overwrites edits: an `updateDataModel` that arrives after the user typed replaces the typed
-value (seen live with a 300 ms emit delay). Keep inputs read-only or show a pending state until the
-stream reports done, or have the agent send the data model before the components.
+Tested (LIVE-PROTOCOL, no runtime): the shared 1.0 `approval-request` stream is **rejected** —
+`A2uiValidationError: Unrecognized reserved protocol directive '@accessibility' in v1.0 dynamic
+object` (logged with `console.warn`, nothing rendered). The same stream without `@accessibility`
+renders and forwards `approval.approve` to `onAction`; a v0.9 stream does not render on the 1.0
+catalog. Cause: the renderer pins `@a2ui/web_core` 0.15.0. Until CopilotKit ships a renderer on
+web_core ≥ 0.16, either keep this path on v0.9 or have the agent omit `@accessibility` (and lose the
+accessible name it carries). An unknown component (shared 1.0 `unknown-component` sample) renders an
+inline red `Unknown component: HtmlBlock` placeholder, echoing the agent-supplied type name, with no
+console output and no error to the app; guard inbound messages yourself before `processMessages`.
+`onAction` is where the allowlist, payload check and idempotency key belong;
+`A2UIProviderProps.catalog` is typed `any`, so the compiler does not catch a wrong catalog.
 
-### Topologies
+## C. CopilotKit components and surfaces (experimental)
 
-Only the endpoints differ; the catalog, guards and components do not
-([backend topologies](../../genui-contract/reference/backend-topologies.md)).
-
-| Topology | `streamUrl` / `actionUrl` | Notes |
-|---|---|---|
-| `shared-backend` | same-origin paths (for the reference backend `/a2ui/stream?scenario=…`, `/actions`) behind the app's API gateway (Vite `server.proxy` in dev) | no CORS; same session as the rest of the app |
-| `standalone-backend` | GenUI service origin from runtime config (`http://127.0.0.1:8712` in the test) | CORS allow-list on the service (exact app origin); token audience for that service |
-
-Both topologies were run live: identical catalog, guards and components; only `streamUrl`/`actionUrl`
-changed. Golden payloads were equal in both.
-
-## B. CopilotKit (optional)
-
-`@copilotkit/react-core@1.90.0` renders A2UI automatically when the CopilotKit runtime reports `a2ui`
-configured. The `<CopilotKit>` provider takes `a2ui?: { theme?, catalog?, loadingComponent?,
-includeSchema?, recovery? }`; the message renderer options accept
-`onAction?: (action, forward) => ...` to intercept actions before they reach the agent. That
-interceptor is where the allowlist and idempotency key above belong. `includeSchema` (default `true`)
-sends catalog JSON schemas to the agent as context. Source: package `.d.mts`, 2026-11-23.
-**DOCUMENTED BUT NOT TESTED:** no CopilotKit runtime or AG-UI agent was run, and `catalog` is typed
-`any`, so whether a `@a2ui/react` catalog (above) can be passed unchanged is **UNVERIFIED**.
-CopilotKit pulls a large dependency set (Radix, recharts, katex, lit, rxjs); justify it with an ADR.
+A separate A2UI 1.0 engine: `createGenerativeUI({ id, components })` with zod props and `slots`,
+`<CopilotKitProvider runtimeUrl generativeUI={{ ui }}>`, a runtime-injected `render_ui` tool or a
+markdown transport, the 69-component `standardUI`, and named page areas. Upstream marks it
+experimental on 1.0 spec revision `cbaa5ee`; its support matrix rejects v0.9 operations,
+`callRendererFunction` and `callAgentFunction`, and does not enforce `allowedParents`/`allowedChildren`.
+**NOT RUN** here (needs a CopilotKit runtime and a model). Adopt it only with an ADR; CopilotKit pulls
+a large dependency set.
 
 ## Tests (per target: web)
 
-| Check | Tool | Status here |
+| Check | Tool | Status |
 |---|---|---|
-| render, binding, user edit, golden payload equality (canonical form) | Vitest + Testing Library + user-event | PASS (3 goldens) |
-| required field blocks submit | Vitest | PASS |
-| invalid fixtures rejected with their exact `expectedError` | Vitest | PASS: 17/20 exact; the 3 `DetailPanel` fixtures (dangling-child, over-depth, self-cycle) are out of scope (component not implemented) and are asserted only as `UNKNOWN_COMPONENT` |
-| size cap runs before `JSON.parse` | Vitest (spy on `JSON.parse`) | PASS |
-| double click sends one request; retry after failure reuses the same `Idempotency-Key`; control disabled in flight | Vitest + mocked `fetch` | PASS (negative controls: new key per retry → fails; no in-flight block and no `disabled` → 2 requests, fails) |
-| forged action name (`ACTION_NOT_ALLOWED`) / extra context key (`ACTION_PAYLOAD_INVALID`) rejected client-side | Vitest | PASS |
-| partial stream renders progressively | Vitest | PASS |
-| live SSE render of ActionCard/InputForm/ApprovalForm; posted body equals golden; `Idempotency-Key` header present only for side-effecting actions | Playwright, both topologies | PASS |
-| `approval.approve` → 202 → ConfirmationDialog → `dialog.confirm` → 200 | Playwright, both topologies | PASS |
-| user B acting on user A's resource → 403 shown in `role="alert"` | Playwright, both topologies | PASS (negative control: message removed → fails) |
-| Stop aborts the stream (status `cancelled`, server logs `stream_stopped`); Reconnect sends `Last-Event-ID` and completes | Playwright, both topologies | PASS |
-| version mismatch (`v0.8` frame, mocked with `page.route`) shown to the user, not rendered | Playwright, both topologies | PASS |
-| zero serious/critical axe violations on rendered surfaces and the dialog | `@axe-core/playwright` | PASS ("no automated violations; manual checks required") |
+| ActionCard, EditableForm, ApprovalRequest render from the shared valid samples, v0.9 and 1.0 | Vitest + Testing Library | PASS (6) |
+| two-way binding writes the data model (shared state); approve resolves the bound comment | Vitest | PASS |
+| `form.submit`: the object binding `values: {"@path": "/profile"}` (v0.9 `{"path"}`) resolves to the edited object; `approval.reject` sends the bound comment as `reason`; empty reason → `ACTION_PAYLOAD_INVALID`, nothing sent | Vitest + Playwright, both versions | PASS (negative control: pre-fix samples → 4 Vitest + 8 Playwright failures) |
+| 12 shared invalid samples rejected with their exact `expectedError`; nothing unsafe in the DOM | Vitest | PASS (12) |
+| size cap before `JSON.parse` (spy); v0.8 → `UNSUPPORTED_VERSION`; 1.0 stream on the v0.9 host rejected; forged action name rejected | Vitest | PASS |
+| failed action → alert → Retry with the same `Idempotency-Key`; double click sends one request; controls disabled in flight | Vitest | PASS (negative control: in-flight block removed → fails) |
+| bad stream → Clear and start over → new stream renders | Vitest | PASS |
+| unknown component without the guard: STRICT returns an error; RELAXED is silent (v0.9 and 1.0) | Vitest | PASS (4) |
+| CopilotKit renderer: nested web_core 0.15.0 processes; 1.0 `@accessibility` rejected; stripped stream renders and dispatches; v0.9 stream not rendered; unknown component → inline placeholder | Vitest | PASS (5; negative control: nested-copy assertion inverted → fails) |
+| approve, submit and reject post the resolved payload with an `Idempotency-Key` header; 403 shown in `role="alert"`; unknown component shown as an error | Playwright, Chromium 375 + 1280 px, both versions | PASS (24) |
+| zero axe violations (WCAG 2.0/2.1/2.2 A+AA tags) on all three components | `@axe-core/playwright` | PASS ("no automated violations; manual checks required"; negative control: low contrast → fails) |
 
-Testing Library cleanup is not automatic when Vitest `globals` is off: register
-`afterEach(cleanup)` in the setup file or renders leak between tests (found here). Compare payloads in
-the contract's canonical form (sorted keys, timestamp normalised) and write them to the parity
-directory for cross-platform checks.
+Register `afterEach(cleanup)` in the Vitest setup file when `globals` is off, or renders leak between
+tests. Hooks inside `createComponentImplementation` callbacks are invisible to `rules-of-hooks`; keep
+views as named components.

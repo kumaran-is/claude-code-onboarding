@@ -1,13 +1,19 @@
 # Tooling — scaffold pins, TypeScript, Vite, ESLint
 
-> RECOMMENDED PRACTICE. Verified 2026-11-23 with Node 24.13.1. Scaffold steps: `/scaffold-react-app`.
+> RECOMMENDED PRACTICE. Toolchain verified 2026-11-23 on Node 26.13.1 / npm 11.20.0 (TypeScript 6.0.3).
+> Scaffold steps and full-stack framework choice: `/scaffold-react-app`.
 
 ## What `create-vite@9.3.4 --template react-ts` gives you (inspected from the package)
 
 - `typescript: ~7.0.2`, `lint: oxlint`, caret ranges, and `tsconfig.app.json` **without `strict`**.
-- `typescript-eslint@8.73.0` peers `typescript >=4.8.4 <6.1.0`, so TS 7 cannot be linted with it.
-- Fix: `npm i -DE typescript@5.9.3` (workspace standard), replace oxlint with the ESLint config below,
-  add `strict` and `noUncheckedIndexedAccess`, and pin every dependency exactly.
+- `typescript-eslint@8.74.0` peers `typescript >=4.8.4 <6.1.0` (typescript-eslint.io/users/dependency-versions),
+  so TS 7 cannot be linted with it. TypeScript 6.0.3 is the newest version that every tool in the table
+  accepts (`msw@3.0.7` `>=5.9.x`, `@tanstack/eslint-plugin-query` `^5.6 || ^6 || ^7`).
+- Fix: `npm i -DE typescript@6.0.3`, replace oxlint with the ESLint config below (or pass `--eslint` to the
+  creator, which writes a smaller config), add `strict` and `noUncheckedIndexedAccess`, and pin every
+  dependency exactly. Move to TypeScript 7 only when `npm view typescript-eslint peerDependencies` allows it.
+- Node: 26.13.1 (Active LTS). Every tool's `engines` allows it; the strictest floors are React Router 8
+  (`>=22.22.0`) and jsdom 31 (`^22.22.2 || ^24.15.0 || >=26.0.0`).
 
 ## package.json (validated app)
 
@@ -29,7 +35,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "7.0.8",
-    "@tanstack/react-query": "5.108.3",
+    "@tanstack/react-query": "5.108.4",
     "dompurify": "3.5.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -44,12 +50,12 @@
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.65.1",
     "@rolldown/plugin-babel": "0.3.1",
-    "@tanstack/eslint-plugin-query": "5.108.3",
+    "@tanstack/eslint-plugin-query": "5.108.4",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "8.0.0",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.13",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
@@ -61,14 +67,15 @@
     "globals": "17.14.0",
     "jsdom": "31.0.1",
     "msw": "3.0.7",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.73.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.74.0",
     "vite": "8.3.8",
     "vitest": "5.1.1"
   },
   "overrides": {
     "eslint-plugin-jsx-a11y-x": { "minimatch": "11.0.9" }
-  }
+  },
+  "engines": { "node": "^22.22.0 || ^24.15.0 || >=26.0.0" }
 }
 ```
 
@@ -165,12 +172,19 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
+  // Enforce Trusted Types on `vite preview` (the E2E server). Production sends the same header from the host.
+  preview: { headers: { 'Content-Security-Policy': "require-trusted-types-for 'script'; trusted-types dompurify" } },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
 })
 ```
 
-`react({ compiler: true })` is the experimental native compiler path in plugin-react 6; the Babel preset
-above is the stable path. The `@` alias needs both `resolve.alias` and `paths` in `tsconfig.app.json`.
+This is the setup react.dev documents for `@vitejs/plugin-react` 6 (learn/react-compiler/installation, "Vite")
+and what the creator's `react-compiler-ts` template writes. `react({ compiler: true })` is the experimental
+native compiler path in plugin-react 6; the Babel preset above is the stable path. Proof that it runs: the validation app's
+production bundle contains `react.memo_cache_sentinel` 6 times with the preset and once (React's own) without it.
+The `@` alias needs both `resolve.alias` and `paths` in `tsconfig.app.json`.
+The `preview` CSP makes the Playwright run enforce Trusted Types (only DOMPurify may create a policy). zod 4 then
+needs `z.config({ jitless: true })` in `main.tsx` (`reference/routing.md`, `reference/security.md`). Verified: 12/12 E2E green with the header.
 
 `src/vite-env.d.ts` types the public env vars:
 
@@ -207,7 +221,7 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat['recommended-latest'],
+      reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
       jsxA11y.configs.recommended,
       pluginQuery.configs['flat/recommended'],
@@ -221,8 +235,13 @@ export default defineConfig([
 ])
 ```
 
-Positive controls run: conditional `useState` → `react-hooks/rules-of-hooks` (exit 1);
-`<img>` without `alt` → `jsx-a11y-x/alt-text` (exit 1).
+`flat.recommended` already contains the React Compiler rules (`refs`, `purity`, `immutability`,
+`set-state-in-effect`, …), which report code the compiler skips. The plugin README calls
+`recommended-latest` "bleeding edge experimental"; in 7.1.1 it adds only `void-use-memo`.
+
+Positive controls run: conditional `useState` → `react-hooks/rules-of-hooks`; reading `ref.current` during
+render → `react-hooks/refs` (compiler diagnostic); `<img>` without `alt` → `jsx-a11y-x/alt-text` (exit 1).
+Without the `overrides` block, `npm audit` reports 2 moderate advisories; with it, 0.
 
 **ESLint 10 and the accessibility plugin:** `eslint-plugin-jsx-a11y@6.10.2` (its latest) peers `eslint ^3 … ^9`
 and ESLint 9 is npm-deprecated, so the stack uses `eslint-plugin-jsx-a11y-x@0.2.0`, the es-tooling fork that
@@ -252,6 +271,16 @@ input { min-height: 44px; font: inherit; padding: 0 0.5rem; width: 100%; box-siz
 .field-error { color: #b00020; margin: 0.25rem 0 0; }
 dialog { width: min(32rem, calc(100vw - 2rem)); box-sizing: border-box; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* <ViewTransition> classes used by SettingsTabs; honour reduced motion. */
+::view-transition-old(.slide-to-left) { animation: 180ms ease-in both vt-out-left; }
+::view-transition-new(.slide-from-right) { animation: 180ms ease-out both vt-in-right; }
+::view-transition-old(.slide-to-right) { animation: 180ms ease-in both vt-out-right; }
+::view-transition-new(.slide-from-left) { animation: 180ms ease-out both vt-in-left; }
+@keyframes vt-out-left { to { transform: translateX(-2rem); opacity: 0; } }
+@keyframes vt-in-right { from { transform: translateX(2rem); opacity: 0; } }
+@keyframes vt-out-right { to { transform: translateX(2rem); opacity: 0; } }
+@keyframes vt-in-left { from { transform: translateX(-2rem); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; } }
 ```
 
 A design system (Tailwind, CSS modules, a component library) replaces these literals with its tokens;

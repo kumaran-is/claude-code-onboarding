@@ -14,6 +14,68 @@
   `button-name`; `<img>` without `alt` → ESLint `jsx-a11y-x/alt-text`.
 - Dialog: Escape closes it and focus returns to the opener; the first invalid field receives focus.
 
+## Styling stack (verified 2026-11-23, Vite 8.3.8)
+
+The default React stack uses **CSS Modules + CSS custom-property tokens**: no CSS framework and no extra
+dependency (Vite supports `*.module.css` natively and `vite/client` types the import). Token naming, tiers and
+review rules are framework-neutral: `ui-standards-tokens` skill (`reference/ui-design-tokens.md`); do not
+redefine them here.
+
+`src/index.css`: tokens in `:root`, a dark set under `prefers-color-scheme`, motion collapsed under
+`prefers-reduced-motion`; components use only `var(--…)`.
+
+```css
+:root {
+  color-scheme: light dark;
+  --color-bg: #ffffff;
+  --color-fg: #1a1a1a;
+  --color-muted: #4a4a4a;
+  --color-accent: #0b57d0;
+  --color-accent-fg: #ffffff;
+  --color-danger: #b00020;
+  --target-min: 44px;
+  --duration-fast: 150ms;
+  color: var(--color-fg);
+  background: var(--color-bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #121212;
+    --color-fg: #ececec;
+    --color-muted: #b8b8b8;
+    --color-accent: #8ab4f8;
+    --color-accent-fg: #0b1a33;
+    --color-danger: #ff8a80;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; }
+}
+:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+```
+
+`App.module.css` (imported as `import styles from './App.module.css'`, used as `className={styles.button}`):
+
+```css
+.button {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+  padding-inline: 1rem;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  transition: background-color var(--duration-fast) ease;
+}
+```
+
+Verified in Chromium at 375 and 1280 px: axe (`wcag2a`…`wcag22aa`) reports no violations in light mode
+and with `page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })`. Under reduced motion the
+computed `transition-duration` is `0s`. A planted `#bbb` text on white fails `color-contrast`.
+
+Tailwind is optional. Add it only when the design system is Tailwind-based: `tailwindcss` and
+`@tailwindcss/vite` 4.3.5 (peer `vite ^5.2 || ^6 || ^7 || ^8`; registry-checked, not installed in the
+validation app). Patterns live in the `tailwind-patterns` skill. Never ship two styling systems for the same
+components.
+
 ## React specifics
 
 | Topic | Do |
@@ -26,7 +88,7 @@
 | Dialogs | native `<dialog>` + `showModal()`; `aria-labelledby` to its heading; focus returns to the opener |
 | Targets | at least 24×24 CSS px (WCAG 2.2 AA 2.5.8); this toolkit's web baseline is 44 px (`code-standards.md`) |
 | Focus visible | do not remove outlines without a visible replacement; sticky headers must not hide focused elements (2.4.11) |
-| Motion | respect `prefers-reduced-motion` |
+| Motion | respect `prefers-reduced-motion` (token collapse above; test with `emulateMedia({ reducedMotion: 'reduce' })`) |
 | Lint | `eslint-plugin-jsx-a11y-x` `configs.recommended` (0.2.0, ESLint 10; see `tooling.md`) |
 
 ## i18n basics

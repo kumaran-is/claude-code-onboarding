@@ -1,9 +1,9 @@
 ---
 name: react-spa
-description: "React 19 single-page app development with Vite 8, TypeScript 5.9.3, React Router 8 (data mode), TanStack Query 5, React Hook Form + zod 4, Vitest + Testing Library + MSW, and Playwright + axe. Use when building or changing React web components, hooks, routes, forms, server state, API clients, auth plumbing, performance or tests. Not for React Native (mobile-developer) and not a Next.js/SSR guide."
+description: "React 19.3 single-page app development (Actions, use, Suspense, ViewTransition, Fragment refs, Trusted Types) with Vite 8, TypeScript 6.0.3, React Router 8 (data mode), TanStack Query 5, React Hook Form + zod 4, Vitest + Testing Library + MSW, and Playwright + axe. Use when building or changing React web components, hooks, routes, forms, server state, API clients, auth plumbing, performance or tests. Not for React Native (mobile-developer) and not a Next.js/SSR guide."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch
 metadata:
-  triggers: React, React 19, Vite, React SPA, tsx component, React hook, useEffect, React Router, TanStack Query, React Query, React Hook Form, zod, Vitest React, Testing Library, MSW, React Compiler
+  triggers: React, React 19, React 19.3, useActionState, useOptimistic, useFormStatus, ViewTransition, Fragment ref, Trusted Types, Vite, React SPA, tsx component, React hook, useEffect, React Router, TanStack Query, React Query, React Hook Form, zod, Vitest React, Testing Library, MSW, React Compiler
   related-skills: accessibility-audit, browser-testing, design-system, security-reviewer, ai-chat, web-performance-optimization, typescript-expert
   domain: frontend
   role: specialist
@@ -16,7 +16,8 @@ last-reviewed: "2026-11-23"
 
 > **RECOMMENDED PRACTICE.** This toolkit has no production React history. Everything here is current
 > official guidance plus patterns that were compiled and executed in a disposable Vite app on
-> 2026-11-22/23 (`tsc -b`, ESLint, Vitest, `vite build`, Playwright + axe in Chromium: all exit 0).
+> 2026-11-22/23 (`tsc -b`, ESLint, Vitest, `vite build`, Playwright + axe in Chromium: all exit 0; re-run
+> on React 19.3.1, TypeScript 6.0.3 and Node 26.13.1, 2026-11-23: 33 Vitest tests, 12 Playwright tests).
 > It is not a record of what any team shipped. Where something could not be executed it says
 > **UNVERIFIED — check before use**.
 
@@ -30,11 +31,11 @@ An effect exists only to synchronise with something outside React (a browser API
 
 | Package | Version | Note |
 |---|---|---|
-| `react`, `react-dom` | `19.3.1` | `ref` is a plain prop; `<Ctx value>` is the provider; `useEffectEvent`, `useOptimistic`, `useActionState`, `Activity` exported |
+| `react`, `react-dom` | `19.3.1` | npm `latest` (19.3.0: 2026-09-09; 19.3.1: 2026-10-14). APIs in "React 19 / 19.3 APIs" below |
 | `vite` / `@vitejs/plugin-react` | `8.3.8` / `6.3.0` | creator `create-vite@9.3.4` (template `react-ts`) |
-| `typescript` | `5.9.3` | **pin it**: `create-vite@9.3.4` ships `typescript ~7.0.2` and no `strict`; `typescript-eslint@8.73.0` peers `typescript >=4.8.4 <6.1.0` |
+| `typescript` | `6.0.3` | **pin it**: the Vite `react-ts` template (creator 9.3.4) ships `typescript ~7.0.2` and no `strict`; `typescript-eslint@8.74.0` peers `typescript >=4.8.4 <6.1.0`, so 6.0.3 is the newest lintable version (decision and evidence: `reference/tooling.md`) |
 | `react-router` | `8.5.2` | **not** `react-router-dom` (see Routing) |
-| `@tanstack/react-query` (+ eslint plugin) | `5.108.3` | |
+| `@tanstack/react-query` (+ eslint plugin) | `5.108.4` | |
 | `react-hook-form` / `@hookform/resolvers` / `zod` | `7.92.0` / `7.0.8` / `4.6.7` | |
 | `react-error-boundary` / `dompurify` | `6.1.6` / `3.5.0` | |
 | `babel-plugin-react-compiler` / `@rolldown/plugin-babel` | `1.0.0` / `0.3.1` | React Compiler 1.0 (stable) |
@@ -42,10 +43,10 @@ An effect exists only to synchronise with something outside React (a browser API
 | `@testing-library/react` / `user-event` / `jest-dom` | `16.3.3` / `14.6.13` / `8.0.0` | |
 | `msw` | `3.0.7` | v3 option is `onUnhandledFrame` (v2's `onUnhandledRequest` no longer type-checks) |
 | `@playwright/test` / `@axe-core/playwright` | `1.65.1` / `4.14.0` | |
-| `eslint` / `typescript-eslint` | `10.15.0` / `8.73.0` | |
+| `eslint` / `typescript-eslint` | `10.15.0` / `8.74.0` | `typescript-eslint@8.74.0` still peers `typescript <6.1.0` |
 | `eslint-plugin-react-hooks` / `eslint-plugin-jsx-a11y-x` | `7.1.1` / `0.2.0` | ESLint 10 fork of `eslint-plugin-jsx-a11y`; `minimatch` override (`reference/tooling.md`) |
 
-Node 24.x (React Router 8 requires Node `>=22.22.0`). Pin exact versions (`npm i -E`); re-check with
+Node 24.x or 26.x (React Router 8 requires Node `>=22.22.0`; the 2026-11-23 re-run used 26.13.1). Pin exact versions (`npm i -E`); re-check with
 `npm view <pkg> version` before moving any row, and re-run the verification below after a move.
 
 ## Documentation sources
@@ -60,6 +61,26 @@ Node 24.x (React Router 8 requires Node `>=22.22.0`). Pin exact versions (`npm i
 
 Trust the installed `.d.ts` over memory: the MSW 3 option rename and the TanStack v5 callback
 signatures below were found that way.
+
+## React 19 / 19.3 APIs (verified against `react@19.3.1` exports, `@types/react@19.3.0` and react.dev)
+
+| API | Use it for | Example |
+|---|---|---|
+| `<form action>`, `useActionState`, `useOptimistic`, `useFormStatus` | form results with no shared cache; pending UI, optimistic value that reverts on failure | `reference/forms.md` |
+| `use(promise)` + `<Suspense>` + error boundary | read a promise created by the parent or a loader | `reference/architecture-and-state.md` |
+| `use(Context)`, `<Ctx value>`, `ref` as a prop | context provider/reader without `.Provider`/`forwardRef` | `reference/architecture-and-state.md` |
+| `<title>`, `<meta>`, `<link>` in components | document metadata (hoisted to `<head>`) | `reference/forms.md` (settings page) |
+| `preconnect`, `preload`, `preinit` (`react-dom`) | resource hints | exports checked; not exercised |
+| `useEffectEvent` | non-reactive values inside effects | `reference/architecture-and-state.md` |
+| `<ViewTransition>`, `addTransitionType` (19.3, stable) | animate Transition updates with the View Transition API | `reference/performance.md` |
+| `<Fragment ref>` → `FragmentInstance` (19.3) | focus/observe/listen on children without a wrapper | `reference/architecture-and-state.md` |
+| Trusted Types pass-through (19.3) | enforce `require-trusted-types-for 'script'` with `TrustedHTML` | `reference/security.md` |
+| Independent Transition rendering (19.3) | a slow Transition no longer blocks unrelated ones | changelog note only |
+| `use(browser())` (`react-dom`, 19.3) | opt a subtree out of **server** rendering | SSR only: an SPA never needs it |
+| `<Activity>` (19.2) | keep hidden UI state | export checked; behaviour not exercised |
+
+Sources: react.dev/blog "React 19.3" (2026-09-09), react.dev/versions ("Latest version: 19.3"),
+`node_modules/@types/react/index.d.ts`, `node_modules/@types/react-dom/index.d.ts`.
 
 ## Project structure (by feature)
 
@@ -98,7 +119,7 @@ A feature imports `shared/*` and its own folders; it never reaches into another 
 - `react-hooks/exhaustive-deps` is a warning in the preset: raise it to **error** (missing deps are
   stale-closure bugs). Never silence it with `eslint-disable`; read non-reactive values in an effect
   through `useEffectEvent`.
-- The `recommended-latest` preset of `eslint-plugin-react-hooks` 7 adds compiler-powered rules
+- The `recommended` preset of `eslint-plugin-react-hooks` 7 includes compiler-powered rules
   (`set-state-in-effect`, `refs`, `purity`, `immutability`, `static-components`).
 
 ## You might not need an effect
@@ -115,6 +136,12 @@ Legitimate effects: sync with a browser API (`<dialog>.showModal()`, focus after
 subscribe/unsubscribe, third-party widgets. Every effect that starts async work cleans up
 (`AbortController` or an `ignore` flag); otherwise the slower, stale response wins.
 Details and examples: `reference/architecture-and-state.md`.
+
+## Choosing libraries by app complexity
+
+Nothing is mandatory: plain React (state, context, `use()`, Actions) for small apps; TanStack Query when
+many screens share and mutate server data; a store only for cross-route client workflows. Table and
+rules: `reference/architecture-and-state.md`.
 
 ## State ownership
 
@@ -191,6 +218,8 @@ Code: `reference/forms.md`.
 - `VITE_*` variables are compiled into the public bundle (Vite `envPrefix` default `'VITE_'`): config
   only, never secrets.
 - Client guards and hidden buttons are UX; the server authorizes.
+- Enforce Trusted Types (React 19.3+): CSP `require-trusted-types-for 'script'; trusted-types dompurify`,
+  `DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: true })`, `z.config({ jitless: true })` at startup.
 
 Code, attack payloads and their controls: `reference/security.md`.
 
@@ -201,6 +230,8 @@ Code, attack payloads and their controls: `reference/security.md`.
   contains the compiler's memo cache (`react.memo_cache_sentinel` found in the built chunks).
 - No new `useMemo`/`useCallback`/`memo` without a profiler trace or an effect-dependency reason.
 - Code-split by route (`lazy`); read `vite build` chunk sizes; add a visualizer when a budget is exceeded.
+- `<ViewTransition>` + `startTransition`/`addTransitionType` for animated state changes (19.3, stable);
+  honour `prefers-reduced-motion`.
 - Virtualize lists beyond ~100 rows (`@tanstack/react-virtual`); `useTransition` / `useDeferredValue`
   for expensive non-urgent updates.
 - Profile first: React DevTools Profiler and the Chrome Performance panel.
@@ -223,7 +254,7 @@ canonical i18n reference `design-system/reference/i18n-rtl-intl.md`.
 | Layer | Tool |
 |---|---|
 | Types | `tsc -b` (Vitest does not type-check; the root tsconfig is a solution file, so plain `tsc --noEmit` checks nothing) |
-| Lint | ESLint flat config: typescript-eslint, react-hooks (`recommended-latest`), jsx-a11y, TanStack Query plugin |
+| Lint | ESLint flat config: typescript-eslint, react-hooks (`recommended`), jsx-a11y, TanStack Query plugin |
 | Unit/component | Vitest + jsdom + Testing Library + user-event; MSW for HTTP (mock the network, not hooks) |
 | E2E + a11y | Playwright (`@playwright/test`) + `@axe-core/playwright` in real Chromium at 375 and 1280 px |
 
@@ -243,37 +274,41 @@ npx playwright test; echo "e2e exit=$?"
 Do not claim a check passed unless you ran it in this session and show the command and its output;
 otherwise mark it NOT RUN. Positive controls that were run for this skill: a conditional hook fails
 ESLint (`react-hooks/rules-of-hooks`), an `<img>` without `alt` fails ESLint (`jsx-a11y-x/alt-text`), a
-failing test fails Vitest, and low-contrast text fails the axe scan (`color-contrast`).
+failing test fails Vitest, a type error fails `tsc -b` (TS2322), low-contrast text fails the axe scan
+(`color-contrast`), and a browser console error (for example a Trusted Types violation) fails Playwright.
 
-## Generative UI (A2UI v0.9)
+## Generative UI (A2UI 1.0, v0.9.x compatibility)
 
-Agent-generated UI uses the official renderer `@a2ui/react@0.15.0` (`/v0_9` entry, never the v0.8
-root export) with `@a2ui/web_core@0.15.0` `MessageProcessor` + `STRICT_VALIDATION`; CopilotKit is
-optional. The wire contract (catalog IDs, action allowlist, golden payloads) belongs to the
-`genui-contract` skill; React maps IDs to components, guards size/version/strings inbound, allowlists
-actions outbound with an `Idempotency-Key` header, and never renders model text as HTML. Note the A2UI
-packages pull zod 3 and currently carry `npm audit` findings. Details, tested code and status:
+Agent-generated UI uses the official renderer `@a2ui/react@0.16.1` (package root, version-agnostic)
+with `@a2ui/web_core@0.16.1` `MessageProcessor` + `STRICT_VALIDATION`; the catalog's protocol version
+(`'1.0'` or `'v0.9'`) selects the wire version, and both were rendered and tested.
+`@copilotkit/a2ui-renderer@1.90.0` is optional and only partly 1.0-ready (it rejects `@accessibility`).
+The wire contract (catalog IDs, action allowlist, payload schemas) belongs to the `genui-contract`
+skill; React maps names to views, guards size/version/strings/legacy bindings inbound, allowlists
+actions outbound with an `Idempotency-Key` header, and never renders model text as HTML. The A2UI
+packages need zod 3 and carry the zod `npm audit` advisory. Details, tested code and status:
 `reference/generative-ui-a2ui.md`.
 
-## Optional: SSR / RSC
+## Choosing CSR vs a full-stack framework
 
-This skill assumes a client-rendered SPA. Do not add `hydrateRoot`, Server Components or
-`"use client"` boundaries to it. If the team adopts SSR (React Router Framework mode or Next.js), that is
-an architecture decision (ADR via `architecture-design`) with its own data-loading, caching and
-security model (server secrets, request-scoped data, hydration mismatches); this skill's routing and
-env-var guidance does not transfer unchanged. **UNVERIFIED — no SSR setup was executed here.**
+This skill builds a client-rendered SPA (Vite + React Router data mode). Decide before scaffolding: the
+SPA vs Next.js App Router vs React Router framework mode comparison, the pinned creators and their
+validation live in `.claude/commands/scaffold-react-app.md` ("Choosing SPA vs full-stack"); toolchain pins
+in `reference/tooling.md`. Moving later is an architecture decision (ADR via `architecture-design`).
+Do not add `hydrateRoot`, Server Components, `"use client"` or `use(browser())` to the SPA; this skill's
+env-var, token and routing guidance does not transfer to a server-rendered app unchanged.
 
 ## Reference files
 
 | File | Covers |
 |---|---|
-| `reference/architecture-and-state.md` | components, context, hooks, effects, state ownership |
+| `reference/architecture-and-state.md` | architecture by complexity, components, context, `use()` + Suspense, Fragment refs, effects, state ownership |
 | `reference/server-state-and-api.md` | API client, query keys, list states, optimistic mutation |
 | `reference/routing.md` | React Router 8 data mode, lazy routes, layouts, auth middleware, returnUrl, error boundaries |
-| `reference/forms.md` | React Hook Form + zod, accessible errors, server errors, dialog |
-| `reference/security.md` | XSS, URLs, tokens, credentials allow-list, env vars |
-| `reference/performance.md` | compiler, memo policy, splitting, virtualization, profiling |
+| `reference/forms.md` | React Hook Form + zod, accessible errors, server errors, dialog, React 19 Actions, settings page |
+| `reference/security.md` | XSS, URLs, tokens, credentials allow-list, env vars, Trusted Types + E2E spec |
+| `reference/performance.md` | compiler decision, memo policy, ViewTransition, splitting, virtualization, profiling |
 | `reference/accessibility-and-i18n.md` | focus, dialog, forms, axe, i18n basics |
 | `reference/testing.md` | Vitest/RTL/MSW setup, Playwright + axe spec |
 | `reference/tooling.md` | scaffold pins, tsconfig, Vite config, ESLint flat config |
-| `reference/generative-ui-a2ui.md` | A2UI v0.9 renderer, catalog mapping, guards, stream host, topologies, CopilotKit option |
+| `reference/generative-ui-a2ui.md` | A2UI 1.0 / v0.9 renderer, catalog views, guards, host, CopilotKit options |

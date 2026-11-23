@@ -1,6 +1,6 @@
 ---
 name: typescript-expert
-description: "TypeScript 5.9 project and Node.js 24 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
+description: "TypeScript project engineering (5.9 for NestJS/Node services, 6.0 for Angular 22 and React) and Node.js 24 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
 allowed-tools: Read, Bash
 metadata:
   triggers: TypeScript performance, Type diagnostics, ESM CJS interop, require(esm), nodenext, TypeScript migration, Monorepo TypeScript, tsc optimization, .d.ts authoring, declaration files, incremental TypeScript, TypeScript project references, Node.js service, env config validation, graceful shutdown, SIGTERM, AbortSignal timeout, unhandled rejection, event loop blocking, worker_threads, stream pipeline backpressure, await using, memory leak, heap snapshot, cpu profile, pino logging, npm audit, npm ci, lockfile
@@ -45,19 +45,19 @@ Use this skill for project-level TypeScript decisions:
 - Do not use for implementation-level type patterns — load `typescript-advanced-types` instead
 - Do not use for runtime debugging — load `systematic-debugging` instead
 
-## Strict baseline (TypeScript 5.9)
+## Strict baseline (TypeScript 5.9 / 6.0)
 
-New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular 21 CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 5.9.3 (2026-11-22). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). Pin TypeScript per project: create-vite 9.3.4 templates install `typescript@~7.0`, so pin `typescript@5.9.3` explicitly where the stack is on 5.9.
+New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 5.9.3 (2026-11-22). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). Pin TypeScript per project: Angular 22 requires `>=6.0.0 <6.1.0` (`@angular/compiler-cli` peer; pin 6.0.3); the React toolchain pins 6.0.3 because typescript-eslint 8.74.0 has the peer `typescript <6.1.0`; NestJS and Node services stay on 5.9.3. create-vite 9.3.4 templates install `typescript@~7.0`, which none of these stacks accept, so always pin explicitly. TypeScript 7.0.2 is npm `latest`.
 
 ## Type-check commands that actually check
 
-Angular 21 and create-vite generate a **solution tsconfig**: the root `tsconfig.json` has `"files": []` plus `references`. `tsc --noEmit` at that root type-checks an empty program and exits 0 on any error.
+Angular 22 and create-vite generate a **solution tsconfig**: the root `tsconfig.json` has `"files": []` plus `references`. `tsc --noEmit` at that root type-checks an empty program and exits 0 on any error.
 
 | Project | Command |
 |---|---|
 | Plain tsconfig (NestJS, libraries, Next.js) | `npx tsc --noEmit` |
 | create-vite (references with `noEmit`) | `npx tsc -b` |
-| Angular 21 | `npx tsc -p tsconfig.app.json --noEmit` and `-p tsconfig.spec.json`; templates are checked only by `npx ng build` / `ng test` (`tsc -b` would emit into `out-tsc/`, because the app config is not `noEmit`) |
+| Angular 22 | `npx tsc -p tsconfig.app.json --noEmit` and `-p tsconfig.spec.json`; templates are checked only by `npx ng build` / `ng test` (`tsc -b` would emit into `out-tsc/`, because the app config is not `noEmit`) |
 | References between composite projects | `npx tsc -b` |
 
 `.claude/hooks/post-edit-typecheck.sh` and the `/verify` web block apply this table.
@@ -208,7 +208,7 @@ Verified patterns with tests and negative controls: `references/node-service-eng
 
 | Stack | Applicable |
 |-------|-----------|
-| Angular 21.x | Yes — but load `angular-spa` for framework patterns |
+| Angular 22.x | Yes — but load `angular-spa` for framework patterns |
 | NestJS 11.x | Yes — but load `nestjs-api` for framework patterns |
 | MCP Builder TypeScript | Yes — Node service rules apply; MCP specifics in `mcp-builder` |
 | Plain Node.js 24 (services, CLIs, workers) | Yes — `references/node-service-engineering.md` |

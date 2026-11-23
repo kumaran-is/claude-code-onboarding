@@ -1,6 +1,6 @@
 ---
 name: typescript-advanced-types
-description: "Canonical TypeScript type-design skill (TS 5.9) for Angular 21.x, React, NestJS 11.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
+description: "Canonical TypeScript type-design skill (TS 5.9 / 6.0) for Angular 22.x, React, NestJS 11.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
 allowed-tools: Read
 metadata:
   triggers: "Generic types, Conditional types, Mapped types, Utility types, Template literal types, Type-safe API client, Type-safe form, DeepPartial, DeepReadonly, Branded types, type inference, Zod, runtime validation, DTO mapping, discriminated union, exhaustive check, assertNever, TypeScript architecture, type safety hardening, shared types"
@@ -45,7 +45,7 @@ Before applying any type pattern, READ the actual TypeScript file first. Do not 
 
 Compile-time types describe what you EXPECT; they check nothing that arrives at runtime. `res.json() as Order` compiles for any payload, and a wrong field becomes `undefined` or an `Invalid Date` three components later. Rules:
 
-1. **Parse every untrusted value at the boundary** (HTTP responses, SSE/WebSocket frames, model output, URL/query params, `localStorage`, `postMessage`) with a schema, then work with the inferred type. Angular: `httpResource(..., { parse: Schema.parse })` (experimental in v21) or `.pipe(map(v => Schema.parse(v)))` after `HttpClient`.
+1. **Parse every untrusted value at the boundary** (HTTP responses, SSE/WebSocket frames, model output, URL/query params, `localStorage`, `postMessage`) with a schema, then work with the inferred type. Angular: `httpResource(..., { parse: Schema.parse })` (stable since Angular 22) or `.pipe(map(v => Schema.parse(v)))` after `HttpClient`.
 2. **DTO ≠ domain model.** The DTO mirrors the wire; the domain type is what the app uses (branded ids, `Date`, camelCase). Map in ONE place (service/repository); templates and components receive domain types only.
 3. **Model UI and protocol states as discriminated unions** and end every `switch` with `assertNever`, so a new variant is a compile error, not a blank screen.
 4. **No `any`.** `unknown` + narrowing (schema, type guard). Enforce with `@typescript-eslint/no-explicit-any` and the type-aware `no-unsafe-*` rules where ESLint is configured.
@@ -145,7 +145,7 @@ TypeScript's built-in transformation utilities: `Partial<T>`, `Required<T>`, `Re
 
 | Stack | Applicable | Notes |
 |-------|-----------|-------|
-| Angular 21.x | Yes | Type-safe forms, component inputs, RxJS operator types, signal types, `httpResource` `parse` |
+| Angular 22.x | Yes | Type-safe forms, component inputs, RxJS operator types, signal types, `httpResource` `parse` |
 | React 19 | Yes | Props and state unions, typed hooks, schema-parsed fetch results |
 | NestJS 11.x | Yes | Type-safe DTOs, guards, interceptors, Prisma query result types |
 | MCP Builder (TypeScript) | Yes | Type-safe tool definitions, request/response contracts |

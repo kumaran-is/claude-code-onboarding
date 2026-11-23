@@ -1,7 +1,8 @@
 # Server state and the typed API client
 
 > RECOMMENDED PRACTICE. Every block below is copied from the validation app and passed `tsc -b`,
-> ESLint and Vitest (2026-11-23). Paths are relative to the app root.
+> ESLint and Vitest (2026-11-23; re-run with React 19.3.1, `@tanstack/react-query@5.108.4`). Paths are
+> relative to the app root.
 
 ## API client: runtime validation at the boundary, credentials only to allow-listed origins
 
@@ -171,6 +172,10 @@ export function useCreateProject() {
   })
 }
 ```
+
+Mutations vs React 19 Actions: when the data lives in this cache, mutate with `useMutation` and keep the
+optimistic write in the cache (above). React's `useActionState` + `useOptimistic` (`forms.md`) suit
+results that no cache shares; mixing both for the same data shows two optimistic copies.
 
 TanStack v5 callback signatures (from `@tanstack/query-core` types): `onMutate(variables, context)`,
 `onError(error, variables, onMutateResult, context)`, `onSettled(data, error, variables, onMutateResult, context)`;

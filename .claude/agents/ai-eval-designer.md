@@ -1,6 +1,6 @@
 ---
 name: ai-eval-designer
-description: Use this agent to design a risk-tiered evaluation set for an AI feature. Trigger when the user says "design evals for", "I need an eval set", "what should I test for this AI feature", "build a golden dataset", or before launching an AI feature that doesn't have evals yet. Also trigger after an incident, to add the new failure mode as eval cases.
+description: Use this agent to design a risk-tiered evaluation set for an AI feature. Trigger when the user says "design evals for", "I need an eval set", "what should I test for this AI feature", "build a golden dataset", or before launching an AI feature that doesn't have evals yet. Also trigger after an incident, to add the new failure mode as eval cases. Not for reviewing eval code (eval-reviewer) or running evals (rag-eval-runner).
 # Write is needed to create eval-set files only (evals/<feature-slug>/README.md and cases/*.json).
 # It never edits product code, prompts or existing eval cases; no Edit, no Bash.
 tools: Read, Grep, Glob, Write

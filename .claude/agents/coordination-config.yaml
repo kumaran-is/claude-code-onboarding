@@ -1,6 +1,6 @@
 # Claude Code Agent Coordination Config
 # Defines: task dispatch rules, cross-consultation, conflict resolution, and quality gates
-# for a 43-agent multi-stack development team.
+# for the agents in .claude/agents/ (68; check with: ls .claude/agents/*.md | wc -l).
 #
 # Stacks covered: Java/Spring Boot, NestJS, Python/FastAPI, Agentic AI (LangChain/LangGraph),
 #                 Angular, Flutter, React Native, PostgreSQL, pgvector, Weaviate,
@@ -104,7 +104,7 @@ agent_registry:
 
     - name: terraform-specialist
       domain: Terraform for GCP, Cloud Run, Cloud SQL, Firestore, IAM, networking
-      model: sonnet
+      model: opus
       can_write: false  # Default permissionMode — review/plan only unless elevated
       note: "Infrastructure changes require explicit human approval before apply"
 
@@ -123,6 +123,21 @@ agent_registry:
       domain: STRIDE, PASTA, attack trees, security architecture review, risk assessment
       model: sonnet
       can_write: false  # Analysis and reporting only
+
+    - name: flutter-genui
+      domain: "Expert Flutter A2UI (generative UI) developer for agent-driven native UIs on protocol v0.9 with..."
+      model: sonnet
+      can_write: true
+
+    - name: tdd-guide
+      domain: "Red-Green-Refactor enforcement agent"
+      model: sonnet
+      can_write: true
+
+    - name: java-build-resolver
+      domain: "Surgical Maven/Spring Boot build error specialist"
+      model: sonnet
+      can_write: true
 
   # P3 — Reviewers. Run post-implementation. Never dispatched as primary implementer.
   # Each reviewer targets a specific stack or cross-cutting concern.
@@ -202,6 +217,56 @@ agent_registry:
       can_write: false
       note: "Web UI: Chrome DevTools MCP / playwright-cli. Flutter Android/iOS: Maestro evidence. Only returns APPROVED with visual proof."
 
+    - name: adk-reviewer
+      domain: "Read-only reviewer for Google ADK 1.29.0 agent code"
+      model: opus
+      can_write: false
+
+    - name: ai-security-reviewer
+      domain: "Use this agent when reviewing AI-related code (prompts, agent loops, RAG systems, tool definitions,..."
+      model: opus
+      can_write: false
+
+    - name: design-system-reviewer
+      domain: "Specialist reviewer for changes that touch shared UI component libraries (Flutter or Angular)"
+      model: sonnet
+      can_write: false
+
+    - name: eval-reviewer
+      domain: "Read-only reviewer for eval code after implementation: eval tests, golden dataset cases, CI eval gates,..."
+      model: sonnet
+      can_write: false
+
+    - name: genui-contract-reviewer
+      domain: "Read-only reviewer for cross-platform generative UI on the A2UI v0.9 contract"
+      model: opus
+      can_write: false
+
+    - name: performance-oracle
+      domain: "Quantified performance review specialist"
+      model: sonnet
+      can_write: false
+
+    - name: python-reviewer
+      domain: "General Python 3.14 / FastAPI 0.135+ code reviewer (read-only)"
+      model: sonnet
+      can_write: false
+
+    - name: python-worker-reviewer
+      domain: "Read-only reviewer for standalone Python background worker services (Pub/Sub or queue consumers,..."
+      model: opus
+      can_write: false
+
+    - name: rag-eval-runner
+      domain: "Use to run the RAG eval suite and produce a regression report"
+      model: sonnet
+      can_write: false
+
+    - name: wireframe-reviewer
+      domain: "Reviews wireframe HTML files and UI designs using dual-persona evaluation (efficiency + delight)"
+      model: sonnet
+      can_write: false
+
   # P4 — Utility agents. Support any tier for research, scaffolding, or one-off analysis.
   # These are tools, not owners — they do not drive tasks.
   p4_utility:
@@ -245,6 +310,61 @@ agent_registry:
     - name: output-evaluator
       domain: Also usable as a utility gate for intermediate agent outputs
       can_write: false
+
+    - name: ai-eval-designer
+      domain: "Use this agent to design a risk-tiered evaluation set for an AI feature"
+      model: opus
+      can_write: true
+
+    - name: doc-updater
+      domain: "Lightweight documentation updater"
+      model: haiku
+      can_write: true
+
+    - name: idea-to-backlog
+      domain: "Transforms one-line product ideas into comprehensive validated feature backlogs with pain points,..."
+      model: sonnet
+      can_write: true
+
+    - name: mvp-shortlist
+      domain: "Evaluates feature backlogs and selects optimal MVP feature sets using Titan methodology"
+      model: sonnet
+      can_write: true
+
+    - name: premium-wireframe-2026
+      domain: "Generates stunning 2026 mobile wireframes with dual dark/light themes using Aurora design system"
+      model: sonnet
+      can_write: true
+
+    - name: presentation
+      domain: "Create stunning, animation-rich HTML slide presentations from scratch or by converting PowerPoint files"
+      model: sonnet
+      can_write: true
+
+    - name: publish-wireframes
+      domain: "Deploys wireframes to Firebase Hosting"
+      model: haiku
+      can_write: true
+
+    - name: reddit-research
+      domain: "Mine Reddit threads to extract real customer pain points, unmet needs, and product gaps"
+      model: sonnet
+      can_write: true
+
+    - name: rules-distill
+      domain: "Scans .claude/skills/ for behavioral patterns appearing in 2+ skills that are actionable, violation-prone,..."
+      model: sonnet
+      can_write: true
+
+    - name: wireframe-agent
+      domain: "Generates interactive HTML/CSS/JS wireframes for UI design exploration"
+      model: sonnet
+      can_write: true
+
+    - name: wireframe-iterator
+      domain: "Applies review feedback to improve wireframe HTML files using a 3-pass system (critical fixes, recommended..."
+      model: sonnet
+      can_write: true
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TASK DISTRIBUTION

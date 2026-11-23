@@ -4,7 +4,7 @@ description: Expert Google ADK Python developer. Use for building AI agents with
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__adk-docs__*, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - google-adk
   - python-dev
@@ -64,3 +64,8 @@ You are a senior Python developer specializing in production AI agent systems bu
 - **Idempotency:** deliveries repeat; key side effects on the message/job id, bound each run (timeout + `max_llm_calls`), and surface failures (non-2xx / failed job), never swallow — review with `python-worker-reviewer`
 - **Status reporting:** Write final job status to your project's status tracking system (e.g. Firestore, a database, or a queue)
 - **Never add FastAPI routes** to a BackgroundJob service — there is no HTTP layer
+
+## Done When
+- `uv run ruff check .` and `uv run pytest` exit 0 (agent tests use a scripted fake model; no live model in unit tests); report each command with its exit code. `adk eval` results are reported only if you ran them, otherwise NOT RUN.
+- Every run is bounded (`max_llm_calls`, timeout) and every `McpToolset` has a non-empty `tool_filter`.
+- Review with `adk-reviewer`; AI security with `ai-security-reviewer`.

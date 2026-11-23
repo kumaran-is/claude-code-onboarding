@@ -4,7 +4,7 @@ description: Expert Agentic AI developer with Python 3.14, LangChain v1.2.8, Lan
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__langchain-docs__search_docs_by_lang_chain, mcp__langchain-docs__query_docs_filesystem_docs_by_lang_chain, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - agentic-ai-dev
   - agentic-ai-coding-standard

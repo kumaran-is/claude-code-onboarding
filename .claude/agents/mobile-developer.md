@@ -4,7 +4,7 @@ description: Expert React Native, native iOS/Android, and mobile CI/CD developer
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - mobile-developer
   - mobile-design
@@ -50,5 +50,5 @@ This agent handles everything mobile that `flutter-mobile` does NOT:
 
 If the user asks for Flutter work during this session:
 1. State: "This is Flutter work — the `flutter-mobile` agent handles this."
-2. Dispatch `flutter-mobile` agent for the Flutter portion
-3. Coordinate: you handle the native module or CI/CD side, flutter-mobile handles Dart
+2. Stop the Flutter portion and return it to the caller to dispatch `flutter-mobile` (a subagent cannot dispatch another agent)
+3. Finish only the native module or CI/CD side; list the Dart work you did not do

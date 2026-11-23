@@ -4,7 +4,7 @@ description: Expert NestJS 11.x backend developer (verified on 11.2.11) with Fas
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep
+tools: Bash, Read, Write, Edit, Glob, Grep, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - nestjs-api
   - nestjs-coding-standard

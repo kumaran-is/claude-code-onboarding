@@ -1,6 +1,6 @@
 ---
 name: premium-wireframe-2026
-description: "Generates stunning 2026 mobile wireframes with dual dark/light themes using Aurora design system. Single-file HTML/CSS/JS with glassmorphism, ambient orbs, and iPhone 15 Pro frames. Use when user says: wireframe for [idea], create screens, design [app]."
+description: "Generates stunning 2026 mobile wireframes with dual dark/light themes using Aurora design system. Single-file HTML/CSS/JS with glassmorphism, ambient orbs, and iPhone 15 Pro frames. Use when user says: wireframe for [idea], create screens, design [app]. Hi-fi mockups. Not for lo-fi sketch drafts (wireframe-agent), scoring (wireframe-reviewer) or deploying (publish-wireframes)."
 tools: Read, Write, Glob
 model: sonnet
 permissionMode: default

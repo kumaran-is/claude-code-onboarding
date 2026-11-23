@@ -4,7 +4,7 @@ description: Expert Flutter A2UI (generative UI) developer for agent-driven nati
 model: sonnet
 permissionMode: acceptEdits
 memory: project
-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__dart-mcp-server__dart, mcp__context7__resolve-library-id, mcp__context7__query-docs
+tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__dart-mcp-server__analyze_files, mcp__dart-mcp-server__pub_dev_search, mcp__dart-mcp-server__read_package_uris, mcp__dart-mcp-server__rip_grep_packages, mcp__context7__resolve-library-id, mcp__context7__query-docs
 skills:
   - flutter-genui
   - flutter-mobile

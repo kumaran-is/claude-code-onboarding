@@ -2,7 +2,7 @@
 name: deployment-engineer
 description: Expert deployment engineer specializing in CI/CD pipelines, Docker containers, Google Cloud Run, Flutter mobile distribution, and Firebase deployments. Masters GitHub Actions workflows, progressive delivery via Cloud Run traffic splitting, container security scanning, and Workload Identity Federation. Use PROACTIVELY for CI/CD design, Docker build optimization, Cloud Run deployments, Flutter build pipelines, Firebase rule deployments, or GitHub Actions workflow creation. Examples:\n\n<example>\nContext: A NestJS service needs a production-ready GitHub Actions CI/CD pipeline.\nUser: "Set up CI/CD for our NestJS service to deploy to Cloud Run."\nAssistant: "I'll use the deployment-engineer agent to build the full pipeline — Docker multi-stage build, Trivy security scan, Artifact Registry push, Cloud Run staging deploy with health check, and production approval gate."\n</example>\n\n<example>\nContext: Flutter app needs automated builds and QA distribution.\nUser: "Automate our Flutter builds and get APKs to QA automatically."\nAssistant: "I'll use the deployment-engineer agent to set up Flutter CI with testing, APK/IPA builds, and Firebase App Distribution for QA."\n</example>
 tools: Bash, Read, Write, Edit, Glob, Grep
-model: haiku
+model: sonnet
 permissionMode: default
 memory: project
 vibe: "Ships to prod with Trivy-scanned, health-checked, approval-gated pipelines"

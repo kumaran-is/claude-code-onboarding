@@ -96,7 +96,7 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 ### Colors
 - **NEVER** hardcode hex values (`#3b82f6`, `Color(0xFF...)`)
 - **NEVER** use `rgb()`, `rgba()`, `hsl()`, `hsla()` literals
-- **Flutter:** Use `Theme.of(context).colorScheme.*`; `Color.withOpacity` is deprecated — use `withValues(alpha: ...)`
+- **Flutter:** Use `Theme.of(context).colorScheme.*`; `Color.withOpacity` is deprecated — use `withValues(alpha: ...)`. State colours use `WidgetStateProperty`/`WidgetState` (`MaterialStateProperty` is deprecated). Import widgets from `package:material_ui/material_ui.dart` (Flutter >= 3.47)
 - **Angular:** Use daisyUI semantic tokens (`bg-primary`, `text-base-content`)
 
 ### Spacing
@@ -111,7 +111,7 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 
 ### Forms
 - **NEVER** use an input without a form binding or without a visible, associated label
-- **Web:** daisyUI 5 form classes (`fieldset`, `label`, `input`, `select`, `validator`) plus a form binding (`formControlName`, `[formField]` (experimental Signal Forms), `ngModel`, or the React form library). daisyUI 4 names (`form-control`, `label-text`, `*-bordered`) emit no CSS in v5
+- **Web:** daisyUI 5 form classes (`fieldset`, `label`, `input`, `select`, `validator`) plus a form binding (`formControlName`, `[formField]` (Signal Forms, stable in Angular 22), `ngModel`, or the React form library). daisyUI 4 names (`form-control`, `label-text`, `*-bordered`) emit no CSS in v5
 - **Flutter:** Use shared form field wrapper widgets
 
 ### Touch Targets

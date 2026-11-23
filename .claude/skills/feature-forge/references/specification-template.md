@@ -128,8 +128,8 @@ The brief answers "Should we build this at all?" — the EARS spec answers "How 
 
 ## 4. What layer does this land on?
 - [ ] REST API only (NestJS 11.x endpoint + Prisma DTO)
-- [ ] REST API + Angular UI (NestJS + Angular 21.x component)
-- [ ] REST API + Flutter mobile (NestJS + Flutter 3.41.x screen)
+- [ ] REST API + Angular UI (NestJS + Angular 22.3.x component)
+- [ ] REST API + Flutter mobile (NestJS + Flutter 3.50.x screen)
 - [ ] Full stack (NestJS + Angular + Flutter + DB migration)
 - [ ] Background/agent only (LangGraph + FastAPI)
 - [ ] Database schema change only (PostgreSQL migration)

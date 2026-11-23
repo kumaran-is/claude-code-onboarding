@@ -76,7 +76,7 @@ Re-check before pinning: `npm view <pkg>@<major> version`, then install with `np
     "prisma": "7.10.1",
     "socket.io-client": "4.8.4",
     "supertest": "7.3.2",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "typescript-eslint": "8.73.0",
     "unplugin-swc": "2.0.0",
     "vitest": "4.1.12"

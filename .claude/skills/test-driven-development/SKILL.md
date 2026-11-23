@@ -74,7 +74,7 @@ test('createUser throws ConflictException when email is duplicate', ...)
 | NestJS 11 / TypeScript | `references/tdd-patterns-nestjs.md` | Writing tests for NestJS, TypeScript, Fastify |
 | Python 3.14 / FastAPI | `references/tdd-patterns-python.md` | Writing tests for FastAPI, Pydantic, async Python |
 | Flutter / Dart | `references/tdd-patterns-flutter.md` | Writing tests for Flutter widgets, Riverpod providers, Dart |
-| Angular 21 | `../angular-spa/reference/testing-vitest.md` | Writing `ng test` (Vitest) component and service tests |
+| Angular 22 | `../angular-spa/reference/testing-vitest.md` | Writing `ng test` (Vitest) component and service tests |
 | React 19 | `../react-spa/reference/testing.md` | Writing Vitest + React Testing Library tests |
 
 ## Quick Checklist

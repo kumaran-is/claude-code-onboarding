@@ -1,9 +1,10 @@
-# Web Frontend Delivery (static SPA: Angular 21, React)
+# Web Frontend Delivery (static SPA: Angular 22, React)
 
 Release, configuration, caching, verification and client telemetry for browser apps served from static hosting
 (Firebase Hosting, a bucket + CDN, or similar). Host-specific commands: `firebase-hosting-basics`. Security rules for
 headers, tokens and CSP: `security-reviewer/reference/web-frontend-security.md`. Angular content was compiled and run on
-Angular 21.2.26 / TS 5.9.3 / Node 24.13.1 / Chromium (Playwright 1.58.2) on 2026-11-22; React notes are RECOMMENDED
+Angular 21.2.26 / TS 5.9.3 / Node 24.13.1 / Chromium (Playwright 1.58.2) on 2026-11-22; the `ng build` output shape and
+hash format were re-checked on Angular 22.3.0 / TS 6.0.3 / Node 26.13.1 on 2026-11-23. React notes are RECOMMENDED
 PRACTICE.
 
 ## 1. Reproducible builds
@@ -11,7 +12,7 @@ PRACTICE.
 - Build from a clean checkout of one commit, never a developer working tree: `git worktree add --detach <dir> <sha>` locally,
   or the CI checkout.
 - `npm ci` (lockfile-exact; fails when `package.json` and the lockfile disagree). Never `npm install` in a release job.
-- Pin Node: `.nvmrc` (e.g. `24.13.1`) + `"engines": { "node": ">=24.13 <25" }` + `actions/setup-node` with
+- Pin Node: `.nvmrc` (e.g. `26.13.1`, the Active LTS; Angular 22 accepts `^22.22.3 || ^24.15.0 || ^26.0.0`) + `"engines": { "node": ">=26.13 <27" }` + `actions/setup-node` with
   `node-version-file: .nvmrc`. Pin GitHub Actions to commit SHAs (`firebase-hosting-basics/references/ci-cd-github-actions.md`).
 - Angular: `ng build` (production is the default configuration; `--prod` no longer exists). Budgets fail the build only
   if a CI job runs it on every PR. React/Vite: `vite build`.
@@ -134,8 +135,8 @@ loadRuntimeConfig()
 | Content-hashed bundles (`main-XXXXXXXX.js`, `chunk-*.js`, `styles-*.css`) | `public, max-age=31536000, immutable` | Name changes when content changes |
 | Unhashed files copied from `public/`/`assets/` | `no-cache` (or version the file name) | An `immutable` glob that also matches `logo.png` or a theme script pins a stale file for a year |
 
-- Check the real `dist/` listing before writing the hashed-file glob. Angular 21.2 emits uppercase base32 hashes
-  (`main-43LP34PO.js`, verified); a Firebase Hosting rule for that is in `firebase-hosting-basics/references/configuration.md`
+- Check the real `dist/` listing before writing the hashed-file glob. Angular 21.2 and 22.3 emit uppercase base32 hashes
+  (`main-43LP34PO.js` on 21.2, `main-WYLVDS3Y.js` on 22.3, verified); a Firebase Hosting rule for that is in `firebase-hosting-basics/references/configuration.md`
   (emulator-verified).
 - Deploys must keep the **previous** release's hashed chunks reachable for a while: a tab opened before the deploy
   lazy-loads old chunk names. Hosts that publish immutable versions (Firebase Hosting) do this per version only while the

@@ -12,7 +12,7 @@ Status: Intl and CSS behaviour below is verified (Node 24 `Intl`, Tailwind 4.3.5
 | Angular runtime library (for example Transloco) | Loads translation JSON at runtime | Yes | Extra runtime cost and lazy loading per scope. UNVERIFIED for v21 compatibility: check the library's peer range before adopting |
 | React: FormatJS / `react-intl` | ICU MessageFormat, `<FormattedMessage>`, `useIntl()` | Yes | Same ICU syntax as Angular, so translators see one format |
 | React: `i18next` + `react-i18next` | Key-based JSON, plugins for ICU | Yes | Large ecosystem; enable the ICU plugin if you need ICU plurals |
-| Flutter | `flutter_localizations` + `intl` with ARB files (`gen-l10n`) | Yes | Owned by `flutter-mobile`; same rules below apply |
+| Flutter | ARB files + `gen-l10n` with `intl` 0.20.3; Material/Cupertino delegates from `material_ui`'s `GlobalMaterialLocalizations.delegates` (importing `flutter_localizations` unprefixed alongside `material_ui` is an `ambiguous_import` error on 3.50) | Yes | Owned by `flutter-mobile`; same rules below apply |
 
 ## 2. Formatting rules (all stacks)
 

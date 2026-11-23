@@ -123,7 +123,7 @@ If any of these are present, do NOT ship. Restart the design direction:
 
 ## Framework-Specific Execution Notes
 
-### Angular (daisyUI 5.5.5 + TailwindCSS 4.x)
+### Angular (daisyUI 5.8.2 + Tailwind CSS 4.3.5)
 - Use daisyUI semantic tokens for all colors: `bg-primary`, `text-base-content`, `bg-base-100`
 - Custom aesthetics: extend daisyUI theme in CSS — do NOT hardcode hex values
 - Typography: load custom fonts via `@font-face` in global styles, reference via Tailwind `font-*` utility

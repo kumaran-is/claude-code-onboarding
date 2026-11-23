@@ -1,8 +1,8 @@
 ---
 name: fixing-motion-performance
-description: "Audit and fix animation performance issues in Angular 21.x — layout thrashing, compositor properties, scroll-linked motion, will-change, blur effects, FLIP technique, and View Transitions API. Use when Angular animations stutter, transitions jank, scroll-linked motion is slow, or reviewing CSS/WAAPI animation code for performance. Works as a file auditor: /fixing-motion-performance <file> reports violations with exact line quotes and concrete fixes."
+description: "Audit and fix animation performance issues in Angular 22.x — layout thrashing, compositor properties, scroll-linked motion, will-change, blur effects, FLIP technique, and View Transitions API. Use when Angular animations stutter, transitions jank, scroll-linked motion is slow, or reviewing CSS/WAAPI animation code for performance. Works as a file auditor: /fixing-motion-performance <file> reports violations with exact line quotes and concrete fixes."
 risk: low
-source: community (adapted for Angular 21.x)
+source: community (adapted for Angular 22.x)
 date_added: "2026-03-15"
 allowed-tools: Read, Grep, Bash
 metadata:
@@ -19,7 +19,7 @@ last-reviewed: "2026-03-15"
 
 **NEVER ANIMATE LAYOUT PROPERTIES (width, height, top, left, margin) ON LARGE SURFACES. Default to `transform` and `opacity` only. Resolve compositor vs paint vs layout tier BEFORE writing any animation CSS.**
 
-# Fixing Motion Performance — Angular 21.x
+# Fixing Motion Performance — Angular 22.x
 
 ## When to Use
 
@@ -279,7 +279,7 @@ onHoverEnd(el: HTMLElement): void {
 
 ## 8. View Transitions (Low)
 
-Angular 21.x has native View Transition support via the router.
+Angular 22.x has native View Transition support via the router.
 
 - Use view transitions only for navigation-level page changes
 - Avoid view transitions for interaction-heavy UI (tabs, toggles, accordions)

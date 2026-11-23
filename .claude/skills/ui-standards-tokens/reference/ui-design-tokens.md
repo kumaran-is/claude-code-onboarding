@@ -181,7 +181,8 @@ Primitive → Semantic → Component
   const Duration normal = Duration(milliseconds: 200);
   const Duration slow   = Duration(milliseconds: 300);
   ```
-  Always respect `MediaQuery.of(context).disableAnimations` — skip or shorten animations when true.
+  Always respect `MediaQuery.disableAnimationsOf(context)` — skip or shorten animations when true. Start/stop looping
+  controllers in `didChangeDependencies`, not in `build()`, because the setting can change while the screen is open.
 - **Angular/CSS:**
   ```css
   --duration-fast: 150ms;
@@ -245,17 +246,17 @@ Component token format (both platforms):
 ### Flutter (ThemeData / brightness)
 
 ```dart
+// import 'package:material_ui/material_ui.dart';  (Flutter >= 3.47; flutter/material.dart is deprecated)
+const brandSeed = Color(0xFF1565C0); // ignore-design: the single brand seed
+
 MaterialApp(
   themeMode: ThemeMode.system, // or .light / .dark
   theme: ThemeData(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.blue,
-      brightness: Brightness.light,
-    ),
+    colorScheme: ColorScheme.fromSeed(seedColor: brandSeed),
   ),
   darkTheme: ThemeData(
     colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.blue,
+      seedColor: brandSeed,
       brightness: Brightness.dark,
     ),
   ),
@@ -291,7 +292,7 @@ MaterialApp(
 | UI components and graphics (input borders, icons, focus rings) | 3:1 (1.4.11, AA) |
 | High-contrast theme target (WCAG AAA, 1.4.6) | 7:1 |
 
-**daisyUI 5 secondary ("muted") text.** Opacity on `text-base-content` is a contrast decision. Measured with axe-core 4.14.1 `color-contrast` in Chromium against the default daisyUI 5.5.5 themes:
+**daisyUI 5 secondary ("muted") text.** Opacity on `text-base-content` is a contrast decision. Measured with axe-core 4.14.1 `color-contrast` in Chromium against the default daisyUI 5.8.2 themes:
 
 | Class | `base-100` light | `base-100` dark | `base-300` light |
 |---|---|---|---|

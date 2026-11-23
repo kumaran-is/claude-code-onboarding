@@ -162,7 +162,7 @@ Use this template when dispatching any agent to ensure adequate context:
 Agent: [agent-name]
 Task: [specific task — not "review this code"]
 Files: [explicit file paths]
-Tech stack: [Java 21 / NestJS 11 / Python 3.14 / Flutter 3.41.x / Angular 21 / etc.]
+Tech stack: [Java 21 / NestJS 11 / Python 3.14 / Flutter 3.50.x / Angular 22.3 / React 19.3 / etc.]
 Focus: [specific area of concern]
 Output format: [severity-bucketed findings | PASS/FAIL | recommendation list]
 Non-negotiable rules:

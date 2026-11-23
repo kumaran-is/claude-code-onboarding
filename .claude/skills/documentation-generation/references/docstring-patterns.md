@@ -199,7 +199,7 @@ class UserProfileCard extends StatelessWidget {
 ///
 /// Automatically refreshes when [authProvider] emits a new user.
 @riverpod
-Future<UserProfile> userProfile(UserProfileRef ref) async {
+Future<UserProfile> userProfile(Ref ref) async {
 ```
 
 ### Service method

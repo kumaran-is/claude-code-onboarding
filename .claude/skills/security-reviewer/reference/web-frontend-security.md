@@ -1,8 +1,9 @@
-# Web Frontend Security (Angular 21, React)
+# Web Frontend Security (Angular 22, React)
 
 Browser-side review rules for single-page apps and static sites. Angular rows are official-doc practice
 (angular.dev v21 security guide, read through the Angular CLI MCP on 2026-11-22) or were executed in a
-sandbox on Angular 21.2.26 in Chromium (Playwright 1.58.2) — each row says which. React rows are
+sandbox on Angular 21.2.26 in Chromium (Playwright 1.58.2) — each row says which. The toolkit now targets
+Angular 22.3: the executed rows below were not re-run on 22.3, so re-check them in your app. React rows are
 **RECOMMENDED PRACTICE**: not executed here, no production history claimed.
 
 Severity labels match `security-review-checklist.md`. Server-side authorization rules live in the

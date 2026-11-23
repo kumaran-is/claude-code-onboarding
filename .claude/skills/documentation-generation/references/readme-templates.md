@@ -200,12 +200,12 @@ pytest -m integration        # integration only
 ```markdown
 # ${APP_NAME} — Flutter App
 
-Flutter 3.41.x, Dart 3.10.9, cross-platform (iOS + Android)
+Flutter 3.50.x, Dart 3.14.0, cross-platform (iOS + Android)
 
 ## Prerequisites
 
-- Flutter 3.41.x+
-- Dart 3.10.9+
+- Flutter 3.50.x+
+- Dart 3.14.0+
 - Xcode 16+ (iOS)
 - Android Studio (Android)
 
@@ -228,7 +228,8 @@ Copy `lib/config/env.example.dart` to `lib/config/env.dart` and fill in:
 
 ```bash
 flutter test                 # unit + widget tests
-flutter test integration_test/  # integration tests
+flutter test integration_test/ -d <device-id>  # in-process integration tests (needs a device/simulator)
+maestro test .maestro/          # Android/iOS UI/E2E flows (Maestro only)
 ```
 ```
 
@@ -243,5 +244,5 @@ flutter test integration_test/  # integration tests
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Java](https://img.shields.io/badge/java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/spring--boot-3.5.x-green)
-![Flutter](https://img.shields.io/badge/flutter-3.41.x-blue)
+![Flutter](https://img.shields.io/badge/flutter-3.50.x-blue)
 ```

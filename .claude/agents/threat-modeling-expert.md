@@ -33,8 +33,8 @@ Analyze architectures built with the project tech stack:
 - Java 21 / Spring Boot 3.5.x (WebFlux / Reactive)
 - Node.js 24.14.x / NestJS 11.x with Prisma ORM
 - Python 3.14 / FastAPI with SQLAlchemy async
-- Angular 21.x SPA frontend
-- Flutter 3.41.x cross-platform mobile
+- Angular 22.3.x SPA frontend; React 19.3 SPA or Next.js 16.4 / React Router 8 full-stack (optional)
+- Flutter 3.50.x cross-platform mobile
 - PostgreSQL, Firebase Firestore, Docker infrastructure
 
 ## When to Use

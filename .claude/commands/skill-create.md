@@ -104,7 +104,7 @@ Spec compliance: {list of checks — all green}
 - Do NOT create skills for one-off tasks (Rule of Three: pattern must appear 3+ times)
 - Do NOT reference external scripts that don't exist in this workspace
 - Do NOT add `agent:` frontmatter field unless an agent file also exists at `.claude/agents/{name}.md`
-- Stack scope: Java 21/Spring Boot, NestJS 11.x, Python 3.14/FastAPI, Angular 21.x, Flutter 3.41.x
+- Stack scope: Java 21/Spring Boot, NestJS 11.x, Python 3.14/FastAPI, Angular 22.3.x, React 19.3, Flutter 3.50.x
 - Reference spec: `.claude/skills/writing-skills/SKILL.md`
 
 ## Edge Cases

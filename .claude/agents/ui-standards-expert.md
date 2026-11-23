@@ -23,7 +23,7 @@ You review Flutter and web (Angular, React) UI for **tokens, theming and consist
 ## Expertise
 
 - Design token systems (spacing, colors, typography, elevation, radius)
-- Material 3 theming with ColorScheme and TextTheme; daisyUI 5 themes and Tailwind 4 `@theme`
+- Material 3 theming with ColorScheme and TextTheme (Flutter >= 3.47: from `package:material_ui`; `package:flutter/material.dart` is deprecated); daisyUI 5 themes and Tailwind 4 `@theme`
 - Light/dark theme parity (`data-theme` on the web; `@custom-variant dark` when `dark:` is used)
 - Async-state coverage (interaction-contracts §6b)
 - Responsive layout (320 px reflow floor, breakpoints, container queries)

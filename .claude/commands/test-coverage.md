@@ -44,11 +44,11 @@ tail -40 /tmp/cov-node.log
 ```
 Missing `@vitest/coverage-v8` or no `test:cov` script → BLOCKED. Thresholds belong in `vitest.config.*` (`coverage.thresholds`), so the exit code is the verdict; the table is display only.
 
-### Angular (21.x, `@angular/build:unit-test`)
+### Angular (22.x, `@angular/build:unit-test`)
 Detected by: `angular.json`
 
 ```bash
-npx ng test --watch=false --coverage > /tmp/cov-ng.log 2>&1; echo "COVERAGE EXIT:$?"
+npm exec --no -- ng test --watch=false --coverage > /tmp/cov-ng.log 2>&1; echo "COVERAGE EXIT:$?"   # needs @vitest/coverage-v8 matching vitest (5.1.1), else exit 1 "Code coverage requires ..."
 tail -40 /tmp/cov-ng.log
 ```
 Source: `.claude/skills/angular-spa/reference/testing-vitest.md`.
@@ -62,7 +62,7 @@ tail -40 /tmp/cov-react.log
 ```
 Missing `@vitest/coverage-v8` → BLOCKED. Coverage is unit/component only; E2E (Playwright) is not counted here — see `.claude/rules/testing-tool-selection.md`.
 
-### Flutter (Dart 3.10.9)
+### Flutter (Dart 3.14.0)
 Detected by: `pubspec.yaml` containing `flutter:`
 
 ```bash

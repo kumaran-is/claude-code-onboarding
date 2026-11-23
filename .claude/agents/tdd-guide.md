@@ -121,49 +121,47 @@ describe('UserService', () => {
 });
 ```
 
-### Flutter (flutter_test / Riverpod)
+### Flutter (flutter_test / Riverpod 3, Flutter 3.50.1)
 ```bash
-# Run all tests
-flutter test --coverage -q
+# Run all tests (failures-only reporter; `-q` is not a flutter test flag and exits 64)
+flutter test --coverage -r failures-only
 
 # Run single file
-flutter test test/features/auth/auth_notifier_test.dart
+flutter test test/unit/features/auth/providers/auth_provider_test.dart
 
 # Watch (requires fswatch)
-fswatch -o lib/ | xargs -n1 -I{} flutter test -q
+fswatch -o lib/ | xargs -n1 -I{} flutter test -r failures-only
 ```
 
 ```dart
-// Riverpod provider test pattern
-void main() {
-  group('AuthNotifier', () {
-    late ProviderContainer container;
+// Riverpod 3 notifier test: a mocktail Mock (never a Fake) stubbed per test; ProviderContainer.test() disposes itself
+test('signIn moves loading -> authenticated', () async {
+  when(() => repository.currentUser()).thenReturn(null);
+  when(() => repository.signIn(email: 'bob@example.com', password: 'pass'))
+      .thenAnswer((_) async => Success(user));
+  final container = ProviderContainer.test(
+    overrides: [authRepositoryProvider.overrideWithValue(repository)],
+  );
+  final states = <AuthState>[];
+  container.listen(authProvider, (_, next) => states.add(next)); // listen BEFORE acting
 
-    setUp(() {
-      container = ProviderContainer(
-        overrides: [authRepositoryProvider.overrideWith((_) => MockAuthRepository())],
-      );
-    });
+  await container.read(authProvider.notifier).signIn(email: 'bob@example.com', password: 'pass');
 
-    tearDown(() => container.dispose());
-
-    test('login sets authenticated state', () async {
-      final notifier = container.read(authNotifierProvider.notifier);
-      await notifier.login('user@test.com', 'password');
-      expect(container.read(authNotifierProvider), isA<AsyncData>());
-    });
-  });
-}
+  expect(states, [const AuthState.loading(), AuthState.authenticated(user)]);
+});
 ```
 
-### Angular 21 (`ng test` → Vitest via `@angular/build:unit-test`, jsdom)
+Full compiled file, widget/golden/Robot patterns and the `material_ui` import rule: `flutter-mobile/reference/flutter-testing-patterns.md`.
+Verified RED (exit 1 with the `loading` assignment removed) then GREEN (exit 0) on Flutter 3.50.1 / Riverpod 3.5.0 / mocktail 1.0.5 (2026-11-23).
+
+### Angular 22 (`ng test` → Vitest via `@angular/build:unit-test`, jsdom)
 ```bash
 npx ng test --no-watch --no-progress; echo "UNIT EXIT:$?"                      # CI; never the Karma flag --browsers=ChromeHeadless
 npx ng test --no-watch --include 'src/app/orders/**/*.spec.ts'                 # one area
 ```
 
 ```typescript
-// Zoneless is the default in v21: no change-detection provider in TestBed. Signal inputs via setInput.
+// Zoneless is the default (v21+): no change-detection provider in TestBed. Signal inputs via setInput.
 import { TestBed } from '@angular/core/testing';
 import { OrderTotal } from './order-total';
 
@@ -183,7 +181,7 @@ describe('OrderTotal', () => {
   });
 });
 ```
-Verified RED (exit 1, 2 failed) then GREEN (exit 0, 2 passed) with Angular 21.2 / `@angular/build:unit-test` / Vitest 4. HTTP: `provideHttpClient()` + `provideHttpClientTesting()` and `HttpTestingController.verify()`. Use `vi.fn()` / `vi.spyOn()`, not Jasmine spies. Detect the runner from the `test` builder in `angular.json` before assuming one.
+Verified RED (exit 1, 2 failed) then GREEN (exit 0, 2 passed) with Angular 22.3.0 / `@angular/build:unit-test` / Vitest 5.1.1 / Node 26.13.1 (2026-11-23). HTTP: `provideHttpClient()` + `provideHttpClientTesting()` and `HttpTestingController.verify()`. Use `vi.fn()` / `vi.spyOn()`, not Jasmine spies. Detect the runner from the `test` builder in `angular.json` before assuming one.
 
 ### React (Vitest + React Testing Library + user-event)
 ```bash
@@ -214,7 +212,7 @@ it('shows an alert when saving fails', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not save')
 })
 ```
-Verified RED (exit 1) then GREEN (exit 0, 2 passed) with React 19.3, Vitest 5.1, RTL 16.3, user-event 14.6, jsdom (`environment: 'jsdom'`, setup file importing `@testing-library/jest-dom/vitest`). jsdom cannot compute colour contrast or layout: run those checks in a real browser. API mocks: MSW 3 with `onUnhandledFrame: 'error'` (renamed from `onUnhandledRequest`); a fresh `QueryClient` with `retry: false` per test; one test per UI state (loading, empty, error, success) plus control tests for abort, optimistic rollback and security rules. Vitest does not type-check: run `npx tsc -b` in CI as well. Patterns: `react-spa/reference/testing.md`.
+Verified RED (exit 1) then GREEN (exit 0, 2 passed) with React 19.3, Vitest 5.1, RTL 16.3, user-event 14.6, jsdom (`environment: 'jsdom'`, setup file importing `@testing-library/jest-dom/vitest`). jsdom cannot compute colour contrast or layout: run those checks in a real browser. API mocks: MSW 3 with `onUnhandledFrame: 'error'` (renamed from `onUnhandledRequest`); a fresh `QueryClient` with `retry: false` per test; one test per UI state (loading, empty, error, success) plus control tests for abort, optimistic rollback and security rules. Vitest does not type-check: run `npx tsc -b` in CI as well. Patterns: `react-spa/reference/testing.md`. E2E specs import `test`/`expect` from an auto console-guard fixture (`browser-testing/reference/playwright-test-suite.md`, "Console guard fixture") that fails the test on any console error or uncaught exception; an expected-failure spec declares one RegExp through `test.use(...)`, never an array (Playwright reads an array as `[value, options]`). A React 19.3.1 SPA suite built this way (it also fails on failed requests and 5xx) ran green on Playwright 1.65.1 on 2026-11-23. If the app enforces Trusted Types, never plant markup with `innerHTML` (in a component test or `page.evaluate`): build fixture DOM with `createElement` / `textContent`, or go through the app's Trusted Types policy; a raw `innerHTML` assignment is a Trusted Types violation that the console guard reports as a failure the app did not cause.
 
 ## UI / E2E tool per target (`.claude/rules/testing-tool-selection.md`)
 

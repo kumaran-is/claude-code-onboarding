@@ -35,7 +35,7 @@ Each criterion scores **0** (fail), **1** (partial), or **2** (pass).
 | C1 | **MCP server named explicitly** | Specific MCP server listed (e.g. `dart-mcp-server`, `context7`, `angular-cli`) | Generic "use MCP" without naming which | No MCP reference for a tech that has one |
 | C2 | **Code examples present** | ≥ 1 concrete code block showing correct usage | Examples described in prose only | No examples |
 | C3 | **Anti-patterns documented** | ≥ 1 explicit "don't do this" section or callout | Anti-patterns implied but not explicit | Absent |
-| C4 | **Stack version pinned** | Specific version referenced (e.g. "NestJS 11.x", "Flutter 3.41.x") | Stack named without version | No stack version |
+| C4 | **Stack version pinned** | Specific version referenced (e.g. "NestJS 11.x", "Flutter 3.50.x") | Stack named without version | No stack version |
 
 ### Category D — Safety & Ops (8 pts)
 

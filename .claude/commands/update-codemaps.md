@@ -13,8 +13,8 @@ Generates and updates `docs/CODEMAPS/` — compact, <1000-token snapshots of eac
 |------|--------|
 | `docs/CODEMAPS/spring-api.md` | Java 21 / Spring Boot 3.5.x WebFlux service |
 | `docs/CODEMAPS/nestjs-api.md` | NestJS 11.x / Fastify / Prisma service |
-| `docs/CODEMAPS/angular-spa.md` | Angular 21.x SPA |
-| `docs/CODEMAPS/flutter-mobile.md` | Flutter 3.41.x mobile app |
+| `docs/CODEMAPS/angular-spa.md` | Angular 22.3.x SPA |
+| `docs/CODEMAPS/flutter-mobile.md` | Flutter 3.50.x mobile app |
 | `docs/CODEMAPS/python-api.md` | Python 3.14 / FastAPI service |
 | `docs/CODEMAPS/architecture.md` | Cross-service integration map |
 

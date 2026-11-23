@@ -35,8 +35,8 @@ tasks, and improves developer workflow efficiency across the team's tech stack.
 Verify prerequisites are installed at correct versions:
 
 - Java 21 (`java -version`)
-- Node.js 24.14.x (`node -v`)
-- Flutter 3.41.x (`flutter --version`)
+- Node.js 24.14.x for NestJS; Node.js 26 LTS (26.13.1) for Angular 22 and React (`node -v`)
+- Flutter 3.50.x (`flutter --version`)
 - Python 3.14 (`python3 --version`)
 - Docker + Docker Compose (`docker --version`)
 
@@ -110,7 +110,7 @@ DX AUDIT — [Project Name]
 ENVIRONMENT:
 ✅ Java 21.0.3
 ❌ Node.js 22.1.0 (required: 24.14.x) — run: nvm install 24.14
-✅ Flutter 3.41.x.0
+✅ Flutter 3.50.1
 
 MANUAL TASKS IDENTIFIED:
 1. [Task] — currently requires [N] commands — can be: [automation approach]

@@ -129,7 +129,7 @@ Measure with `node --cpu-prof` (CPU), `perf_hooks.monitorEventLoopDelay` / the `
 
 | Pattern | Estimated Impact | Detection |
 |---------|-----------------|-----------|
-| Missing `OnPush` change detection on data-heavy component | Re-renders entire subtree on any change | Component decorator without `changeDetection: ChangeDetectionStrategy.OnPush` |
+| Component opted out of OnPush on a data-heavy view (Angular 22 defaults to OnPush) | Re-renders entire subtree on any change | Component decorator with `changeDetection: ChangeDetectionStrategy.Eager` (or an app still on ≤21 without OnPush) |
 | Unsubscribed Observable (memory leak + repeated execution) | Memory grows unbounded per navigation | `subscribe()` without `takeUntilDestroyed`, `async` pipe, or explicit unsubscribe |
 | Missing lazy loading for feature routes | Initial bundle +Xkb per eager feature module | Routes without `loadComponent`/`loadChildren` |
 | `@for` tracking `$index` or the object itself on a mutable list; any legacy `*ngFor` | DOM nodes destroyed and recreated on reorder/refresh instead of moved | `@for (… ; track $index)` on data that is re-fetched or reordered; `*ngFor` anywhere (migrate to `@for (…; track item.id)`) |

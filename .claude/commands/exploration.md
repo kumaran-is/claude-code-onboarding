@@ -117,7 +117,7 @@ When the proposed solution touches these layers, add these stack-specific questi
 | **Spring Boot / WebFlux** | "Is this reactive all the way down? Any blocking calls?" |
 | **NestJS / Prisma** | "Is this inside a transaction? What's the rollback on partial failure?" |
 | **Flutter / Riverpod** | "What's the loading/error state? Is the provider scoped correctly?" |
-| **Angular** | "Is this a signal or observable? Is OnPush strategy considered?" |
+| **Angular** | "Is this a signal or observable? OnPush is the v22 default: is any `Eager` opt-out justified?" |
 | **PostgreSQL** | "Does this need an index? Run EXPLAIN ANALYZE first." |
 | **Firebase** | "Does this need a Firestore rule change? What's the read/write cost?" |
 

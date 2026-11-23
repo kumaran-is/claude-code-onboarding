@@ -46,8 +46,9 @@ if [ "$HAS_MAVEN" = true ]; then      # non-zero = CVSS >= 7 found, or plugin/NV
   else echo "maven: BLOCKED (mvn not installed)"; fi
 fi
 if [ "$HAS_PUB" = true ]; then
-  # There is no `pub audit` subcommand: `flutter pub audit` prints the pub help and exits 0 (checked on
-  # Flutter 3.44.2), which would read as a clean scan. Pub reports advisories during `pub get`
+  # There is no `pub audit` subcommand: on Flutter 3.50.1 `flutter pub audit` and `dart pub audit` exit 64
+  # ("Could not find a subcommand"); 3.44.2 printed the help and exited 0, which read as a clean scan
+  # (historical; not re-run on 3.50). Pub reports advisories during `pub get`
   # ("affected by advisory", dart.dev/tools/pub/security-advisories).
   if command -v flutter >/dev/null; then PUB="flutter pub"; elif command -v dart >/dev/null; then PUB="dart pub"; else PUB=""; fi
   if [ -z "$PUB" ]; then echo "pub: BLOCKED (neither flutter nor dart installed)"

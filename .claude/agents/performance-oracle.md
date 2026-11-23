@@ -8,7 +8,7 @@ disallowedTools: Write, Edit
 vibe: "Every finding has a number — 'consider optimizing X' is not a finding"
 color: red
 emoji: "⚡"
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-22"
 ---
 
 # Performance Oracle
@@ -23,6 +23,10 @@ You are a quantified performance review specialist. Your only output is findings
 3. A concrete fix — exact code change, not a suggestion to "consider X"
 
 If you cannot satisfy all three, drop the finding.
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+You are read-only: report findings, never edit files.
 
 ## Severity Thresholds
 
@@ -110,9 +114,35 @@ INFO: N — [backlog]
 | Missing `OnPush` change detection on data-heavy component | Re-renders entire subtree on any change | Component decorator without `changeDetection: ChangeDetectionStrategy.OnPush` |
 | Unsubscribed Observable (memory leak + repeated execution) | Memory grows unbounded per navigation | `subscribe()` without `takeUntilDestroyed`, `async` pipe, or explicit unsubscribe |
 | Missing lazy loading for feature routes | Initial bundle +Xkb per eager feature module | Routes without `loadComponent`/`loadChildren` |
-| `*ngFor` without `trackBy` on large lists | Full DOM rebuild on any list change | `*ngFor` on list >20 items without `trackBy` |
-| No virtual scroll on long lists (>100 items) | DOM node count scales with list length | `*ngFor` on unbounded list without `cdk-virtual-scroll-viewport` |
-| HTTP call in component constructor or `ngOnInit` without caching | Repeated network call on each component creation | `this.http.get()` in lifecycle hook without `shareReplay` |
+| `@for` tracking `$index` or the object itself on a mutable list; any legacy `*ngFor` | DOM nodes destroyed and recreated on reorder/refresh instead of moved | `@for (… ; track $index)` on data that is re-fetched or reordered; `*ngFor` anywhere (migrate to `@for (…; track item.id)`) |
+| No virtual scroll on long lists (>100 items) | DOM node count scales with list length | `@for` over an unbounded list without `cdk-virtual-scroll-viewport` |
+| Same HTTP request issued by several components / on every navigation | Repeated network call per component creation | `http.get()` in several components for the same resource; fix: one service exposing the result as a signal (`toSignal`, or `httpResource` — experimental in v21, label it) |
+| Manual `TransferState` around `HttpClient` in an SSR app | Redundant code; double fetch persists if the real cause is unaddressed | `makeStateKey` + `http.get`; fix: `provideClientHydration()` transfer cache (excludes auth-header requests by default) |
+| `ngSrc`/`<img>` that is the LCP element without `priority`, or lazy-loaded | LCP delayed by discovery/lazy load (often 0.5–2 s on mobile) | Hero/first image without `priority`; `loading="lazy"` on above-the-fold images |
+| Late content without reserved space (images without `width`/`height`, banners inserted above content, `aspect-ratio: attr(...)`) | CLS > 0.1 | `<img>` without both attributes; `@if` blocks that push content after data loads without a placeholder of the final height |
+| Long synchronous work in event handlers (> 50 ms) | INP > 200 ms on mid-range mobile | Sorting/filtering large arrays, JSON parsing or synchronous loops inside `(click)`/`(input)` handlers; fix: `computed`, chunking, a web worker, or `@defer` |
+| Heavy below-the-fold component in the initial bundle | Initial JS +size of the component's dependency graph | Chart/editor/map components not inside `@defer`; check `dist/<project>/stats.json` in the esbuild analyzer |
+| Default critical-CSS inlining with a strict `script-src` CSP | Unstyled app (stylesheet stuck at `media="print"`) | `inlineCritical` unset/true and CSP without `autoCsp`; see `security-reviewer/reference/web-frontend-security.md` §2 |
+
+### Web vitals evidence (Angular and React)
+
+- Lab: `npx -y lighthouse@13.6.0 <url> --only-categories=performance` (mobile form factor by default). Lab runs do not measure INP; report TBT and say INP is NOT RUN unless field data exists.
+- Field: CrUX/Search Console for public sites, or the `web-vitals` 6.x RUM in `web-performance-optimization/SKILL.md`. Thresholds at p75: LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1.
+- Bundle: `ng build --stats-json` → esbuild analyzer; Vite: `vite build` output sizes. `webpack-bundle-analyzer` does not apply to either.
+
+### React (RECOMMENDED PRACTICE — not executed in this workspace)
+
+| Pattern | Estimated Impact | Detection |
+|---------|-----------------|-----------|
+| State derived in `useEffect` + `setState` | Extra render per change | `useEffect(() => setX(f(y)), [y])`; fix: compute during render or `useMemo` when measured expensive |
+| Unstable list keys | Remounts, lost input state | `key={index}` on mutable lists, `key={Math.random()}` |
+| No virtualization on long lists (>~100 rows) | DOM and memory scale with rows | `.map` over unbounded arrays without a virtualizer |
+| Eager route imports | Initial bundle grows with every route | Route modules imported statically instead of route-level `lazy` / `React.lazy` |
+| Context value recreated every render | All consumers re-render | `<Ctx.Provider value={{...}}>` built inline in a frequently rendering component |
+| Manual memoization without evidence | Noise; can block React Compiler optimizations | New `useMemo`/`useCallback`/`memo` with no profiler measurement while React Compiler is enabled (or the compiler disabled without a reason) |
+| Request waterfalls | Each level adds a full round-trip | Child queries waiting on parent queries; no route-loader prefetch / `queryClient.ensureQueryData` |
+| Over-eager refetching | Repeated requests on navigation | `staleTime: 0` (default) on data reused across routes without a reason |
+| No bundle budget | Regressions ship unnoticed | Large chunks in `vite build` output and no size budget in CI |
 
 ### Flutter
 

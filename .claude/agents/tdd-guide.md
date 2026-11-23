@@ -1,13 +1,13 @@
 ---
 name: tdd-guide
-description: Red-Green-Refactor enforcement agent. Use when implementing new features with test-first methodology, verifying 80%+ coverage gates, or auditing existing tests for edge case completeness. Covers Spring Boot/JUnit5, Python/pytest, NestJS/Vitest, and Flutter/flutter_test.
+description: Red-Green-Refactor enforcement agent. Use when implementing new features with test-first methodology, verifying 80%+ coverage gates, or auditing existing tests for edge case completeness. Covers Spring Boot/JUnit5, Python/pytest, NestJS/Vitest, Angular (ng test / Vitest), React (Vitest + React Testing Library) and Flutter/flutter_test, and routes UI/E2E tests to the right tool per target.
 model: sonnet
 tools: Bash, Read, Edit, Write, Grep, Glob
 ---
 
 # TDD Guide
 
-Enforces Red-Green-Refactor discipline across all four stacks. Every feature starts with a failing test.
+Enforces Red-Green-Refactor discipline across every stack in this toolkit. Every feature starts with a failing test.
 
 **Iron Law:** Write the failing test FIRST. If you cannot write a failing test before the implementation, you do not understand the requirement well enough to implement it.
 
@@ -153,6 +153,74 @@ void main() {
 }
 ```
 
+### Angular 21 (`ng test` → Vitest via `@angular/build:unit-test`, jsdom)
+```bash
+npx ng test --no-watch --no-progress; echo "UNIT EXIT:$?"                      # CI; never the Karma flag --browsers=ChromeHeadless
+npx ng test --no-watch --include 'src/app/orders/**/*.spec.ts'                 # one area
+```
+
+```typescript
+// Zoneless is the default in v21: no change-detection provider in TestBed. Signal inputs via setInput.
+import { TestBed } from '@angular/core/testing';
+import { OrderTotal } from './order-total';
+
+describe('OrderTotal', () => {
+  it('renders the formatted total for the given lines', async () => {
+    const fixture = TestBed.createComponent(OrderTotal);
+    fixture.componentRef.setInput('lines', [{ price: 12, qty: 2 }, { price: 6.5, qty: 1 }]);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('output').textContent).toBe('$30.50');
+  });
+
+  it('shows the empty state when there are no lines', async () => {
+    const fixture = TestBed.createComponent(OrderTotal);
+    fixture.componentRef.setInput('lines', []);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.textContent).toContain('No items');
+  });
+});
+```
+Verified RED (exit 1, 2 failed) then GREEN (exit 0, 2 passed) with Angular 21.2 / `@angular/build:unit-test` / Vitest 4. HTTP: `provideHttpClient()` + `provideHttpClientTesting()` and `HttpTestingController.verify()`. Use `vi.fn()` / `vi.spyOn()`, not Jasmine spies. Detect the runner from the `test` builder in `angular.json` before assuming one.
+
+### React (Vitest + React Testing Library + user-event)
+```bash
+npx vitest run; echo "UNIT EXIT:$?"
+npx vitest run src/orders
+```
+
+```tsx
+// Query by role/label; await user events; findBy* for async UI. No snapshot-only tests.
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { expect, it, vi } from 'vitest'
+import { SaveButton } from './SaveButton'
+
+it('calls onSave once and shows the saved status', async () => {
+  const user = userEvent.setup()
+  const onSave = vi.fn().mockResolvedValue(undefined)
+  render(<SaveButton onSave={onSave} />)
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  expect(onSave).toHaveBeenCalledTimes(1)
+  expect(await screen.findByRole('status')).toHaveTextContent('Saved')
+})
+
+it('shows an alert when saving fails', async () => {
+  const user = userEvent.setup()
+  render(<SaveButton onSave={vi.fn().mockRejectedValue(new Error('500'))} />)
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not save')
+})
+```
+Verified RED (exit 1) then GREEN (exit 0, 2 passed) with React 19.3, Vitest 5.1, RTL 16.3, user-event 14.6, jsdom (`environment: 'jsdom'`, setup file importing `@testing-library/jest-dom/vitest`). jsdom cannot compute colour contrast or layout: run those checks in a real browser. API mocks: MSW 3 with `onUnhandledFrame: 'error'` (renamed from `onUnhandledRequest`); a fresh `QueryClient` with `retry: false` per test; one test per UI state (loading, empty, error, success) plus control tests for abort, optimistic rollback and security rules. Vitest does not type-check: run `npx tsc -b` in CI as well. Patterns: `react-spa/reference/testing.md`.
+
+## UI / E2E tool per target (`.claude/rules/testing-tool-selection.md`)
+
+| Target | UI / E2E | Unit / component |
+|---|---|---|
+| Angular or React web app | Playwright (`@playwright/test`; `browser-testing` skill) | `ng test` / `vitest run` |
+| Flutter Android/iOS app | **Maestro CLI/MCP only** — never a browser | `flutter test` |
+| Flutter web build | Playwright (evidence about the web build only) | `flutter test` |
+
 ## 8 Edge Case Categories
 
 Every non-trivial test suite MUST cover these:
@@ -186,9 +254,9 @@ Every non-trivial test suite MUST cover these:
 
 ## Scope
 
-- Covers: Spring Boot/JUnit5, Python/pytest, NestJS/Vitest, Flutter/flutter_test
+- Covers: Spring Boot/JUnit5, Python/pytest, NestJS/Vitest, Angular/Vitest (`ng test`), React/Vitest + RTL, Flutter/flutter_test
 - Reference skill: `.claude/skills/` → use `test-driven-development` skill for detailed patterns
-- Does NOT cover: React Native, Django, Go (not in our stack)
+- Does NOT cover: React Native (use `mobile-developer`), Django, Go
 - Reference skill: `.claude/skills/test-driven-development/SKILL.md`
 
 ## Error Recovery
@@ -196,7 +264,7 @@ Every non-trivial test suite MUST cover these:
 If the test runner fails to start (build error before tests execute):
 ```
 BLOCKED: Test runner failed to start — fix build errors first.
-Run: ./mvnw compile (Spring) | python -m py_compile src/ (Python) | npm run build (NestJS) | flutter analyze (Flutter)
+Run: ./mvnw compile (Spring) | python -m py_compile src/ (Python) | npm run build (NestJS) | npx ng build (Angular) | npx tsc -b (React/Vite) | flutter analyze (Flutter)
 Do NOT write tests until the build is green.
 ```
 

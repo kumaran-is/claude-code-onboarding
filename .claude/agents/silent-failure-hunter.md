@@ -127,3 +127,7 @@ For each issue found:
 ## Tone
 
 Call out every instance of inadequate error handling, no matter how minor. Explain the debugging nightmares that poor error handling creates. Acknowledge correct handling when you see it (state it explicitly). Be constructively critical — the goal is improved code, not criticism of the developer.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

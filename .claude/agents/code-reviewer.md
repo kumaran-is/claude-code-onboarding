@@ -71,3 +71,16 @@ Prefer dispatching `python-reviewer`; when reviewing Python yourself, check at l
 - **Tests:** commit-boundary or race behaviour tested through an outer-transaction fixture; `mock.patch` target not proven to land; weakened assertions to get green.
 
 Guardrails with reasoning: `.claude/rules/python-backend.md`.
+
+## Web frontend checks (Angular / React, when `*.ts`, `*.tsx`, `*.html` app files changed)
+
+Prefer the stack skill (`angular-spa` / `react-spa`) and dispatch `security-reviewer` and `accessibility-auditor` for their areas; check at least:
+
+- **Async state:** every async view renders loading, empty, error (with retry) and success; an error never becomes `[]`/`null`/mock data; a refetch error keeps the cached data (stale-while-error).
+- **React:** hooks called conditionally or after an early return; `useEffect` used for derived state, resets or event handling (compute during render, use `key`, or a handler); an effect that starts async work without abort/ignore cleanup; `react-hooks/exhaustive-deps` disabled instead of `useEffectEvent`; server data copied into `useState`/a store; a query key missing an input the `queryFn` uses; a `queryFn` that ignores `signal`; an optimistic update without rollback; imports from `react-router-dom` in a React Router 8 app; `shared/ui` components calling `useQuery`, router hooks or `fetch`.
+- **Angular:** `effect()` used to copy state into another signal; `toObservable`/`toSignal` outside an injection context; resource options using `request` instead of `params`; experimental APIs (Signal Forms, `resource`/`httpResource`) presented as the stable default.
+- **Types at the boundary:** API/SSE/storage/URL data used without a runtime schema parse; DTOs passed straight to templates/components; `any`.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

@@ -51,6 +51,11 @@ agent_registry:
       model: sonnet
       can_write: true
 
+    - name: react-spa
+      domain: React 19 web SPA (Vite 8, React Router 8, TanStack Query 5, RHF + zod, Vitest + RTL + MSW); not React Native or Next.js
+      model: sonnet
+      can_write: true
+
     - name: flutter-mobile
       domain: Flutter 3.41.x, Dart 3.10.9, Riverpod, Firebase, cross-platform iOS/Android
       model: sonnet
@@ -161,7 +166,7 @@ agent_registry:
       note: "Highest conflict-resolution priority. Run on ANY auth, crypto, or input-handling change."
 
     - name: accessibility-auditor
-      domain: WCAG 2.1 Flutter compliance, Semantics widgets, focus management, contrast
+      domain: WCAG 2.2 AA for web (Angular, React) and Flutter, semantics, focus management, contrast, target size
       can_write: false
 
     - name: code-reviewer
@@ -401,6 +406,15 @@ task_distribution:
     primary: mobile-developer
     secondary:
       - security-reviewer
+
+  # React web SPA (no React Native signals)
+  - pattern: "*.tsx"
+    signals: ["react-router", "@tanstack/react-query", "vite"]
+    primary: react-spa
+    secondary:
+      - code-reviewer
+      - security-reviewer
+      - accessibility-auditor
 
   # Architecture docs
   - pattern: "docs/architecture/**"

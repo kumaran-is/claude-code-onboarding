@@ -72,3 +72,7 @@ Savings: ~N lines, reduces nesting from X to Y levels
 
 If no complexity found, report "No significant complexity issues found in [scope]."
 If scope not specified, default to `git diff HEAD~1`.
+
+## Evidence rule
+
+Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.

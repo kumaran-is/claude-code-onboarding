@@ -54,19 +54,20 @@ export class StructuredLogger implements LoggerService {
 
 ```typescript
 // src/health/health.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { CircuitBreakerRegistry } from '../resilience/circuit-breaker.registry';
 
+type CheckStatus = 'healthy' | 'degraded' | 'unhealthy';
+interface DatabaseCheck { status: CheckStatus; latency?: number; error?: string }
+interface MemoryCheck { status: CheckStatus; heapUsed: string; heapTotal: string }
+interface CircuitsCheck { status: CheckStatus; openCount: number; open: string[] }
+
 interface HealthStatus {
-  status: 'healthy' | 'degraded' | 'unhealthy';
+  status: CheckStatus;
   timestamp: string;
   uptime: number;
-  checks: {
-    database: { status: string; latency?: number; error?: string };
-    memory: { status: string; heapUsed: string; heapTotal: string };
-    circuits: { status: string; openCount: number; details?: any };
-  };
+  checks: { database: DatabaseCheck; memory: MemoryCheck; circuits: CircuitsCheck };
 }
 
 @Injectable()
@@ -93,7 +94,9 @@ export class HealthService {
     };
   }
 
-  private async checkDatabase(): Promise<any> {
+  private readonly logger = new Logger(HealthService.name);
+
+  private async checkDatabase(): Promise<DatabaseCheck> {
     const start = performance.now();
     try {
       await this.prisma.$queryRaw`SELECT 1`;
@@ -102,15 +105,14 @@ export class HealthService {
         status: latency < 100 ? 'healthy' : 'degraded',
         latency: Math.round(latency),
       };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        error: error.message,
-      };
+    } catch (error: unknown) {
+      // Log the detail; the (often unauthenticated) health response carries no driver text
+      this.logger.error({ event: 'health_db_failed' }, error instanceof Error ? error.stack : undefined);
+      return { status: 'unhealthy', error: 'database unreachable' };
     }
   }
 
-  private checkMemory(): any {
+  private checkMemory(): MemoryCheck {
     const usage = process.memoryUsage();
     const heapUsedMB = usage.heapUsed / 1024 / 1024;
     const heapTotalMB = usage.heapTotal / 1024 / 1024;
@@ -123,18 +125,18 @@ export class HealthService {
     };
   }
 
-  private checkCircuits(): any {
+  private checkCircuits(): CircuitsCheck {
     const states = this.circuitRegistry.getAllStates();
     const openCount = states.filter(s => s.state === 'OPEN').length;
 
     return {
       status: openCount === 0 ? 'healthy' : openCount < 3 ? 'degraded' : 'unhealthy',
       openCount,
-      details: states.filter(s => s.state === 'OPEN'),
+      open: states.filter(s => s.state === 'OPEN').map(s => s.name),
     };
   }
 
-  private determineOverallStatus(checks: any): 'healthy' | 'degraded' | 'unhealthy' {
+  private determineOverallStatus(checks: HealthStatus['checks']): CheckStatus {
     const statuses = [checks.database.status, checks.memory.status, checks.circuits.status];
 
     if (statuses.includes('unhealthy')) return 'unhealthy';

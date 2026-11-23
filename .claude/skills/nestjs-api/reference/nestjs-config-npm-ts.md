@@ -1,187 +1,208 @@
 # NestJS Configuration — npm & TypeScript
 
-Package configuration and TypeScript setup for NestJS 11.x. For Prisma 7.x schema and database configuration, see `nestjs-config-prisma7.md`.
+Package and TypeScript setup for NestJS 11.x on Fastify, verified in a disposable app on 2026-11-23
+(strict `tsc`, ESLint, 19 unit + 11 e2e tests, `npm audit --audit-level=high` exit 0). Prisma schema and client
+setup: `nestjs-config-prisma7.md`. Reference implementation: `nestjs-production-baseline.md`.
+
+## Versions
+
+| Line | Pin | Why |
+|---|---|---|
+| NestJS core packages | `11.2.11` | latest 11.x. There is no `11.17.x`; NestJS 12 (12.6.0) is GA but its satellites (`@nestjs/swagger@12`, `@nestjs/config@12`, `@nestjs/bullmq@12`) peer on Nest 12 only |
+| `@nestjs/swagger` / `@nestjs/config` / `@nestjs/terminus` / `@nestjs/bullmq` | `11.4.8` / `4.0.4` / `11.1.1` / `11.0.5` | latest majors that peer on Nest 11 |
+| `@nestjs/throttler` | `6.8.0` | peers on Nest 7–12 |
+| Prisma | `7.10.1` | npm `latest` for the `prisma` CLI is `8.0.0-rc.35` (a release candidate); pin the stable 7.x line explicitly |
+| TypeScript | `5.9.3` | `typescript-eslint` 8.73 supports `>=4.8.4 <6.1.0`; TypeScript 7 is not supported by the lint stack yet |
+| ESLint | `9.39.5` | flat config; the `--ext` flag no longer exists |
+
+Re-check before pinning: `npm view <pkg>@<major> version`, then install with `npm i -E`. Never let a caret range float across a Nest major.
 
 ## package.json
 
-NestJS 11 backend service with enterprise-grade dependencies.
-
 ```json
 {
-  "name": "{project_name}",
+  "name": "orders-api",
   "version": "0.1.0",
-  "description": "{description}",
-  "author": "",
   "private": true,
-  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
-    "build": "swc src -d dist --strip-leading-paths",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "start:dev": "npm run build && node dist/main.js",
-    "start:prod": "NODE_ENV=production node dist/main.js",
-    "test": "vitest",
-    "test:watch": "vitest --watch",
-    "test:cov": "vitest run --coverage",
-    "test:e2e": "vitest --config vitest.e2e.config.ts",
-    "test:ci": "vitest run --coverage --reporter=junit --outputFile=./test-results/junit.xml",
-    "lint": "eslint . --ext .ts,.tsx",
-    "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "tsx prisma/seeds/seed.ts",
-    "prisma:studio": "prisma studio",
-    "prisma:reset": "prisma migrate reset --force",
-    "docker:dev": "docker-compose -f docker/docker-compose.dev.yml up -d",
-    "docker:down": "docker-compose -f docker/docker-compose.dev.yml down",
-    "docker:test": "docker-compose -f docker/docker-compose.test.yml up -d",
-    "docker:build": "docker build -t {project_name}:latest .",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run typecheck && npm run lint && npm run test:ci",
-    "prepare": "prisma generate"
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.mts",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
-    "@nestjs/common": "~11.17.0",
-    "@nestjs/config": "~3.3.0",
-    "@nestjs/core": "~11.17.0",
-    "@nestjs/event-emitter": "~2.1.0",
-    "@nestjs/platform-fastify": "~11.17.0",
-    "@nestjs/schedule": "~4.1.0",
-    "@nestjs/swagger": "~8.0.0",
-    "@nestjs/terminus": "~11.17.0",
-    "@nestjs/throttler": "~6.3.0",
-    "@nestjs/bullmq": "~10.2.0",
-    "@bull-board/api": "~5.21.0",
-    "@bull-board/nestjs": "~5.21.0",
-    "@bull-board/express": "~5.21.0",
-    "bullmq": "~5.13.0",
-    "@golevelup/nestjs-rabbitmq": "~5.5.0",
-    "amqplib": "~0.10.4",
-    "kafkajs": "~2.2.4",
-    "@opentelemetry/api": "~1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "~0.50.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "~0.53.0",
-    "@opentelemetry/exporter-trace-otlp-http": "~0.53.0",
-    "@opentelemetry/resources": "~1.26.0",
-    "@opentelemetry/sdk-metrics": "~1.26.0",
-    "@opentelemetry/sdk-node": "~0.53.0",
-    "@opentelemetry/sdk-trace-node": "~1.26.0",
-    "@opentelemetry/semantic-conventions": "~1.26.0",
-    "@prisma/adapter-pg": "~7.3.0",
-    "@prisma/client": "~7.3.0",
-    "pg": "~8.13.0",
-    "axios": "~1.7.0",
-    "class-transformer": "~0.5.1",
-    "class-validator": "~0.14.1",
-    "compression": "~1.7.4",
-    "decimal.js": "~10.4.3",
-    "dotenv": "~16.4.5",
-    "@fastify/compress": "~8.0.0",
-    "@fastify/helmet": "~12.0.0",
-    "@fastify/static": "~8.0.0",
-    "lru-cache": "~11.0.0",
-    "redis": "~4.7.0",
-    "reflect-metadata": "~0.2.2",
-    "rxjs": "~7.8.1",
-    "uuid": "~10.0.0",
-    "zod": "~3.23.0"
+    "@fastify/helmet": "13.2.0",
+    "@fastify/static": "10.1.12",
+    "@nest-lab/throttler-storage-redis": "1.2.0",
+    "@nestjs/bullmq": "11.0.5",
+    "@nestjs/common": "11.2.11",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/core": "11.2.11",
+    "@nestjs/platform-fastify": "11.2.11",
+    "@nestjs/platform-socket.io": "11.2.11",
+    "@nestjs/swagger": "11.4.8",
+    "@nestjs/terminus": "11.1.1",
+    "@nestjs/throttler": "6.8.0",
+    "@nestjs/websockets": "11.2.11",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "bullmq": "5.81.6",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "fastify": "5.12.8",
+    "ioredis": "5.11.1",
+    "jose": "6.2.18",
+    "pg": "8.23.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "socket.io": "4.8.3",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@eslint/js": "~9.15.0",
-    "@nestjs/testing": "~11.17.0",
-    "@swc/cli": "~0.4.0",
-    "@swc/core": "~1.7.0",
-    "@types/compression": "~1.7.5",
-    "@types/node": "~22.9.0",
-    "@types/uuid": "~10.0.0",
-    "@typescript-eslint/eslint-plugin": "~8.15.0",
-    "@typescript-eslint/parser": "~8.15.0",
-    "@vitest/coverage-v8": "~2.1.0",
-    "eslint": "~9.15.0",
-    "eslint-config-prettier": "~9.1.0",
-    "eslint-plugin-import": "~2.31.0",
-    "eslint-plugin-promise": "~7.1.0",
-    "eslint-plugin-security": "~3.0.0",
-    "eslint-plugin-sonarjs": "~2.0.0",
-    "prettier": "~3.4.0",
-    "@types/pg": "~8.11.0",
-    "prisma": "~7.3.0",
-    "tsx": "~4.19.0",
-    "typescript": "~5.9.x",
-    "vitest": "~2.1.0"
+    "@eslint/js": "9.39.5",
+    "@nestjs/testing": "11.2.11",
+    "@swc/core": "1.16.22",
+    "@types/node": "24.19.2",
+    "@types/supertest": "7.2.1",
+    "eslint": "9.39.5",
+    "globals": "17.14.0",
+    "prisma": "7.10.1",
+    "socket.io-client": "4.8.4",
+    "supertest": "7.3.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.73.0",
+    "unplugin-swc": "2.0.0",
+    "vitest": "4.1.12"
   },
-  "engines": {
-    "node": ">=22.15.0",
-    "pnpm": ">=9.0.0"
-  },
-  "packageManager": "pnpm@9.14.2"
+  "overrides": {
+    "effect": "3.22.5"
+  }
 }
 ```
 
-## tsconfig.json
+- `@fastify/static` is only needed for `SwaggerModule.setup()` (Swagger UI) on Fastify.
+- `ioredis` is pinned to the 5.x line that `bullmq` 5 depends on, so the app has one Redis client copy.
+- `overrides.effect`: `npm audit` flagged GHSA-7589-6fvf-x4pw in `effect` (via `prisma` → `@prisma/config` 7.10.1). The override cleared it (audit exit 1 → 0); remove it once Prisma ships a fixed `effect`.
+- npm is the package manager for this stack (`package-lock.json` committed, `npm ci` in CI). Do not add a `packageManager: pnpm` field.
+- The Nest CLI is optional. `nest new` scaffolds Express + Jest; this stack replaces both, so a hand-written `package.json` + `main.ts` is as short. Run `nest new` only through `/scaffold-nestjs-api` (the scaffold hook blocks a raw call).
+- `prisma generate` must run before `tsc` (the generated client is gitignored): run it in CI before the typecheck.
 
-NestJS uses CommonJS module system with decorators and metadata reflection.
+## tsconfig, Vitest and ESLint (verified)
 
 ```json
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "commonjs",
-    "lib": ["ES2022"],
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "allowJs": false,
-    "checkJs": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
     "outDir": "./dist",
-    "rootDir": "./src",
-    "removeComments": true,
-    "noEmit": false,
-    "importHelpers": false,
-    "downlevelIteration": true,
-    "isolatedModules": true,
-
+    "rootDir": ".",
     "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": false,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-
+    "useUnknownInCatchVariables": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
     "sourceMap": true,
-    "declaration": false,
-    "declarationMap": false,
     "incremental": true,
-    "tsBuildInfoFile": ".tsbuildinfo",
-
-    "baseUrl": "./",
-    "paths": {
-      "@app/*": ["src/*"],
-      "@config/*": ["src/config/*"],
-      "@common/*": ["src/common/*"],
-      "@core/*": ["src/core/*"],
-      "@features/*": ["src/features/*"],
-      "@shared/*": ["src/shared/*"]
-    }
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": ["src/**/*"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "test",
-    "**/*.spec.ts",
-    "**/*.test.ts",
-    "**/*.e2e-spec.ts"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts", "prisma.config.ts"],
+  "exclude": ["node_modules", "dist"]
 }
 ```
+
+```typescript
+import swc from 'unplugin-swc';
+import { defineConfig } from 'vitest/config';
+
+// SWC (not esbuild) compiles the tests: esbuild drops emitDecoratorMetadata, so Nest
+// constructor injection by class type would resolve `undefined` at runtime.
+export default defineConfig({
+  test: {
+    globals: false,
+    environment: 'node',
+    include: ['src/**/*.spec.ts'],
+    root: './',
+  },
+  plugins: [swc.vite({ module: { type: 'es6' } })],
+});
+```
+
+```typescript
+import swc from 'unplugin-swc';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: false,
+    environment: 'node',
+    include: ['test/**/*.e2e-spec.ts'],
+    root: './',
+    fileParallelism: false,
+    // ConfigModule.forRoot({ validate }) runs when AppModule is IMPORTED, before any beforeAll:
+    // test env must exist at load time, so it is set here, not in the spec.
+    env: {
+      NODE_ENV: 'test',
+      JWT_ISSUER: 'https://issuer.test',
+      JWT_AUDIENCE: 'orders-api',
+      JWT_JWKS_URL: 'https://issuer.test/.well-known/jwks.json',
+      THROTTLE_LIMIT: '5',
+      THROTTLE_TTL_MS: '60000',
+    },
+  },
+  plugins: [swc.vite({ module: { type: 'es6' } })],
+});
+```
+
+```javascript
+// @ts-check
+import eslint from '@eslint/js';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  { ignores: ['dist/**', 'coverage/**', 'src/generated/**', 'eslint.config.mjs', 'vitest*.config.mts'] },
+  eslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  {
+    languageOptions: {
+      globals: { ...globals.node },
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      'no-console': 'error',
+    },
+  },
+);
+```
+
+Notes:
+- `module`/`moduleResolution: "nodenext"` with a CommonJS `package.json` (the Nest 11 CLI template uses the same pair).
+- Name Vitest configs `.mts` in a CommonJS package: a `.ts` config with ESM syntax triggers Vite 8's "ESM syntax in a file loaded as CommonJS" warning.
+- Decorator metadata: both `unplugin-swc` and Vite 8's built-in Oxc transform read `emitDecoratorMetadata` from tsconfig.
+  With Vitest 4.1 the suite passed **without** the SWC plugin; with `emitDecoratorMetadata: false` every e2e test failed
+  (`Cannot read properties of undefined (reading 'getAllAndOverride')`). Keep the flag on and keep one e2e test that
+  resolves a class-typed constructor dependency — it is the check that catches a broken transform.
+- `npm audit --audit-level=high` flagged `effect` (GHSA-7589-6fvf-x4pw, via `prisma` → `@prisma/config`) on Prisma 7.10.1.
+  `"overrides": { "effect": "3.22.5" }` cleared it (audit exit 1 → 0). Re-check on every Prisma upgrade and drop the override once Prisma ships the fix.
+

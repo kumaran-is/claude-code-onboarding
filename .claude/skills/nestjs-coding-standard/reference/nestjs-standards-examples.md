@@ -81,15 +81,14 @@ export enum OrderStatus {
 
 ```typescript
 // Bad
-function processData(data: any): void {
-  console.log(data.name); // No type safety
+function productName(data: any): string {
+  return data.name; // No type safety
 }
 
 // Good
-function processData(data: unknown): void {
-  if (isProduct(data)) {
-    console.log(data.name); // Type-safe after guard
-  }
+function productName(data: unknown): string {
+  if (!isProduct(data)) throw new BadRequestException('Not a product');
+  return data.name; // Type-safe after guard
 }
 
 function isProduct(value: unknown): value is Product {
@@ -126,7 +125,9 @@ async function fetchProduct(id: string): Promise<ApiResponse<Product>> {
       return { success: false, error: 'Product not found' };
     }
     return { success: true, data: product };
-  } catch (error) {
+  } catch (error: unknown) {
+    // Error state, not a swallow: log with context, return a typed failure the caller must handle
+    logger.error({ event: 'fetch_product_failed', productId: id }, error instanceof Error ? error.stack : undefined);
     return { success: false, error: 'Database error' };
   }
 }
@@ -134,10 +135,9 @@ async function fetchProduct(id: string): Promise<ApiResponse<Product>> {
 // Usage
 const result = await fetchProduct('123');
 if (result.success) {
-  console.log(result.data.name); // TypeScript knows `data` exists
-} else {
-  console.error(result.error); // TypeScript knows `error` exists
+  return toResponse(result.data); // TypeScript knows `data` exists
 }
+throw new ServiceUnavailableException(result.error); // TypeScript knows `error` exists
 ```
 
 ---
@@ -532,8 +532,11 @@ this.logger.debug('Query execution', { query, params });
 // Bad
 this.logger.log('User login', { password: dto.password });
 
-// Good
+// Bad: email is PII
 this.logger.log('User login attempt', { email: dto.email });
+
+// Good: an opaque id, never credentials or PII
+this.logger.log({ event: 'login_attempt', userId: user.id });
 ```
 
 ---
@@ -543,16 +546,16 @@ this.logger.log('User login attempt', { email: dto.email });
 ### Test Structure
 
 ```typescript
+import { beforeEach, describe, expect, it, vi, type Mocked } from 'vitest';
+
 describe('ProductsService', () => {
   let service: ProductsService;
-  let repository: jest.Mocked<ProductsRepository>;
+  let repository: Mocked<Pick<ProductsRepository, 'findAll' | 'create'>>;
 
   beforeEach(() => {
-    repository = {
-      findAll: jest.fn(),
-      create: jest.fn(),
-    } as any;
-    service = new ProductsService(repository, new Logger());
+    // Vitest (not Jest): vi.fn(), typed with Mocked<> — no `as any`
+    repository = { findAll: vi.fn(), create: vi.fn() };
+    service = new ProductsService(repository);
   });
 
   describe('findAll', () => {

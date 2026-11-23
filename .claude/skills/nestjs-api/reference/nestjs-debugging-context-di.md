@@ -64,66 +64,128 @@ export class RequestContextService {
 }
 ```
 
-### Debugging Context in Prisma Middleware
+### Debugging Context in Prisma Queries
+
+Prisma 7 has no `$use` middleware; warn about context-less queries from a query extension. `AsyncLocalStorage`
+context survives `await`, so the extension sees the request's context. Verified (strict `tsc`, ESLint, unit test):
 
 ```typescript
-// src/database/prisma.service.ts (additional middleware)
-async onModuleInit() {
-  await this.$connect();
+// src/common/context/request-context.service.ts
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { Injectable } from '@nestjs/common';
 
-  // Prisma middleware to propagate context
-  this.$use(async (params, next) => {
-    const context = this.contextService.get();
-    if (!context) {
-      this.logger.warn(`Prisma query without context: ${params.model}.${params.action}`, 'PrismaContext');
-    } else {
-      this.logger.debug(
-        `Prisma query with context ${context.correlationId}: ${params.model}.${params.action}`,
-        'PrismaContext'
-      );
-    }
-    return next(params);
+export interface RequestContext {
+  readonly correlationId: string;
+  readonly userId: string;
+  readonly timestamp: number;
+}
+
+@Injectable()
+export class RequestContextService {
+  private readonly storage = new AsyncLocalStorage<RequestContext>();
+
+  run<T>(context: RequestContext, fn: () => Promise<T>): Promise<T> {
+    return this.storage.run(context, fn);
+  }
+
+  get(): RequestContext | undefined {
+    return this.storage.getStore();
+  }
+}
+```
+
+```typescript
+// src/core/database/prisma-context.extension.ts
+import { Logger } from '@nestjs/common';
+import { type PrismaClient } from '../generated/prisma/client';
+import { type RequestContextService } from './request-context.service';
+
+const logger = new Logger('PrismaContext');
+
+/** Wrap the client once and inject the extended client. ALS context survives `await`. */
+export function withContextLogging(client: PrismaClient, context: RequestContextService) {
+  return client.$extends({
+    query: {
+      $allModels: {
+        $allOperations({ model, operation, args, query }) {
+          if (context.get() === undefined) {
+            logger.warn({ event: 'prisma_query_without_context', model, operation });
+          }
+          return query(args);
+        },
+      },
+    },
   });
 }
 ```
 
-### Context Loss in Bull Queue Jobs
+### Context Loss in BullMQ Jobs
+
+Context is not propagated into queue workers. Put the correlation id in `job.data` when enqueuing and re-enter the
+context in the worker. Use `@nestjs/bullmq` (`WorkerHost`); the legacy `@nestjs/bull` / `bull` packages are superseded.
 
 ```typescript
 // src/queues/email.processor.ts
-import { Processor, Process } from '@nestjs/bull';
-import { Job } from 'bull';
-import { Logger } from '@nestjs/common';
-import { RequestContextService } from '../common/context/request-context.service';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Inject, Logger } from '@nestjs/common';
+import type { Job } from 'bullmq';
+import { RequestContextService } from './request-context.service';
+
+export interface EmailJob {
+  readonly correlationId: string;
+  readonly userId: string;
+  readonly templateId: string;
+  readonly to: string;
+}
+
+export interface EmailSender {
+  send(message: { templateId: string; to: string }): Promise<void>;
+}
+export const EMAIL_SENDER = Symbol('EMAIL_SENDER');
 
 @Processor('email')
-export class EmailProcessor {
+export class EmailProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailProcessor.name);
 
-  constructor(private readonly contextService: RequestContextService) {}
-
-  @Process('send')
-  async handleSend(job: Job) {
-    // Context is NOT automatically propagated to queue jobs
-    // Solution: store context in job.data and recreate it
-    const { correlationId, userId, ...emailData } = job.data;
-
-    return this.contextService.run(
-      { correlationId, userId, timestamp: Date.now() },
-      async () => {
-        this.logger.log(`Processing email job with context: ${correlationId}`, 'EmailProcessor');
-        // Now all async operations in this scope have context
-        return this.sendEmail(emailData);
-      }
-    );
+  constructor(
+    private readonly contextService: RequestContextService,
+    @Inject(EMAIL_SENDER) private readonly sender: EmailSender,
+  ) {
+    super();
   }
 
-  private async sendEmail(data: any) {
-    const context = this.contextService.get();
-    this.logger.debug(`Sending email in context: ${context?.correlationId || 'MISSING'}`, 'EmailProcessor');
-    // ... send email
+  /** Errors propagate: BullMQ records the failure and retries per the job's attempts/backoff. */
+  async process(job: Job<EmailJob>): Promise<void> {
+    const { correlationId, userId, templateId, to } = job.data;
+    await this.contextService.run({ correlationId, userId, timestamp: Date.now() }, async () => {
+      this.logger.log({ event: 'email_job_started', jobId: job.id, correlationId });
+      await this.sender.send({ templateId, to });
+    });
   }
 }
+```
+
+```typescript
+// src/queues/email.processor.spec.ts
+import type { Job } from 'bullmq';
+import { describe, expect, it, vi } from 'vitest';
+import { EmailProcessor, type EmailJob } from './email.processor';
+import { RequestContextService } from './request-context.service';
+
+describe('EmailProcessor', () => {
+  it('runs the send inside the job’s correlation context and propagates failures', async () => {
+    const context = new RequestContextService();
+    const seen: Array<string | undefined> = [];
+    const sender = { send: vi.fn(() => { seen.push(context.get()?.correlationId); return Promise.resolve(); }) };
+    const processor = new EmailProcessor(context, sender);
+    const job = { id: '1', data: { correlationId: 'c-1', userId: 'u', templateId: 't', to: 'a@b.test' } } as Job<EmailJob>;
+    await processor.process(job);
+    expect(seen).toEqual(['c-1']);
+
+    sender.send.mockRejectedValueOnce(new Error('smtp down'));
+    await expect(processor.process(job)).rejects.toThrow('smtp down');
+  });
+});
 ```
 
 ## 5. Dependency Injection Debugging
@@ -188,12 +250,16 @@ export class NotificationService {
 export class NotificationService {
   constructor(@Optional() private readonly smsProvider?: SmsProvider) {}
 
-  async send(message: string) {
-    if (this.smsProvider) {
-      await this.smsProvider.send(message);
-    } else {
-      console.log('SMS provider not configured, skipping SMS notification');
+  private readonly logger = new Logger(NotificationService.name);
+
+  async send(message: string): Promise<{ sent: boolean }> {
+    if (this.smsProvider === undefined) {
+      // Visible, not silent: callers learn nothing was sent and can surface it.
+      this.logger.warn({ event: 'sms_not_configured' });
+      return { sent: false };
     }
+    await this.smsProvider.send(message);
+    return { sent: true };
   }
 }
 
@@ -254,11 +320,11 @@ logger.log(`Configuration loaded for environment: ${Config.nodeEnv}`);
 ### Debugging .env File Loading
 
 ```bash
-# Check if .env file is loaded
-node -e "require('dotenv').config(); console.log(process.env)"
+# Check which variables are SET — print names and presence only, never values (values are secrets)
+node -e "require('dotenv').config(); console.log(Object.keys(process.env).sort().join('\n'))"
 
-# Check specific variable
-node -e "require('dotenv').config(); console.log('DATABASE_URL:', process.env.DATABASE_URL)"
+# Check one variable is present without echoing it
+node -e "require('dotenv').config(); console.log('DATABASE_URL set:', Boolean(process.env.DATABASE_URL))"
 
 # Environment variable precedence (highest to lowest):
 # 1. System environment variables (export VAR=value)
@@ -266,11 +332,9 @@ node -e "require('dotenv').config(); console.log('DATABASE_URL:', process.env.DA
 # 3. .env
 # 4. Default values in code
 
-# Debug: print all process.env at startup
-# src/main.ts
-if (Config.isDevelopment) {
-  console.log('Environment variables:', JSON.stringify(process.env, null, 2));
-}
+# Do NOT dump process.env at startup (it lands in log storage with every secret in it).
+# Fail fast instead: validate the environment with a schema and report missing NAMES only
+# (validateEnv in nestjs-production-baseline.md §1).
 ```
 
 ## 7. Troubleshooting Table

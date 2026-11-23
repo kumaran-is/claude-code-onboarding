@@ -172,36 +172,36 @@ export class PerformanceInterceptor implements NestInterceptor {
 }
 ```
 
-### Prisma Query Timing Middleware
+### Prisma Query Timing (client extension)
+
+`$use` middleware no longer exists on the Prisma 7 client. Time queries with a query extension (type-checked against Prisma 7.10.1):
 
 ```typescript
-// src/database/prisma.service.ts (additional middleware)
-async onModuleInit() {
-  await this.$connect();
+import { Logger } from '@nestjs/common';
+import { type PrismaClient } from '../generated/prisma/client';
 
-  // Query timing middleware
-  this.$use(async (params, next) => {
-    const before = performance.now();
-    const result = await next(params);
-    const after = performance.now();
-    const duration = after - before;
+const logger = new Logger('Prisma');
 
-    this.logger.debug(
-      `${params.model}.${params.action} took ${duration.toFixed(2)}ms`,
-      'PrismaPerformance'
-    );
-
-    if (duration > 100) {
-      this.logger.warn(
-        `Slow Prisma query: ${params.model}.${params.action} (${duration.toFixed(2)}ms)`,
-        'PrismaSlowQuery'
-      );
-    }
-
-    return result;
+export function withQueryTiming(client: PrismaClient, slowMs = 100) {
+  return client.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          const started = performance.now();
+          try {
+            return await query(args);
+          } finally {
+            const ms = performance.now() - started;
+            if (ms > slowMs) logger.warn({ event: 'slow_query', model, operation, ms: Math.round(ms) });
+          }
+        },
+      },
+    },
   });
 }
 ```
+
+Log the model and operation, never `args` (they carry user data).
 
 ### CPU Profiling Commands
 

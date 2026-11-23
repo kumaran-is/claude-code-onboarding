@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -18,7 +18,7 @@ Always load the nestjs-api skill before writing NestJS code; never generate Pris
 
 # NestJS + TypeScript Coding Standards
 
-Standards for readable, maintainable TypeScript code in NestJS 11.x + Fastify services.
+Standards for readable, maintainable TypeScript code in NestJS 11.x (verified on 11.2.11) + Fastify services. The runtime-verified reference implementation is `../nestjs-api/reference/nestjs-production-baseline.md`.
 
 ## Core Principles
 
@@ -42,6 +42,8 @@ Standards for readable, maintainable TypeScript code in NestJS 11.x + Fastify se
 | **Null Handling** | Use `null` over `undefined` for explicit absence; validate with DTOs |
 | **Generics** | Explicit return types on public methods; use type inference for locals |
 | **Environment** | All required env vars in `.env` with working defaults; no `??` fallbacks in config code; `.env` written via Bash (hooks block Write/Edit) |
+| **Auth & tenancy** | Global auth guard (opt out with `@Public()`); JWT verified with pinned `algorithms`, `issuer`, `audience`; tenant/owner id only from the verified token; cross-tenant read → 404 |
+| **Tests** | Vitest (`vi.fn()`), never Jest APIs; e2e through the production `configureApp()`; every guard/validation rule has a negative test |
 | **Prisma 7.x** | `provider = "prisma-client"` with `output` path; no `url` in schema; use `prisma.config.ts`; PrismaService via composition (not inheritance) with `@prisma/adapter-pg` |
 
 ## Project Structure
@@ -132,4 +134,4 @@ const stats = await this.statsService.forUser(userId)
 
 **Exception hierarchy**: Use `HttpException` subclasses (`NotFoundException`, `BadRequestException`). Global exception filter returns RFC 9457 ProblemDetail.
 
-**Validation failures**: Use `class-validator` decorators on DTOs. Global `ValidationPipe` auto-returns 422 with field-level details.
+**Validation failures**: Use `class-validator` decorators on DTOs. The global `ValidationPipe` (`whitelist` + `forbidNonWhitelisted`) returns **400** with field-level messages — its default `errorHttpStatusCode` is 400, not 422.

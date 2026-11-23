@@ -2,7 +2,7 @@
 
 ## Code Conventions
 
-- Use **NestJS 11.x** with **Fastify** adapter (not Express)
+- Use **NestJS 11.x** (verified 11.2.11) with the **Fastify** adapter (not Express)
 - **Prisma ORM** for database access with PostgreSQL
 - Module aggregation: `ConfigModule → CommonModule → CoreModule → FeaturesModule`
 - Fail-fast configuration: app crashes at startup if env vars are missing
@@ -10,7 +10,17 @@
 - Feature-first modules: `src/features/{entity}/` with module, controller, service, dto, repository
 - Circuit breaker pattern for all external calls
 - Request context via `AsyncLocalStorage` for correlation ID propagation
-- Tests: Vitest + supertest for API integration tests
+- Tests: Vitest; e2e through the production `configureApp()` with `app.inject()` (or supertest)
+
+## Security Rules (verified in `nestjs-production-baseline.md`)
+
+- Authentication is global (`APP_GUARD`); routes opt out with `@Public()`
+- Guard order: `ThrottlerGuard` → `JwtAuthGuard` → role/permission checks
+- JWT: `jose.jwtVerify` (JWKS) or passport-jwt with pinned `algorithms`, `issuer`, `audience` read via `getOrThrow`
+- Tenant/owner ids only from the verified principal; repositories take `tenantId` explicitly; cross-tenant → 404
+- `ValidationPipe`: `whitelist` + `forbidNonWhitelisted` + `transform`, `enableImplicitConversion: false`; invalid input → 400
+- WebSocket auth in socket.io middleware (`server.use` in `afterInit`)
+- `enableShutdownHooks()` is the only signal handler
 
 ## Package Layout
 

@@ -1,41 +1,46 @@
 ---
 name: nestjs-api
-description: This skill provides patterns and templates for NestJS 11.x with Fastify, Prisma ORM, and TypeScript 5.x development. It should be activated when creating NestJS modules, controllers, services, DTOs, guards, interceptors, or tests.
+description: Patterns and runtime-verified templates for NestJS 11.x (11.2.11) on Fastify with Prisma 7 and TypeScript 5.9. Use when creating or changing NestJS modules, controllers, services, DTOs, guards, interceptors, exception filters, JWT auth and tenant scoping, rate limiting, WebSocket gateways, BullMQ jobs, Prisma transactions, OpenAPI docs, or Vitest unit/e2e tests. Optional for plain Node services (see typescript-expert).
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: NestJS, Nest, TypeScript backend, NestJS module, NestJS controller, NestJS service, Fastify, Prisma, NestJS guard
+  triggers: NestJS, Nest, NestJS module, NestJS controller, NestJS service, NestJS guard, ValidationPipe, ThrottlerGuard, WebSocketGateway, BullMQ, Prisma transaction, Fastify adapter
   related-skills: nestjs-coding-standard, openapi-spec-generation, database-schema-designer
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
 
-**NO NESTJS MODULE WITHOUT READING `reference/nestjs-conventions.md` FIRST — Fastify adapter quirks, Prisma 7.x patterns, and DTO validation rules are defined there**
+**NO NESTJS MODULE WITHOUT READING `reference/nestjs-conventions.md` AND `reference/nestjs-production-baseline.md` FIRST — the baseline is the runtime-verified reference for auth, tenant scoping, validation, rate limiting, WebSockets, shutdown and tests; every rule there has a negative test**
 
 # NestJS 11.x + Fastify + Prisma REST API Skill
+
+**Versions (verified 2026-11-23 with `npm view`):** NestJS `11.2.11` (there is no 11.17.x), Fastify 5, Prisma `7.10.1`,
+TypeScript `5.9.3`, Vitest `4.1.12`. NestJS 12 is GA (12.6.0); this skill targets 11.x — upgrade as a separate,
+tested change, never by letting ranges float. Pins and rationale: `reference/nestjs-config-npm-ts.md`.
 
 ## Conventions & Rules
 
 > For code conventions, package layout, NestJS rules, Prisma 7.x rules, and environment file rules, read `reference/nestjs-conventions.md`
+>
+> Framework-neutral Node rules apply here too: config and secrets validated at startup ([node-service-engineering.md §3](../typescript-expert/references/node-service-engineering.md#3-configuration-and-secrets)), unhandled-rejection and shutdown policy (§11). `npm run build` uses `tsconfig.build.json`, which excludes specs: type-check them with `tsc -p tsconfig.json --noEmit`.
 
 ## Quick Scaffold — New NestJS Project
 
-```bash
-# Using NestJS CLI
-npx @nestjs/cli new my-service --package-manager npm --strict
-```
+Run `/scaffold-nestjs-api <name>` in the main session. Running the Nest CLI creator directly is blocked by the
+scaffold hook, and its template is Express + Jest, which this stack replaces — the hand-written `package.json` +
+`main.ts` from `reference/nestjs-config-npm-ts.md` and `reference/nestjs-production-baseline.md` is equally short.
 
 ## Process
 
-1. **Scaffold** using NestJS CLI or the command above
+1. **Scaffold** with `/scaffold-nestjs-api` (main session only)
 2. **Configure** package.json and tsconfig — read `reference/nestjs-config-basics.md`, `reference/nestjs-config-npm-ts.md`, and `reference/nestjs-config-prisma7.md`
 3. **Create files** using templates — read `reference/nestjs-templates-core.md` for main.ts, AppModule, CoreModule; read `reference/nestjs-templates-features.md` for feature modules, controllers, services, DTOs
 4. **Follow conventions** below for package layout and NestJS rules
-5. **Write tests** with Vitest + supertest or NestJS Testing utilities
+5. **Write tests** with Vitest: unit specs plus e2e through the production `configureApp()` using `app.inject()` — include negative tests (401, 403, cross-tenant 404, 400 for unknown fields, 429)
 6. **Format and check**: `npm run lint && npm run typecheck`
 
 ## Key Patterns
@@ -45,22 +50,28 @@ npx @nestjs/cli new my-service --package-manager npm --strict
 | **Modules** | `@Module()` with imports/providers/exports, aggregation pattern |
 | **Controllers** | `@Controller('api/v1/...')` with route decorators |
 | **Services** | `@Injectable()` with constructor injection |
-| **DTOs** | Classes with `class-validator` decorators (`@IsString()`, `@IsNotEmpty()`) |
+| **DTOs** | Classes with `class-validator` decorators; no tenant/owner fields — those come from the token |
 | **Repositories** | Prisma Client via `DatabaseService` wrapper |
 | **Error handling** | `@Catch()` exception filter returning `ProblemDetail` (RFC 9457) |
 | **Config** | Fail-fast `registerAs()` with static config reader |
 | **Migrations** | Prisma Migrate in `prisma/migrations/` |
-| **Guards** | `@UseGuards()` for auth (`JwtAuthGuard`, `RolesGuard`) |
+| **Guards** | Global `APP_GUARD`s in order: `ThrottlerGuard` → `JwtAuthGuard` (opt out with `@Public()`); missing role → 403 |
+| **Authorization** | Per-resource checks in services; repositories take `tenantId` from the verified principal; cross-tenant → 404 |
+| **WebSockets** | Authenticate in socket.io middleware (`afterInit` → `server.use`), not `handleConnection` |
+| **Transactions** | `$transaction(fn, { isolationLevel, maxWait, timeout })`; no network calls inside; outbox for side effects |
+| **Shutdown** | `app.enableShutdownHooks()` only — no extra `process.on('SIGTERM')` |
 | **Interceptors** | `LoggingInterceptor`, `TransformInterceptor` (global) |
-| **Pipes** | Global `ValidationPipe` with whitelist and transform |
+| **Pipes** | Global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`; `enableImplicitConversion: false` |
 
 ## Reference Files
 
 | File | Content | Load When |
 |------|---------|-----------|
+| `reference/nestjs-production-baseline.md` | **Runtime-verified** reference: JWT verifier + global guards, tenant scoping, DTO validation, Fastify throttling, WebSocket auth, problem+json filter, shutdown, BullMQ, webhooks | **Before any feature work**; when reviewing auth, validation or tenancy |
+| `reference/nestjs-rate-limiting.md` | Throttler order, credential-hash tracker, Redis storage (`@nest-lab/throttler-storage-redis`) | Adding or reviewing rate limits |
 | `reference/nestjs-config-basics.md` | Static config reader, config module aggregation, fail-fast validation | Project setup, initial configuration |
-| `reference/nestjs-config-npm-ts.md` | package.json with dependencies, tsconfig.json | Project setup, configuring dependencies |
-| `reference/nestjs-config-prisma7.md` | Prisma 7.x schema, prisma.config.ts, PrismaService, .env template | Setting up database, writing Prisma queries |
+| `reference/nestjs-config-npm-ts.md` | Verified pins, package.json, tsconfig (`nodenext`), Vitest + ESLint flat config, audit override | Project setup, configuring dependencies |
+| `reference/nestjs-config-prisma7.md` | Prisma 7.x schema, prisma.config.ts, PrismaService, transactions, P2002 under driver adapters, `$extends` | Setting up database, writing Prisma queries or transactions |
 | `reference/nestjs-templates-core.md` | main.ts, app.module, core.module templates | Bootstrapping app, creating core module |
 | `reference/nestjs-templates-features.md` | Feature module, controller, service, DTO templates | Creating modules, controllers, services |
 | `reference/nestjs-templates-infrastructure.md` | Dockerfile, docker-compose, Vitest config | Containerizing app, configuring test runner |
@@ -118,23 +129,27 @@ Before generating code, consult these sources for current syntax and APIs:
 |--------|-----------|---------|
 | Prisma ORM | `https://www.prisma.io/docs/llms.txt` | Prisma schema, migrations, client API |
 | NestJS / TypeScript | `Context7` MCP | Latest NestJS decorators, modules, patterns |
+| Installed package source | `npm view <pkg>@<major> version`; `npm pack <pkg>@<ver>` then grep the `.d.ts` | Ground truth for signatures and defaults when docs lag (e.g. `ValidationPipe` default status, P2002 `meta` shape) |
 
 ## Error Handling
 
-**Validation errors**: Use `class-validator` decorators on DTO classes. Global ValidationPipe auto-returns 422 with details.
+**Validation errors**: Use `class-validator` decorators on DTO classes. The global `ValidationPipe` returns **400** with field messages (its default `errorHttpStatusCode`; verified in `@nestjs/common` 11.2.11). Unknown fields → 400 with `forbidNonWhitelisted`.
 
 **Not-found errors**: Throw `NotFoundException` from services. Global exception filter returns structured 404.
 
-**Duplicate errors**: Catch Prisma `P2002` unique constraint violation and convert to `409 Conflict`.
+**Duplicate errors**: Catch Prisma `P2002` and map to `409 Conflict` (or replay the original for an idempotency key). With Prisma 7 driver adapters the constraint name is in `meta.driverAdapterError.cause.constraint.index`; `meta.target` is not set.
 
 ## Hard Prohibitions
 
-- No raw `any` request bodies — all endpoints must use DTOs with `class-validator` decorators
-- No raw SQL unless performance-critical (document why in a comment)
-- No `jest` in new code — use Vitest exclusively
-- `@UseGuards(JwtAuthGuard)` on every non-public route — no exceptions
-- No arbitrary Tailwind values (`p-[13px]`) — use the scale (`p-4`, `gap-6`)
-- Angular: no `*ngIf`/`*ngFor` — use `@if`/`@for`/`@switch`; typed reactive forms `FormGroup<T>` only
+- No raw `any` request bodies — all endpoints use DTOs with `class-validator` decorators
+- No tenant, owner or role taken from the body, query or headers — only from the verified token
+- No JWT verification without pinned `algorithms`, `issuer` and `audience` read with `getOrThrow` (an undefined audience disables the check)
+- Authentication is global (`APP_GUARD`); public routes opt out with `@Public()` — never opt in per route
+- No raw SQL unless performance-critical (document why); never string-built SQL
+- No `jest` in new code — Vitest only
+- No `$use` Prisma middleware (removed) — use `$extends`
+- No `process.on('SIGTERM')` next to `enableShutdownHooks()` (hooks run twice)
+- No floating version ranges across a Nest major; no package that `npm view` cannot find
 
 ## Post-Code Review
 

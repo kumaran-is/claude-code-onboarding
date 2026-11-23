@@ -1,0 +1,12 @@
+scenarios:
+  - tool: order_total
+    cases:
+      - name: happy_path_known_order
+        input: { order_id: ord_002 }
+        assert: { is_error: false, content_type: text, json_path: { total_cents: 1500 }, max_duration_ms: 5000 }
+      - name: invalid_input_bad_id_format
+        input: { order_id: "DROP TABLE" }
+        assert: { is_error: true }
+      - name: edge_case_unknown_order
+        input: { order_id: ord_999 }
+        assert: { is_error: true, error_contains: "no order" }

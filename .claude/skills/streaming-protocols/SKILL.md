@@ -135,36 +135,37 @@ WebSocket      = both-directions-simultaneously on one connection (phone call)
 
 ---
 
-## 4. MCP Bidirectionality Pattern (How HTTP Fakes Full-Duplex)
+## 4. MCP over Streamable HTTP (revision 2026-07-28)
 
-MCP needs bidirectional communication (clients call tools; servers call back via `sampling/createMessage`, `roots/list`, elicitation). It achieves this over half-duplex HTTP using two simultaneous requests:
+One endpoint, one `POST` per JSON-RPC request; the server answers each with either a single JSON body or an SSE stream that carries that request's progress notifications and then its result. There is no protocol session, no long-lived `GET` stream and no server-initiated request:
 
 ```
-CLIENT                                MCP SERVER
-  │                                     │
-  │── POST /mcp (tools/call) ──────────►│
-  │◄── HTTP 200, SSE response ──────────│  ← Stream A: responds to client POST
-  │◄── data: {progress notification}    │
-  │◄── data: {final result}             │
-  │                                     │
-  │── GET  /mcp (Accept: SSE) ─────────►│
-  │◄── HTTP 200, SSE response ──────────│  ← Stream B: long-lived GET for
-  │◄── data: {server→client request}    │    server-initiated messages
-  │                                     │
-  │── POST /mcp (response to above) ───►│  ← Client replies via new POST
-  │◄── HTTP 200 ────────────────────────│
+CLIENT                                         MCP SERVER
+  │── POST /mcp  tools/call  (id 1) ────────────►│  headers: MCP-Protocol-Version, Mcp-Method, Mcp-Name
+  │◄── 200 text/event-stream ───────────────────│  stream for request 1 only
+  │◄── data: {notifications/progress}           │
+  │◄── data: {result, resultType:"input_required"}│  server needs a user answer (MRTR)
+  │                                              │
+  │── POST /mcp  tools/call  (id 2) ────────────►│  same call again + inputResponses
+  │◄── 200 application/json {result} ───────────│
+  │                                              │
+  │── POST /mcp  subscriptions/listen ──────────►│  opt-in stream for list_changed / resource updates
+  │◄── 200 text/event-stream (stays open) ──────│
 ```
 
-"Bidirectional messaging" in MCP = messages flow in both directions across two streams, **not** both directions on a single TCP stream.
+| Concern | 2026-07-28 rule |
+|---|---|
+| Version | every request carries `_meta` `io.modelcontextprotocol/protocolVersion`; the `MCP-Protocol-Version` header must match it (mismatch → `400`, `-32020`); unsupported version → `400`, `-32022` with `data.supported` |
+| State | no `Mcp-Session-Id`; any replica can serve any request. Cross-call state = explicit handles the server returns as tool results |
+| Cancellation | close the request's SSE stream (stdio still uses `notifications/cancelled`). Servers must stop work and send nothing more |
+| Broken stream | **no resumption**: `Last-Event-ID` replay was removed; the client re-issues the request with a new id. Make side-effecting tools idempotent |
+| Server → client asks | only as an `input_required` result the client answers by retrying (sampling and roots are Deprecated) |
+| Security | validate `Origin` (`403` if invalid), bind `127.0.0.1` for local servers, authenticate remote ones |
+| Proxies | send `X-Accel-Buffering: no` and never compress the SSE response |
 
-**Two headers that carry the operational glue:**
+**2025-era servers (≤ 2025-11-25)** still use the older shape: `initialize` handshake, optional `Mcp-Session-Id` echoed on every request, a standalone `GET` SSE stream for server-initiated requests, and `Last-Event-ID` resumption. Treat these as backward-compatibility behaviour, not a design to copy. A client that must talk to both probes with `server/discover` and falls back to `initialize` when the reply is not a recognised 2026 error.
 
-| Header | Purpose |
-|--------|---------|
-| `Mcp-Session-Id` | Set by server at init. Must be echoed on every subsequent request. Missing = silent state bugs. |
-| `Last-Event-ID` | Standard SSE header. Client sends last received ID on reconnect; server replays missed events. |
-
-**SSE deprecation note:** SSE was deprecated as a *standalone MCP transport* (March 2025, replaced by Streamable HTTP). SSE itself is alive and well for LLM streaming, dashboards, and all browser-facing live updates.
+**SSE deprecation note:** the HTTP+SSE *MCP transport* (2024-11-05: separate `GET /sse` + `POST /messages`) is Deprecated since 2025-03-26, replaced by Streamable HTTP. SSE as a response format is alive and well: Streamable HTTP uses it, and so do LLM streaming, dashboards and browser-facing live updates.
 
 ---
 
@@ -316,7 +317,7 @@ A single user action may generate 30+ network calls. Without a correlation ID, c
 User action
   └─► Backend generates traceparent: 00-{trace_id}-{span_id}-01
         ├─► POST to LLM API — Header: traceparent
-        ├─► POST to MCP server — Header: traceparent, Mcp-Session-Id
+        ├─► POST to MCP server — traceparent in the request's params._meta (MCP reserves traceparent/tracestate/baggage there)
         └─► SSE response to client — echo traceparent back
 ```
 
@@ -328,7 +329,7 @@ They are unrelated and live at different layers.
 | Field | Layer | Purpose |
 |-------|-------|---------|
 | JSON-RPC `id` | Message | Correlates request to response within a JSON-RPC session |
-| SSE `id` | Framing | Enables reconnection via `Last-Event-ID` header |
+| SSE `id` | Framing | Enables reconnection via `Last-Event-ID` header (generic SSE; MCP 2026-07-28 removed resumption) |
 
 ### ❌ Treating Streamable HTTP and SSE as Competitors
 Streamable HTTP (MCP) is a *transport pattern*. SSE is *one of the response formats* Streamable HTTP can return. They compose.
@@ -397,7 +398,7 @@ Plain JSON → one-shot response, no streaming needed
 **Rules that catch most bugs:**
 
 1. Don't compress SSE responses — it buffers your stream into chunky bursts.
-2. Echo `Mcp-Session-Id` on every MCP request after init, or session state silently breaks.
+2. MCP 2026-07-28 has no sessions or stream resumption: keep `MCP-Protocol-Version` equal to the `_meta` version, and re-issue a request whose stream broke (idempotent tools make that safe).
 3. Propagate `traceparent` across every layer, or you'll never debug a multi-hop agent failure.
 4. Client disconnect cancels the model call; every stream ends with exactly one `done` or `error` frame (§6a).
 5. Never act on partial output; never open a second stream from `onerror`.

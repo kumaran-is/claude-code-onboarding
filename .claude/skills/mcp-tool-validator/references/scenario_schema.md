@@ -15,7 +15,7 @@ scenarios:
 
 ## Required case types per tool
 
-Coverage validator enforces ≥3 cases per tool, including:
+The client's coverage check enforces ≥3 cases per tool, including:
 - A case with `happy_path` in the name
 - A case with `invalid_input` in the name
 
@@ -27,7 +27,7 @@ The third can be any of: `edge_case_*`, `auth_*`, `boundary_*`, `error_*`.
 |-----------|------|---------|---------|
 | `is_error` | bool | `is_error: true` | MCP `isError` flag on response |
 | `content_type` | string | `content_type: text` | First content block's `type` field |
-| `content_contains` | str or list | `content_contains: ["Orlando", "FL"]` | All substrings present in text |
+| `content_contains` | str or list | `content_contains: ["ord_002", "shipped"]` | All substrings present in text |
 | `content_not_contains` | str or list | `content_not_contains: ["null", "undefined"]` | No forbidden tokens |
 | `content_matches` | regex string | `content_matches: "\\d{3}-\\d{4}"` | Regex matches text |
 | `json_path` | dict | `json_path: { "results.0.id": 42 }` | Dotted-path equality on parsed JSON |
@@ -42,11 +42,11 @@ The third can be any of: `edge_case_*`, `auth_*`, `boundary_*`, `error_*`.
 2. **Inputs should be minimal.** Only include keys the tool needs for the scenario.
 3. **No environment leakage.** Don't put real API keys, real user IDs, or production data in scenarios. Use seeded test fixtures.
 4. **Assertions over invariants, not snapshots.** Prefer `min_results: 1` over asserting on exact result IDs that may change.
-5. **Name scenarios for behavior, not implementation.** `happy_path_orlando_search` is good; `test_case_1` is bad.
+5. **Name scenarios for behavior, not implementation.** `happy_path_search_by_customer` is good; `test_case_1` is bad.
 
 ## Adding a new assertion type
 
 1. Edit `mcp_test_client.py` → `AssertionEngine`
-2. Add a method `_assert_<name>(self, expected, response) -> Optional[str]`
+2. Add a method `_assert_<name>(self, expected, result, duration_ms) -> str | None`
 3. Return `None` on pass, error string on fail
 4. Document it in this file's table and in `assertion_library.md`

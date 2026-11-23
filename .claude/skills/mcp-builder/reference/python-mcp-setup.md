@@ -1,180 +1,136 @@
-# Python MCP Server Implementation Guide
+# Python MCP Server — Setup, Tools and Validation
 
-## Overview
+Python servers on the **official MCP Python SDK v2** (`mcp` on PyPI). v2 is the stable line (`pip install mcp` installs 2.x), speaks protocol revision **2026-07-28** and still serves 2025-era clients.
 
-This document provides Python-specific best practices and examples for implementing MCP servers using the MCP Python SDK. It covers server setup, tool registration patterns, input validation with Pydantic, error handling, and complete working examples.
-
----
-
-## Quick Reference
-
-### Key Imports
-```python
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import Optional, List, Dict, Any
-from enum import Enum
-import httpx
-```
-
-### Server Initialization
-```python
-mcp = FastMCP("service_mcp")
-```
-
-### Tool Registration Pattern
-```python
-@mcp.tool(name="tool_name", annotations={...})
-async def tool_function(params: InputModel) -> str:
-    # Implementation
-    pass
-```
+> Verified 2026-11-23 with `mcp==2.3.0` on CPython 3.14.5 via `uv`: every `python` block in the `python-mcp-*` files imports and runs, the server snippets were driven through `mcp.Client`, and the complete example in [python-mcp-patterns.md](python-mcp-patterns.md) was run through the SDK `Client` in-memory and over stdio with pytest (plus a negative control). Check `uv pip index versions mcp` / PyPI before you pin.
 
 ---
 
-## MCP Python SDK and FastMCP
+## v1 → v2: what changed for a server author
 
-The official MCP Python SDK provides FastMCP, a high-level framework for building MCP servers. It provides:
-- Automatic description and inputSchema generation from function signatures and docstrings
-- Pydantic model integration for input validation
-- Decorator-based tool registration with `@mcp.tool`
+| v1 (`mcp` 1.x) | v2 (`mcp` 2.x) |
+|---|---|
+| `from mcp.server.fastmcp import FastMCP` | `from mcp.server import MCPServer` (old path removed, not deprecated) |
+| `FastMCP("name")` | `MCPServer("name")` |
+| `from mcp.server.fastmcp import Context` | `from mcp.server.mcpserver import Context` |
+| `ToolError` in `mcp.server.fastmcp.exceptions` | `from mcp.server.mcpserver.exceptions import ToolError` |
+| `McpError` | `from mcp import MCPError` |
+| wire types camelCase (`inputSchema`, `isError`) | snake_case (`input_schema`, `is_error`, `structured_content`); wire types live in `mcp-types` |
+| `ClientSession` + transport context manager + `initialize()` | one `mcp.Client(...)` (URL, `StdioServerParameters`, transport, or the server object for in-memory tests) |
+| low-level `@server.list_tools()` decorators | `Server(name, on_list_tools=..., on_call_tool=...)`; arguments are **not** validated for you there |
 
-**For complete SDK documentation, use WebFetch to load:**
-`https://raw.githubusercontent.com/modelcontextprotocol/python-sdk/main/README.md`
+Migration guide: https://py.sdk.modelcontextprotocol.io/migration/
 
-## Server Naming Convention
+---
 
-Python MCP servers must follow this naming pattern:
-- **Format**: `{service}_mcp` (lowercase with underscores)
-- **Examples**: `github_mcp`, `jira_mcp`, `stripe_mcp`
+## Install (pinned)
 
-The name should be:
-- General (not tied to specific features)
-- Descriptive of the service/API being integrated
-- Easy to infer from the task description
-- Without version numbers or dates
+```bash
+uv init orders-mcp && cd orders-mcp
+uv add "mcp[cli]==2.3.0"           # [cli] adds `mcp dev` / `mcp run`
+uv add --dev pytest==9.0.1 anyio==4.12.0
+```
 
-## Tool Implementation
+`requires-python = ">=3.14"` for this workspace (the SDK itself supports 3.10+).
 
-### Tool Naming
+## Naming
 
-Use snake_case for tool names (e.g., "search_users", "create_project", "get_channel_info") with clear, action-oriented names.
+- Server name: `{service}_mcp` (e.g. `orders_mcp`); no versions or dates.
+- Tool names: `snake_case`, service-prefixed, verb-led (`orders_list`, `orders_cancel`). The function name is the tool name unless you pass `name=`.
 
-**Avoid Naming Conflicts**: Include the service context to prevent overlaps:
-- Use "slack_send_message" instead of just "send_message"
-- Use "github_create_issue" instead of just "create_issue"
-- Use "asana_list_tasks" instead of just "list_tasks"
+---
 
-### Tool Structure with FastMCP
+## Tool structure
 
-Tools are defined using the `@mcp.tool` decorator with Pydantic models for input validation:
+The function signature **is** the contract: type hints become the JSON Schema (2020-12), the docstring becomes the description, and the SDK rejects bad arguments before your function runs. Constrain arguments with `Annotated[..., Field(...)]`; return a Pydantic model (or `TypedDict`, dataclass, primitive) to get an `output_schema` and `structured_content` automatically.
 
 ```python
-from pydantic import BaseModel, Field, ConfigDict
-from mcp.server.fastmcp import FastMCP
+from typing import Annotated, Literal
 
-# Initialize the MCP server
-mcp = FastMCP("example_mcp")
+from pydantic import BaseModel, Field
 
-# Define Pydantic model for input validation
-class ServiceToolInput(BaseModel):
-    '''Input model for service tool operation.'''
-    model_config = ConfigDict(
-        str_strip_whitespace=True,  # Auto-strip whitespace from strings
-        validate_assignment=True,    # Validate on assignment
-        extra='forbid'              # Forbid extra fields
-    )
+from mcp.server import MCPServer
+from mcp.types import ToolAnnotations
 
-    param1: str = Field(..., description="First parameter description (e.g., 'user123', 'project-abc')", min_length=1, max_length=100)
-    param2: Optional[int] = Field(default=None, description="Optional integer parameter with constraints", ge=0, le=1000)
-    tags: Optional[List[str]] = Field(default_factory=list, description="List of tags to apply", max_items=10)
+mcp = MCPServer("orders_mcp")
+
+
+class OrderSummary(BaseModel):
+    id: str
+    status: Literal["pending", "shipped", "delivered"]
+    total_cents: int
+
 
 @mcp.tool(
-    name="service_tool_name",
-    annotations={
-        "title": "Human-Readable Tool Title",
-        "readOnlyHint": True,     # Tool does not modify environment
-        "destructiveHint": False,  # Tool does not perform destructive operations
-        "idempotentHint": True,    # Repeated calls have no additional effect
-        "openWorldHint": False     # Tool does not interact with external entities
-    }
+    title="Get one order",
+    annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False),
 )
-async def service_tool_name(params: ServiceToolInput) -> str:
-    '''Tool description automatically becomes the 'description' field.
-
-    This tool performs a specific operation on the service. It validates all inputs
-    using the ServiceToolInput Pydantic model before processing.
-
-    Args:
-        params (ServiceToolInput): Validated input parameters containing:
-            - param1 (str): First parameter description
-            - param2 (Optional[int]): Optional parameter with default
-            - tags (Optional[List[str]]): List of tags
-
-    Returns:
-        str: JSON-formatted response containing operation results
-    '''
-    # Implementation here
-    pass
+async def orders_get(
+    order_id: Annotated[str, Field(pattern=r"^ord_\d{3,}$", description="Order id from orders_list, e.g. ord_001")],
+) -> OrderSummary:
+    """Fetch one order by id with its status and total in cents. Use after orders_list. Read-only."""
+    return OrderSummary(id=order_id, status="pending", total_cents=1250)
 ```
 
-## Pydantic v2 Key Features
+- **Flat, annotated parameters**, not one `params: InputModel` argument: a single model parameter nests every field under `params` in the advertised schema and makes the model's job harder.
+- Bound everything: `max_length` on strings, `le` on numbers, `max_length` on lists.
+- Annotations are **hints for the host's UI** (auto-approve read-only, confirm destructive). Clients must treat them as untrusted; they never enforce anything. Enforce authorization in the tool.
+- The return annotation drives `structured_content`: `-> OrderSummary` produced `{"id": "ord_002", "total_cents": 1500, ...}` in the sandbox; `-> str` yields `{"result": "..."}`.
 
-- Use `model_config` instead of nested `Config` class
-- Use `field_validator` instead of deprecated `validator`
-- Use `model_dump()` instead of deprecated `dict()`
-- Validators require `@classmethod` decorator
-- Type hints are required for validator methods
+### Pydantic v2 reminders
+
+`model_config = ConfigDict(...)` (not `class Config`), `@field_validator` + `@classmethod` (not `@validator`), `model_dump()` (not `.dict()`), `Field(max_length=...)` on lists (not `max_items`).
 
 ```python
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-class CreateUserInput(BaseModel):
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True
-    )
 
-    name: str = Field(..., description="User's full name", min_length=1, max_length=100)
-    email: str = Field(..., description="User's email address", pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
-    age: int = Field(..., description="User's age", ge=0, le=150)
+class CreateUser(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    @field_validator('email')
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    tags: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("name")
     @classmethod
-    def validate_email(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("Email cannot be empty")
-        return v.lower()
+    def no_control_chars(cls, value: str) -> str:
+        if any(ord(ch) < 32 for ch in value):
+            raise ValueError("name must not contain control characters")
+        return value
 ```
 
-## Response Format Options
+(`EmailStr` needs `uv add email-validator==2.4.0`.)
 
-Support multiple output formats for flexibility:
+---
+
+## Running it
 
 ```python
-from enum import Enum
+from mcp.server import MCPServer
 
-class ResponseFormat(str, Enum):
-    '''Output format for tool responses.'''
-    MARKDOWN = "markdown"
-    JSON = "json"
+mcp = MCPServer("orders_mcp")
 
-class UserSearchInput(BaseModel):
-    query: str = Field(..., description="Search query")
-    response_format: ResponseFormat = Field(
-        default=ResponseFormat.MARKDOWN,
-        description="Output format: 'markdown' for human-readable or 'json' for machine-readable"
-    )
+if __name__ == "__main__":
+    mcp.run()  # stdio by default
 ```
 
-**Markdown format**:
-- Use headers, lists, and formatting for clarity
-- Convert timestamps to human-readable format (e.g., "2024-01-15 10:30:00 UTC" instead of epoch)
-- Show display names with IDs in parentheses (e.g., "@john.doe (U123456)")
-- Omit verbose metadata (e.g., show only one profile image URL, not all sizes)
-- Group related information logically
+| Transport | How | Notes |
+|---|---|---|
+| stdio | `mcp.run()` | default; stdout is the protocol — log to stderr (the `logging` module's default stream) |
+| Streamable HTTP | `mcp.run(transport="streamable-http", port=3001)` or mount `mcp.streamable_http_app()` in an ASGI app | serves `/mcp`; transport options go to `run()`/`streamable_http_app()`, never to `MCPServer(...)` |
+| SSE (`transport="sse"`) | **do not use** | the 2024-11-05 HTTP+SSE transport is Deprecated; migration only |
 
-**JSON format**:
-- Return complete, structured data suitable for programmatic processing
-- Include all available fields and metadata
-- Use consistent field names and types
+- `streamable_http_app()` enables DNS-rebinding protection for localhost by default. Behind a real hostname pass `transport_security=TransportSecuritySettings(allowed_hosts=["mcp.example.com", "mcp.example.com:*"], ...)` from `mcp.server.transport_security`. A non-localhost `host=` alone **turns the protection off** rather than allow-listing.
+- HTTP options that only matter for 2025-era clients: `stateless_http=True` (no legacy sessions), `json_response=True` (no SSE; a tool that elicits then fails with `NoBackChannelError`), `session_idle_timeout`, `max_sessions`, `event_store`. Request bodies over 4 MiB get HTTP 413 (`max_request_body_size`).
+- Authentication is not on by default: see [security-core.md](security-core.md).
+
+### Inspector and CLI
+
+```bash
+uv run mcp dev server.py                       # MCP Inspector UI (needs npx)
+uv run mcp run server.py --transport streamable-http
+npx @modelcontextprotocol/inspector@2.16.0 --cli uv run python server.py --method tools/list
+```
+
+Next: error handling, pagination, the complete tested example → [python-mcp-patterns.md](python-mcp-patterns.md); context, progress, cancellation, resources, prompts, lifespan, protocol eras → [python-mcp-advanced.md](python-mcp-advanced.md).

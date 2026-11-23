@@ -9,13 +9,10 @@ your-mcp-project/
 ├── docker-compose.yml           # service: mcp-server with healthcheck
 ├── Dockerfile                   # builds the MCP server
 ├── tests/
-│   ├── mcp_test_client.py       # from this skill
+│   ├── mcp_test_client.py       # copied from the skill's scripts/
 │   ├── scenarios.yaml           # the spec
-│   ├── run_validation.sh        # from this skill
+│   ├── run_validation.sh        # copied from the skill's scripts/
 │   └── validation_report.json   # generated
-├── scripts/
-│   ├── generate_scenarios.py    # from this skill
-│   └── validate_coverage.py     # from this skill
 └── CLAUDE.md                    # includes feedback_loop.md block
 ```
 
@@ -59,13 +56,10 @@ lsof -i :8080
 ```
 
 ### Health endpoint missing
-If your MCP server doesn't expose `/health`, add one. For Python MCP servers
-using FastAPI/Starlette under the hood:
-```python
-from starlette.responses import JSONResponse
-@app.route("/health")
-async def health(_): return JSONResponse({"status": "ok"})
-```
+If your MCP server doesn't expose `/health`, add one next to the `/mcp` route of the
+ASGI or HTTP app that serves it (for example a Starlette `Route("/health", ...)` beside
+`mcp.streamable_http_app()`, or an Express/Fastify route beside the TypeScript handler).
+Keep it unauthenticated and free of MCP calls, so it reports process health only.
 
 ### Container exits immediately
 The validator will time out on health check. Diagnose with:
@@ -92,4 +86,4 @@ SERVER_URL="stdio://python -m mcp_server" \
 HEALTH_URL="" \
 bash tests/run_validation.sh
 ```
-And modify `run_validation.sh` to skip Docker steps when `HEALTH_URL` is empty.
+The reference `run_validation.sh` skips every Docker step when `HEALTH_URL` is empty.

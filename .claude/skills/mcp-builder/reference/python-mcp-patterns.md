@@ -1,293 +1,225 @@
-# Python MCP Server Patterns
+# Python MCP Server — Errors, Pagination, Upstream Calls, Complete Example
 
-## Pagination Implementation
+`mcp==2.3.0` (SDK v2). Setup and tool basics: [python-mcp-setup.md](python-mcp-setup.md).
 
-For tools that list resources:
+---
+
+## Errors: three outcomes
+
+| You raise / return | The client gets | Who reads it |
+|---|---|---|
+| `raise ToolError("...")` (`mcp.server.mcpserver.exceptions`) | a result with `is_error=True` and your message | the **model** — it can correct itself |
+| arguments fail the signature's validation | `is_error=True` result, your function never runs | the model |
+| `raise MCPError(code=INVALID_PARAMS, message=...)` (`from mcp import MCPError`) | a JSON-RPC error, no result | the **host code** |
+| any other exception | a failed call; the model learns only that it failed; your log gets the traceback | nobody useful — avoid |
+
+Rules:
+
+- Expected failures (not found, upstream 429/5xx, business rule) → `ToolError` with a sentence that names the next step. Never `return "Error: ..."`: a returned string has `is_error=False`, so the model treats it as success.
+- `MCPError` only when the request itself is wrong for the host (unknown resource, malformed params).
+- Log the full exception server-side with context before raising `ToolError` — never put stack traces or secrets in the message.
+
+## Upstream client (httpx2, one pooled client)
 
 ```python
-class ListInput(BaseModel):
-    limit: Optional[int] = Field(default=20, description="Maximum results to return", ge=1, le=100)
-    offset: Optional[int] = Field(default=0, description="Number of results to skip for pagination", ge=0)
+import logging
 
-async def list_items(params: ListInput) -> str:
-    # Make API request with pagination
-    data = await api_request(limit=params.limit, offset=params.offset)
+import httpx2
 
-    # Return pagination info
-    response = {
-        "total": data["total"],
-        "count": len(data["items"]),
-        "offset": params.offset,
-        "items": data["items"],
-        "has_more": data["total"] > params.offset + len(data["items"]),
-        "next_offset": params.offset + len(data["items"]) if data["total"] > params.offset + len(data["items"]) else None
-    }
-    return json.dumps(response, indent=2)
+from mcp.server.mcpserver.exceptions import ToolError
+
+logger = logging.getLogger("orders_mcp")
+
+
+def to_tool_error(exc: Exception, action: str) -> ToolError:
+    """Map an upstream failure to a model-readable ToolError, after logging the detail."""
+    logger.error("%s failed", action, exc_info=exc)
+    if isinstance(exc, httpx2.HTTPStatusError):
+        status = exc.response.status_code
+        if status == 404:
+            return ToolError("Not found. Check the id with the matching *_list tool.")
+        if status == 403:
+            return ToolError("Permission denied for this account. Do not retry; tell the user.")
+        if status == 429 or status >= 500:
+            return ToolError(f"Upstream temporarily unavailable (HTTP {status}). Retry once after a short wait.")
+        return ToolError(f"Upstream rejected the request (HTTP {status}). Check the arguments.")
+    if isinstance(exc, httpx2.TimeoutException):
+        return ToolError("Upstream timed out. Retry once with a narrower query.")
+    return ToolError("Unexpected failure. Do not retry; report it.")
+
+
+async def get_json(client: httpx2.AsyncClient, path: str, params: dict[str, str | int]) -> dict[str, object]:
+    response = await client.get(path, params=params, timeout=10.0)
+    response.raise_for_status()
+    body = response.json()
+    if not isinstance(body, dict):
+        raise ValueError(f"expected a JSON object from {path}")
+    return body
 ```
 
-## Error Handling
+Create the `httpx2.AsyncClient` once in the server lifespan ([python-mcp-advanced.md](python-mcp-advanced.md#lifespan-shared-clients-and-pools)), not per call. Use `async def` tools for I/O; a blocking call inside `async def` stalls every other request.
 
-Provide clear, actionable error messages:
+## Pagination
 
-```python
-def _handle_api_error(e: Exception) -> str:
-    '''Consistent error formatting across all tools.'''
-    if isinstance(e, httpx.HTTPStatusError):
-        if e.response.status_code == 404:
-            return "Error: Resource not found. Please check the ID is correct."
-        elif e.response.status_code == 403:
-            return "Error: Permission denied. You don't have access to this resource."
-        elif e.response.status_code == 429:
-            return "Error: Rate limit exceeded. Please wait before making more requests."
-        return f"Error: API request failed with status {e.response.status_code}"
-    elif isinstance(e, httpx.TimeoutException):
-        return "Error: Request timed out. Please try again."
-    return f"Error: Unexpected error occurred: {type(e).__name__}"
-```
-
-## Shared Utilities
-
-Extract common functionality into reusable functions:
+Tool-level pagination: an opaque `cursor` argument in, a `next_cursor` field out. Bound the page size; reject a bad cursor with a `ToolError` that says how to restart.
 
 ```python
-# Shared API request function
-async def _make_api_request(endpoint: str, method: str = "GET", **kwargs) -> dict:
-    '''Reusable function for all API calls.'''
-    async with httpx.AsyncClient() as client:
-        response = await client.request(
-            method,
-            f"{API_BASE_URL}/{endpoint}",
-            timeout=30.0,
-            **kwargs
-        )
-        response.raise_for_status()
-        return response.json()
-```
+import base64
+from typing import Annotated
 
-## Async/Await Best Practices
+from pydantic import BaseModel, Field
 
-Always use async/await for network requests and I/O operations:
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-```python
-# Good: Async network request
-async def fetch_data(resource_id: str) -> dict:
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{API_URL}/resource/{resource_id}")
-        response.raise_for_status()
-        return response.json()
+mcp = MCPServer("orders_mcp")
+ORDERS = [f"ord_{i:03d}" for i in range(1, 24)]
 
-# Bad: Synchronous request
-def fetch_data(resource_id: str) -> dict:
-    response = requests.get(f"{API_URL}/resource/{resource_id}")  # Blocks
-    return response.json()
-```
 
-## Type Hints
+class OrderPage(BaseModel):
+    items: list[str]
+    total: int
+    next_cursor: str | None = None
 
-Use type hints throughout:
 
-```python
-from typing import Optional, List, Dict, Any
+def _encode(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode()
 
-async def get_user(user_id: str) -> Dict[str, Any]:
-    data = await fetch_user(user_id)
-    return {"id": data["id"], "name": data["name"]}
-```
 
-## Tool Docstrings
-
-Every tool must have comprehensive docstrings with explicit type information:
-
-```python
-async def search_users(params: UserSearchInput) -> str:
-    '''
-    Search for users in the Example system by name, email, or team.
-
-    This tool searches across all user profiles in the Example platform,
-    supporting partial matches and various search filters. It does NOT
-    create or modify users, only searches existing ones.
-
-    Args:
-        params (UserSearchInput): Validated input parameters containing:
-            - query (str): Search string to match against names/emails (e.g., "john", "@example.com", "team:marketing")
-            - limit (Optional[int]): Maximum results to return, between 1-100 (default: 20)
-            - offset (Optional[int]): Number of results to skip for pagination (default: 0)
-
-    Returns:
-        str: JSON-formatted string containing search results with the following schema:
-
-        Success response:
-        {
-            "total": int,           # Total number of matches found
-            "count": int,           # Number of results in this response
-            "offset": int,          # Current pagination offset
-            "users": [
-                {
-                    "id": str,      # User ID (e.g., "U123456789")
-                    "name": str,    # Full name (e.g., "John Doe")
-                    "email": str,   # Email address (e.g., "john@example.com")
-                    "team": str     # Team name (e.g., "Marketing") - optional
-                }
-            ]
-        }
-
-        Error response:
-        "Error: <error message>" or "No users found matching '<query>'"
-
-    Examples:
-        - Use when: "Find all marketing team members" -> params with query="team:marketing"
-        - Use when: "Search for John's account" -> params with query="john"
-        - Don't use when: You need to create a user (use example_create_user instead)
-        - Don't use when: You have a user ID and need full details (use example_get_user instead)
-
-    Error Handling:
-        - Input validation errors are handled by Pydantic model
-        - Returns "Error: Rate limit exceeded" if too many requests (429 status)
-        - Returns "Error: Invalid API authentication" if API key is invalid (401 status)
-        - Returns formatted list of results or "No users found matching 'query'"
-    '''
-```
-
-## Complete Example
-
-See below for a complete Python MCP server example:
-
-```python
-#!/usr/bin/env python3
-'''
-MCP Server for Example Service.
-
-This server provides tools to interact with Example API, including user search,
-project management, and data export capabilities.
-'''
-
-from typing import Optional, List, Dict, Any
-from enum import Enum
-import httpx
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-from mcp.server.fastmcp import FastMCP
-
-# Initialize the MCP server
-mcp = FastMCP("example_mcp")
-
-# Constants
-API_BASE_URL = "https://api.example.com/v1"
-
-# Enums
-class ResponseFormat(str, Enum):
-    '''Output format for tool responses.'''
-    MARKDOWN = "markdown"
-    JSON = "json"
-
-# Pydantic Models for Input Validation
-class UserSearchInput(BaseModel):
-    '''Input model for user search operations.'''
-    model_config = ConfigDict(
-        str_strip_whitespace=True,
-        validate_assignment=True
-    )
-
-    query: str = Field(..., description="Search string to match against names/emails", min_length=2, max_length=200)
-    limit: Optional[int] = Field(default=20, description="Maximum results to return", ge=1, le=100)
-    offset: Optional[int] = Field(default=0, description="Number of results to skip for pagination", ge=0)
-    response_format: ResponseFormat = Field(default=ResponseFormat.MARKDOWN, description="Output format")
-
-    @field_validator('query')
-    @classmethod
-    def validate_query(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("Query cannot be empty or whitespace only")
-        return v.strip()
-
-# Shared utility functions
-async def _make_api_request(endpoint: str, method: str = "GET", **kwargs) -> dict:
-    '''Reusable function for all API calls.'''
-    async with httpx.AsyncClient() as client:
-        response = await client.request(
-            method,
-            f"{API_BASE_URL}/{endpoint}",
-            timeout=30.0,
-            **kwargs
-        )
-        response.raise_for_status()
-        return response.json()
-
-def _handle_api_error(e: Exception) -> str:
-    '''Consistent error formatting across all tools.'''
-    if isinstance(e, httpx.HTTPStatusError):
-        if e.response.status_code == 404:
-            return "Error: Resource not found. Please check the ID is correct."
-        elif e.response.status_code == 403:
-            return "Error: Permission denied. You don't have access to this resource."
-        elif e.response.status_code == 429:
-            return "Error: Rate limit exceeded. Please wait before making more requests."
-        return f"Error: API request failed with status {e.response.status_code}"
-    elif isinstance(e, httpx.TimeoutException):
-        return "Error: Request timed out. Please try again."
-    return f"Error: Unexpected error occurred: {type(e).__name__}"
-
-# Tool definitions
-@mcp.tool(
-    name="example_search_users",
-    annotations={
-        "title": "Search Example Users",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True
-    }
-)
-async def example_search_users(params: UserSearchInput) -> str:
-    '''Search for users in the Example system by name, email, or team.
-
-    [Full docstring as shown above]
-    '''
+def _decode(cursor: str) -> int:
     try:
-        # Make API request using validated parameters
-        data = await _make_api_request(
-            "users/search",
-            params={
-                "q": params.query,
-                "limit": params.limit,
-                "offset": params.offset
-            }
-        )
+        offset = int(base64.urlsafe_b64decode(cursor.encode()).decode())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ToolError("Invalid cursor. Call orders_list without cursor to restart.") from exc
+    if offset < 0:
+        raise ToolError("Invalid cursor. Call orders_list without cursor to restart.")
+    return offset
 
-        users = data.get("users", [])
-        total = data.get("total", 0)
 
-        if not users:
-            return f"No users found matching '{params.query}'"
+@mcp.tool()
+async def orders_list(
+    limit: Annotated[int, Field(ge=1, le=50, description="Page size, 1-50")] = 20,
+    cursor: Annotated[str | None, Field(max_length=128, description="Opaque next_cursor from the previous page")] = None,
+) -> OrderPage:
+    """List order ids one page at a time. Pass next_cursor back unchanged as cursor to get the next page."""
+    start = 0 if cursor is None else _decode(cursor)
+    items = ORDERS[start : start + limit]
+    end = start + len(items)
+    return OrderPage(items=items, total=len(ORDERS), next_cursor=_encode(end) if end < len(ORDERS) else None)
+```
 
-        # Format response based on requested format
-        if params.response_format == ResponseFormat.MARKDOWN:
-            lines = [f"# User Search Results: '{params.query}'", ""]
-            lines.append(f"Found {total} users (showing {len(users)})")
-            lines.append("")
+Protocol-level pagination of `tools/list` / `resources/list` (a `cursor` param and `nextCursor` result on the list call itself) is only needed for very large catalogs and is done on the low-level `Server` (`on_list_resources=...` receiving `PaginatedRequestParams`). Cursors are opaque; page size is the server's choice; a missing `next_cursor` ends the walk.
 
-            for user in users:
-                lines.append(f"## {user['name']} ({user['id']})")
-                lines.append(f"- **Email**: {user['email']}")
-                if user.get('team'):
-                    lines.append(f"- **Team**: {user['team']}")
-                lines.append("")
+---
 
-            return "\n".join(lines)
+## Complete example (tested)
 
-        else:
-            # Machine-readable JSON format
-            import json
-            response = {
-                "total": total,
-                "count": len(users),
-                "offset": params.offset,
-                "users": users
-            }
-            return json.dumps(response, indent=2)
+`src/server.py`:
 
-    except Exception as e:
-        return _handle_api_error(e)
+```python
+"""Orders demo MCP server (Python SDK v2)."""
+
+import json
+import logging
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+from mcp import MCPError
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import INVALID_PARAMS
+
+logger = logging.getLogger("orders-demo")
+
+mcp = MCPServer("orders-demo")
+
+ORDERS = {f"ord_{i:03d}": 1000 + i * 250 for i in range(1, 24)}
+
+
+class OrderTotal(BaseModel):
+    id: str
+    total_cents: int
+
+
+@mcp.tool()
+async def order_total(
+    order_id: Annotated[str, Field(pattern=r"^ord_\d{3}$", description="Order id, e.g. ord_001")],
+    ctx: Context,
+) -> OrderTotal:
+    """Return the total of one order in cents. Use when the user asks what an order cost."""
+    await ctx.report_progress(1, 1, "looked up order")
+    if order_id not in ORDERS:
+        logger.info("order not found", extra={"order_id": order_id})
+        raise ToolError(f"No order {order_id!r}. Call order_total with an id like ord_001.")
+    return OrderTotal(id=order_id, total_cents=ORDERS[order_id])
+
+
+@mcp.resource("orders://{order_id}")
+def order_resource(order_id: str) -> str:
+    """One order as JSON text."""
+    if order_id not in ORDERS:
+        raise MCPError(code=INVALID_PARAMS, message=f"Unknown order {order_id!r}")
+    return json.dumps({"id": order_id, "total_cents": ORDERS[order_id]})
+
 
 if __name__ == "__main__":
     mcp.run()
 ```
+
+`tests/test_server.py` — drives the server through the real `Client`, in memory and as a stdio subprocess:
+
+```python
+import sys
+from pathlib import Path
+
+import pytest
+
+from mcp import Client, MCPError, StdioServerParameters
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from server import mcp  # noqa: E402
+
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+async def test_in_memory_structured_output_and_errors() -> None:
+    async with Client(mcp) as client:
+        tools = (await client.list_tools()).tools
+        tool = next(t for t in tools if t.name == "order_total")
+        assert tool.output_schema is not None
+        ok = await client.call_tool("order_total", {"order_id": "ord_002"})
+        assert ok.is_error is False
+        assert ok.structured_content == {"id": "ord_002", "total_cents": 1500}
+        missing = await client.call_tool("order_total", {"order_id": "ord_999"})
+        assert missing.is_error is True
+        bad = await client.call_tool("order_total", {"order_id": "DROP TABLE"})
+        assert bad.is_error is True
+
+
+async def test_resource_read_and_unknown_id_is_protocol_error() -> None:
+    async with Client(mcp) as client:
+        found = await client.read_resource("orders://ord_003")
+        assert "ord_003" in str(found.contents[0])
+        with pytest.raises(MCPError):
+            await client.read_resource("orders://ord_999")
+
+
+async def test_stdio_subprocess() -> None:
+    server = Path(__file__).resolve().parents[1] / "src" / "server.py"
+    params = StdioServerParameters(command=sys.executable, args=[str(server)])
+    async with Client(params) as client:
+        assert client.protocol_version is not None
+        res = await client.call_tool("order_total", {"order_id": "ord_001"})
+        assert res.structured_content == {"id": "ord_001", "total_cents": 1250}
+```
+
+Observed: `uv run pytest -q` → `3 passed`; `client.protocol_version` on stdio was `2026-07-28`. Negative control: changing the not-found branch to return a zero total instead of raising made `test_in_memory_structured_output_and_errors` fail (`assert False is True`, exit 1).
+
+Production hardening on top of this example: add authorization per call ([security-core.md](security-core.md)); add the house `next_actions` / `suggestion` fields ([agent-design-patterns.md](agent-design-patterns.md)).

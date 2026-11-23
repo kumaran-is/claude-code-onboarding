@@ -27,8 +27,8 @@ assert:
 ### `content_contains: str | list[str]`
 All listed substrings must appear in concatenated text content.
 ```yaml
-content_contains: "Orlando"
-content_contains: ["Orlando", "FL", "32801"]
+content_contains: "ord_002"
+content_contains: ["ord_002", "shipped", "1500"]
 ```
 
 ### `content_not_contains: str | list[str]`
@@ -53,13 +53,13 @@ Dotted-path equality. Path supports dict keys and integer list indices.
 ```yaml
 json_path:
   status: "ok"
-  results.0.id: "PROP-0001"
+  results.0.id: "ord_001"
   metadata.total: 42
   results: []        # exact equality with empty list
 ```
 
 ### `min_results: int` / `max_results: int`
-For tools returning lists or `{"results": [...]}`.
+For tools returning a list, or an object whose first list-valued field is the result set (`{"results": [...]}`, `{"orders": [...]}`). Reads `structuredContent` first, then JSON text content.
 ```yaml
 min_results: 1   # at least one result
 max_results: 100 # respects pagination cap
@@ -78,7 +78,7 @@ assert:
 ## Performance
 
 ### `max_duration_ms: int`
-Tool must respond within budget. Soft assertion — if duration not measured, silently passes.
+Tool must respond within budget. The client times every `tools/call`, so this assertion always has a measured duration.
 ```yaml
 max_duration_ms: 2000
 ```
@@ -91,7 +91,7 @@ All assertions in one `assert` block are AND-ed. There is no OR. If you need OR 
 assert:
   is_error: false
   content_type: text
-  content_contains: ["Orlando"]
+  content_contains: ["ord_002"]
   min_results: 1
   max_duration_ms: 3000
 ```
@@ -101,9 +101,9 @@ assert:
 Edit `AssertionEngine` in `mcp_test_client.py`:
 
 ```python
-def _assert_has_field(self, expected: str, response: Any) -> Optional[str]:
+def _assert_has_field(self, expected: str, result: Any, _: float) -> str | None:
     """Assert response JSON has a top-level field with given name."""
-    data = self._extract_json(response)
+    data = self._json(result)
     if not isinstance(data, dict):
         return f"has_field: response is not a JSON object"
     if expected not in data:

@@ -1,0 +1,22 @@
+{
+  "description": "Connection drops mid-line: the unterminated last line is buffered, never parsed; earlier lines stay applied.",
+  "errors": [
+    {
+      "line": 4,
+      "code": "INCOMPLETE_FRAME"
+    }
+  ],
+  "finalState": {
+    "card-1": {
+      "componentIds": [
+        "root"
+      ],
+      "dataModel": {
+        "card": {
+          "title": "Booking needs a time slot",
+          "body": "Choose a slot before Friday."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "createSurface names a catalog this client does not support.",
+  "expectedError": "UNSUPPORTED_CATALOG",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "c",
+        "catalogId": "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"
+      }
+    }
+  ]
+}

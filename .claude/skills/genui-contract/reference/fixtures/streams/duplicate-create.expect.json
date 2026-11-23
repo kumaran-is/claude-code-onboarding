@@ -1,0 +1,22 @@
+{
+  "description": "A second createSurface for a live surface is rejected; the surface keeps its state.",
+  "errors": [
+    {
+      "line": 2,
+      "code": "DUPLICATE_SURFACE"
+    }
+  ],
+  "finalState": {
+    "card-1": {
+      "componentIds": [
+        "root"
+      ],
+      "dataModel": {
+        "card": {
+          "title": "Booking needs a time slot",
+          "body": "Choose a slot before Friday."
+        }
+      }
+    }
+  }
+}

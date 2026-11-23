@@ -1,0 +1,13 @@
+{
+  "description": "Root arrives first and references a child delivered in a later message; render progressively.",
+  "errors": [],
+  "finalState": {
+    "s1": {
+      "componentIds": [
+        "root",
+        "status"
+      ],
+      "dataModel": {}
+    }
+  }
+}

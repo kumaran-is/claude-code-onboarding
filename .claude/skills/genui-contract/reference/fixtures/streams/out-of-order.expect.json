@@ -1,0 +1,19 @@
+{
+  "description": "Updates before createSurface are rejected (no client-side reordering); the server must order per surface.",
+  "errors": [
+    {
+      "line": 1,
+      "code": "SURFACE_NOT_FOUND"
+    },
+    {
+      "line": 2,
+      "code": "SURFACE_NOT_FOUND"
+    }
+  ],
+  "finalState": {
+    "card-1": {
+      "componentIds": [],
+      "dataModel": {}
+    }
+  }
+}

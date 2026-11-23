@@ -1,0 +1,3 @@
+{"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"https://catalogs.example.com/genui/canonical/v1/catalog.json"}}
+{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"id":"root","component":"DetailPanel","title":"Order","fields":[{"label":"Id","value":"5521"}],"children":["status"]}]}}
+{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"id":"status","component":"StatusIndicator","label":"Shipment","status":"pending"}]}}

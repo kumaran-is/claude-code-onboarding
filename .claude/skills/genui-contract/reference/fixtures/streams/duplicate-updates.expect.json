@@ -1,0 +1,17 @@
+{
+  "description": "Duplicate updateComponents and updateDataModel are idempotent upserts.",
+  "errors": [],
+  "finalState": {
+    "card-1": {
+      "componentIds": [
+        "root"
+      ],
+      "dataModel": {
+        "card": {
+          "title": "Booking needs a time slot",
+          "body": "Choose a slot before Friday."
+        }
+      }
+    }
+  }
+}

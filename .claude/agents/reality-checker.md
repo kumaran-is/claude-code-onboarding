@@ -89,7 +89,7 @@ Verdict: NEEDS WORK — do not merge until all Critical and High issues are reso
 4. **Binary verdict** — APPROVED or NEEDS WORK. No "approved with caveats".
 5. **Console errors (web) or crashes/ANRs in Maestro output (mobile) = NEEDS WORK** unless explained.
 6. **Never skip unhappy paths** — happy path only = NEEDS WORK.
-7. **Accessibility** — automated results never prove compliance: "no automated violations; manual checks required".
+7. **Accessibility** — automated results never prove compliance: "no automated violations; manual checks required". Web axe runs use tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa`. A full accessibility review (web + Flutter, WCAG 2.2 AA) belongs to `accessibility-auditor`; cite its verdict rather than re-auditing here.
 8. **Default to finding issues** — if a first implementation shows zero issues, re-examine.
 
 ## When to use

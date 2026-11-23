@@ -245,30 +245,17 @@ Insight names observed in a real trace this toolkit ran: `LCPBreakdown`, `CLSCul
 
 ## Emulation & Testing
 
-### emulate_cpu
-Throttle CPU to simulate slower devices.
+### emulate
+One tool for CPU and network throttling and media emulation. **Each call replaces all emulation settings** (except `extraHttpHeaders`), so pass everything you want in one call. There are no `emulate_cpu` / `emulate_network` tools.
 
 ```typescript
-emulate_cpu({ rate: 4 })  // 4x slowdown
+emulate({ pageId: 2, cpuThrottlingRate: 4, networkConditions: "Slow 4G" })   // 4x CPU slowdown + slow network
+emulate({ pageId: 2, networkConditions: "Offline" })                         // also clears the CPU throttle set above
+emulate({ pageId: 2, prefersReducedMotion: "reduce", colorScheme: "dark" })
+emulate({ pageId: 2 })                                                        // reset everything
 ```
 
-### emulate_network
-Throttle network to simulate slow connections.
-
-```typescript
-emulate_network({ profile: "Slow 3G" })
-emulate_network({ profile: "Fast 3G" })
-emulate_network({ profile: "Offline" })
-```
-
-**Custom throttling:**
-```typescript
-emulate_network({
-  downloadThroughput: 750000,  // bytes/sec
-  uploadThroughput: 250000,
-  latency: 100  // ms
-})
-```
+`networkConditions` accepts only the presets `Offline`, `Slow 3G`, `Fast 3G`, `Slow 4G` and `Fast 4G`; custom throughput or latency values are not supported. `cpuThrottlingRate` ranges from 1 to 20. Other options: `viewport` (`"<w>x<h>x<dpr>[,mobile][,touch][,landscape]"`, a web-layout emulation only, never mobile-app evidence), `forcedColors`, `prefersContrast`, `geolocation` and `userAgent`.
 
 ### resize_page
 Change viewport size.

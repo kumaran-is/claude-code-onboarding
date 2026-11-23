@@ -114,4 +114,5 @@ v22 guidance that is wrong for 21.2). Context7 remains a fallback for other libr
 - `angular-spa` — workspace skill: daisyUI components, TailwindCSS tokens, conventions; `reference/web-security.md` (interceptor, refresh, guards, returnUrl); `reference/testing-vitest.md` (testing these states)
 - `angular` — API reference: `references/signals-core.md` (resource options and stability), `references/signal-forms.md`
 - `angular-best-practices` — review checklist and performance priorities
+- `design-system` — framework-neutral async-state contract ([interaction-contracts.md §6b](../design-system/reference/interaction-contracts.md#6b-async-state-contract-loading--empty--error--refresh): loading / empty / error / refresh); this skill is its Angular implementation
 - `accessibility-audit` — WCAG 2.2 AA checklist and automated checks

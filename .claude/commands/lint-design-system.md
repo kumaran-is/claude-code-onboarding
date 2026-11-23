@@ -58,12 +58,12 @@ Commands (POSIX ERE via `grep -E`, portable across BSD and GNU grep; no `\d`). E
 WEB="src/app"; INC='--include=*.html --include=*.ts --include=*.tsx --include=*.jsx --include=*.css --include=*.scss'
 X='ignore-design:[[:space:]]*[^[:space:]]'
 # Literal colours (token/theme stylesheets are where literals belong: exclude them)
-grep -rnE $INC '(bg|text|border|ring|fill|stroke|from|via|to|outline)-\[(#|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\()|(background(-color)?|[^a-z-]color|border(-[a-z]+)?-color|fill|stroke)[[:space:]]*:[[:space:]]*(#[0-9a-fA-F]{3,8}|(rgba?|hsla?|oklch|oklab|hwb)\()' "$WEB" \
-  | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.spec\.ts:' | grep -vE "$X"
+grep -rnE $INC '(bg|text|border|ring|fill|stroke|from|via|to|outline)-\[(#|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\()|(background(-color)?|[^a-z-]color|border(-[a-z]+)?-color|fill|stroke|(background|border|outline)Color)[[:space:]]*:[[:space:]]*['"'"'"]?(#[0-9a-fA-F]{3,8}|(rgba?|hsla?|oklch|oklab|hwb)\()' "$WEB" \
+  | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Arbitrary spacing values and inline px spacing
-grep -rnE $INC '(^|[[:space:]"'"'"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^]v][^]]*\]|style="[^"]*(margin|padding|gap)[a-z-]*[[:space:]]*:[[:space:]]*-?[0-9.]+px' "$WEB" | grep -vE "$X"
+grep -rnE $INC '(^|[[:space:]"'"'"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^]v][^]]*\]|style="[^"]*(margin|padding|gap)[a-z-]*[[:space:]]*:[[:space:]]*-?[0-9.]+px|style=\{\{[^}]*(margin|padding|gap)[A-Za-z]*[[:space:]]*:[[:space:]]*['"'"'"]?-?[0-9]' "$WEB" | grep -vE '\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Raw typography
-grep -rnE $INC 'text-\[[0-9.]+(px|rem|em)\]|font-\[[^]v][^]]*\]|font-size[[:space:]]*:[[:space:]]*[0-9]' "$WEB" | grep -vE '(tokens?|theme)[^/]*\.s?css:' | grep -vE "$X"
+grep -rnE $INC 'text-\[[0-9.]+(px|rem|em)\]|font-\[[^]v][^]]*\]|font-size[[:space:]]*:[[:space:]]*[0-9]|fontSize[[:space:]]*:[[:space:]]*['"'"'"]?[0-9]' "$WEB" | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
 # Inline styles in templates
 grep -rnE --include=*.html 'style="' "$WEB" | grep -vE "$X"
 # daisyUI 4 class names

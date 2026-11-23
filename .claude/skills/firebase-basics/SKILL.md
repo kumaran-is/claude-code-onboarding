@@ -1,11 +1,9 @@
 ---
 name: firebase-basics
-description: >-
-  Firebase CLI foundation for any project. Use when checking Firebase CLI
-  version, authenticating with Firebase, setting active projects, initializing
-  Firebase services, or running Firebase MCP commands. Triggers: firebase login,
-  firebase use, firebase projects list, firebase init, firebase MCP, Firebase CLI
-  setup, Firebase emulator start.
+description: "Firebase CLI foundation for any project. Use when checking the Firebase CLI version, authenticating with Firebase, setting active projects, initializing Firebase services, or running Firebase MCP commands."
+metadata:
+  triggers: firebase login, firebase use, firebase projects list, firebase init, firebase MCP, Firebase CLI setup, Firebase emulator start
+  related-skills: firebase-hosting-basics, deployment-ci-cd
 allowed-tools: Bash, Read
 ---
 
@@ -31,7 +29,7 @@ Firebase project ID should be stored in an environment variable (e.g. `FIREBASE_
    ```bash
    npx -y firebase-tools@15.37.0 --version
    ```
-   Read [references/local-env-setup.md](references/local-env-setup.md) for full setup.
+   Requires Node.js (the workspace pins Node 24); `npx` downloads the pinned CLI on first use.
 
 2. **Authentication:**
    ```bash
@@ -60,9 +58,10 @@ Firebase project ID should be stored in an environment variable (e.g. `FIREBASE_
 
 # References
 
-- **Initialize services:** [references/firebase-service-init.md](references/firebase-service-init.md)
-- **CLI commands:** [references/firebase-cli-guide.md](references/firebase-cli-guide.md)
-- **Local env setup:** [references/local-env-setup.md](references/local-env-setup.md)
+- **Initialize services and CLI commands:** `npx -y firebase-tools@15.37.0 init --help` and
+  `npx -y firebase-tools@15.37.0 <command> --help` (the pinned CLI's own help is the source of truth)
+- **Service documentation:** Firebase MCP `developerknowledge_search_documents`
+- **Hosting deploys, previews, rollback:** `firebase-hosting-basics` skill
 
 # Related Skills
 

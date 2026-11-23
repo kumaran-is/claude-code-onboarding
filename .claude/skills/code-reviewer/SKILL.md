@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: General-purpose code review skill. Provides checklists for security, code quality, performance, and best practices. Use when reviewing code changes, PRs, or performing quality audits.
+description: "General code review across all stacks: correctness, security, quality and performance findings with file:line evidence and an APPROVE / NEEDS_REVIEW / BLOCK verdict. Use when reviewing changed code, a PR or a diff before commit. Not for simplicity-only (code-simplifier), comment accuracy (comment-analyzer) or deep security audits (security-reviewer)."
 allowed-tools: Read, Grep, Glob, Bash
 agent: code-reviewer
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,61 +20,20 @@ Never approve code without reading the actual implementation; always provide sev
 
 # Code Reviewer
 
-General-purpose code review skill covering security, quality, performance, and best practices.
+Thin entry point: this skill forks into the `code-reviewer` agent ([`.claude/agents/code-reviewer.md`](../../agents/code-reviewer.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-## When to Use
+## Reusable reference
 
-- After writing or modifying code
-- During PR reviews
-- When auditing code quality
+- [reference/code-review-checklist.md](reference/code-review-checklist.md) — the reusable review checklist (also loaded by the agent).
 
-## Process
+## Task for the forked agent
 
-1. Identify changed files via `git diff` or user request
-2. Read [reference/code-review-checklist.md](reference/code-review-checklist.md) for review categories, severity levels, and output format
-3. Review each file against the checklist
-4. Report findings by severity (Critical > High > Medium > Low)
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `code-reviewer` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-## Reference Files
+## Not for
 
-| File | Contents | Load When |
-|------|----------|-----------|
-| `reference/code-review-checklist.md` | Security checks, code quality, performance, best practices, output format | Reviewing any code change, pre-PR checklist, security audit |
-
-## Error Handling
-
-If no changes are found, report "No changes detected" and list the files/paths searched.
-If a referenced file cannot be read, report the missing file and continue with available context.
-
-## Anti-Patterns
-
-- **Never rubber-stamp without file:line** — "looks good" with no evidence is a failed review
-- **Never mark APPROVED if any Critical or High finding is unresolved** — severity discipline is non-negotiable
-- **Never review from memory** — always read the actual changed files; filenames do not tell you what changed
-- **Never scope-creep the review** — report what changed, not what you wish were different in adjacent code
-- **Never merge findings across files** — report per-file with specific line numbers, not aggregate impressions
-- **Avoid vague findings** — "this could be a security issue" is not a finding; "SQL built via string concatenation at service.ts:47 allows injection" is
-
-## Verify
-
-After completing a review:
-
-```bash
-# Confirm all files you reviewed are the ones that actually changed
-git diff --name-only HEAD~1
-
-# Confirm no new linting errors introduced
-npm run lint 2>&1 | grep -E "error|warning" | head -20
-
-# Confirm tests still pass after changes
-npm test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -5 /tmp/test.log   # no --passWithNoTests: zero tests must fail
-```
-
-Report format after verification:
-```
-REVIEW COMPLETE:
-- Files reviewed: N (list them)
-- Findings: X Critical, Y High, Z Medium, W Low
-- Verdict: APPROVED / NEEDS_REVIEW / REJECT
-- Evidence: [file:line for each finding]
-```
+- Complexity only → `code-simplifier`; comment accuracy → `comment-analyzer`; swallowed errors → `silent-failure-hunter`
+- Security audit → `security-reviewer`; stack depth → the stack reviewer (`nestjs-reviewer`, `python-reviewer`, `spring-reactive-reviewer`, `riverpod-reviewer`)
+- Reviewing someone else's GitHub PR for posting → `pr-review`

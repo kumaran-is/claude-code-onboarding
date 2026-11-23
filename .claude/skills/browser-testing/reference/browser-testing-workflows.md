@@ -164,6 +164,7 @@ Measure a production build (`ng build` / `vite build` served statically), not a 
 - Test a release build served statically (`flutter build web --release`, then `python3 -m http.server 8080 --directory build/web`). Do not drive the debug (DDC) dev server: it needs a manual bootstrap and is far slower.
 - Flutter renders to a canvas. Prefer the semantics tree (enable semantics in the app for tests) over pixel coordinates; coordinates (`mousemove`/`mousedown`/`mouseup`) are a last resort.
 - Wait on a visible result (`find <text>` / a suite `expect(...).toPass()`), never a fixed sleep.
+- Locator traps (accessible name vs text, merged `Semantics` nodes, hash routing, offline signals): [flutter-web-e2e.md](flutter-web-e2e.md).
 
 ---
 

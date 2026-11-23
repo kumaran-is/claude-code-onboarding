@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Reviews code for unnecessary complexity, excessive nesting, redundant abstractions, and over-engineering. Use when code feels over-engineered, before PRs, or after implementations. Complements code-reviewer (correctness) by focusing purely on simplicity and readability.
+description: "Simplicity review: excessive nesting, single-implementation abstractions, wrapper-around-wrapper, dead flexibility, over-parameterisation — each with a concrete simpler alternative. Use when code feels over-engineered, before a PR, or after a feature grew. Not for correctness or bugs (code-reviewer)."
 allowed-tools: Read, Grep, Glob
 agent: code-simplifier
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,49 +20,15 @@ Never claim code is too complex without showing a concrete simpler alternative a
 
 # Code Simplifier
 
-Reviews code for complexity that doesn't earn its place — abstractions with one implementation, excessive nesting, dead flexibility, and wrapper-around-wrapper patterns.
+Thin entry point: this skill forks into the `code-simplifier` agent ([`.claude/agents/code-simplifier.md`](../../agents/code-simplifier.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-## When to Use
+## Task for the forked agent
 
-- Code works correctly but feels over-engineered
-- Before opening a PR on new implementation
-- When a reviewer says "couldn't you just do X?"
-- After implementing a feature that grew beyond its original scope
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `code-simplifier` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-## What to Check
+## Not for
 
-| Pattern | Description |
-|---------|-------------|
-| **Excessive nesting** | 3+ levels of if/for/try — flatten with early returns |
-| **Premature abstraction** | Factory/strategy/plugin with only 1 current implementation |
-| **Wrapper around wrapper** | Class that just delegates with no added value |
-| **Over-parameterization** | 5+ params where a config object would be clearer |
-| **Dead flexibility** | Config flags, extension points with zero current users |
-| **Complex when simple** | 15-line solution where a 3-line solution exists |
-
-## Severity Levels
-
-| Level | Meaning |
-|-------|---------|
-| **HIGH** | Abstraction adds zero value; removing it simplifies significantly |
-| **MEDIUM** | Could be simplified; modest readability improvement |
-| **LOW** | Minor cleanup; marginal improvement |
-
-## Output Format
-
-```
-## Simplification Review: [scope]
-
-### HIGH — Remove or simplify immediately
-**[file:line] — [pattern name]**
-Current: [description]
-Simpler: [concrete suggestion]
-Savings: ~N lines
-
-### MEDIUM — Should simplify
-- [file:line] [description] — [suggestion]
-
-### Summary
-- Issues: N (high: X, medium: Y, low: Z)
-- Recommendation: Complexity acceptable / Simplify before merge
-```
+- Correctness, security or bugs → `code-reviewer`
+- Duplicate or dead code across the codebase → `dedup-code-agent`

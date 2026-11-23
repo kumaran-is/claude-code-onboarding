@@ -96,6 +96,7 @@ For a server that is not running yet. Run `python scripts/with_server.py --help`
 | [api-performance.md](reference/api-performance.md) | API latency and payload checks during browser flows |
 | [agentic-debug-loop.md](reference/agentic-debug-loop.md) | Observe → diagnose → fix → re-verify on a live app |
 | [browser-use-tools.md](reference/browser-use-tools.md) | The four Browser-Use MCP tools that actually exist |
+| [flutter-web-e2e.md](reference/flutter-web-e2e.md) | Flutter **web** builds only: enabling semantics, CanvasKit locator matrix, merged-`Semantics` stability hangs, hash routing, offline signals |
 
 ## Report
 

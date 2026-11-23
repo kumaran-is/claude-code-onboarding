@@ -1,6 +1,6 @@
 ---
 name: comment-analyzer
-description: Reviews code comments for accuracy against actual implementation, detects comment rot, outdated documentation, and misleading inline comments. Use after refactoring, before PRs, or when comments might be stale.
+description: "Comment accuracy review: comments, docstrings, JSDoc/JavaDoc/dartdoc checked against the code they describe for rot, contradiction, staleness and redundancy. Use after a refactor or before a PR. Not for writing new documentation (documentation-generation)."
 allowed-tools: Read, Grep, Glob
 agent: comment-analyzer
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,46 +20,15 @@ If the comment contradicts the code, the comment is wrong — never accept a com
 
 # Comment Analyzer
 
-Verifies that comments, docstrings, JSDoc, JavaDoc, and inline documentation accurately describe the actual code implementation.
+Thin entry point: this skill forks into the `comment-analyzer` agent ([`.claude/agents/comment-analyzer.md`](../../agents/comment-analyzer.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-## When to Use
+## Task for the forked agent
 
-- After refactoring code that has existing comments
-- Before opening a PR with documentation changes
-- When code was changed but comments might not have been updated
-- Code review gate for documentation accuracy
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `comment-analyzer` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-## What to Check
+## Not for
 
-| Category | Description |
-|----------|-------------|
-| **Accuracy** | Does the comment describe what the code actually does? |
-| **Staleness** | Was code changed but the comment not updated? |
-| **Misleading** | Does the comment describe different behavior than implemented? |
-| **Completeness** | Are error cases, side effects undocumented? |
-| **Redundancy** | Comments that just restate the code (`i++ // increment i`) |
-
-## Severity Levels
-
-| Level | Meaning |
-|-------|---------|
-| **CRITICAL** | Comment directly contradicts code behavior |
-| **HIGH** | Comment describes old behavior after refactor |
-| **MEDIUM** | Incomplete — missing error cases, missing params |
-| **LOW** | Redundant or trivial comments |
-
-## Output Format
-
-```
-## Comment Analysis: [scope]
-
-### CRITICAL
-- [file:line] Comment: "[quote]" -> Actual: [what code really does]
-
-### HIGH
-- [file:line] Comment: "[quote]" -> Stale since: [what changed]
-
-### Summary
-- Total: N (critical: X, high: Y, medium: Z, low: W)
-- Recommendation: PASS / FAIL Comments need updates before PR
-```
+- Writing or generating docs → `documentation-generation`
+- General code review → `code-reviewer`

@@ -57,7 +57,7 @@ Skip any step = lying, not verifying
 | Regression test works | Red-green cycle verified | Test passes once |
 | Agent completed | VCS diff shows changes | Agent reports "success" |
 | Requirements met | Line-by-line checklist | Tests passing |
-| PR task complete | GitHub Actions CI green + deployment workflow succeeded | PR merged |
+| PR task complete | GitHub Actions CI green + deployment workflow succeeded on the base branch | PR merged |
 
 ## Red Flags — STOP
 
@@ -115,7 +115,7 @@ Skip any step = lying, not verifying
 ❌ Trust agent report
 ```
 
-**Post-merge deployment (GitHub Actions via `github` MCP):**
+**Post-merge deployment (GitHub Actions):**
 ```
 ✅ PR merged → Check Actions run → CI green + deploy workflow succeeded → Task complete
 ❌ "PR merged" (deployment may have failed silently)
@@ -123,40 +123,32 @@ Skip any step = lying, not verifying
 
 ## Post-Merge Verification
 
-When a task involves a PR that has been merged, "done" means the deployment succeeded — not just that the code was merged. Use the `github` MCP (already configured) to check:
+When a task involves a PR that has been merged, "done" means the deployment succeeded — not just that the code was merged. Check the runs on the PR's base branch (`develop` in this toolkit's Git workflow) with the `gh` CLI:
 
-```
-1. gh run list --branch main --limit 5          # list recent workflow runs
-2. gh run view <run-id>                         # inspect CI + deploy workflow
-3. All jobs: ✅ green → task is complete
-   Any job: ❌ failed → task is NOT complete — investigate and fix
+```bash
+gh run list --branch develop --limit 5; echo "exit=$?"   # recent workflow runs on the base branch
+gh run view <run-id>                                      # inspect CI + deploy jobs
 ```
 
-This costs nothing — the `github` MCP is already in `.mcp.json`. The agent can check deployment status directly without leaving the session.
+All jobs green → complete. Any job failed, cancelled or still running → NOT complete; say so with the run URL.
 
-**Trigger:** Apply this check whenever:
-- A PR was merged as part of the task
-- The task description included deployment or release
-- The human says "it's merged" or "it's deployed"
+**Trigger:** a PR was merged as part of the task, the task included deployment or release, or the human says "it's merged" / "it's deployed". CI can pass locally and fail in the pipeline (environment variables, container build, migration runner) — merge is never evidence of success.
 
-**Do NOT skip this step** by assuming merge = success. CI can pass locally and fail in the pipeline (environment variables, container build, migration runner).
+## Which Command, Which Checklist
 
-## Test Command by Stack
+Do not keep a private list of commands here — use the authoritative ones:
 
-When about to claim tests pass, first confirm you're running the right command. Pick by what files are in the changed set:
+| Need | Authoritative source |
+|------|----------------------|
+| Build + test command per stack (Spring, Python, NestJS, Angular, React, Flutter), each with its own exit code | `/verify` (`.claude/commands/verify.md`); `/verify full` before claiming tests pass |
+| Which tool tests which target (Maestro for Flutter Android/iOS, Playwright for web, Vitest/`ng test`/`flutter test`/pytest for units) | `.claude/rules/testing-tool-selection.md` |
+| Evidence a claim needs (own exit code, positive control, env parity) | `.claude/rules/verification-and-reporting.md` → "Action Claims Require Evidence" |
+| When to run which gate, reusing results whose inputs have not changed, findings ledger, standing habits | [reference/verification-loop.md](reference/verification-loop.md) |
+| How to write a positive control that cannot lie (anchor guards, inert mutations, restore in `finally`, the absence trap, stale `.pyc`) | [reference/positive-control-harness.md](reference/positive-control-harness.md) |
+| Gates per workflow type (Feature/PR, Architecture, Database, UI, Release) | `.claude/rules/verification-and-reporting.md` → "Quality Gates" (the single canonical completion checklist) |
+| Pre-deploy readiness across all stacks | `/ship` |
 
-| Project marker / changed files | Test command |
-|--------------------------------|--------------|
-| `pom.xml` or `*.java` | `mvn test -q` |
-| `nest-cli.json` or `*.ts` with NestJS imports | `npm test` |
-| `pyproject.toml` or `*.py` (FastAPI / plain Python) | `pytest -q` |
-| `pubspec.yaml` or `*.dart` | `flutter test` |
-| `angular.json` or `*.ts` with Angular imports | `ng test --watch=false` |
-| `pyproject.toml` + LangGraph/LangChain imports | `pytest -q` |
-
-**If multiple markers match** (e.g., a monorepo with Java + TypeScript), run the test command for each changed service separately.
-
-**Never run the wrong stack's test command** — `npm test` in a Python project exits 0 with no output, giving false confidence.
+Capture each tool's **own** exit code (`cmd > log 2>&1; echo $?`), never a pipe's. In a monorepo, run the command for every changed target separately — one target's green run is never evidence for another, and `npm test` in a Python project proves nothing.
 
 ## Why This Matters
 

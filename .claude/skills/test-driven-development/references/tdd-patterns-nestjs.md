@@ -1,125 +1,103 @@
-# TDD Patterns — NestJS 11 / TypeScript
+# TDD Patterns — NestJS 11 / TypeScript (Vitest)
 
-## Test Structure (Jest)
+NestJS services in this toolkit test with **Vitest** on the **Fastify** adapter. This file covers the
+red-green loop only. Configuration (`vitest.config.mts`, `unplugin-swc`, coverage `thresholds`), deep mocks
+and the Testcontainers e2e setup are owned by the `nestjs-api` skill:
+`nestjs-api/reference/nestjs-testing-unit-basics.md`, `nestjs-testing-unit-mocks.md`,
+`nestjs-testing-integration-setup.md`.
+
+## Unit Test (service, mocked dependencies)
 
 ```typescript
-// Unit test — isolated service
+// src/modules/users/user.service.spec.ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UserService } from './user.service';
+import { UserRepository } from './user.repository';
+
 describe('UserService', () => {
   let service: UserService;
-  let repository: jest.Mocked<UserRepository>;
+  const repository = { findByEmail: vi.fn(), save: vi.fn() };
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        UserService,
-        {
-          provide: UserRepository,
-          useValue: {
-            findByEmail: jest.fn(),
-            save: jest.fn(),
-          },
-        },
-      ],
+      providers: [UserService, { provide: UserRepository, useValue: repository }],
     }).compile();
-
-    service = module.get<UserService>(UserService);
-    repository = module.get(UserRepository);
+    service = module.get(UserService);
   });
 
-  describe('createUser', () => {
-    it('should throw ConflictException when email already exists', async () => {
-      // ARRANGE
-      repository.findByEmail.mockResolvedValue(existingUser());
+  it('throws ConflictException when the email already exists', async () => {
+    repository.findByEmail.mockResolvedValue(existingUser());
 
-      // ACT + ASSERT
-      await expect(service.createUser(newUserDto())).rejects.toThrow(
-        ConflictException,
-      );
-    });
+    await expect(service.createUser(newUserDto())).rejects.toThrow(ConflictException);
+    expect(repository.save).not.toHaveBeenCalled();
   });
 });
 ```
 
-## Integration Test (supertest + e2e)
+## E2E Test (Fastify, `app.inject`)
 
 ```typescript
 // test/users.e2e-spec.ts
+import { Test } from '@nestjs/testing';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AppModule } from '../src/app.module';
+
 describe('Users (e2e)', () => {
-  let app: INestApplication;
+  let app: NestFastifyApplication;
 
   beforeAll(async () => {
-    const moduleFixture = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
     await app.init();
+    await app.getHttpAdapter().getInstance().ready();
   });
 
   afterAll(() => app.close());
 
-  it('POST /users — valid request -> 201', () => {
-    return request(app.getHttpServer())
-      .post('/users')
-      .send(validCreateUserDto())
-      .expect(201)
-      .expect((res) => {
-        expect(res.body.id).toBeDefined();
-        expect(res.body.email).toBe('test@example.com');
-      });
+  it('POST /users with a valid body and token returns 201', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users',
+      payload: validCreateUserDto(),
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().email).toBe('test@example.com');
+  });
+
+  it('POST /users without a token returns 401', async () => {
+    const res = await app.inject({ method: 'POST', url: '/users', payload: validCreateUserDto() });
+    expect(res.statusCode).toBe(401);
   });
 });
 ```
 
-## Controller Test
-
-```typescript
-describe('UserController', () => {
-  let controller: UserController;
-  let service: jest.Mocked<UserService>;
-
-  beforeEach(async () => {
-    const module = await Test.createTestingModule({
-      controllers: [UserController],
-      providers: [
-        {
-          provide: UserService,
-          useValue: { findById: jest.fn() },
-        },
-      ],
-    }).compile();
-
-    controller = module.get<UserController>(UserController);
-    service = module.get(UserService);
-  });
-
-  it('should return user when found', async () => {
-    service.findById.mockResolvedValue(mockUser());
-    const result = await controller.findOne('user-id');
-    expect(result).toMatchObject({ id: 'user-id' });
-  });
-});
-```
+Every protected route gets the negative cases (401, 403, 404, 400) — see `nestjs-api` for the full list.
 
 ## Mocking Rules
 
-- `jest.fn()` for method mocks on injected dependencies
-- `jest.spyOn()` for partial mocks on real instances
-- Always `mockResolvedValue` for async (not `mockReturnValue`)
-- `mockRejectedValue(new SomeException())` for error paths
-- Reset mocks between tests: `jest.clearAllMocks()` in `afterEach`
+- `vi.fn()` for method mocks on injected dependencies; `vi.spyOn()` for partial mocks on real instances
+- `mockResolvedValue` / `mockRejectedValue(new SomeException())` for async success and error paths
+- `vi.clearAllMocks()` in `beforeEach` so call counts do not leak between tests
+- Mock only external boundaries (repository, HTTP client, queue) — never the class under test
 
 ## RED-GREEN Example
 
 ```bash
-# RED
-npx jest --testPathPattern=user.service.spec --testNamePattern="throw ConflictException"
-# Expected: FAIL
+# RED — run the one new test and see it fail for the right reason
+npx vitest run src/modules/users/user.service.spec.ts -t "throws ConflictException"; echo "exit=$?"
+# Expected: exit=1, failure names ConflictException (not a compile or import error)
 
-# GREEN — implement logic
-npx jest --testPathPattern=user.service.spec --testNamePattern="throw ConflictException"
-# Expected: PASS
+# GREEN — implement, re-run the same command
+npx vitest run src/modules/users/user.service.spec.ts -t "throws ConflictException"; echo "exit=$?"
+# Expected: exit=0
 
-# Full suite
-npx jest
+# Full suite before claiming done
+npx vitest run; echo "exit=$?"
 ```
+
+`-t` is Vitest's `--testNamePattern` shorthand (SOURCE-PROVEN against the vitest 4.1 CLI definition).

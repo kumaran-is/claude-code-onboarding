@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing new features or logic that requires tests — before writing implementation code. Covers Red-Green-Refactor cycle, stack-specific test patterns, test naming conventions, and mocking. Triggers: "write tests first", "TDD", "test-driven", "failing test", "red-green-refactor", "how do I test X".
+description: "Use when implementing new features or logic that requires tests — before writing implementation code. Covers Red-Green-Refactor cycle, stack-specific test patterns, test naming conventions, and mocking. Triggers: \"write tests first\", \"TDD\", \"test-driven\", \"failing test\", \"red-green-refactor\", \"how do I test X\"."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 metadata:
   triggers: TDD, test-driven, write tests first, failing test, red-green-refactor, test first, unit test, TDD cycle
@@ -56,7 +56,7 @@ Pattern: `test_<what>_<when>_<expected>` (or `should_<expected>_when_<condition>
 # Java
 @Test void createUser_withDuplicateEmail_throwsConflictException()
 
-# NestJS/Jest
+# NestJS, Angular, React (Vitest)
 it('should throw ConflictException when email already exists', ...)
 
 # Python/pytest
@@ -74,6 +74,8 @@ test('createUser throws ConflictException when email is duplicate', ...)
 | NestJS 11 / TypeScript | `references/tdd-patterns-nestjs.md` | Writing tests for NestJS, TypeScript, Fastify |
 | Python 3.14 / FastAPI | `references/tdd-patterns-python.md` | Writing tests for FastAPI, Pydantic, async Python |
 | Flutter / Dart | `references/tdd-patterns-flutter.md` | Writing tests for Flutter widgets, Riverpod providers, Dart |
+| Angular 21 | `../angular-spa/reference/testing-vitest.md` | Writing `ng test` (Vitest) component and service tests |
+| React 19 | `../react-spa/reference/testing.md` | Writing Vitest + React Testing Library tests |
 
 ## Quick Checklist
 

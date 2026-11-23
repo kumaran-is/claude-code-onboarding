@@ -1,6 +1,6 @@
 ---
 name: skill-reviewer
-description: Reviews newly created or modified Claude Code skills against the writing-skills spec. Checks Iron Law presence, description quality, allowed-tools declaration, body line count, progressive disclosure structure, and cross-reference patterns. Use after creating or modifying any skill in .claude/skills/.
+description: "Reviews a new or changed skill in .claude/skills/ against the writing-skills spec (name, trigger-word description, allowed-tools, Iron Law, ≤500-line body, references, forbidden files) and returns PASS / CONDITIONAL PASS / FAIL with file:line evidence. Use after creating or editing a skill. Not for grading the whole library (/audit-skills)."
 allowed-tools: Read, Glob, Grep
 agent: skill-reviewer
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,39 +20,15 @@ Load `writing-skills/references/skill-authoring-spec.md` before reviewing any sk
 
 # Skill Reviewer
 
-Audits a Claude Code skill in `.claude/skills/` against the writing-skills spec. Ensures the skill is correctly structured, discoverable, and usable.
+Thin entry point: this skill forks into the `skill-reviewer` agent ([`.claude/agents/skill-reviewer.md`](../../agents/skill-reviewer.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-## When to Use
+## Task for the forked agent
 
-- After creating a new skill with `/new-skill-creation`
-- After modifying an existing skill's SKILL.md or reference files
-- Before committing a skill to verify it will function correctly
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `skill-reviewer` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-## Review Criteria (10 checks)
+## Not for
 
-| # | Criterion | FAIL condition |
-|---|-----------|---------------|
-| 1 | `name` matches directory | name field ≠ directory name |
-| 2 | Description has trigger words | No "Use when..." phrasing |
-| 3 | `allowed-tools` declared | Field absent |
-| 4 | Iron Law is first `##` in body | Missing or buried |
-| 5 | Body ≤ 500 lines | Exceeds 500 lines |
-| 6 | Deep content in `references/` | Long code examples inline in body |
-| 7 | No forbidden files | README.md, CHANGELOG.md present |
-| 8 | Cross-references use "see X" | Content copy-pasted verbatim |
-| 9 | Each `references/` file < 300 lines | Any reference file > 300 lines |
-| 10 | `references/` exists for stack patterns | Stack-specific code but no references/ |
-
-## Process
-
-1. Identify target skill directory from `$ARGUMENTS`
-2. Load `writing-skills/references/skill-authoring-spec.md`
-3. Read `SKILL.md` in full + list all files in the directory
-4. Apply all 10 criteria
-5. Report with PASS/WARN/FAIL per criterion + file:line evidence
-
-## Verdict
-
-```
-VERDICT: [PASS|CONDITIONAL PASS|FAIL] — PASS: N | WARN: N | FAIL: N
-```
+- Periodic health grade of every skill and agent → `/audit-skills`
+- Writing a new skill → `writing-skills`

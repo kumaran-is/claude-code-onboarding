@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Use when reviewing someone else's PR or preparing your own review comments for posting to GitHub. Implements a two-stage approval process — internal rich analysis first, human approval gate, then clean public posting. Nothing posts to GitHub until you explicitly approve. Triggers: "review this PR", "post a PR review", "review PR #N", "give feedback on PR", "submit a code review", "pr comment".
+description: "Use when reviewing someone else's PR or preparing your own review comments for posting to GitHub. Implements a two-stage approval process — internal rich analysis first, human approval gate, then clean public posting. Nothing posts to GitHub until you explicitly approve. Triggers: \"review this PR\", \"post a PR review\", \"review PR #N\", \"give feedback on PR\", \"submit a code review\", \"pr comment\"."
 allowed-tools: Read, Write, Bash, Glob, Grep
 metadata:
   triggers: PR review, pull request review, GitHub PR, code review, review PR, post PR comment, PR feedback

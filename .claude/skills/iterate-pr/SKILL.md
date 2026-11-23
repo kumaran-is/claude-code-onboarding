@@ -48,6 +48,8 @@ Track the number of full fix→push→CI cycles completed. **After 6 cycles with
 
 A "cycle" = one complete pass through Steps 2–8 (gather feedback → fix → push → CI result).
 
+**Same check, 3 failed fixes → stop sooner.** The 6-cycle cap bounds the whole PR. If the *same* CI check still fails after 3 fix attempts, stop at that point and escalate with the same report (the 3-attempt hard stop in `.claude/rules/first-principles.md` takes precedence over the cycle cap). Compare the normalized error signature between attempts, as `systematic-debugging` "No-Progress Detection" describes.
+
 **On hitting cycle 6 with no resolution:**
 ```
 ESCALATION — Cycle limit reached (6/6)
@@ -71,6 +73,15 @@ C) Close the PR and start fresh with a different approach
 ```
 
 Do NOT attempt a 7th cycle. Do NOT make any more code changes. Wait for human direction.
+
+## Local-authoritative mode (hosted CI unavailable)
+
+Use this only when hosted CI is down or cannot run: runs never start, unrelated workflows fail the same way, or the CI provider reports an incident. If CI is healthy, use the normal loop above. Say which outage signal you saw.
+
+1. **The local gate is the source of truth for the code.** Run `/verify pre-pr` (`.claude/commands/verify.md`) on the PR branch, capturing each command's own exit code. Fix and re-run until it exits 0. The circuit breakers above still apply: if the same check still fails after 3 fix attempts, STOP and escalate.
+2. **Report every required check.** Run `gh pr checks <PR> --required --json name,bucket,link` and list each check as completed (`pass`), pending (`pending`) or failing (`fail`/`cancel`), with the local command and exit code that covers it.
+3. **Never merge while a required check is pending or failing.** A green local run does not make a pending required check green, and the agent never bypasses branch protection (no `gh pr merge --admin`).
+4. **STOP and ask before `gh pr merge`.** Show the required-check table and the local evidence, then ask: "Merge PR #<N> now, or wait for hosted CI?" Run `gh pr merge` only after an explicit yes, and only once every required check reports `pass`.
 
 ## LOGAF Scale
 
@@ -100,7 +111,7 @@ CI check fails
     |             NO (new failure)   → Fix as if it's yours
     |
     +-- Fix applied, pushed — CI still fails same check?
-    |   → This is now Cycle 2. Log it in the cycle tracker.
+    |   → Next cycle; log it. Third failed fix for the same check → STOP and escalate.
     |
     +-- CI log is truncated or unreadable?
     |   → Run: `gh run view <run-id> --log-failed 2>&1 | head -200`
@@ -111,7 +122,7 @@ CI check fails
           Suspect missing env var or secret. Check CI env configuration."
 ```
 
-**Never mark CI as "passing" based on local test output alone.** Always wait for the actual CI run result from `fetch_pr_checks.py` before moving to the next cycle.
+**Never mark CI as "passing" based on local test output alone.** (Local-authoritative mode does not change this: local results stand in for the code checks, but a required check stays pending until hosted CI reports it.) Always wait for the actual CI run result from `fetch_pr_checks.py` before moving to the next cycle.
 
 ## Reference Files
 

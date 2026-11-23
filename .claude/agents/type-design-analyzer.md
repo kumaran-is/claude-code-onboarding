@@ -8,7 +8,7 @@ permissionMode: default
 vibe: "If the type allows invalid states, the type is wrong"
 color: blue
 emoji: "🔢"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Type Design Analyzer
@@ -32,6 +32,15 @@ Canonical patterns: `.claude/skills/typescript-advanced-types/SKILL.md` ("Bounda
 - **UI state:** one discriminated union (`idle | loading | loaded | error`), not optional-field soup (`data?`, `error?`, `loading?` that can all be set); every `switch` over it ends in `assertNever`.
 - **No `any`:** `unknown` + narrowing; `catch (e: any)` and `as any` are findings. Errors are typed (`Result` union / error kind).
 - **Compiler settings** that make the type claims real: `strict`, `noUncheckedIndexedAccess`; read `tsconfig*.json` (file:line) rather than assuming.
+
+## TypeScript / Node service checklist
+
+Canonical patterns: `.claude/skills/typescript-expert/references/node-service-engineering.md`.
+- **Config type:** derived from the env schema (`z.infer`), parsed once and `Readonly`; a hand-written `interface Config` filled from `process.env.X!` or `as string`, or a secret field with a default value, is HIGH.
+- **Failure types:** outbound calls return a discriminated failure (`timeout | aborted | http | invalid-payload | network`), not `T | null` or a boolean flag; handlers `switch` over `kind` with `assertNever`.
+- **Error classes:** subclasses set `override readonly name` and accept `ErrorOptions`, so `cause` is kept; a constructor that drops the original error is MEDIUM.
+- **Ports:** dependencies typed as small interfaces (`{ get(id, signal): Promise<Result<…>> }`), not concrete client classes, so tests can pass fakes; a required `AbortSignal` parameter on I/O ports is the expected shape.
+- **Optional fields** under `exactOptionalPropertyTypes`: `prop?: T` means "may be absent"; a type that needs "present but undefined" must say `prop: T | undefined`.
 
 ## Severity
 

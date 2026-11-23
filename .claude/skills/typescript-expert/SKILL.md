@@ -1,9 +1,9 @@
 ---
 name: typescript-expert
-description: TypeScript 5.9 infrastructure specialist — tsconfig strict flags, solution-style configs (Angular 21 CLI, create-vite), project references, type-check commands that actually check, type performance diagnostics, ESM/CJS interop, strict mode migration, .d.ts authoring and OpenAPI client codegen. Use for project-level TypeScript decisions, not type-design patterns (typescript-advanced-types).
+description: TypeScript 5.9 infrastructure and Node.js 24 service engineering — tsconfig strict flags, solution-style configs (Angular 21 CLI, create-vite), project references, type-check commands that actually check, ESM/CJS interop (nodenext, require(esm)), schema-validated config and secrets, AbortSignal deadlines, typed errors, DI without a framework, pino logging, worker_threads, stream pipelines, await using, graceful shutdown, profiling, npm dependency governance, .d.ts authoring and OpenAPI client codegen. Use for project-level TypeScript and plain Node runtime decisions, not type-design patterns (typescript-advanced-types).
 allowed-tools: Read, Bash
 metadata:
-  triggers: TypeScript performance, Type diagnostics, ESM CJS interop, TypeScript migration, Monorepo TypeScript, tsc optimization, .d.ts authoring, declaration files, incremental TypeScript, TypeScript project references
+  triggers: TypeScript performance, Type diagnostics, ESM CJS interop, require(esm), nodenext, TypeScript migration, Monorepo TypeScript, tsc optimization, .d.ts authoring, declaration files, incremental TypeScript, TypeScript project references, Node.js service, env config validation, graceful shutdown, SIGTERM, AbortSignal timeout, unhandled rejection, event loop blocking, worker_threads, stream pipeline backpressure, await using, memory leak, heap snapshot, cpu profile, pino logging, npm audit, npm ci, lockfile
   related-skills: typescript-advanced-types, nestjs-api, angular-spa, mcp-builder, nestjs-coding-standard
   domain: frontend, backend
   role: specialist
@@ -12,7 +12,7 @@ metadata:
   risk: safe
   source: "antigravity-awesome-skills (community)"
   date_added: "2026-03-14"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # TypeScript Expert
@@ -37,6 +37,7 @@ Use this skill for project-level TypeScript decisions:
 - `.d.ts` authoring and declaration file management
 - Incremental compilation configuration
 - Migrating from JavaScript to TypeScript
+- Plain Node.js 24 runtime engineering: config, deadlines, logging, workers, streams, shutdown, profiling, npm governance (`references/node-service-engineering.md`)
 
 ## Do Not Use
 
@@ -109,7 +110,7 @@ Do not chain fallbacks with `||` (`npm run typecheck || npx tsc --noEmit`): when
 Create nominal types to prevent primitive obsession. Use for critical domain primitives, API boundaries, currency/units.
 
 ```typescript
-type Brand<K, T> = K & { __brand: T };
+type Brand<K, T> = K & { readonly __brand: T }; // same shape as references/utility-types.ts
 type UserId = Brand<string, 'UserId'>;
 type OrderId = Brand<string, 'OrderId'>;
 ```
@@ -153,10 +154,10 @@ npx tsc --extendedDiagnostics --incremental false | grep -E "Check time|Files:|L
 - **"Cannot find module"**: Check `moduleResolution`, verify `baseUrl`/`paths`, clear cache
 
 ### ESM/CJS Interop
-- Set `"type": "module"` in package.json for ESM-first
-- Use `"moduleResolution": "bundler"` for modern tools
-- Use dynamic imports for CJS: `const pkg = await import('cjs-package')`
-- TypeScript paths only work at compile time — not runtime
+- Set `"type": "module"` in package.json for ESM-first; one format per package, with an `"exports"` map (`"types"` first)
+- Code Node loads directly (services, CLIs, libraries): `"module": "nodenext"` (implies `moduleResolution: nodenext`), relative imports with `.js` extensions (omitting them is TS2835). `"moduleResolution": "bundler"` only when a bundler produces what runs (Angular, Vite, esbuild)
+- Node 24: ESM can `import` CJS statically (default import always; named imports only when Node's static analysis detects them); CJS can `require()` ESM without a flag unless the ESM uses top-level `await` (`ERR_REQUIRE_ASYNC_MODULE`). Reproduced on 24.13.1, details in `references/node-service-engineering.md` §2
+- TypeScript `paths` only work at compile time, not at runtime; for Node use package.json `"imports"` (`#src/*`) or relative imports
 
 ### Migration Strategies
 JavaScript to TypeScript migration — incremental approach:
@@ -187,13 +188,30 @@ JavaScript to TypeScript migration — incremental approach:
 ### Shared API contracts (frontend ↔ backend)
 Generate client types from the backend's OpenAPI document instead of hand-copying DTOs, pinned, e.g. `npx openapi-typescript@7.13.0 openapi.json -o src/api/schema.d.ts`, and fail CI when regenerating changes the file (`git diff --exit-code src/api/schema.d.ts`). Generated types are still compile-time only: parse responses at runtime (`typescript-advanced-types`, "Boundaries"). Tool choice is RECOMMENDED practice, not verified in a project here.
 
+### Node.js 24 services (plain Node or under NestJS)
+Verified patterns with tests and negative controls: `references/node-service-engineering.md`. Non-negotiables:
+
+| Area | Rule |
+|---|---|
+| Config and secrets | One zod schema parses `process.env` at startup; type via `z.infer`; secrets have no default and `.min(n)`; bad config exits non-zero before `listen()`; never log values or pass secrets in argv. `z.httpUrl()` rejects IPs, `localhost` and service names; use `z.url({ protocol: /^https?$/ })` for internal URLs |
+| Async safety | ESLint `strictTypeChecked` with `no-floating-promises`, `no-misused-promises`, `return-await`; unhandled rejections stay fatal (Node default), never `NODE_ENV`-dependent |
+| Deadlines | Every outbound call: `AbortSignal.any([caller, AbortSignal.timeout(ms)])`; cancel unread bodies; failures as a typed `Result` |
+| Errors | Wrap with `{ cause }`; expected failures are discriminated unions; never swallow |
+| DI | Ports (small interfaces) + one composition root (`main.ts`); tests inject fakes, no container |
+| Logging | pino JSON with `redact` paths; `AsyncLocalStorage` + `mixin()` for request and trace ids; stderr when stdout carries a protocol |
+| Event loop | No `*Sync` or CPU-heavy work on request paths; `monitorEventLoopDelay`; CPU work in `worker_threads` |
+| Streams | `pipeline` from `node:stream/promises`, never `.pipe()` chains |
+| Lifecycle | `await using` with `return await`; one idempotent shutdown coordinator: drain, close in order, unref'd deadline below the orchestrator grace period |
+| Supply chain | Exact pins, committed lockfile, `npm ci`, `npm audit --audit-level=high`, `npm audit signatures` |
+
 ## Tech Stack Applicability
 
 | Stack | Applicable |
 |-------|-----------|
 | Angular 21.x | Yes — but load `angular-spa` for framework patterns |
 | NestJS 11.x | Yes — but load `nestjs-api` for framework patterns |
-| MCP Builder TypeScript | Yes |
+| MCP Builder TypeScript | Yes — Node service rules apply; MCP specifics in `mcp-builder` |
+| Plain Node.js 24 (services, CLIs, workers) | Yes — `references/node-service-engineering.md` |
 | Flutter | No |
 | Java | No |
 | Python | No |
@@ -204,7 +222,8 @@ Generate client types from the backend's OpenAPI document instead of hand-copyin
 |------|---------|
 | `references/typescript-cheatsheet.md` | Quick reference for type basics, utility types, generics, type guards, and best practices |
 | `references/utility-types.ts` | Production-ready utility type library (branded types, Result/Option types, deep utilities, JSON types) |
-| `references/tsconfig-strict.json` | Strict TypeScript 5.9 tsconfig template (single project) with ESM, performance and path alias settings; compiles under 5.9.3 |
+| `references/tsconfig-strict.json` | Strict TypeScript 5.9 tsconfig template for **bundled** apps and libraries (`moduleResolution: bundler`); Node services use the `nodenext` config in `node-service-engineering.md` §1 |
+| `references/node-service-engineering.md` | Node 24 service engineering: ESM/CJS, config and secrets, errors, deadlines, DI, logging, workers, streams, `await using`, graceful shutdown, profiling, testing, dependency governance; every snippet compiled, linted and tested |
 | `scripts/ts_diagnostic.py` | Python diagnostic script — analyzes tsconfig, tooling, monorepo setup, any-type usage, and type check performance |
 
 ## Validation Commands

@@ -12,7 +12,7 @@ metadata:
   risk: safe
   source: "antigravity-awesome-skills (community)"
   date_added: "2026-03-14"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # TypeScript Advanced Types
@@ -50,6 +50,7 @@ Compile-time types describe what you EXPECT; they check nothing that arrives at 
 3. **Model UI and protocol states as discriminated unions** and end every `switch` with `assertNever`, so a new variant is a compile error, not a blank screen.
 4. **No `any`.** `unknown` + narrowing (schema, type guard). Enforce with `@typescript-eslint/no-explicit-any` and the type-aware `no-unsafe-*` rules where ESLint is configured.
 5. **Failures are typed:** a `Result` union or a typed error kind, never `catch (e: any)`.
+6. **Server side, the environment is a boundary too:** parse `process.env` once with a schema at startup. Zod 4 gotchas: `z.string().url()`/`.email()` are deprecated (use `z.url()`, `z.email()`); `z.httpUrl()` rejects IPs, `localhost` and service names like `http://orders:8080`; `z.coerce.number()` turns `''` into `0`; `z.coerce.boolean()` turns `"false"` into `true` (use `z.stringbool()`). Verified examples: `typescript-expert/references/node-service-engineering.md` §3–§5.
 
 Compiled with TypeScript 5.9.3 + Zod 4.6.7 under `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature` (2026-11-22). Removing a `case` (or adding a variant without one) fails with TS2345 at `assertNever`.
 

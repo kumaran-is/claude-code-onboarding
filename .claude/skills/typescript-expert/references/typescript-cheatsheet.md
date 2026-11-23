@@ -319,6 +319,8 @@ declare global {
 
 ## TSConfig Essentials
 
+Bundled browser app (Vite, Angular CLI, esbuild). Full template: `tsconfig-strict.json`.
+
 ```json
 {
   "compilerOptions": {
@@ -327,7 +329,7 @@ declare global {
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
 
-    // Modules
+    // Modules: a bundler produces what runs
     "module": "ESNext",
     "moduleResolution": "bundler",
     "esModuleInterop": true,
@@ -340,14 +342,15 @@ declare global {
     "skipLibCheck": true,
     "incremental": true,
 
-    // Paths
-    "baseUrl": ".",
+    // Paths: no baseUrl (TypeScript 6 rejects it); paths resolve relative to this file
     "paths": {
       "@/*": ["./src/*"]
     }
   }
 }
 ```
+
+Code that Node runs directly (services, CLIs) uses `"module": "nodenext"` and no `paths`; see `node-service-engineering.md` §1.
 
 ## Best Practices
 

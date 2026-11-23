@@ -35,7 +35,7 @@ if (config.GDPR_COMPLIANCE_MODE) {
   // Override PII fields list to add project-specific PII
   config.piiFields = new Set([
     ...DEFAULT_PII_FIELDS,
-    'tenant_email', 'landlord_name', 'property_address',
+    'customer_email', 'account_holder_name', 'shipping_address',
   ]);
 }
 
@@ -64,16 +64,16 @@ if (config.PCI_COMPLIANCE_MODE) {
 
 ```
 ❌ WRONG — scoring logic in the MCP layer
-async function handleVendorSearch(args) {
-  const vendors = await fetchVendors(args);
-  return vendors
+async function handleProductSearch(args) {
+  const products = await fetchProducts(args);
+  return products
     .filter(v => v.rating > 3.5)               // ← business rule
     .sort((a, b) => b.score - a.score)          // ← ranking logic
     .slice(0, args.top_k);                       // ← trimming with business rule
 }
 
 ✅ CORRECT — delegate to canonical scorer
-async function handleVendorSearch(args) {
+async function handleProductSearch(args) {
   // Pass raw args to the upstream scorer; it owns all business logic
   const result = await canonicalScorerClient.match({
     ...args,

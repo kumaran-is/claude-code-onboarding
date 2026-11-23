@@ -103,7 +103,7 @@ Plus agents: Project Bootstrap Agent, Troubleshooting Agent
 RevenueCat manages mobile subscription entitlements for Flutter apps. A typical setup might include:
 - **Primary app** — Pro and Growth subscription tiers
 - **Companion app** — Free tier (included with primary subscription)
-- **Partner/vendor app** — Free tier with optional premium features
+- **Partner app** — Free tier with optional premium features
 
 Stripe is the payment processor; RevenueCat sits on top as the entitlement/subscription management layer. RevenueCat handles App Store and Google Play receipt validation, cross-platform entitlement sync, and subscription analytics.
 
@@ -121,22 +121,22 @@ Stripe is the payment processor; RevenueCat sits on top as the entitlement/subsc
 
 | Entitlement ID | Grants Access To | Tiers |
 |----------------|------------------|-------|
-| `pro_landlord` | Full property management, AI triage, vendor matching | Pro, Growth |
-| `premium_vendor` | Priority queue, analytics dashboard | Vendor Premium |
-| `basic_access` | Core features, limited properties | Free (default) |
+| `pro` | All premium features of the primary app | Pro, Growth |
+| `partner_premium` | Premium features of the partner app | Partner Premium |
+| `basic_access` | Core features with usage limits | Free (default) |
 
 ## Offerings Structure
 
 ```
 default_offering/
 ├── $rc_monthly/
-│   ├── landlord_pro_monthly      ($9/unit/mo)
-│   └── landlord_growth_monthly   ($7/unit/mo)
+│   ├── pro_monthly               (price set in the stores)
+│   └── growth_monthly
 ├── $rc_annual/
-│   ├── landlord_pro_annual       ($86.40/unit/yr — 20% discount)
-│   └── landlord_growth_annual    ($67.20/unit/yr — 20% discount)
-└── vendor_premium/
-    └── vendor_premium_monthly    (TBD pricing)
+│   ├── pro_annual                (annual discount set in the stores)
+│   └── growth_annual
+└── partner_premium/
+    └── partner_premium_monthly
 ```
 
 ## Code Conventions
@@ -167,7 +167,7 @@ Future<void> identifyUser(String userId) async {
 // Check entitlement
 Future<bool> hasProAccess() async {
   final customerInfo = await Purchases.getCustomerInfo();
-  return customerInfo.entitlements.all['pro_landlord']?.isActive ?? false;
+  return customerInfo.entitlements.all['pro']?.isActive ?? false;
 }
 
 // Present paywall
@@ -187,7 +187,7 @@ Future<void> showPaywall(BuildContext context) async {
 Future<bool> purchasePackage(Package package) async {
   try {
     final customerInfo = await Purchases.purchasePackage(package);
-    return customerInfo.entitlements.all['pro_landlord']?.isActive ?? false;
+    return customerInfo.entitlements.all['pro']?.isActive ?? false;
   } on PurchasesErrorCode catch (e) {
     if (e != PurchasesErrorCode.purchaseCancelledError) {
       logger.error('Purchase failed', error: e);
@@ -219,7 +219,7 @@ class SubscriptionState extends _$SubscriptionState {
 bool hasProEntitlement(HasProEntitlementRef ref) {
   final customerInfo = ref.watch(subscriptionStateProvider);
   return customerInfo.whenOrNull(
-    data: (info) => info.entitlements.all['pro_landlord']?.isActive ?? false,
+    data: (info) => info.entitlements.all['pro']?.isActive ?? false,
   ) ?? false;
 }
 ```
@@ -317,7 +317,7 @@ def mock_revenuecat(httpx_mock):
         json={
             "subscriber": {
                 "entitlements": {
-                    "pro_landlord": {
+                    "pro": {
                         "expires_date": "2027-01-01T00:00:00Z",
                         "purchase_date": "2026-01-01T00:00:00Z",
                     }

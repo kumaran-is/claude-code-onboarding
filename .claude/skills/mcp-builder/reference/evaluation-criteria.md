@@ -180,13 +180,13 @@ from deepeval.test_case import LLMTestCase, ConversationalTestCase, Turn
 from deepeval.metrics import MCPUseMetric, MCPTaskCompletionMetric
 
 # Single-turn evaluation
-def test_vendor_search_tool_use():
+def test_product_search_tool_use():
     test_case = LLMTestCase(
-        input="Find plumbers within 10 miles of property 42",
+        input="Find waterproof boots under $150 for customer 42",
         actual_output=agent_response,
         tools_called=agent_tool_calls,          # list of {name, args} dicts
         expected_tools=[
-            {"name": "search_vendors", "args": {"trade": "plumber", "property_id": "42", "radius_miles": 10}}
+            {"name": "search_products", "args": {"query": "waterproof boots", "max_price": 150, "customer_id": "42"}}
         ]
     )
     metric = MCPUseMetric(threshold=0.7)
@@ -198,17 +198,17 @@ def test_checkout_workflow():
     test_case = ConversationalTestCase(
         turns=[
             Turn(
-                input="I need to book a plumber for property 42",
+                input="I want to order the waterproof boots for customer 42",
                 actual_output=agent_turn_1_response,
                 tools_called=turn_1_tool_calls
             ),
             Turn(
-                input="Schedule for next Tuesday at 2pm",
+                input="Deliver them next Tuesday",
                 actual_output=agent_turn_2_response,
                 tools_called=turn_2_tool_calls
             ),
             Turn(
-                input="Confirm the booking",
+                input="Confirm the order",
                 actual_output=agent_turn_3_response,
                 tools_called=turn_3_tool_calls
             )
@@ -225,9 +225,9 @@ Every MCP server eval suite must include these four edge case categories:
 
 | Category | Example | Why It Matters |
 |----------|---------|----------------|
-| **Abbreviations** | "AC unit" instead of "air conditioning unit" | Agent must map informal language to correct tool params |
-| **Disambiguation** | "Fix the leak" — roof or plumbing? | Agent must ask or infer from context rather than guessing |
-| **Implicit context** | "Same property as last time" in multi-turn | Agent must carry forward session context correctly |
+| **Abbreviations** | "PO" instead of "purchase order" | Agent must map informal language to correct tool params |
+| **Disambiguation** | "Cancel it" — the order or the subscription? | Agent must ask or infer from context rather than guessing |
+| **Implicit context** | "Same address as last time" in multi-turn | Agent must carry forward session context correctly |
 | **Format preferences** | "Next Friday" instead of ISO date | Agent must normalize before passing to tools |
 
 ### Eval Suite Structure

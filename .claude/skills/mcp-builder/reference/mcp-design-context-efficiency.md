@@ -19,22 +19,22 @@ RETURNS: [Key fields in the response and what they mean]
 **Example — well-formed description:**
 
 ```typescript
-server.registerTool('vendor_search_vendors', {
-  title: 'Search Vendors',
-  description: `USE WHEN: Finding service vendors (plumbers, electricians, HVAC) for a property.
+server.registerTool('catalog_search_products', {
+  title: 'Search Products',
+  description: `USE WHEN: Finding products in the catalog by keyword, category, price or availability.
 
 EXAMPLES:
-- "Find plumbers near 123 Main St, Boston who handle emergency calls"
-- "Search electricians in Chicago with rating > 4.0"
+- "Find waterproof hiking boots under $150 that ship this week"
+- "Search wireless headphones with rating > 4.0 in stock"
 
-NEXT STEPS: After getting results, call vendor_get_details to fetch full vendor profile, or vendor_request_quote to initiate a quote.
+NEXT STEPS: After getting results, call catalog_get_product to fetch the full product record, or orders_create_quote to price a basket.
 
-RETURNS: vendors[] with id, name, distance_km, rating, specialties; plus next_actions and suggestion.`,
+RETURNS: products[] with id, name, price, rating, in_stock; plus next_actions and suggestion.`,
   inputSchema: { ... }
 });
 ```
 
-**Anti-pattern:** "Executes a semantic search against the vendor matching engine using the provided query string and filters." — This is developer documentation, not agent guidance. It tells the LLM nothing about WHEN to use this tool.
+**Anti-pattern:** "Executes a semantic search against the product ranking engine using the provided query string and filters." — This is developer documentation, not agent guidance. It tells the LLM nothing about WHEN to use this tool.
 
 ---
 

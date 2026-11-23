@@ -5,7 +5,7 @@
 ![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?style=flat&logo=springboot&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-24.14-339933?style=flat&logo=nodedotjs&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-11.17.x-E0234E?style=flat&logo=nestjs&logoColor=white)
+![NestJS](https://img.shields.io/badge/NestJS-11.2.x-E0234E?style=flat&logo=nestjs&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.135.2-009688?style=flat&logo=fastapi&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.2.8-1C3C3C?style=flat&logo=langchain&logoColor=white)
@@ -37,7 +37,7 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 
 | Layer | Technologies |
 |---|---|
-| **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.17.x, Python v3.14 |
+| **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.2.x, Python v3.14 |
 | **Agentic AI** | Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, Google ADK, FastAPI 0.135.2 |
 | **Frontend** | Angular 21.2.x, TypeScript 5.9.x, A2UI v0.8 (Agent-to-User Interface renderer), Three.js r160+ (3D/WebGL) |
 | **Mobile** | Flutter 3.41.x, Dart 3.10.9, three_dart (3D in Flutter) |
@@ -152,7 +152,7 @@ Clone it, install Claude Code, and start building.
     - [The `--dangerously-skip-permissions` Flag](#the---dangerously-skip-permissions-flag)
     - [Pre-configured Guardrails in This Kit](#pre-configured-guardrails-in-this-kit)
     - [Checklist Before Using Claude Code on a Real Project](#checklist-before-using-claude-code-on-a-real-project)
-  - [19. Customizing the Kit](#19-customizing-the-kit)
+  - [20. Customizing the Kit](#20-customizing-the-kit)
     - [Adding a New Agent](#adding-a-new-agent)
     - [Adding a New Slash Command](#adding-a-new-slash-command)
     - [Adding a New Skill](#adding-a-new-skill)
@@ -919,6 +919,7 @@ This repo registers 36 hooks in `.claude/settings.json`. The ones most people in
 |------|--------|-------|-------------|
 | **Bash Guard** | `pre-bash-guard.sh` (+ `pre-bash-guard.py`) | `PreToolUse` → Bash | Parses the command (quotes, `$(...)`, `bash -c`, pipelines) and blocks `rm` that resolves outside the project/temp dirs or to an unresolvable path, deleting `.env`/keys, pushes to `main`/`master`/`develop`, destructive SQL via a DB client, `curl … \| sh`. Does not match text that merely mentions a command. |
 | **Restore Guard** | `pre-bash-destructive-restore-guard.sh` | `PreToolUse` → Bash | Asks for confirmation before `git checkout --`, `git restore`, `git reset --hard`, `git clean -f` when they would discard uncommitted work |
+| **zsh Split Guard** | `pre-bash-zsh-split-guard.sh` | `PreToolUse` → Bash | Blocks an unquoted `--include=`/`--exclude=` glob (zsh aborts the command, so the sweep never runs) and an unquoted `$VAR` docker compose service list; warns on `for x in $VAR` and bare `$VAR` path lists, which zsh does not word-split. `--selftest` |
 | **Raw Scaffold Block** | `block-raw-scaffold.sh` | `PreToolUse` → Bash | Blocks `flutter create` / `ng new` / `nest new` etc. unless the call carries the owning scaffold command's `CC_SCAFFOLD=<command>` marker (logged to `.claude/state/scaffold-audit.log`) |
 | **Protect Sensitive Files** | `pre-edit-protect-sensitive.sh` | `PreToolUse` → Write/Edit | Blocks edits to `.git/` internals, `.env`, credentials, private keys, lock files |
 | **Auto-Format** | `post-edit-format.sh` | `PostToolUse` → Write/Edit | Runs Prettier (TS/JS/HTML/CSS), `dart format`, ruff/black (Python) |

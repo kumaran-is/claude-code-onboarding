@@ -10,7 +10,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 
 ## Tech Stack
 - **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux / Reactive), REST APIs
-- **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.17.x, Fastify, Prisma ORM, TypeScript 5.9.x
+- **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2
 - **Frontend**: Angular 21.2.x (SPA), TypeScript 5.9.x, RxJS, SCSS
@@ -47,7 +47,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 >
 > **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools (unit: Angular `ng test` on Vitest, React Vitest + Testing Library). Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
 >
-> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), `typescript-node-backend.md` for NestJS, plain Node and MCP server files (controllers, `src/app.module.ts`, `src/modules/**`, `nest-cli.json`, `**/mcp/**`, `src/server.ts`; never Angular/React app files), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 

@@ -32,7 +32,7 @@ agent_registry:
       can_write: true
 
     - name: nestjs-api
-      domain: NestJS 11.17.x, Fastify, Prisma ORM, TypeScript 5.9.x backend
+      domain: NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x backend
       model: sonnet
       can_write: true
 

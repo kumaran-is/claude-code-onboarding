@@ -99,16 +99,23 @@ New additions must pass this scan before use:
 | `context7` (npx @upstash/context7-mcp) | ✅ Trusted | Read-only doc fetcher |
 | `dart-mcp-server` (dart mcp-server) | ✅ Trusted | Local Dart/Flutter tooling |
 | `langchain-docs` (docs.langchain.com/mcp) | ✅ Trusted | Read-only doc fetcher — if your project standardizes on Google ADK, prefer `adk-docs` MCP instead |
-| `postgres` (npx @modelcontextprotocol/server-postgres) | ✅ Trusted | Read-only DB queries via connection string |
+| `postgres` (npx @modelcontextprotocol/server-postgres) | ⚠️ Archived | Package archived upstream (no security fixes); connection string in argv. Replace with a maintained server |
 | `docker` (npx docker-mcp) | ⚠️ Elevated | Can manage containers — confirm scope per use |
 | `xcodebuild` (xcodebuildmcp) | ✅ Trusted | Local Xcode build tooling |
 | `maestro` (maestro mcp) | ✅ Trusted | Local mobile test runner |
 | `adk-docs` (uvx mcpdoc) | ✅ Trusted | Read-only doc fetcher |
 | `voicemode` (uvx voice-mode) | ⚠️ Elevated | Uses OpenAI STT/TTS — sends audio to external API |
 | `weaviate-docs` (mcp-remote) | ✅ Trusted | Read-only doc fetcher |
-| `stripe` (mcp.stripe.com) | ✅ Trusted | Official Stripe HTTP MCP, OAuth-authenticated, payment operations |
+| `stripe` (`.mcp.json`: npx @stripe/mcp) | ⚠️ Deprecated | Local package deprecated by Stripe (no security fixes); hosted mcp.stripe.com (OAuth) is the supported server. Key must come from `env`, not `--api-key` |
 | `revenuecat` (mcp.revenuecat.ai) | ✅ Trusted | Official RevenueCat HTTP MCP, OAuth-authenticated, subscription management |
 | `drawio` (mcp.draw.io) | ✅ Trusted | Official draw.io HTTP MCP App Server, read-only diagram creation — no auth required |
+| `gcp-*`, `firestore`, `cloud-sql-*`, `cloud-storage` (*.googleapis.com/mcp) | ⚠️ Elevated | Google-managed HTTP MCP servers; act with your Google Cloud credentials on any project they reach. Use a non-production project; `cloud-sql-postgres` is the read-only endpoint |
+| `firebase-emulator` (npx firebase-tools@15.37.0 mcp) | ✅ Trusted | Same package as `firebase`, pointed at local emulators (127.0.0.1); use a `demo-*` project id |
+| `weaviate-local` (localhost:8091) | ✅ Trusted | Local Weaviate instance only |
+| `terraform` (docker hashicorp/terraform-mcp-server:1.4.1) | ✅ Trusted | Official HashiCorp image, pinned; registry docs lookup |
+| `mobile-mcp` (npx @mobilenext/mobile-mcp@1.0.19) | ⚠️ Elevated | Drives local emulators/simulators. Exploratory only: Flutter UI/E2E tests stay Maestro-only |
+| `appstore-connect` (npx @mgcrea/mcp-appstore-connect@0.32.2) | ⚠️ Elevated | Community package; key read from a `.p8` file path; writes disabled by default (`APP_STORE_CONNECT_ALLOW_WRITES=0`) |
+| `google-play-developer` (npx google-play-developer-mcp@0.2.0) | ⚠️ Elevated | Community package; service-account credential; grant least Play Console permissions |
 
 ---
 

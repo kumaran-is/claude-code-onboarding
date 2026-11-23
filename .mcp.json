@@ -8,7 +8,7 @@
         "Authorization": "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
       },
       "timeout": 60000,
-      "description": "GitHub Copilot MCP server for repository operations"
+      "description": "GitHub Copilot MCP server for repository operations. Requires GITHUB_PERSONAL_ACCESS_TOKEN (fine-grained PAT, least privilege) in your environment; if it is unset the header is sent empty and the server rejects it."
     },
     "angular-cli": {
       "type": "stdio",
@@ -16,7 +16,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@angular/cli",
+        "@angular/cli@21.2.31",
         "mcp"
       ],
       "timeout": 60000
@@ -28,7 +28,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "chrome-devtools-mcp@latest"
+        "chrome-devtools-mcp@1.13.0"
       ],
       "timeout": 60000
     },
@@ -38,7 +38,9 @@
       "description": "Browser automation for web testing, form filling, screenshots, and data extraction.",
       "command": "uvx",
       "args": [
-        "browser-use[cli]",
+        "--from",
+        "browser-use[cli]==1.0.8",
+        "browser-use",
         "--mcp"
       ],
       "timeout": 60000
@@ -49,7 +51,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "firebase-tools@latest",
+        "firebase-tools@15.37.0",
         "mcp"
       ],
       "timeout": 60000
@@ -62,7 +64,7 @@
       "timeout": 60000,
       "args": [
         "-y",
-        "@upstash/context7-mcp"
+        "@upstash/context7-mcp@4.7.3"
       ]
     },
     "dart-mcp-server": {
@@ -84,11 +86,11 @@
     "postgres": {
       "type": "stdio",
       "disabled": false,
-      "description": "PostgreSQL MCP server for schema inspection and read-only query execution.",
+      "description": "PostgreSQL MCP server for schema inspection and read-only queries. The package is archived upstream (no security fixes): point it at a local or dev database only, with a SELECT-only role, and keep the password out of POSTGRES_CONNECTION_STRING (libpq reads PGPASSWORD or ~/.pgpass), because the string is passed as an argument and is visible in the process list. For Cloud SQL use cloud-sql-postgres (read-only) instead.",
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-postgres",
+        "@modelcontextprotocol/server-postgres@0.6.2",
         "${POSTGRES_CONNECTION_STRING}"
       ],
       "timeout": 60000
@@ -100,7 +102,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "docker-mcp"
+        "docker-mcp@1.0.0"
       ],
       "timeout": 60000
     },
@@ -132,7 +134,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "mcpdoc",
+        "mcpdoc==0.0.10",
         "mcpdoc",
         "--urls",
         "AgentDevelopmentKit:https://google.github.io/adk-docs/llms.txt",
@@ -147,7 +149,8 @@
       "description": "Voice Mode for Claude Code — OpenAI Whisper API (STT) + OpenAI TTS API (speech output). Local Whisper + Kokoro available on Apple Silicon.",
       "command": "uvx",
       "args": [
-        "--refresh",
+        "--from",
+        "voice-mode==9.1.0",
         "voice-mode"
       ],
       "timeout": 60000
@@ -156,7 +159,8 @@
       "type": "stdio",
       "command": "npx",
       "args": [
-        "mcp-remote",
+        "-y",
+        "mcp-remote@0.16.7",
         "https://weaviate-docs.mcp.kapa.ai"
       ],
       "timeout": 60000,
@@ -165,13 +169,12 @@
     "stripe": {
       "type": "stdio",
       "disabled": false,
-      "description": "Official Stripe MCP server (@stripe/mcp) — 27 tools: customer management, product/price creation, payment links, invoices, subscriptions, refunds, balance, disputes. Permissions controlled by Restricted API Key (RAK). Use --tools=all for full access or comma-separated tool names to restrict.",
+      "description": "Stripe MCP server (@stripe/mcp 0.3.4, stdio). The key is read from the STRIPE_SECRET_KEY env var, never passed as an argument (argv is visible in the process list); use a restricted test-mode key. Stripe has deprecated this package (no further security fixes) in favour of the hosted server at https://mcp.stripe.com with OAuth: migrate when you can. Narrow --tools=all to the tools you need.",
       "command": "npx",
       "args": [
         "-y",
-        "@stripe/mcp",
-        "--tools=all",
-        "--api-key=${STRIPE_SECRET_KEY}"
+        "@stripe/mcp@0.3.4",
+        "--tools=all"
       ],
       "env": {
         "STRIPE_SECRET_KEY": "${STRIPE_SECRET_KEY}"
@@ -181,11 +184,163 @@
     "revenuecat": {
       "type": "http",
       "disabled": false,
-      "description": "Official RevenueCat MCP server — 26 tools: project/app management, product/entitlement CRUD, offering/package setup. Auth via OAuth (recommended) or API v2 Secret Key header.",
+      "description": "Official RevenueCat MCP server (project/app, products, entitlements, offerings). Authenticates with OAuth: run /mcp and sign in. No static API-key header, so no secret sits in this file or your shell.",
       "url": "https://mcp.revenuecat.ai/mcp",
-      "headers": {
-        "Authorization": "Bearer ${REVENUECAT_API_V2_SECRET_KEY}"
+      "timeout": 60000
+    },
+    "firestore": {
+      "type": "http",
+      "url": "https://firestore.googleapis.com/mcp",
+      "description": "Google-managed Firestore MCP server. Uses your Google Cloud credentials (gcloud auth application-default login); acts on whatever project those credentials can reach, so use a non-production project or a least-privilege account.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "firebase-emulator": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "firebase-tools@15.37.0",
+        "mcp"
+      ],
+      "env": {
+        "FIRESTORE_EMULATOR_HOST": "127.0.0.1:8080",
+        "FIREBASE_AUTH_EMULATOR_HOST": "127.0.0.1:9099",
+        "FIREBASE_STORAGE_EMULATOR_HOST": "127.0.0.1:9199",
+        "FIREBASE_FUNCTIONS_EMULATOR_HOST": "127.0.0.1:5001",
+        "GCLOUD_PROJECT": "${FIREBASE_LOCAL_PROJECT_ID}"
       },
+      "description": "Firebase MCP pointed at the local Emulator Suite (default emulator ports). Start the emulators first (firebase emulators:start) and set FIREBASE_LOCAL_PROJECT_ID to a demo-* project id so nothing reaches a real project.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "weaviate-local": {
+      "type": "http",
+      "url": "http://localhost:8091/v1/mcp",
+      "description": "Weaviate MCP endpoint of a local Weaviate instance (docker-compose). Local development only; never point it at a shared cluster without auth.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-cloud-cli": {
+      "type": "http",
+      "url": "https://cloudcli.googleapis.com/mcp",
+      "description": "Google-managed Cloud CLI MCP server. Uses your Google Cloud credentials; can change resources the account is allowed to change.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-cloud-run": {
+      "type": "http",
+      "url": "https://run.googleapis.com/mcp",
+      "description": "Google-managed Cloud Run MCP server (services, revisions, deploys). Uses your Google Cloud credentials.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-logging": {
+      "type": "http",
+      "url": "https://logging.googleapis.com/mcp",
+      "description": "Google-managed Cloud Logging MCP server for querying logs. Uses your Google Cloud credentials; log entries can contain PII.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-monitoring": {
+      "type": "http",
+      "url": "https://monitoring.googleapis.com/mcp",
+      "description": "Google-managed Cloud Monitoring MCP server (metrics, alerting). Uses your Google Cloud credentials.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-iam": {
+      "type": "http",
+      "url": "https://iam.googleapis.com/mcp",
+      "description": "Google-managed IAM MCP server. Uses your Google Cloud credentials. IAM changes are security-sensitive: review every write before approving it.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-pubsub": {
+      "type": "http",
+      "url": "https://pubsub.googleapis.com/mcp",
+      "description": "Google-managed Pub/Sub MCP server (topics, subscriptions). Uses your Google Cloud credentials.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "cloud-sql-postgres": {
+      "type": "http",
+      "url": "https://sqladmin.googleapis.com/mcp/readonly",
+      "description": "Google-managed Cloud SQL MCP server, read-only endpoint. Uses your Google Cloud credentials. Prefer it over cloud-sql-admin for inspection.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "cloud-sql-admin": {
+      "type": "http",
+      "url": "https://sqladmin.googleapis.com/mcp",
+      "description": "Google-managed Cloud SQL admin MCP server (instances, databases, users). Uses your Google Cloud credentials; write-capable, so review every change.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "cloud-storage": {
+      "type": "http",
+      "url": "https://storage.googleapis.com/storage/mcp",
+      "description": "Google-managed Cloud Storage MCP server (buckets, objects). Uses your Google Cloud credentials.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "gcp-cloud-assist": {
+      "type": "http",
+      "url": "https://geminicloudassist.googleapis.com/mcp",
+      "description": "Google-managed Gemini Cloud Assist MCP server (design and troubleshooting help). Uses your Google Cloud credentials.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "terraform": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "hashicorp/terraform-mcp-server:1.4.1"
+      ],
+      "description": "HashiCorp Terraform MCP server (registry providers and modules docs) in Docker, image pinned to 1.4.1. Needs a running Docker daemon.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "mobile-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@mobilenext/mobile-mcp@1.0.19"
+      ],
+      "description": "Mobile device automation (Android emulator / iOS simulator) for exploratory checks. Flutter Android/iOS UI and E2E tests still use Maestro only (.claude/rules/testing-tool-selection.md).",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "appstore-connect": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@mgcrea/mcp-appstore-connect@0.32.2"
+      ],
+      "env": {
+        "APP_STORE_CONNECT_KEY_ID": "${APP_STORE_CONNECT_KEY_ID}",
+        "APP_STORE_CONNECT_ISSUER_ID": "${APP_STORE_CONNECT_ISSUER_ID}",
+        "APP_STORE_CONNECT_P8_PATH": "${APP_STORE_CONNECT_P8_PATH}",
+        "APP_STORE_CONNECT_ALLOW_WRITES": "0"
+      },
+      "description": "App Store Connect MCP (apps, builds, TestFlight, reviews). Reads an API key from the .p8 file path in APP_STORE_CONNECT_P8_PATH (never inline the key). Writes are disabled (APP_STORE_CONNECT_ALLOW_WRITES=0); enable them only for a reviewed release task.",
+      "disabled": false,
+      "timeout": 60000
+    },
+    "google-play-developer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "google-play-developer-mcp@0.2.0"
+      ],
+      "description": "Google Play Developer API MCP (tracks, releases, reviews). Uses a service-account credential configured outside this file; grant it the least Play Console permissions needed.",
+      "disabled": false,
       "timeout": 60000
     }
   }

@@ -1,5 +1,6 @@
 ---
 description: Audit a RAG pipeline E2E against all 8 stages of the production RAG checklist; produce a structured gaps report with severity and verdict
+allowed-tools: Read, Glob, Grep
 ---
 
 # /rag-review — E2E RAG Pipeline Audit

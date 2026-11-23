@@ -1,5 +1,6 @@
 ---
 description: Cancel an active Ralph loop immediately. Deletes the state file so the loop stops on the next turn exit.
+allowed-tools: Bash, Read
 ---
 
 # Cancel Ralph Loop

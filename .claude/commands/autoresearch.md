@@ -1,6 +1,7 @@
 ---
 description: Autonomous metric-driven improvement loop. Measures codebase quality, proposes improvements, runs an implementer agent, keeps changes only if the metric improves — git reset on regression. Loops until stopped or max-iterations reached.
 argument-hint: '[--metric METRIC] [--target N] [--max-iterations N]'
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
 # Autoresearch — Autonomous Improvement Loop

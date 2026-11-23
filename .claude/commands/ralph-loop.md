@@ -1,6 +1,7 @@
 ---
 description: Start a Ralph Wiggum autonomous iteration loop. Claude works on the task, and when it tries to exit, the stop hook feeds the same prompt back until done. Use for long autonomous tasks, overnight work, or multi-attempt problems.
 argument-hint: '"PROMPT" [--max-iterations N] [--completion-promise "TEXT"] [--verify-cmd "COMMAND"]'
+allowed-tools: Bash, Read, Write
 ---
 
 # Ralph Loop

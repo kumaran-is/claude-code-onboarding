@@ -1,6 +1,7 @@
 ---
 description: Walk the 9-layer RAG failure diagnostic chain against a specific failing query
 argument-hint: "[symptom or query]"
+allowed-tools: Read, Glob, Grep, Bash
 ---
 
 # /rag-debug — Diagnose RAG Failure

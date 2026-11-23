@@ -1,6 +1,7 @@
 ---
 description: Interactive RAG architecture design — produces an ADR with stack choices grounded in the production playbook
 argument-hint: "[project-name]"
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 ---
 
 # /rag-design — Interactive RAG Architecture Design

@@ -1,6 +1,7 @@
 ---
 description: Capture a full RAG audit trace for a query — useful for debugging or seeding a regression test
 argument-hint: "[query]"
+allowed-tools: Read, Write, Glob, Grep, Bash
 ---
 
 # /rag-failure-trace — Capture Full RAG Audit Trace

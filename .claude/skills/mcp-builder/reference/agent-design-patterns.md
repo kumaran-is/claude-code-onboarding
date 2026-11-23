@@ -61,8 +61,8 @@ function formatAgentResponse<T>(
 ### Usage in Tool Handler (Modern MCP SDK)
 
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
 
 const server = new McpServer({ name: "example-server", version: "1.0.0" });
 
@@ -72,9 +72,9 @@ server.registerTool(
   {
     title: "Get User",
     description: "Fetches user profile by ID",
-    inputSchema: {
+    inputSchema: z.object({
       user_id: z.string().describe("The user ID to fetch")
-    },
+    }),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
   },
   async ({ user_id }) => {

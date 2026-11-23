@@ -229,7 +229,7 @@ Implement patterns in this order. Each tier's patterns are prerequisites for the
 - [ ] **Tool count** — Between 10-25 tools (consolidate if >25 — see mcp-design-principles.md)
 
 **Next Steps:**
-1. Read `mcp-server-template.md` for modern SDK implementation examples
-2. Use `server.registerTool()` API (NOT deprecated `server.tool()` or `setRequestHandler`)
-3. Return responses in `{ content: [{ type: "text", text: JSON.stringify(...) }] }` format
+1. Read [node-mcp-setup.md](node-mcp-setup.md) or [python-mcp-setup.md](python-mcp-setup.md) for current SDK v2 implementation examples
+2. Use `server.registerTool()` (TypeScript) or `@mcp.tool()` on `MCPServer` (Python) — never the deprecated v1 `server.tool()`. The low-level `server.setRequestHandler(...)` is not deprecated; use it only for what `McpServer` does not cover (e.g. paginated `resources/list`)
+3. Return `structuredContent` (matching `outputSchema`) plus a `content` text block: `{ content: [{ type: "text", text: JSON.stringify(output) }], structuredContent: output }`
 4. Test with autonomous agent workflows, not just single tool calls

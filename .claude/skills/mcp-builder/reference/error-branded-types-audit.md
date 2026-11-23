@@ -149,6 +149,9 @@ export interface AuditEntry {
 ```typescript
 import { createHash } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
+import { pino } from 'pino';
+
+const logger = pino({}, pino.destination(2));
 
 export class AuditLogger {
   private readonly logPath: string;
@@ -168,8 +171,9 @@ export class AuditLogger {
     try {
       await appendFile(this.logPath, logLine, 'utf8');
     } catch (err) {
-      console.error('Failed to write audit log:', err);
-      // Don't throw - audit logging should not break app flow
+      // Fail closed: an action that cannot be audited must not be reported as done.
+      logger.error({ err, tool: entry.tool_name, correlation_id: entry.correlation_id }, 'audit log write failed');
+      throw err;
     }
   }
 

@@ -17,32 +17,36 @@ Most teams only check for schema breaks. That catches roughly a third of actual 
 
 **Semantic break example:**
 
-> `search_vendors({ query: "plumber" })` returns fuzzy matches in v1, exact matches only in v2.
+> `search_products({ query: "boots" })` returns fuzzy matches in v1, exact matches only in v2.
 > Schema is identical. Every agent workflow that relied on fuzzy matching silently stops working.
 
 ### Explicit Tool Versioning
 
-MCP has no built-in tool versioning (SEP-1575 is proposed but not yet ratified). Until it lands,
-choose one of three strategies:
+The MCP specification (revision 2026-07-28) defines no tool versioning. Choose one of three strategies:
 
-**Option A — Version in annotations** (recommended for most servers):
+**Option A — Version in `_meta`** (recommended for most servers):
 
 ```typescript
-server.registerTool("search_vendors", {
-  title: "Search Vendors",
-  description: "Find vendors by trade and location",
-  annotations: {
-    version: "2.0.0",
-    deprecates: "1.0.0",
-    minProtocolVersion: "2025-06-18",
-    readOnlyHint: true,
-    idempotentHint: true,
+import { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
+
+declare const server: McpServer;
+
+server.registerTool(
+  'orders_search',
+  {
+    title: 'Search Orders',
+    description: 'Find orders by customer and status',
+    inputSchema: z.object({ customer_id: z.string(), status: z.enum(['open', 'closed']).optional() }),
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    // _meta is the spec's extension point; prefix custom keys with a domain you own.
+    _meta: { 'com.example/tool-version': '2.0.0', 'com.example/deprecates': '1.0.0' },
   },
-  inputSchema: { ... }
-}, handler);
+  async () => ({ content: [{ type: 'text', text: '[]' }] }),
+);
 ```
 
-Cleanest namespace. Requires clients to inspect annotations for version negotiation.
+Cleanest namespace. Do **not** put custom keys in `annotations`: `ToolAnnotations` is a closed type in SDK v2 and `tsc` rejects `annotations: { version: ... }`. Clients must read `_meta` to use the version.
 
 **Option B — Version parameter in inputSchema** (best for backward compatibility):
 
@@ -57,7 +61,7 @@ inputSchema: {
 
 Single tool handles both versions. Keeps tool list clean. Increases handler complexity.
 
-**Option C — Version in tool name** (`search_vendors_v2`):
+**Option C — Version in tool name** (`search_products_v2`):
 
 Increases tool count and agent selection entropy — the agent must choose between versions.
 Use only for external servers with diverse clients and long deprecation windows.
@@ -133,16 +137,16 @@ Example response:
 ```json
 {
   "_meta": {
-    "tool": "search_vendors",
+    "tool": "search_products",
     "version": "2.0.0",
     "supported_versions": ["1.0.0", "2.0.0"],
     "downgrade_hint": "Pass api_version='v1' for legacy format with email inline",
     "deprecation_warning": {
-      "message": "v1 deprecated: email field moving to separate get_vendor_contact tool",
+      "message": "v1 deprecated: email field moving to separate get_supplier_contact tool",
       "deadline": "2026-09-01"
     }
   },
-  "data": { "vendors": [...], "total": 12 }
+  "data": { "products": [...], "total": 12 }
 }
 ```
 
@@ -155,27 +159,39 @@ The tool surface hash catches all three break types in a single CI check. Comput
 of the entire agent-visible surface (name + description + all parameter names, types, descriptions,
 required flags). Block the deploy when it changes; require human review.
 
+```typescript
+// scripts/tool-surface-hash.ts — list tools through a real Client, in process (no port, no subprocess)
+import { createHash } from 'node:crypto';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { createMcpHandler } from '@modelcontextprotocol/server';
+import { createServer } from '../src/server.js';
+
+const handler = createMcpHandler(createServer);
+const client = new Client({ name: 'surface-hash', version: '1.0.0' });
+await client.connect(
+  new StreamableHTTPClientTransport(new URL('http://surface.invalid/mcp'), {
+    fetch: (input, init) => handler.fetch(new Request(input, init)),
+  }),
+);
+const { tools } = await client.listTools();
+const surface = tools
+  .map(({ name, description, inputSchema, outputSchema, annotations }) => ({ name, description, inputSchema, outputSchema, annotations }))
+  .sort((x, y) => x.name.localeCompare(y.name));
+await client.close();
+await handler.close();
+process.stdout.write(`${createHash('sha256').update(JSON.stringify(surface)).digest('hex')}\n`);
+```
+
 ```bash
-# Generate current tool surface hash
-node -e "
-const { server } = require('./dist/index.js');
-const tools = server.listTools();
-const hash = require('crypto')
-  .createHash('sha256')
-  .update(JSON.stringify(tools, null, 2))
-  .digest('hex');
-console.log(hash);
-" > .tool-surface-hash
-
-# In CI: compare to committed baseline
-git diff .tool-surface-hash
-
-if [ \$? -ne 0 ]; then
-  echo 'Tool surface changed — run tool selection eval before merging'
-  echo 'Set APPROVE_SURFACE_CHANGES=1 after eval passes to unblock'
-  [ -z \"\$APPROVE_SURFACE_CHANGES\" ] && exit 1
+# In CI: regenerate, then fail when it differs from the committed, human-reviewed baseline
+npx tsx scripts/tool-surface-hash.ts > .tool-surface-hash
+if ! git diff --exit-code -- .tool-surface-hash; then
+  echo 'Tool surface changed: run the tool-selection eval, then commit the new hash after review' >&2
+  exit 1
 fi
 ```
+
+`git diff` without `--exit-code` always exits 0, so a gate written that way never fails.
 
 Commit `.tool-surface-hash` to the repository. The baseline is the last human-reviewed surface.
 
@@ -194,7 +210,7 @@ interface RolloutConfig {
 }
 
 const rolloutConfig: Record<string, RolloutConfig> = {
-  search_vendors: {
+  search_products: {
     "2.1.0": { rollout_percentage: 5, eligible_clients: ["internal-"] },
     "2.0.0": { rollout_percentage: 95, is_stable: true }
   }
@@ -223,8 +239,8 @@ function resolveVersion(toolName: string, clientId: string): string {
 
 ```typescript
 // Instant rollback: set canary percentage to 0
-rolloutConfig.search_vendors["2.1.0"].rollout_percentage = 0;
-logger.warn("Rollback executed", { tool: "search_vendors", version: "2.1.0", reason: "error_rate > 5%" });
+rolloutConfig.search_products["2.1.0"].rollout_percentage = 0;
+logger.warn("Rollback executed", { tool: "search_products", version: "2.1.0", reason: "error_rate > 5%" });
 // Alert on-call: page with rollback event + metrics snapshot
 ```
 

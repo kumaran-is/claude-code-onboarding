@@ -90,6 +90,24 @@ def extract_xml_content(text: str, tag: str) -> str | None:
     return matches[-1].strip() if matches else None
 
 
+DEFAULT_MODEL = "claude-opus-5-5"
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+async def create_message(client: Anthropic, model: str, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
+    """One Messages API call. Server-side refusal fallback is on ("default" routing by refusal category)."""
+    return await asyncio.to_thread(
+        client.beta.messages.create,
+        model=model,
+        max_tokens=16000,
+        system=EVALUATION_PROMPT,
+        messages=messages,
+        tools=tools,
+        betas=[FALLBACK_BETA],
+        fallbacks="default",
+    )
+
+
 async def agent_loop(
     client: Anthropic,
     model: str,
@@ -97,72 +115,48 @@ async def agent_loop(
     tools: list[dict[str, Any]],
     connection: Any,
 ) -> tuple[str, dict[str, Any]]:
-    """Run the agent loop with MCP tools."""
-    messages = [{"role": "user", "content": question}]
-
-    response = await asyncio.to_thread(
-        client.messages.create,
-        model=model,
-        max_tokens=4096,
-        system=EVALUATION_PROMPT,
-        messages=messages,
-        tools=tools,
-    )
-
+    """Run the agent loop with MCP tools. Answers every tool_use block of a turn in one user message."""
+    messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
+    response = await create_message(client, model, messages, tools)
+    # Append the full content (thinking blocks included) unchanged on every turn.
     messages.append({"role": "assistant", "content": response.content})
 
-    tool_metrics = {}
+    tool_metrics: dict[str, Any] = {}
 
     while response.stop_reason == "tool_use":
-        tool_use = next(block for block in response.content if block.type == "tool_use")
-        tool_name = tool_use.name
-        tool_input = tool_use.input
+        tool_results = []
+        for tool_use in (block for block in response.content if block.type == "tool_use"):
+            tool_start_ts = time.time()
+            is_error = False
+            try:
+                tool_result = await connection.call_tool(tool_use.name, tool_use.input)
+                is_error = tool_result["is_error"]
+                tool_response = json.dumps(tool_result)
+            except Exception as e:
+                # A protocol/transport failure: surface it to the model as a failed tool call.
+                is_error = True
+                tool_response = f"Error executing tool {tool_use.name}: {e}\n{traceback.format_exc()}"
+            tool_duration = time.time() - tool_start_ts
 
-        tool_start_ts = time.time()
-        try:
-            tool_result = await connection.call_tool(tool_name, tool_input)
-            tool_response = (
-                json.dumps(tool_result)
-                if isinstance(tool_result, (dict, list))
-                else str(tool_result)
+            metrics = tool_metrics.setdefault(tool_use.name, {"count": 0, "durations": [], "errors": 0})
+            metrics["count"] += 1
+            metrics["durations"].append(tool_duration)
+            metrics["errors"] += int(is_error)
+
+            tool_results.append(
+                {"type": "tool_result", "tool_use_id": tool_use.id, "content": tool_response, "is_error": is_error}
             )
-        except Exception as e:
-            tool_response = f"Error executing tool {tool_name}: {str(e)}\n"
-            tool_response += traceback.format_exc()
-        tool_duration = time.time() - tool_start_ts
 
-        if tool_name not in tool_metrics:
-            tool_metrics[tool_name] = {"count": 0, "durations": []}
-        tool_metrics[tool_name]["count"] += 1
-        tool_metrics[tool_name]["durations"].append(tool_duration)
-
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
-                        "content": tool_response,
-                    }
-                ],
-            }
-        )
-
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model=model,
-            max_tokens=4096,
-            system=EVALUATION_PROMPT,
-            messages=messages,
-            tools=tools,
-        )
+        messages.append({"role": "user", "content": tool_results})
+        response = await create_message(client, model, messages, tools)
         messages.append({"role": "assistant", "content": response.content})
 
-    response_text = next(
-        (block.text for block in response.content if hasattr(block, "text")),
-        None,
-    )
+    if response.stop_reason == "refusal":
+        category = response.stop_details.category if response.stop_details else None
+        print(f"Model declined the task (refusal, category={category}); scoring it as no answer")
+        return "", tool_metrics
+
+    response_text = "".join(block.text for block in response.content if block.type == "text")
     return response_text, tool_metrics
 
 
@@ -243,7 +237,7 @@ TASK_TEMPLATE = """
 async def run_evaluation(
     eval_path: Path,
     connection: Any,
-    model: str = "claude-3-7-sonnet-20250219",
+    model: str = DEFAULT_MODEL,
 ) -> str:
     """Run evaluation with MCP server tools."""
     print("🚀 Starting Evaluation")
@@ -342,11 +336,11 @@ Examples:
   # Evaluate a local stdio MCP server
   python evaluation.py -t stdio -c python -a my_server.py eval.xml
 
-  # Evaluate an SSE MCP server
-  python evaluation.py -t sse -u https://example.com/mcp -H "Authorization: Bearer token" eval.xml
+  # Evaluate a Streamable HTTP MCP server (token from the environment, not typed inline)
+  python evaluation.py -t http -u https://example.com/mcp -H "Authorization: Bearer $MCP_TOKEN" eval.xml
 
-  # Evaluate an HTTP MCP server with custom model
-  python evaluation.py -t http -u https://example.com/mcp -m claude-3-5-sonnet-20241022 eval.xml
+  # Evaluate with a different Claude model
+  python evaluation.py -t http -u https://example.com/mcp -m claude-sonnet-5-5 eval.xml
         """,
     )
 
@@ -354,15 +348,15 @@ Examples:
     parser.add_argument(
         "-t",
         "--transport",
-        choices=["stdio", "sse", "http"],
+        choices=["stdio", "http"],
         default="stdio",
-        help="Transport type (default: stdio)",
+        help="Transport type: stdio or http (Streamable HTTP). Default: stdio",
     )
     parser.add_argument(
         "-m",
         "--model",
-        default="claude-3-7-sonnet-20250219",
-        help="Claude model to use (default: claude-3-7-sonnet-20250219)",
+        default=DEFAULT_MODEL,
+        help=f"Claude model to use (default: {DEFAULT_MODEL})",
     )
 
     stdio_group = parser.add_argument_group("stdio options")
@@ -379,14 +373,14 @@ Examples:
         help="Environment variables in KEY=VALUE format (stdio only)",
     )
 
-    remote_group = parser.add_argument_group("sse/http options")
-    remote_group.add_argument("-u", "--url", help="MCP server URL (sse/http only)")
+    remote_group = parser.add_argument_group("http options")
+    remote_group.add_argument("-u", "--url", help="MCP server URL (http only)")
     remote_group.add_argument(
         "-H",
         "--header",
         nargs="+",
         dest="headers",
-        help="HTTP headers in 'Key: Value' format (sse/http only)",
+        help="HTTP headers in 'Key: Value' format (http only)",
     )
 
     parser.add_argument(

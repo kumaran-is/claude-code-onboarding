@@ -187,33 +187,33 @@ Example pagination response:
 | **Complexity** | Low | Medium |
 | **Real-time** | No | Yes |
 
+The 2024-11-05 HTTP+SSE transport (separate `/sse` + `/messages` endpoints) is Deprecated; never pick it for new work.
+
 ### Dual Transport Pattern (Production)
 
-Production servers support both transports via an environment variable:
+One `createServer()` factory, two thin entry points (TypeScript SDK v2; full code in [node-mcp-setup.md](node-mcp-setup.md)):
 
 ```typescript
-// server.ts — transport-agnostic business logic
-const transport = process.env.MCP_TRANSPORT === 'http'
-  ? new StreamableHTTPServerTransport({ port: Number(process.env.PORT || 3000) })
-  : new StdioServerTransport();
+// src/stdio.ts — local
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { createServer } from './server.js';
 
-await server.connect(transport);
+serveStdio(createServer);
+```
+
+```typescript
+// src/http.ts — remote: the handler calls the factory per request; put Host/Origin checks and auth in front of it
+import { createMcpHandler } from '@modelcontextprotocol/server';
+import { createServer } from './server.js';
+
+export const mcpHandler = createMcpHandler(createServer);
 ```
 
 **Critical constraint:** Business logic (tools, resources, prompts) MUST NOT know which transport is active. Transport selection is infrastructure configuration — not business logic. Mixing them means you can't switch transports without rewriting tool handlers.
 
 **stdio lifecycle warning:** The server process dies when the client disconnects. All in-memory state is lost. Design tool handlers to be stateless or use an external store (Redis, DB) for persistence.
 
-**HTTP session management:** For Streamable HTTP, implement zombie session cleanup:
-```typescript
-// Cleanup interval — prevent memory leak from abandoned sessions
-setInterval(() => {
-  const cutoff = Date.now() - SESSION_TTL_MS;
-  for (const [id, session] of sessions) {
-    if (session.lastSeen < cutoff) sessions.delete(id);
-  }
-}, 60_000); // every minute
-```
+**No protocol sessions (2026-07-28):** Streamable HTTP has no `Mcp-Session-Id` in the current revision; each request carries its own version and capabilities, so any replica can serve it. Keep state that must survive between calls in an external store behind an explicit handle the tool returns (owner-checked, expiring) — see [node-mcp-patterns.md](node-mcp-patterns.md). Sessionful serving with idle-timeout cleanup exists only for 2025-era clients ([node-mcp-advanced.md](node-mcp-advanced.md#legacy-sessions-2025-era-only)).
 
 ---
 

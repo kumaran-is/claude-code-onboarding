@@ -1,0 +1,72 @@
+{
+  "description": "Components delivered but none has id 'root'.",
+  "expectedError": "MISSING_ROOT",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "r",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "r",
+        "components": [
+          {
+            "id": "card",
+            "component": "ActionCard",
+            "title": {
+              "path": "/card/title"
+            },
+            "subtitle": "Suggested next step",
+            "body": {
+              "path": "/card/body"
+            },
+            "accessibility": {
+              "label": "Suggested booking"
+            },
+            "actions": [
+              {
+                "label": "Open booking",
+                "variant": "primary",
+                "action": {
+                  "event": {
+                    "name": "item.open",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              },
+              {
+                "label": "Dismiss",
+                "variant": "secondary",
+                "action": {
+                  "event": {
+                    "name": "item.dismiss",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateDataModel": {
+        "surfaceId": "r",
+        "path": "/card",
+        "value": {
+          "title": "t",
+          "body": "b"
+        }
+      }
+    }
+  ]
+}

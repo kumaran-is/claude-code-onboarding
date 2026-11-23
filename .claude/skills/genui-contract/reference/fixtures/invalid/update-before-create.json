@@ -1,0 +1,54 @@
+{
+  "description": "updateComponents for a surface that was never created.",
+  "expectedError": "SURFACE_NOT_FOUND",
+  "messages": [
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "ghost",
+        "components": [
+          {
+            "id": "root",
+            "component": "ActionCard",
+            "title": {
+              "path": "/card/title"
+            },
+            "subtitle": "Suggested next step",
+            "body": {
+              "path": "/card/body"
+            },
+            "accessibility": {
+              "label": "Suggested booking"
+            },
+            "actions": [
+              {
+                "label": "Open booking",
+                "variant": "primary",
+                "action": {
+                  "event": {
+                    "name": "item.open",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              },
+              {
+                "label": "Dismiss",
+                "variant": "secondary",
+                "action": {
+                  "event": {
+                    "name": "item.dismiss",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

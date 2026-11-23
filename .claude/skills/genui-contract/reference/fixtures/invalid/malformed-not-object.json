@@ -1,0 +1,15 @@
+{
+  "description": "Message is a JSON array, not an object.",
+  "expectedError": "MALFORMED_MESSAGE",
+  "messages": [
+    [
+      {
+        "version": "v0.9",
+        "createSurface": {
+          "surfaceId": "x",
+          "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+        }
+      }
+    ]
+  ]
+}

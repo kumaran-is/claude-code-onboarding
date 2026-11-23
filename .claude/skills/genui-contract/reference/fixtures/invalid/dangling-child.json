@@ -1,0 +1,35 @@
+{
+  "description": "DetailPanel references a child that never arrives.",
+  "expectedError": "DANGLING_REFERENCE",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "p",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "p",
+        "components": [
+          {
+            "id": "root",
+            "component": "DetailPanel",
+            "title": "T",
+            "fields": [
+              {
+                "label": "a",
+                "value": "b"
+              }
+            ],
+            "children": [
+              "missing"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

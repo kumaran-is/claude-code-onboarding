@@ -1,0 +1,72 @@
+{
+  "description": "Script markup in a literal string.",
+  "expectedError": "UNSAFE_CONTENT",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "card-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "card-1",
+        "components": [
+          {
+            "id": "root",
+            "component": "ActionCard",
+            "title": {
+              "path": "/card/title"
+            },
+            "subtitle": "<script>alert(1)</script>",
+            "body": {
+              "path": "/card/body"
+            },
+            "accessibility": {
+              "label": "Suggested booking"
+            },
+            "actions": [
+              {
+                "label": "Open booking",
+                "variant": "primary",
+                "action": {
+                  "event": {
+                    "name": "item.open",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              },
+              {
+                "label": "Dismiss",
+                "variant": "secondary",
+                "action": {
+                  "event": {
+                    "name": "item.dismiss",
+                    "context": {
+                      "itemId": "booking-1042"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateDataModel": {
+        "surfaceId": "card-1",
+        "path": "/card",
+        "value": {
+          "title": "Booking needs a time slot",
+          "body": "Choose a slot before Friday."
+        }
+      }
+    }
+  ]
+}

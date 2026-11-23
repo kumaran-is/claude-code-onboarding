@@ -1,0 +1,16 @@
+{
+  "description": "Envelope carries two message bodies.",
+  "expectedError": "MALFORMED_MESSAGE",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "x",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      },
+      "deleteSurface": {
+        "surfaceId": "x"
+      }
+    }
+  ]
+}

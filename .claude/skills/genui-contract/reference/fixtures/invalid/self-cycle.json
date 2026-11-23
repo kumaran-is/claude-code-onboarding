@@ -1,0 +1,35 @@
+{
+  "description": "DetailPanel lists itself as a child.",
+  "expectedError": "CYCLE",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "p",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "p",
+        "components": [
+          {
+            "id": "root",
+            "component": "DetailPanel",
+            "title": "Loop",
+            "fields": [
+              {
+                "label": "a",
+                "value": "b"
+              }
+            ],
+            "children": [
+              "root"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "description": "Nine nested DetailPanels; maxDepth is 8.",
+  "expectedError": "MAX_DEPTH_EXCEEDED",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "d",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "d",
+        "components": [
+          {
+            "id": "root",
+            "component": "DetailPanel",
+            "title": "Level 0",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p1"
+            ]
+          },
+          {
+            "id": "p1",
+            "component": "DetailPanel",
+            "title": "Level 1",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p2"
+            ]
+          },
+          {
+            "id": "p2",
+            "component": "DetailPanel",
+            "title": "Level 2",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p3"
+            ]
+          },
+          {
+            "id": "p3",
+            "component": "DetailPanel",
+            "title": "Level 3",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p4"
+            ]
+          },
+          {
+            "id": "p4",
+            "component": "DetailPanel",
+            "title": "Level 4",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p5"
+            ]
+          },
+          {
+            "id": "p5",
+            "component": "DetailPanel",
+            "title": "Level 5",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p6"
+            ]
+          },
+          {
+            "id": "p6",
+            "component": "DetailPanel",
+            "title": "Level 6",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p7"
+            ]
+          },
+          {
+            "id": "p7",
+            "component": "DetailPanel",
+            "title": "Level 7",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ],
+            "children": [
+              "p8"
+            ]
+          },
+          {
+            "id": "p8",
+            "component": "DetailPanel",
+            "title": "Level 8",
+            "fields": [
+              {
+                "label": "l",
+                "value": "v"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

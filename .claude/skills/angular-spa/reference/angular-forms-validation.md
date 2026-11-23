@@ -89,11 +89,11 @@ Every form element must satisfy all of the following:
   [attr.aria-invalid]="hasError('email')"
   [attr.aria-describedby]="hasError('email') ? 'email-error' : null"
   aria-required="true"
-  class="input input-bordered" />
+  class="input" />
 
 <!-- role="alert" triggers immediate screen reader announcement -->
 @if (hasError('email')) {
-  <span id="email-error" class="label-text-alt text-error" role="alert">
+  <span id="email-error" class="label text-error" role="alert">
     Email must include @ symbol (e.g., name@example.com)
   </span>
 }

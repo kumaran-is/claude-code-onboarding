@@ -147,7 +147,6 @@ interface BreadcrumbItem { label: string; path?: string; }
 
 @Component({
   selector: 'app-breadcrumb',
-  standalone: true,
   imports: [RouterLink],
   template: `
     <div class="breadcrumbs text-sm">
@@ -184,18 +183,31 @@ export class BreadcrumbComponent {
 
 ## Tabs Pattern
 
+Panel content is passed as `<ng-template [appTabPanel]="id">`: `<ng-content>` projects once, so it cannot
+fill one panel per loop iteration, and a structural `*ngIf` on it (without importing `NgIf`) silently renders
+nothing (`NG8103` is only a warning).
+
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, input, signal, computed
+  ChangeDetectionStrategy, Component, Directive, TemplateRef, computed, contentChildren, inject, input, signal,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 
-interface TabItem { id: string; label: string; }
+export interface TabItem { id: string; label: string; }
+
+/** Marks the template for one panel: <ng-template appTabPanel="details">…</ng-template> */
+@Directive({ selector: 'ng-template[appTabPanel]' })
+export class TabPanel {
+  readonly id = input.required<string>({ alias: 'appTabPanel' });
+  readonly template = inject(TemplateRef);
+}
 
 @Component({
   selector: 'app-tabs',
-  standalone: true,
+  imports: [NgTemplateOutlet],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div role="tablist" class="tabs tabs-bordered">
+    <div role="tablist" class="tabs tabs-border">
       @for (tab of tabs(); track tab.id) {
         <button
           role="tab"
@@ -204,8 +216,10 @@ interface TabItem { id: string; label: string; }
           [class.tab-active]="activeTab() === tab.id"
           [attr.aria-selected]="activeTab() === tab.id"
           [attr.aria-controls]="'tabpanel-' + tab.id"
+          [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
           [id]="'tab-' + tab.id"
-          (click)="activeTab.set(tab.id)">
+          (click)="selected.set(tab.id)"
+          (keydown)="onKey($event)">
           {{ tab.label }}
         </button>
       }
@@ -214,27 +228,51 @@ interface TabItem { id: string; label: string; }
       @for (tab of tabs(); track tab.id) {
         <div
           role="tabpanel"
+          tabindex="0"
           [id]="'tabpanel-' + tab.id"
           [attr.aria-labelledby]="'tab-' + tab.id"
           [hidden]="activeTab() !== tab.id">
-          <ng-content *ngIf="activeTab() === tab.id" />
+          @if (activeTab() === tab.id) {
+            <ng-container [ngTemplateOutlet]="panelFor(tab.id)" />
+          }
         </div>
       }
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TabsComponent {
-  tabs = input.required<TabItem[]>();
-  protected readonly activeTab = signal('');
+  readonly tabs = input.required<TabItem[]>();
+  private readonly panels = contentChildren(TabPanel);
+  protected readonly selected = signal<string | null>(null);
+  protected readonly activeTab = computed(() => this.selected() ?? this.tabs()[0]?.id ?? '');
 
-  ngOnInit(): void {
-    if (this.tabs().length > 0) {
-      this.activeTab.set(this.tabs()[0].id);
-    }
+  protected panelFor(id: string): TemplateRef<unknown> | null {
+    return this.panels().find((panel) => panel.id() === id)?.template ?? null;
+  }
+
+  /** Arrow keys move between tabs (roving tabindex), as in the WAI-ARIA tabs pattern. */
+  protected onKey(event: KeyboardEvent): void {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const ids = this.tabs().map((tab) => tab.id);
+    if (ids.length === 0) return;
+    const step = event.key === 'ArrowRight' ? 1 : -1;
+    const next = ids[(ids.indexOf(this.activeTab()) + step + ids.length) % ids.length];
+    this.selected.set(next);
+    (event.currentTarget as HTMLElement).closest('[role="tablist"]')?.querySelector<HTMLElement>(`#tab-${next}`)?.focus();
   }
 }
 ```
+
+**Usage** (import `TabsComponent` and `TabPanel`):
+```html
+<app-tabs [tabs]="[{ id: 'details', label: 'Details' }, { id: 'history', label: 'History' }]">
+  <ng-template appTabPanel="details"><p>Details content</p></ng-template>
+  <ng-template appTabPanel="history"><p>History content</p></ng-template>
+</app-tabs>
+```
+
+Verified: compiles under `strictTemplates` with no `NG8103`; a Vitest spec shows the first panel's content,
+switches on click and on ArrowRight.
 
 ---
 

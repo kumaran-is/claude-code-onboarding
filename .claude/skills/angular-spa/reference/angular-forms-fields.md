@@ -11,21 +11,21 @@ All components use standalone, OnPush, and signal-based APIs.
 
 | Data Type | Component | daisyUI Class |
 |-----------|-----------|---------------|
-| Short text (<100 chars) | `input[type=text/email/password/url]` | `input input-bordered` |
-| Long text (>100 chars) | `textarea` | `textarea textarea-bordered` |
-| Numeric (integer/decimal) | `input[type=number]` | `input input-bordered` |
-| Currency | Composite: prefix `$` + `input[type=number]` | `input input-bordered` with `join` wrapper |
-| Date | `input[type=date]` | `input input-bordered` |
-| Time | `input[type=time]` | `input input-bordered` |
+| Short text (<100 chars) | `input[type=text/email/password/url]` | `input` |
+| Long text (>100 chars) | `textarea` | `textarea` |
+| Numeric (integer/decimal) | `input[type=number]` | `input` |
+| Currency | Composite: prefix `$` + `input[type=number]` | `input` with `join` wrapper |
+| Date | `input[type=date]` | `input` |
+| Time | `input[type=time]` | `input` |
 | Boolean (single toggle) | `input[type=checkbox]` | `checkbox` or `toggle` |
-| Single choice, 2–7 options | Radio group | `radio` inside `form-control` |
-| Single choice, 8–15 options | `select` | `select select-bordered` |
-| Single choice, >15 options | Autocomplete / combobox | `input input-bordered` + dropdown |
+| Single choice, 2–7 options | Radio group | `radio` inside `fieldset` |
+| Single choice, 8–15 options | `select` | `select` |
+| Single choice, >15 options | Autocomplete / combobox | `input` + dropdown |
 | Multiple choice, ≤8 options | Checkbox group | `checkbox` per option |
-| Multiple choice, >8 options | `select[multiple]` | `select select-bordered h-auto` |
-| File / media upload | `input[type=file]` | `file-input file-input-bordered` |
-| Structured (address, phone) | Composite inputs | Multiple `input input-bordered` in grid |
-| Search | `input[type=search]` | `input input-bordered` with search icon |
+| Multiple choice, >8 options | `select[multiple]` | `select h-auto` |
+| File / media upload | `input[type=file]` | `file-input` |
+| Structured (address, phone) | Composite inputs | Multiple `input` in grid |
+| Search | `input[type=search]` | `input` with search icon |
 | Range / slider | `input[type=range]` | `range range-primary` |
 
 **Decision rules:**
@@ -45,29 +45,28 @@ import { Component, ChangeDetectionStrategy, input, computed } from '@angular/co
 
 @Component({
   selector: 'app-form-field',
-  standalone: true,
   template: `
-    <div class="form-control w-full">
+    <div class="fieldset w-full">
       <label class="label" [for]="inputId()">
-        <span class="label-text">
+        <span>
           {{ label() }}
           @if (required()) {
             <span class="text-error ml-1" aria-hidden="true">*</span>
           }
         </span>
         @if (labelAlt()) {
-          <span class="label-text-alt">{{ labelAlt() }}</span>
+          <span class="label">{{ labelAlt() }}</span>
         }
       </label>
       <ng-content></ng-content>
       @if (errorMessage()) {
         <label class="label">
-          <span class="label-text-alt text-error" role="alert">{{ errorMessage() }}</span>
+          <span class="label text-error" role="alert">{{ errorMessage() }}</span>
         </label>
       }
       @if (hint() && !errorMessage()) {
         <label class="label">
-          <span class="label-text-alt text-base-content/60">{{ hint() }}</span>
+          <span class="label text-base-content/60">{{ hint() }}</span>
         </label>
       }
     </div>
@@ -102,13 +101,12 @@ import { FormFieldComponent } from './form-field.component';
 
 @Component({
   selector: 'app-contact-form',
-  standalone: true,
   imports: [ReactiveFormsModule, FormFieldComponent],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4">
       <app-form-field label="Full Name" [required]="true" [errorMessage]="getError('name')">
         <input type="text" formControlName="name"
-          class="input input-bordered w-full"
+          class="input w-full"
           [class.input-error]="hasError('name')"
           [attr.aria-invalid]="hasError('name')"
           aria-required="true" />
@@ -116,7 +114,7 @@ import { FormFieldComponent } from './form-field.component';
 
       <app-form-field label="Email" [required]="true" [errorMessage]="getError('email')">
         <input type="email" formControlName="email"
-          class="input input-bordered w-full"
+          class="input w-full"
           [class.input-error]="hasError('email')"
           [attr.aria-invalid]="hasError('email')"
           aria-required="true" />
@@ -125,7 +123,7 @@ import { FormFieldComponent } from './form-field.component';
       <app-form-field label="Message" [required]="true"
         [errorMessage]="getError('message')" labelAlt="Max 500 chars">
         <textarea formControlName="message"
-          class="textarea textarea-bordered w-full h-32"
+          class="textarea w-full h-32"
           [class.textarea-error]="hasError('message')"
           [attr.aria-invalid]="hasError('message')"
           aria-required="true"></textarea>
@@ -189,31 +187,31 @@ export class ContactFormComponent {
 
 ```html
 <!-- Single checkbox -->
-<div class="form-control">
+<div class="fieldset">
   <label class="label cursor-pointer gap-3">
     <input type="checkbox" formControlName="agreed" class="checkbox checkbox-primary" />
-    <span class="label-text">I agree to the terms and conditions</span>
+    <span>I agree to the terms and conditions</span>
   </label>
 </div>
 
 <!-- Radio group -->
 <fieldset class="space-y-2">
-  <legend class="label-text font-medium">Preferred contact method</legend>
+  <legend class="font-medium">Preferred contact method</legend>
   @for (option of contactOptions; track option.value) {
-    <div class="form-control">
+    <div class="fieldset">
       <label class="label cursor-pointer gap-3 justify-start">
         <input type="radio" formControlName="contactMethod"
           [value]="option.value" class="radio radio-primary" />
-        <span class="label-text">{{ option.label }}</span>
+        <span>{{ option.label }}</span>
       </label>
     </div>
   }
 </fieldset>
 
 <!-- Toggle -->
-<div class="form-control">
+<div class="fieldset">
   <label class="label cursor-pointer gap-3">
-    <span class="label-text">Enable notifications</span>
+    <span>Enable notifications</span>
     <input type="checkbox" formControlName="notifications" class="toggle toggle-primary" />
   </label>
 </div>

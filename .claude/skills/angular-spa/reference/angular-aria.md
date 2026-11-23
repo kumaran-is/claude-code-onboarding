@@ -49,7 +49,6 @@ import { FocusTrapFactory, FocusTrap } from '@angular/cdk/a11y';
 
 @Component({
   selector: 'app-modal',
-  standalone: true,
   template: `
     <div 
       #modalPanel
@@ -89,7 +88,6 @@ import { DOWN_ARROW, UP_ARROW, ENTER } from '@angular/cdk/keycodes';
 // Each item must implement Highlightable
 @Component({
   selector: 'app-menu-item',
-  standalone: true,
   template: `<li role="option" [class.active]="isActive" [id]="id()">{{ label() }}</li>`,
   host: { '[attr.aria-selected]': 'isActive' },
 })
@@ -103,7 +101,6 @@ export class MenuItemComponent {
 
 @Component({
   selector: 'app-menu',
-  standalone: true,
   imports: [MenuItemComponent],
   template: `
     <ul
@@ -168,7 +165,6 @@ export class DataTableComponent {
 ```typescript
 @Component({
   selector: 'app-accordion',
-  standalone: true,
   template: `
     @for (item of items(); track item.id) {
       <div>
@@ -210,7 +206,6 @@ export class AccordionComponent {
 ```typescript
 @Component({
   selector: 'app-combobox',
-  standalone: true,
   template: `
     <div class="relative">
       <input
@@ -221,7 +216,7 @@ export class AccordionComponent {
         [attr.aria-autocomplete]="'list'"
         [attr.aria-controls]="'listbox-' + id"
         [attr.aria-activedescendant]="activeId()"
-        class="input input-bordered w-full"
+        class="input w-full"
         (input)="onInput($event)"
         (keydown)="onKeydown($event)"
       />
@@ -290,3 +285,55 @@ export class ComboboxComponent {
 - [ ] `tabindex="0"` on keyboard-navigable containers
 - [ ] `hidden` attribute (not `display:none`) on collapsed regions for ARIA hiding
 - [ ] `LiveAnnouncer` for dynamic content changes (sort, load, filter)
+
+## Route-change focus management (SPA navigation)
+
+A client-side navigation does not move focus or announce the new page; keyboard and screen-reader
+users stay on the link they activated (WCAG 2.2 SC 2.4.3 Focus Order, 2.4.2 Page Titled). Give every
+route a `title`, and move focus to the new page's `<h1>` after each in-app navigation:
+
+```typescript
+import { DOCUMENT, EnvironmentInjector, Injectable, afterNextRender, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter } from 'rxjs';
+
+@Injectable({ providedIn: 'root' })
+export class RouteFocus {
+  private readonly router = inject(Router);
+  private readonly document = inject(DOCUMENT);
+  private readonly injector = inject(EnvironmentInjector);
+  private lastPath: string | null = null;
+
+  /** Call once from the root component's constructor (injection context for takeUntilDestroyed). */
+  start(): void {
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd), takeUntilDestroyed())
+      .subscribe((e) => {
+        const path = e.urlAfterRedirects.split(/[?#]/, 1)[0];
+        const previous = this.lastPath;
+        this.lastPath = path;
+        if (previous === null) return; // initial load: leave focus where the browser put it
+        if (path === previous) return; // query/fragment-only change (filters, tabs): keep focus, announce instead
+        afterNextRender(() => this.focusMain(), { injector: this.injector });
+      });
+  }
+
+  private focusMain(): void {
+    const target =
+      this.document.querySelector<HTMLElement>('main h1') ?? this.document.querySelector<HTMLElement>('main');
+    if (!target) return;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1'); // focusable, not tabbable
+    target.focus();
+  }
+}
+// Root component: constructor() { inject(RouteFocus).start(); }   Template: <main><router-outlet /></main>
+```
+
+Verified with a `RouterTestingHarness` spec: focus lands on the new `<h1>` (tag `H1`,
+`tabindex="-1"`); without `start()` the same spec fails with focus on `BODY`. Verified in Chromium:
+a query-param-only link (`/dashboard?tab=2`) keeps focus on the link, a path change focuses the new
+`<h1>`; the earlier version that focused on every `NavigationEnd` failed the first check. For
+query-param-only updates inside the same page (filters, tabs) announce the result with `LiveAnnouncer`
+instead of moving focus. Keep a visible skip link to `<main>`. Full WCAG 2.2 AA checklist:
+`accessibility-audit` skill.

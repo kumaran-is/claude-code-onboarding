@@ -11,22 +11,22 @@ All components use standalone, OnPush, and signal-based APIs.
 
 | Data Type | Component | daisyUI Class |
 |-----------|-----------|---------------|
-| Short text (<100 chars) | `input[type=text/email/password/url]` | `input input-bordered` |
-| Long text (>100 chars) | `textarea` | `textarea textarea-bordered` |
-| Numeric (integer/decimal) | `input[type=number]` | `input input-bordered` |
-| Currency | Composite: prefix `$` + `input[type=number]` | `input input-bordered` with `join` wrapper |
-| Date | `input[type=date]` | `input input-bordered` |
-| Time | `input[type=time]` | `input input-bordered` |
+| Short text (<100 chars) | `input[type=text/email/password/url]` | `input` |
+| Long text (>100 chars) | `textarea` | `textarea` |
+| Numeric (integer/decimal) | `input[type=number]` | `input` |
+| Currency | Composite: prefix `$` + `input[type=number]` | `input` with `join` wrapper |
+| Date | `input[type=date]` | `input` |
+| Time | `input[type=time]` | `input` |
 | Boolean (single toggle) | `input[type=checkbox]` | `checkbox` or `toggle` |
-| Single choice, 2–7 options | Radio group | `radio` inside `form-control` |
-| Single choice, 8–15 options | `select` | `select select-bordered` |
-| Single choice, >15 options | Autocomplete / combobox | `input input-bordered` + dropdown |
+| Single choice, 2–7 options | Radio group | `radio` inside `fieldset` |
+| Single choice, 8–15 options | `select` | `select` |
+| Single choice, >15 options | Autocomplete / combobox | `input` + dropdown |
 | Multiple choice, ≤8 options | Checkbox group | `checkbox` per option |
-| Multiple choice, >8 options | `select[multiple]` | `select select-bordered h-auto` |
-| File / media upload | `input[type=file]` | `file-input file-input-bordered` |
-| Structured (address, phone) | Composite inputs | Multiple `input input-bordered` in grid |
-| Credit card | Composite: number + expiry + CVV | `join` wrapper with `input input-bordered` |
-| Search | `input[type=search]` | `input input-bordered` with search icon |
+| Multiple choice, >8 options | `select[multiple]` | `select h-auto` |
+| File / media upload | `input[type=file]` | `file-input` |
+| Structured (address, phone) | Composite inputs | Multiple `input` in grid |
+| Credit card | Composite: number + expiry + CVV | `join` wrapper with `input` |
+| Search | `input[type=search]` | `input` with search icon |
 | Range / slider | `input[type=range]` | `range range-primary` |
 | Color | `input[type=color]` | Native color picker |
 
@@ -114,43 +114,42 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 // Step 1 component
 @Component({
   selector: 'app-wizard-step-personal',
-  standalone: true,
   imports: [ReactiveFormsModule],
   template: `
     <div class="space-y-4">
       <h3 class="text-lg font-semibold">Personal Information</h3>
       <div [formGroup]="form" class="space-y-4">
-        <div class="form-control">
+        <div class="fieldset">
           <label class="label" for="firstName">
-            <span class="label-text">First Name <span class="text-error" aria-hidden="true">*</span></span>
+            <span>First Name <span class="text-error" aria-hidden="true">*</span></span>
           </label>
           <input id="firstName" type="text" formControlName="firstName"
-            class="input input-bordered"
+            class="input"
             [class.input-error]="hasError('firstName')"
             [attr.aria-invalid]="hasError('firstName')"
             [attr.aria-describedby]="hasError('firstName') ? 'firstName-error' : null"
             aria-required="true" />
           @if (hasError('firstName')) {
             <label class="label">
-              <span id="firstName-error" class="label-text-alt text-error" role="alert">
+              <span id="firstName-error" class="label text-error" role="alert">
                 {{ getError('firstName') }}
               </span>
             </label>
           }
         </div>
-        <div class="form-control">
+        <div class="fieldset">
           <label class="label" for="lastName">
-            <span class="label-text">Last Name <span class="text-error" aria-hidden="true">*</span></span>
+            <span>Last Name <span class="text-error" aria-hidden="true">*</span></span>
           </label>
           <input id="lastName" type="text" formControlName="lastName"
-            class="input input-bordered"
+            class="input"
             [class.input-error]="hasError('lastName')"
             [attr.aria-invalid]="hasError('lastName')"
             [attr.aria-describedby]="hasError('lastName') ? 'lastName-error' : null"
             aria-required="true" />
           @if (hasError('lastName')) {
             <label class="label">
-              <span id="lastName-error" class="label-text-alt text-error" role="alert">
+              <span id="lastName-error" class="label text-error" role="alert">
                 {{ getError('lastName') }}
               </span>
             </label>
@@ -186,25 +185,24 @@ export class WizardStepPersonalComponent {
 // Step 2 component (contact)
 @Component({
   selector: 'app-wizard-step-contact',
-  standalone: true,
   imports: [ReactiveFormsModule],
   template: `
     <div class="space-y-4">
       <h3 class="text-lg font-semibold">Contact Details</h3>
       <div [formGroup]="form">
-        <div class="form-control">
+        <div class="fieldset">
           <label class="label" for="email">
-            <span class="label-text">Email <span class="text-error" aria-hidden="true">*</span></span>
+            <span>Email <span class="text-error" aria-hidden="true">*</span></span>
           </label>
           <input id="email" type="email" formControlName="email"
-            class="input input-bordered"
+            class="input"
             [class.input-error]="hasError('email')"
             [attr.aria-invalid]="hasError('email')"
             [attr.aria-describedby]="hasError('email') ? 'email-error' : null"
             aria-required="true" />
           @if (hasError('email')) {
             <label class="label">
-              <span id="email-error" class="label-text-alt text-error" role="alert">
+              <span id="email-error" class="label text-error" role="alert">
                 {{ getError('email') }}
               </span>
             </label>
@@ -239,7 +237,6 @@ export class WizardStepContactComponent {
 // Step 3 — Review (read-only summary, no form)
 @Component({
   selector: 'app-wizard-step-review',
-  standalone: true,
   template: `
     <div class="space-y-4">
       <h3 class="text-lg font-semibold">Review Your Information</h3>
@@ -262,7 +259,6 @@ export class WizardStepReviewComponent {
 // Wizard orchestrator
 @Component({
   selector: 'app-multi-step-wizard',
-  standalone: true,
   imports: [
     WizardStepPersonalComponent,
     WizardStepContactComponent,
@@ -423,11 +419,11 @@ protected onSubmit(): void {
   [attr.aria-invalid]="hasError('email')"
   [attr.aria-describedby]="hasError('email') ? 'email-error' : null"
   aria-required="true"
-  class="input input-bordered" />
+  class="input" />
 
 <!-- role="alert" triggers immediate screen reader announcement -->
 @if (hasError('email')) {
-  <span id="email-error" class="label-text-alt text-error" role="alert">
+  <span id="email-error" class="label text-error" role="alert">
     Email must include @ symbol (e.g., name@example.com)
   </span>
 }
@@ -464,12 +460,11 @@ const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 @Component({
   selector: 'app-file-upload',
-  standalone: true,
   template: `
-    <div class="form-control w-full space-y-3">
+    <div class="fieldset w-full space-y-3">
       <label class="label" for="file-input">
-        <span class="label-text font-medium">Upload File</span>
-        <span class="label-text-alt text-base-content/60">JPEG, PNG, WebP, PDF — max 10 MB</span>
+        <span class="font-medium">Upload File</span>
+        <span class="label text-base-content/60">JPEG, PNG, WebP, PDF — max 10 MB</span>
       </label>
 
       <!-- File picker -->
@@ -477,7 +472,7 @@ const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
         id="file-input"
         type="file"
         accept=".jpg,.jpeg,.png,.webp,.pdf"
-        class="file-input file-input-bordered w-full"
+        class="file-input w-full"
         [class.file-input-error]="state() === 'error'"
         [disabled]="state() === 'uploading'"
         (change)="onFileSelected($event)"
@@ -645,13 +640,12 @@ interface PresignedUrlResponse {
 
 @Component({
   selector: 'app-gcs-upload',
-  standalone: true,
   template: `
     <div class="space-y-4">
       <input
         type="file"
         accept=".jpg,.jpeg,.png,.webp,.mp4"
-        class="file-input file-input-bordered w-full"
+        class="file-input w-full"
         [disabled]="state() === 'uploading'"
         (change)="onFileSelected($event)"
       />
@@ -801,27 +795,27 @@ import { Component, ChangeDetectionStrategy, input, computed } from '@angular/co
   selector: 'app-form-field',
 
   template: `
-    <div class="form-control w-full">
+    <div class="fieldset w-full">
       <label class="label" [for]="inputId()">
-        <span class="label-text">
+        <span>
           {{ label() }}
           @if (required()) {
             <span class="text-error ml-1" aria-hidden="true">*</span>
           }
         </span>
         @if (labelAlt()) {
-          <span class="label-text-alt">{{ labelAlt() }}</span>
+          <span class="label">{{ labelAlt() }}</span>
         }
       </label>
       <ng-content></ng-content>
       @if (errorMessage()) {
         <label class="label">
-          <span class="label-text-alt text-error" role="alert">{{ errorMessage() }}</span>
+          <span class="label text-error" role="alert">{{ errorMessage() }}</span>
         </label>
       }
       @if (hint() && !errorMessage()) {
         <label class="label">
-          <span class="label-text-alt text-base-content/60">{{ hint() }}</span>
+          <span class="label text-base-content/60">{{ hint() }}</span>
         </label>
       }
     </div>
@@ -858,17 +852,17 @@ import { FormFieldComponent } from './form-field.component';
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4">
       <app-form-field label="Full Name" [required]="true" [errorMessage]="getError('name')">
         <input type="text" formControlName="name"
-          class="input input-bordered w-full" [class.input-error]="hasError('name')" />
+          class="input w-full" [class.input-error]="hasError('name')" />
       </app-form-field>
 
       <app-form-field label="Email" [required]="true" [errorMessage]="getError('email')">
         <input type="email" formControlName="email"
-          class="input input-bordered w-full" [class.input-error]="hasError('email')" />
+          class="input w-full" [class.input-error]="hasError('email')" />
       </app-form-field>
 
       <app-form-field label="Message" [required]="true" [errorMessage]="getError('message')" labelAlt="Max 500 chars">
         <textarea formControlName="message"
-          class="textarea textarea-bordered w-full h-32" [class.textarea-error]="hasError('message')"></textarea>
+          class="textarea w-full h-32" [class.textarea-error]="hasError('message')"></textarea>
       </app-form-field>
 
       <div class="flex justify-end gap-2 pt-4">

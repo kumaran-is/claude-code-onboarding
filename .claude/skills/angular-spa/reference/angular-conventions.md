@@ -77,16 +77,16 @@ Name handlers for the **action performed**, not the triggering event: `saveUserD
 
 ## Zoneless (Angular 21 default)
 
-- Angular 21 is zoneless by default — do NOT add `provideZoneChangeDetection()` or import `zone.js`
-- Do NOT install `zone.js` as a dependency
-- Do NOT add `provideZonelessChangeDetection()` either — it is the default and unnecessary in v21+
+- `ng new` 21.2 creates a zoneless app: no `zone.js`, no change-detection provider. Do not add `zone.js` or `provideZoneChangeDetection()` without a recorded reason
+- `provideZonelessChangeDetection()` is redundant in 21.x (it was the v20 opt-in) — omit it
+- Zoneless renders on signal changes, template/host events, `markForCheck()` and `setInput()` — keep async results in signals. Details: `angular` skill §Zoneless
 
 ## Components
 
 - Standalone components (no NgModules unless legacy) — do NOT set `standalone: true` in decorators (default in v20+)
-- `ChangeDetectionStrategy.OnPush` on all components
+- `ChangeDetectionStrategy.OnPush` on all components — still opt-in in 21.x (the default is `Eager`)
 - Prefer inline templates for small components, external for large ones
-- Use `signal()`, `computed()`, `effect()` for component state — do NOT use `mutate` on signals
+- Use `signal()` / `computed()` / `linkedSignal()` for state; `effect()` only to push state out to non-reactive code (never to set another signal). Canonical rules: `angular/references/signals-core.md`
 - Use `inject()` function over constructor injection
 - Use `input()` and `output()` functions — NOT `@Input`/`@Output` decorators
 - Use `NgOptimizedImage` for all static images
@@ -120,13 +120,14 @@ Full pattern guide: `smart-dumb-components.md`
 - Design services around a single responsibility
 - Use `providedIn: 'root'` for singleton services
 - Use `inject()` instead of constructor injection
-- Use `HttpClient` with RxJS operators — return `Observable<T>` from services
+- Use `HttpClient` with RxJS operators — return `Observable<T>` from services and let errors propagate to the page
+- Auth (interceptor allow-list, refresh, guards, returnUrl): `web-security.md`
 - Feature routes as separate `*.routes.ts` files with `loadComponent` / `loadChildren`
 - Use functional guards (`CanActivateFn`) and interceptors (`HttpInterceptorFn`)
 
 ## Forms
 
-- Prefer Reactive forms over Template-driven forms
+- Typed reactive forms (`NonNullableFormBuilder`) are the 21.x production default; Signal Forms is EXPERIMENTAL (`angular/references/signal-forms.md`). No template-driven forms in new code
 
 ## Styling
 
@@ -135,7 +136,7 @@ Full pattern guide: `smart-dumb-components.md`
 - **PostCSS config** must be `.postcssrc.json` — Angular's `@angular/build:application` builder ignores `postcss.config.js`
 - **Global styles** must be `.css` (not `.scss`) — Sass intercepts TailwindCSS 4.x directives (`@import`, `@theme`, `@plugin`)
 - **Mobile-first** — start with base styles, add `sm:`, `md:`, `lg:` breakpoints
-- **Spacing**: 4px base unit (4, 8, 12, 16, 24, 32, 48, 64)
+- **Spacing**: Tailwind 4 numeric utilities (`p-4`, `gap-2`, `mt-6`) ARE the spacing scale (4px base) and are allowed; arbitrary values (`p-[13px]`) and inline `style="margin: …"` are not
 - **BEM Naming** for custom CSS: `.block__element--modifier`
 
 ### Machine Enforcement
@@ -145,7 +146,7 @@ Design rules are enforced automatically:
 | Rule File | What It Catches | Action |
 |---|---|---|
 | `hookify.design-no-hex-angular.local.md` | `bg-[#hex]`, `text-[#hex]`, `color: #hex` in `src/**/*.{html,scss,css,ts}` | warn |
-| `hookify.design-no-raw-spacing-angular.local.md` | `mt-3`, `px-4`, `gap-2` numeric utilities in `src/**/*.html` | warn |
+| `hookify.design-no-raw-spacing-angular.local.md` | arbitrary spacing (`p-[13px]`, `gap-x-[1.1rem]`) and inline `style="margin: 12px"` in `src/app` templates | warn |
 
 Lint commands:
 - `ng lint` — ESLint rules including Angular-specific checks
@@ -155,22 +156,17 @@ Scope: `src/app/` only. Test files, generated code, and node_modules are exclude
 
 Exception marker: `<!-- ignore-design: [reason] -->` in templates, `// ignore-design: [reason]` in TypeScript/SCSS.
 
-## Accessibility (WCAG 2.1 AA)
+## Accessibility (WCAG 2.2 AA)
 
-- Must pass all AXE checks
-- Focus management, color contrast, ARIA attributes
-- Text contrast >= 4.5:1, UI component contrast >= 3:1
-- Touch targets >= 44x44px on mobile
-- All icon-only buttons need `aria-label`
-- Keyboard navigable: Tab, Enter, Space, Arrow keys
-- `aria-live="polite"` for dynamic content updates
-- `prefers-reduced-motion` respected for all animations
+- Checklist and test protocol: `accessibility-audit` skill (canonical). Automated axe runs report "no automated violations" — manual keyboard and screen-reader checks are still required
+- Angular specifics (CDK a11y, route-change focus, `LiveAnnouncer`): `angular-aria.md`
+- `prefers-reduced-motion` respected for all animations (`angular-animations.md`)
 
 ## Testing
 
-- Use `provideZonelessChangeDetection()` in TestBed (required for tests)
-- Use `await fixture.whenStable()` instead of `fixture.detectChanges()`
-- Use `provideHttpClient()` and `provideHttpClientTesting()` for HTTP mocking
+- Vitest via `@angular/build:unit-test`; TestBed is zoneless without any provider. No `fakeAsync` (needs zone.js) — use Vitest fake timers
+- Flush `HttpTestingController` requests before `await fixture.whenStable()` (in-flight requests block stability)
+- Canonical guide: `testing-vitest.md`; E2E: `browser-testing` skill (Playwright)
 
 ## Design Principles
 
@@ -185,7 +181,7 @@ Exception marker: `<!-- ignore-design: [reason] -->` in templates, `// ignore-de
 | Pattern | Description |
 |---------|-------------|
 | **Standalone Component** | Default in Angular v20+ — do NOT set `standalone: true` in decorators |
-| **Signals** | Use `signal()`, `computed()`, `effect()` for reactive state |
+| **Signals** | `signal()`, `computed()`, `linkedSignal()`; `effect()` only for side effects out of Angular |
 | **input() / output()** | Use function-based `input()` and `output()` — not `@Input`/`@Output` decorators |
 | **inject() Function** | Prefer `inject()` over constructor injection |
 | **OnPush Change Detection** | Use `ChangeDetectionStrategy.OnPush` on all components |
@@ -194,16 +190,17 @@ Exception marker: `<!-- ignore-design: [reason] -->` in templates, `// ignore-de
 | **Functional Interceptors** | Use `HttpInterceptorFn` instead of class-based interceptors |
 | **Functional Guards** | Use `CanActivateFn` instead of class-based guards |
 | **Control Flow Syntax** | Use `@if`, `@for`, `@switch`, `@defer` — never `*ngIf`/`*ngFor` |
-| **RxJS Observables** | Return `Observable<T>` from services, subscribe in components |
+| **RxJS Observables** | Return `Observable<T>` from services; consume with a resource, `toSignal` or `async` pipe — long-lived manual subscriptions need `takeUntilDestroyed` |
 
 ## Folder Structure
 
 ```
 src/app/
-├── core/               # Singletons: auth, interceptors, guards
-│   ├── services/
-│   ├── interceptors/
-│   └── guards/
+├── core/               # Singletons
+│   ├── auth/           # interceptor, session, guard, safe returnUrl
+│   ├── config/         # API_CONFIG token
+│   ├── http/           # ApiError / toApiError
+│   └── logging/        # Logger
 ├── shared/             # Reusable components, pipes, directives
 │   ├── components/
 │   ├── pipes/
@@ -230,9 +227,9 @@ src/app/
 ```bash
 ng serve                             # Dev server at localhost:4200
 ng build --configuration=production  # Production build
-ng test                              # Unit tests (Karma/Jest)
+ng test --watch=false                # Unit tests once (Vitest)
 ng generate component <name>         # Scaffold component
 ng generate service <name>           # Scaffold service
-ng lint                              # Run linter
+ng lint                              # needs angular-eslint (ng add angular-eslint@21.4.0)
 npx tsc --noEmit                     # Type check only
 ```

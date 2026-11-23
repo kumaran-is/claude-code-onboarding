@@ -19,25 +19,24 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 @Component({
   selector: 'app-wizard-step-personal',
-  standalone: true,
   imports: [ReactiveFormsModule],
   template: `
     <div class="space-y-4">
       <h3 class="text-lg font-semibold">Personal Information</h3>
       <div [formGroup]="form" class="space-y-4">
-        <div class="form-control">
+        <div class="fieldset">
           <label class="label" for="firstName">
-            <span class="label-text">First Name <span class="text-error" aria-hidden="true">*</span></span>
+            <span>First Name <span class="text-error" aria-hidden="true">*</span></span>
           </label>
           <input id="firstName" type="text" formControlName="firstName"
-            class="input input-bordered"
+            class="input"
             [class.input-error]="hasError('firstName')"
             [attr.aria-invalid]="hasError('firstName')"
             [attr.aria-describedby]="hasError('firstName') ? 'firstName-error' : null"
             aria-required="true" />
           @if (hasError('firstName')) {
             <label class="label">
-              <span id="firstName-error" class="label-text-alt text-error" role="alert">
+              <span id="firstName-error" class="label text-error" role="alert">
                 {{ getError('firstName') }}
               </span>
             </label>
@@ -81,7 +80,6 @@ import { WizardStepPersonalComponent } from './wizard-step-personal.component';
 
 @Component({
   selector: 'app-multi-step-wizard',
-  standalone: true,
   imports: [WizardStepPersonalComponent],
   template: `
     <div class="card bg-base-100 shadow-xl max-w-2xl mx-auto">
@@ -187,16 +185,15 @@ const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 @Component({
   selector: 'app-file-upload',
-  standalone: true,
   template: `
-    <div class="form-control w-full space-y-3">
+    <div class="fieldset w-full space-y-3">
       <label class="label" for="file-input">
-        <span class="label-text font-medium">Upload File</span>
-        <span class="label-text-alt text-base-content/60">JPEG, PNG, WebP, PDF — max 10 MB</span>
+        <span class="font-medium">Upload File</span>
+        <span class="label text-base-content/60">JPEG, PNG, WebP, PDF — max 10 MB</span>
       </label>
       <input id="file-input" type="file"
         accept=".jpg,.jpeg,.png,.webp,.pdf"
-        class="file-input file-input-bordered w-full"
+        class="file-input w-full"
         [class.file-input-error]="state() === 'error'"
         [disabled]="state() === 'uploading'"
         (change)="onFileSelected($event)" />

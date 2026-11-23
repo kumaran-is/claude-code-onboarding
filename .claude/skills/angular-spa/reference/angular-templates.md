@@ -1,339 +1,158 @@
-# Angular 21.x Code Templates
+# Angular 21.2 Code Templates
 
-This reference contains all code templates for Angular SPA development with standalone components, signals, and lazy routing.
+Starting points for features in an Angular 21.2 SPA. Compiled against `@angular/*@21.2.26`,
+TypeScript 5.9.3, `strictTemplates`.
 
-> **IMPORTANT:** Angular 21 is zoneless by default. Do NOT use `provideZoneChangeDetection()`, `zone.js`, or `CommonModule`. Do NOT set `standalone: true` in decorators (it is the default in v20+).
+> Zoneless is the 21.x default: no `zone.js`, no change-detection provider. `standalone: true` is the
+> default — omit it. Do not import `CommonModule`. Set `ChangeDetectionStrategy.OnPush` explicitly
+> (it is still opt-in). Background: `angular` skill §Zoneless.
 
----
-
-## Standalone Component Template
-
-```typescript
-import { Component, ChangeDetectionStrategy, signal, computed, inject } from '@angular/core';
-
-@Component({
-  selector: 'app-feature',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    @if (loading()) {
-      <div class="spinner">Loading...</div>
-    } @else if (error()) {
-      <p class="error">Something went wrong.</p>
-    } @else {
-      <div class="feature">
-        @for (item of items(); track item.id) {
-          <div class="feature__item">{{ item.name }}</div>
-        } @empty {
-          <p>No items found.</p>
-        }
-      </div>
-    }
-  `,
-  styles: [`
-    .feature { display: flex; flex-direction: column; gap: 1rem; }
-    .feature__item { padding: 1rem; border: 1px solid #e0e0e0; border-radius: 8px; }
-  `]
-})
-export class FeatureComponent {
-  private service = inject(FeatureService);
-  items = signal<Item[]>([]);
-  loading = signal(true);
-  error = signal(false);
-
-  totalItems = computed(() => this.items().length);
-
-  constructor() {
-    this.service.getAll().subscribe({
-      next: (data) => { this.items.set(data); this.loading.set(false); },
-      error: () => { this.error.set(true); this.loading.set(false); },
-    });
-  }
-}
-```
-
-**Key Points:**
-- Do NOT set `standalone: true` — it is the default in Angular v20+
-- Do NOT import `CommonModule` — control flow (`@if`, `@for`) is built-in
-- Use `ChangeDetectionStrategy.OnPush` on all components
-- Use `signal()` for reactive state, `computed()` for derived state
-- Use `inject()` function for dependencies
-- Use `@if`, `@for`, `@empty` control flow (not `*ngIf`/`*ngFor`)
-- Inline template for small components, external for large ones
-- Always handle loading, error, and empty states
+Canonical homes used by these templates:
+- Load / empty / error states and the typed `ApiError`: `angular-ui-patterns/reference/loading-control-flow.md`, `error-handling.md`
+- Auth interceptor, guard, returnUrl, token storage: [web-security.md](web-security.md)
+- Unit tests: [testing-vitest.md](testing-vitest.md)
+- Paged list with a query signal: [angular-ui-tables.md](angular-ui-tables.md)
 
 ---
 
-## Service Template
+## Service
 
 ```typescript
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../../environments/environment';
+import { API_CONFIG } from '../../core/config/api-config';
+
+export interface User { readonly id: string; readonly name: string }
+export interface Page<T> { readonly items: readonly T[]; readonly total: number }
+export interface UserQuery { readonly filter: string; readonly offset: number }
 
 @Injectable({ providedIn: 'root' })
-export class UserService {
-  private http = inject(HttpClient);
-  private baseUrl = `${environment.apiUrl}/api/v1/users`;
+export class UsersApi {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${inject(API_CONFIG).apiRoots[0]}/users`;
 
-  getAll(): Observable<User[]> {
-    return this.http.get<User[]>(this.baseUrl);
+  list(query: UserQuery): Observable<Page<User>> {
+    const params = new HttpParams().set('filter', query.filter).set('offset', query.offset);
+    return this.http.get<Page<User>>(this.base, { params });
   }
 
-  getById(id: string): Observable<User> {
-    return this.http.get<User>(`${this.baseUrl}/${id}`);
-  }
-
-  create(dto: CreateUserDto): Observable<User> {
-    return this.http.post<User>(this.baseUrl, dto);
-  }
-
-  update(id: string, dto: UpdateUserDto): Observable<User> {
-    return this.http.patch<User>(`${this.baseUrl}/${id}`, dto);
-  }
-
-  delete(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/${id}`);
+  get(id: string): Observable<User> {
+    return this.http.get<User>(`${this.base}/${encodeURIComponent(id)}`);
   }
 }
 ```
 
-**Key Points:**
-- Use `providedIn: 'root'` for singleton services
-- Use `inject()` instead of constructor injection
-- Return `Observable<T>` for async operations
-- Use environment variables for API URLs
-- Follow CRUD naming: `getAll`, `getById`, `create`, `update`, `delete`
+- Services return typed observables and **let errors propagate**; the page decides what to show.
+  Never `catchError(() => of([]))`.
+- Encode every path segment (`encodeURIComponent`); build query strings with `HttpParams`.
+- `http.get<T>()` is a compile-time cast. Validate untrusted payloads at the boundary (a `parse`
+  function or a schema library) when the shape matters for security or money.
+- Map API DTOs to view models inside the service when they differ; components never import raw API types.
+- Frontend `environment.ts` files are public. Put only public config there (API origin, feature
+  flags) — never secrets.
 
-### DTO vs Domain Model (Angular services)
-// Services return domain models, not raw API shapes.
-// If the API response shape differs from what components need, transform inside the service.
-// For simple marketing site calls this is usually unnecessary.
-// For complex data: define a separate ApiResponseDto interface, add a private mapper method.
-// Components and templates NEVER import API response types directly.
-
----
-
-## Lazy Routes Template
+## Page component (resource + load-state union)
 
 ```typescript
-// app.routes.ts
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import { toApiError } from '../../core/http/api-error';
+import { UserQuery, UsersApi } from './users-api';
+
+@Component({
+  selector: 'app-user-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (users.error()) {
+      <div role="alert" class="alert alert-error">
+        <span>{{ errorMessage() }}</span>
+        <button type="button" class="btn btn-sm" (click)="users.reload()">Try again</button>
+      </div>
+    } @else if (!users.hasValue()) {
+      <p role="status"><span class="loading loading-spinner" aria-hidden="true"></span> Loading users…</p>
+    } @else {
+      <ul class="list">
+        @for (user of users.value().items; track user.id) {
+          <li class="list-row">{{ user.name }}</li>
+        } @empty {
+          <li>No users match “{{ query().filter }}”.</li>
+        }
+      </ul>
+    }
+  `,
+})
+export class UserList {
+  private readonly api = inject(UsersApi);
+  protected readonly query = signal<UserQuery>({ filter: '', offset: 0 });
+
+  // rxResource is EXPERIMENTAL in 21.x. Branch on error() → hasValue() → value(): value() throws in error.
+  readonly users = rxResource({ params: () => this.query(), stream: ({ params }) => this.api.list(params) });
+
+  protected readonly errorMessage = computed(() => {
+    const kind = toApiError(this.users.error()).kind;
+    return kind === 'network' ? 'You appear to be offline.' : 'Users could not be loaded.';
+  });
+
+  search(filter: string): void {
+    this.query.set({ filter: filter.trim(), offset: 0 }); // a filter change resets paging
+  }
+}
+```
+
+The full version (401 → sign in again, 403 → no retry, typed `LoadState` union, tests) lives in
+`angular-ui-patterns/reference/loading-control-flow.md` and [testing-vitest.md](testing-vitest.md).
+
+## Lazy routes
+
+```typescript
 import { Routes } from '@angular/router';
-import { authGuard } from './core/guards/auth.guard';
+import { signedInGuard } from './core/auth/signed-in.guard';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-  {
-    path: 'dashboard',
-    loadComponent: () => import('./features/dashboard/dashboard.component')
-      .then(m => m.DashboardComponent),
-    canActivate: [authGuard],
-  },
+  { path: '', pathMatch: 'full', redirectTo: 'users' },
+  { path: 'login', loadComponent: () => import('./features/auth/login').then((m) => m.Login) },
   {
     path: 'users',
-    loadChildren: () => import('./features/users/users.routes')
-      .then(m => m.USER_ROUTES),
-    canActivate: [authGuard],
+    canActivate: [signedInGuard], // UX only — the API authorizes every request
+    loadChildren: () => import('./features/users/users.routes').then((m) => m.USER_ROUTES),
   },
-  {
-    path: 'login',
-    loadComponent: () => import('./features/auth/login.component')
-      .then(m => m.LoginComponent),
-  },
-  { path: '**', redirectTo: 'dashboard' },
+  { path: '**', loadComponent: () => import('./features/not-found').then((m) => m.NotFound) },
 ];
 ```
 
-**Child Routes Example:**
-```typescript
-// features/users/users.routes.ts
-import { Routes } from '@angular/router';
-
-export const USER_ROUTES: Routes = [
-  {
-    path: '',
-    loadComponent: () => import('./user-list.component').then(m => m.UserListComponent),
-  },
-  {
-    path: ':id',
-    loadComponent: () => import('./user-detail.component').then(m => m.UserDetailComponent),
-  },
-];
-```
-
-**Key Points:**
-- Use `loadComponent` for lazy-loaded standalone components
-- Use `loadChildren` for feature route modules
-- Use functional guards (`authGuard`, not class-based)
-- Always handle wildcard route (`**`) as last route
-
----
+Use a real not-found page for `**` instead of silently redirecting; set a `title` per route so the
+document title changes on navigation (route-change focus: `angular-spa/reference/angular-aria.md`).
 
 ## app.config.ts
 
 ```typescript
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
-import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { authInterceptor } from './core/auth/auth.interceptor';
+import { API_CONFIG } from './core/config/api-config';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideRouter(routes, withComponentInputBinding()),
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
+    {
+      provide: API_CONFIG,
+      useValue: { apiRoots: ['https://api.example.test/v1'], refreshUrl: 'https://api.example.test/v1/auth/refresh' },
+    },
   ],
 };
 ```
 
-**Key Points:**
-- Angular 21 is zoneless by default — do NOT add `provideZoneChangeDetection()` or `provideZonelessChangeDetection()`
-- Do NOT import or install `zone.js`
-- Use `provideHttpClient(withInterceptors([...]))` for HTTP + functional interceptors
-- Use `provideRouter(routes)` for routing configuration
-- Add `provideAnimations()` only if using Angular animations
+- No zone provider (zoneless default). No `provideAnimations()`: `@angular/animations` is deprecated
+  since v20.2 — use `animate.enter` / `animate.leave` + CSS ([angular-animations.md](angular-animations.md)).
+- `authInterceptor`, `API_CONFIG`, `signedInGuard`: [web-security.md](web-security.md).
 
----
+## Tests
 
-## Auth Interceptor
-
-```typescript
-import { HttpInterceptorFn } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { AuthService } from '../services/auth.service';
-
-export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = inject(AuthService).getToken();
-  if (token) {
-    req = req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
-  }
-  return next(req);
-};
-```
-
-**Register in app.config.ts:**
-```typescript
-provideHttpClient(
-  withInterceptors([authInterceptor]),
-)
-```
-
-**Key Points:**
-- Use functional interceptors (`HttpInterceptorFn`, not class-based)
-- Use `inject()` to access services inside interceptor
-- Use `req.clone()` to modify requests (requests are immutable)
-- Register with `withInterceptors([...])` in `provideHttpClient`
-
----
-
-## Auth Guard (Functional)
-
-```typescript
-import { CanActivateFn, Router } from '@angular/router';
-import { inject } from '@angular/core';
-import { AuthService } from '../services/auth.service';
-
-export const authGuard: CanActivateFn = () => {
-  const authService = inject(AuthService);
-  const router = inject(Router);
-
-  if (authService.isAuthenticated()) {
-    return true;
-  }
-  return router.createUrlTree(['/login']);
-};
-```
-
-**Key Points:**
-- Use `CanActivateFn` — not class-based guards
-- Use `inject()` for dependencies
-- Return `true`, `false`, or `UrlTree` for redirect
-
----
-
-## Component Test Template
-
-```typescript
-import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
-import { UserListComponent } from './user-list.component';
-
-describe('UserListComponent', () => {
-  let fixture: ComponentFixture<UserListComponent>;
-  let component: UserListComponent;
-
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
-      imports: [UserListComponent],
-      providers: [
-        provideZonelessChangeDetection(),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-      ],
-    }).compileComponents();
-
-    fixture = TestBed.createComponent(UserListComponent);
-    component = fixture.componentInstance;
-    await fixture.whenStable();
-  });
-
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
-  it('should display items', () => {
-    const items = fixture.nativeElement.querySelectorAll('.feature__item');
-    expect(items.length).toBeGreaterThanOrEqual(0);
-  });
-});
-```
-
-**Service Test Template:**
-```typescript
-import { TestBed } from '@angular/core/testing';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { provideZonelessChangeDetection } from '@angular/core';
-import { UserService } from './user.service';
-
-describe('UserService', () => {
-  let service: UserService;
-  let httpMock: HttpTestingController;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        provideZonelessChangeDetection(),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-      ],
-    });
-    service = TestBed.inject(UserService);
-    httpMock = TestBed.inject(HttpTestingController);
-  });
-
-  afterEach(() => {
-    httpMock.verify();
-  });
-
-  it('should fetch users', () => {
-    const mockUsers = [{ id: '1', name: 'Test' }];
-    service.getAll().subscribe(users => {
-      expect(users).toEqual(mockUsers);
-    });
-    const req = httpMock.expectOne('/api/v1/users');
-    expect(req.request.method).toBe('GET');
-    req.flush(mockUsers);
-  });
-});
-```
-
-**Key Points:**
-- Import standalone component directly in `imports: [...]`
-- Use `provideZonelessChangeDetection()` in TestBed (required for tests even though it's the app default)
-- Use `await fixture.whenStable()` instead of `fixture.detectChanges()` for zoneless
-- Use `provideHttpClientTesting()` for HTTP mocking
-- Use `HttpTestingController` for service tests
+Component, service, harness, `HttpTestingController` and fake-timer templates:
+[testing-vitest.md](testing-vitest.md). Do not copy Karma/Jasmine or `fakeAsync` templates from
+older docs — they fail under the 21.x Vitest runner.

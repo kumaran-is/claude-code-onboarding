@@ -1,0 +1,66 @@
+{
+  "description": "High-risk ApprovalForm with a bound comment; both actions need a human and an idempotency key.",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "approval-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "approval-1",
+        "components": [
+          {
+            "id": "root",
+            "component": "ApprovalForm",
+            "title": "Approve refund",
+            "summary": {
+              "path": "/request/summary"
+            },
+            "requestId": "req-7731",
+            "riskLevel": "high",
+            "comment": {
+              "path": "/request/comment"
+            },
+            "approveAction": {
+              "event": {
+                "name": "approval.approve",
+                "context": {
+                  "requestId": "req-7731",
+                  "comment": {
+                    "path": "/request/comment"
+                  }
+                }
+              }
+            },
+            "rejectAction": {
+              "event": {
+                "name": "approval.reject",
+                "context": {
+                  "requestId": "req-7731",
+                  "reason": {
+                    "path": "/request/comment"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateDataModel": {
+        "surfaceId": "approval-1",
+        "path": "/request",
+        "value": {
+          "summary": "Refund 120.00 to order 5521.",
+          "comment": ""
+        }
+      }
+    }
+  ]
+}

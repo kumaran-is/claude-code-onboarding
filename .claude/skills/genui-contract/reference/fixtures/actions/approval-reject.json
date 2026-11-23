@@ -1,0 +1,29 @@
+{
+  "description": "Reviewer rejects with a reason.",
+  "fixture": "valid/approval-form.json",
+  "trigger": {
+    "surfaceId": "approval-1",
+    "sourceComponentId": "root",
+    "actionPointer": "/rejectAction"
+  },
+  "edits": [
+    {
+      "path": "/request/comment",
+      "value": "Duplicate request"
+    }
+  ],
+  "expected": {
+    "version": "v0.9",
+    "action": {
+      "name": "approval.reject",
+      "surfaceId": "approval-1",
+      "sourceComponentId": "root",
+      "timestamp": "2026-11-23T10:15:30.000Z",
+      "context": {
+        "requestId": "req-7731",
+        "reason": "Duplicate request"
+      }
+    }
+  },
+  "canonical": "{\"action\":{\"context\":{\"reason\":\"Duplicate request\",\"requestId\":\"req-7731\"},\"name\":\"approval.reject\",\"sourceComponentId\":\"root\",\"surfaceId\":\"approval-1\",\"timestamp\":\"1970-01-01T00:00:00.000Z\"},\"version\":\"v0.9\"}"
+}

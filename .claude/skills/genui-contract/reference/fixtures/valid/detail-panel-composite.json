@@ -1,0 +1,162 @@
+{
+  "description": "DetailPanel container holding the other read-only and interactive components.",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "panel-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "panel-1",
+        "components": [
+          {
+            "id": "root",
+            "component": "DetailPanel",
+            "title": "Order 5521",
+            "fields": [
+              {
+                "label": "Customer",
+                "value": {
+                  "path": "/order/customer"
+                }
+              },
+              {
+                "label": "Total",
+                "value": "120.00"
+              }
+            ],
+            "children": [
+              "status",
+              "lines",
+              "pick",
+              "confirm"
+            ]
+          },
+          {
+            "id": "status",
+            "component": "StatusIndicator",
+            "label": "Shipment",
+            "status": {
+              "path": "/order/status"
+            },
+            "message": "Carrier notified"
+          },
+          {
+            "id": "lines",
+            "component": "DataSummaryTable",
+            "caption": "Order lines",
+            "maxRows": 20,
+            "columns": [
+              {
+                "key": "sku",
+                "header": "SKU"
+              },
+              {
+                "key": "qty",
+                "header": "Qty",
+                "format": "integer"
+              },
+              {
+                "key": "price",
+                "header": "Price",
+                "format": "decimal"
+              }
+            ],
+            "rows": {
+              "path": "/order/lines"
+            }
+          },
+          {
+            "id": "pick",
+            "component": "SelectionList",
+            "label": "Items to return",
+            "listId": "return-items",
+            "selectionMode": "multiple",
+            "maxSelected": 5,
+            "options": {
+              "path": "/order/options"
+            },
+            "selected": {
+              "path": "/order/selected"
+            },
+            "submitAction": {
+              "event": {
+                "name": "selection.submit",
+                "context": {
+                  "listId": "return-items",
+                  "selectedIds": {
+                    "path": "/order/selected"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "confirm",
+            "component": "ConfirmationDialog",
+            "title": "Start return?",
+            "message": "A return label will be emailed.",
+            "dialogId": "dlg-return-5521",
+            "destructive": false,
+            "confirmLabel": "Start return",
+            "cancelLabel": "Keep order",
+            "confirmAction": {
+              "event": {
+                "name": "dialog.confirm",
+                "context": {
+                  "dialogId": "dlg-return-5521"
+                }
+              }
+            },
+            "cancelAction": {
+              "event": {
+                "name": "dialog.cancel",
+                "context": {
+                  "dialogId": "dlg-return-5521"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateDataModel": {
+        "surfaceId": "panel-1",
+        "path": "/order",
+        "value": {
+          "customer": "A. Customer",
+          "status": "in_progress",
+          "lines": [
+            {
+              "sku": "SKU-1",
+              "qty": 2,
+              "price": "40.00"
+            },
+            {
+              "sku": "SKU-2",
+              "qty": 1,
+              "price": "40.00"
+            }
+          ],
+          "options": [
+            {
+              "id": "SKU-1",
+              "label": "Desk lamp"
+            },
+            {
+              "id": "SKU-2",
+              "label": "Shelf"
+            }
+          ],
+          "selected": []
+        }
+      }
+    }
+  ]
+}

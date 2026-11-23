@@ -1,0 +1,41 @@
+{
+  "description": "User fills the form (non-ASCII name) and submits.",
+  "fixture": "valid/input-form.json",
+  "trigger": {
+    "surfaceId": "form-1",
+    "sourceComponentId": "root",
+    "actionPointer": "/submitAction"
+  },
+  "edits": [
+    {
+      "path": "/form/fullName",
+      "value": "Zoë Müller"
+    },
+    {
+      "path": "/form/email",
+      "value": "zoe@example.com"
+    },
+    {
+      "path": "/form/copies",
+      "value": 3
+    }
+  ],
+  "expected": {
+    "version": "v0.9",
+    "action": {
+      "name": "form.submit",
+      "surfaceId": "form-1",
+      "sourceComponentId": "root",
+      "timestamp": "2026-11-23T10:15:30.000Z",
+      "context": {
+        "formId": "doc-request",
+        "values": {
+          "fullName": "Zoë Müller",
+          "email": "zoe@example.com",
+          "copies": 3
+        }
+      }
+    }
+  },
+  "canonical": "{\"action\":{\"context\":{\"formId\":\"doc-request\",\"values\":{\"copies\":3,\"email\":\"zoe@example.com\",\"fullName\":\"Zoë Müller\"}},\"name\":\"form.submit\",\"sourceComponentId\":\"root\",\"surfaceId\":\"form-1\",\"timestamp\":\"1970-01-01T00:00:00.000Z\"},\"version\":\"v0.9\"}"
+}

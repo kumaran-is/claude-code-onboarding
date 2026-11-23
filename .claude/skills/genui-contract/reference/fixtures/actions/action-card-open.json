@@ -1,0 +1,23 @@
+{
+  "description": "User taps the primary card action; no edits.",
+  "fixture": "valid/action-card.json",
+  "trigger": {
+    "surfaceId": "card-1",
+    "sourceComponentId": "root",
+    "actionPointer": "/actions/0/action"
+  },
+  "edits": [],
+  "expected": {
+    "version": "v0.9",
+    "action": {
+      "name": "item.open",
+      "surfaceId": "card-1",
+      "sourceComponentId": "root",
+      "timestamp": "2026-11-23T10:15:30.000Z",
+      "context": {
+        "itemId": "booking-1042"
+      }
+    }
+  },
+  "canonical": "{\"action\":{\"context\":{\"itemId\":\"booking-1042\"},\"name\":\"item.open\",\"sourceComponentId\":\"root\",\"surfaceId\":\"card-1\",\"timestamp\":\"1970-01-01T00:00:00.000Z\"},\"version\":\"v0.9\"}"
+}

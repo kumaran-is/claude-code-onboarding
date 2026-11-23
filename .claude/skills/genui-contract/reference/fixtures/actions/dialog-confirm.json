@@ -1,0 +1,23 @@
+{
+  "description": "User confirms the dialog.",
+  "fixture": "valid/detail-panel-composite.json",
+  "trigger": {
+    "surfaceId": "panel-1",
+    "sourceComponentId": "confirm",
+    "actionPointer": "/confirmAction"
+  },
+  "edits": [],
+  "expected": {
+    "version": "v0.9",
+    "action": {
+      "name": "dialog.confirm",
+      "surfaceId": "panel-1",
+      "sourceComponentId": "confirm",
+      "timestamp": "2026-11-23T10:15:30.000Z",
+      "context": {
+        "dialogId": "dlg-return-5521"
+      }
+    }
+  },
+  "canonical": "{\"action\":{\"context\":{\"dialogId\":\"dlg-return-5521\"},\"name\":\"dialog.confirm\",\"sourceComponentId\":\"confirm\",\"surfaceId\":\"panel-1\",\"timestamp\":\"1970-01-01T00:00:00.000Z\"},\"version\":\"v0.9\"}"
+}

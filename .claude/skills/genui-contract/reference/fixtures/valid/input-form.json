@@ -1,0 +1,113 @@
+{
+  "description": "Editable InputForm: three two-way bound fields, client checks, submit and cancel.",
+  "messages": [
+    {
+      "version": "v0.9",
+      "createSurface": {
+        "surfaceId": "form-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateComponents": {
+        "surfaceId": "form-1",
+        "components": [
+          {
+            "id": "root",
+            "component": "InputForm",
+            "title": "Request a document",
+            "formId": "doc-request",
+            "submitLabel": "Send request",
+            "fields": [
+              {
+                "name": "fullName",
+                "label": "Full name",
+                "inputType": "text",
+                "value": {
+                  "path": "/form/fullName"
+                },
+                "required": true,
+                "maxLength": 120,
+                "checks": [
+                  {
+                    "condition": {
+                      "call": "required",
+                      "args": {
+                        "value": {
+                          "path": "/form/fullName"
+                        }
+                      }
+                    },
+                    "message": "Enter your name"
+                  }
+                ]
+              },
+              {
+                "name": "email",
+                "label": "Email",
+                "inputType": "email",
+                "value": {
+                  "path": "/form/email"
+                },
+                "required": true,
+                "checks": [
+                  {
+                    "condition": {
+                      "call": "email",
+                      "args": {
+                        "value": {
+                          "path": "/form/email"
+                        }
+                      }
+                    },
+                    "message": "Enter a valid email"
+                  }
+                ]
+              },
+              {
+                "name": "copies",
+                "label": "Copies",
+                "inputType": "integer",
+                "value": {
+                  "path": "/form/copies"
+                }
+              }
+            ],
+            "submitAction": {
+              "event": {
+                "name": "form.submit",
+                "context": {
+                  "formId": "doc-request",
+                  "values": {
+                    "path": "/form"
+                  }
+                }
+              }
+            },
+            "cancelAction": {
+              "event": {
+                "name": "form.cancel",
+                "context": {
+                  "formId": "doc-request"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "version": "v0.9",
+      "updateDataModel": {
+        "surfaceId": "form-1",
+        "path": "/form",
+        "value": {
+          "fullName": "",
+          "email": "",
+          "copies": 1
+        }
+      }
+    }
+  ]
+}

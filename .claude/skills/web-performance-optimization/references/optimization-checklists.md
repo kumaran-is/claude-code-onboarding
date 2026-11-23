@@ -36,7 +36,7 @@ import { NgOptimizedImage } from '@angular/common';
 @Component({
   imports: [NgOptimizedImage],
   template: `
-    <!-- priority tells Angular to add fetchpriority="high" + preload link -->
+    <!-- priority: fetchpriority="high", eager loading, and a preconnect check; a preload link is added when server-rendered -->
     <img ngSrc="/hero.jpg"
          width="1200"
          height="600"
@@ -48,13 +48,13 @@ export class AppComponent {}
 ```
 
 `NgOptimizedImage` automatically:
-- Adds `fetchpriority="high"` and a `<link rel="preload">` for the LCP image
-- Enforces `width`/`height` — eliminating CLS from that image
+- Adds `fetchpriority="high"` for the `priority` image (preload link only in server-rendered output — UNVERIFIED for CSR, check the emitted HTML)
+- Requires `width`/`height` (or `fill`) — a dev-mode runtime error otherwise — eliminating CLS from that image
 - Lazy-loads all non-priority images by default
 
 **Additional LCP steps:**
 - Compress hero image to < 200KB (use `sharp` pipeline — see Example 3)
-- Serve from CDN with proper `Cache-Control: public, max-age=31536000, immutable`
+- Serve from a CDN; `Cache-Control: public, max-age=31536000, immutable` only when the file name contains a content hash (files in `public/` are copied unhashed — give them `no-cache` or version the name)
 - Preload critical font: `<link rel="preload" as="font" href="/fonts/inter.woff2" crossorigin>`
 
 ### Fix INP — OnPush + Signals
@@ -62,7 +62,7 @@ export class AppComponent {}
 **Before:**
 ```typescript
 @Component({
-  // Default CD: re-renders on EVERY async event in the app
+  // Default strategy: checked whenever any change detection runs above it
   template: `<div>{{ user.name }}</div>`
 })
 export class ProfileComponent {
@@ -70,30 +70,25 @@ export class ProfileComponent {
 }
 ```
 
-**After:**
+**After** (compiled on Angular 21.2.26):
 ```typescript
-import { Component, input, computed, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+
+export interface User { firstName: string; lastName: string; }
 
 @Component({
+  selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div>{{ fullName() }}</div>
-    <button (click)="updateName('Jane')">Update</button>
-  `
+  template: `<div>{{ fullName() }}</div>`,
 })
 export class ProfileComponent {
-  user = input.required<User>();
-
-  // Computed only re-evaluates when user signal changes
-  fullName = computed(() => `${this.user().firstName} ${this.user().lastName}`);
-
-  updateName(first: string) {
-    // Signal update — Angular knows exactly which components to re-render
-  }
+  readonly user = input.required<User>();
+  // Re-evaluates only when the user input changes; the view is checked only when a signal it reads changes
+  readonly fullName = computed(() => `${this.user().firstName} ${this.user().lastName}`);
 }
 ```
 
-**Rule:** Every component must have `ChangeDetectionStrategy.OnPush`. Without it, a single button click anywhere in the app triggers a full-tree check.
+**Rule:** Every component declares `ChangeDetectionStrategy.OnPush` and reads state through signals. v21 apps are zoneless by default, so checks are scheduled by signal and event notifications; `Default` components are still re-checked on every pass that reaches them.
 
 ### Fix CLS — NgOptimizedImage dimensions + skeleton loaders
 
@@ -141,11 +136,9 @@ For dynamically-loaded content (lists, cards that appear after API response):
 ### Step 1: Diagnose with Stats JSON
 
 ```bash
-# Production build with stats output
-ng build --configuration=production --stats-json
-
-# Visualize bundle composition
-npx webpack-bundle-analyzer dist/browser/stats.json
+# Production is the default configuration; writes the esbuild metafile dist/<project>/stats.json
+ng build --stats-json
+# Open dist/<project>/stats.json at https://esbuild.github.io/analyze/ (webpack-bundle-analyzer cannot read it)
 ```
 
 **Findings from analyzer:**
@@ -240,7 +233,7 @@ export const routes: Routes = [
 
 ### Step 5: Configure Build Budgets in angular.json
 
-Budgets fail the build before a bloated bundle reaches production:
+Budgets fail the build before a bloated bundle reaches production — only if CI runs `ng build`. Values are examples; set them from your measured baseline:
 
 ```json
 "configurations": {
@@ -253,8 +246,8 @@ Budgets fail the build before a bloated bundle reaches production:
       },
       {
         "type": "anyComponentStyle",
-        "maximumWarning": "2kb",
-        "maximumError": "4kb"
+        "maximumWarning": "4kb",
+        "maximumError": "8kb"
       }
     ]
   }
@@ -264,24 +257,33 @@ Budgets fail the build before a bloated bundle reaches production:
 ### Step 6: Defer Third-Party Analytics
 
 ```typescript
-// app.component.ts — load analytics after Angular bootstraps
-import { Component, AfterViewInit } from '@angular/core';
+// core/telemetry/analytics-loader.ts — load a third-party script after first render, without blocking it
+import { DOCUMENT, Injectable, afterNextRender, inject } from '@angular/core';
 
-@Component({ ... })
-export class AppComponent implements AfterViewInit {
-  ngAfterViewInit(): void {
-    // Deferred until after first paint — does not block TTI
-    if (typeof window !== 'undefined') {
-      window.addEventListener('load', () => {
-        const script = document.createElement('script');
-        script.src = 'https://analytics.example.com/script.js';
+@Injectable({ providedIn: 'root' })
+export class AnalyticsLoader {
+  private readonly document = inject(DOCUMENT);
+
+  /** Call from the root component's constructor. afterNextRender never runs on the server. */
+  scheduleLoad(src: string, integrity: string): void {
+    afterNextRender(() => {
+      const append = (): void => {
+        const script = this.document.createElement('script');
+        script.src = src;               // exact, versioned URL — also listed in CSP script-src
+        script.integrity = integrity;   // SRI hash of that exact file
+        script.crossOrigin = 'anonymous';
         script.async = true;
-        document.body.appendChild(script);
-      });
-    }
+        this.document.head.appendChild(script);
+      };
+      // The window 'load' event may already have fired by the time the app renders
+      if (this.document.readyState === 'complete') append();
+      else this.document.defaultView?.addEventListener('load', append, { once: true });
+    });
   }
 }
 ```
+
+The old pattern (`ngAfterViewInit` + `window.addEventListener('load', …)`) never loads the script when `load` has already fired before the app renders. The script is also third-party code with full page access: pin the version, add SRI and list its origin in CSP (`security-reviewer/reference/web-frontend-security.md` §2).
 
 ### Results
 
@@ -379,7 +381,7 @@ import { NgOptimizedImage } from '@angular/common';
 export class HeroComponent {}
 ```
 
-NgOptimizedImage serves the browser-appropriate format automatically when an image CDN loader is configured. Without a loader, point `ngSrc` directly at AVIF/WebP files and the browser picks the best supported format via the Accept header.
+Format negotiation needs a server: an image CDN loader (below) reads the `Accept` header and returns AVIF/WebP. A static `.avif` file referenced directly has **no** fallback — browsers without AVIF support show a broken image. Without a loader, serve WebP (or JPEG) from `ngSrc`, or use a plain `<picture>` with `<source type="image/avif">` + a JPEG/WebP `<img>` fallback.
 
 ### Step 3: NgOptimizedImage — Below-fold (Lazy) Images
 
@@ -440,15 +442,15 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 ### Angular Architecture
 - [ ] `ChangeDetectionStrategy.OnPush` on ALL components — no exceptions
 - [ ] Signals (`signal()`, `computed()`) used for all reactive state — no `BehaviorSubject` for component state
-- [ ] No barrel file imports (`index.ts`) — import directly from the source file
-- [ ] `trackBy` or `track` expression on every `@for` loop
+- [ ] No side-effectful or CommonJS barrel imports (check the metafile; side-effect-free ESM barrels tree-shake)
+- [ ] Every `@for` has a stable `track` expression (an id, not `$index` for mutable lists); no legacy `*ngFor`
 
 ### Bundle Size
 - [ ] All feature routes use `loadComponent` or `loadChildren` — zero eagerly imported feature components in `app.routes.ts`
 - [ ] `@defer` blocks wrapping all below-fold heavy components
-- [ ] `ng build --configuration=production` used (esbuild, tree shaking, minification enabled)
-- [ ] Angular build budgets configured in `angular.json` (`maximumWarning: 500kb`, `maximumError: 1mb`)
-- [ ] Bundle analyzed with `ng build --stats-json` + `webpack-bundle-analyzer` — no unexpected large chunks
+- [ ] `ng build` (production is the default configuration; `--prod` no longer exists) run in CI from `npm ci`
+- [ ] Budgets for `initial` and `anyComponentStyle` in `angular.json`, and a CI job that runs `ng build` so the error threshold actually gates merges
+- [ ] Bundle analyzed with `ng build --stats-json` → esbuild analyzer — no unexpected large chunks
 - [ ] Heavy libraries replaced: `moment` → `date-fns`, full `lodash` → cherry-picked `lodash-es`
 
 ### Images
@@ -456,25 +458,25 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 - [ ] All `ngSrc` images have explicit `width` and `height` attributes
 - [ ] LCP image has `priority` attribute
 - [ ] Non-LCP images have NO `priority` attribute (browser lazy-loads automatically)
-- [ ] Images converted to AVIF/WebP with JPEG fallback
-- [ ] Images served from CDN with `Cache-Control: public, max-age=31536000, immutable`
+- [ ] AVIF/WebP via a negotiating loader or `<picture>` with a fallback — never a bare `.avif` with no fallback
+- [ ] `immutable` caching only for content-hashed image URLs
 
 ### CSS
-- [ ] Critical CSS inlined (Angular SSR handles this automatically via server render)
-- [ ] No unused CSS (PurgeCSS or TailwindCSS tree-shaking handles this at build time)
-- [ ] Component styles stay under `anyComponentStyle` budget (2KB warning)
+- [ ] Critical CSS inlining (`optimization.styles.inlineCritical`, default **true** for every production build, CSR included) is compatible with your CSP: under `script-src 'self'` it leaves the global stylesheet at `media="print"` (unstyled app, verified in Chromium). Either set `inlineCritical: false` (measure the LCP cost) or use `autoCsp` — `security-reviewer/reference/web-frontend-security.md` §2
+- [ ] No unused CSS (TailwindCSS emits only used utilities at build time)
+- [ ] Component styles stay under the `anyComponentStyle` budget you set
 
 ### Core Web Vitals Targets
 - [ ] LCP < 2.5s
 - [ ] INP < 200ms
 - [ ] CLS < 0.1
-- [ ] TTFB < 600ms
-- [ ] TTI < 3.8s
+- [ ] TTFB < 800ms (diagnostic, not a Core Web Vital)
+- [ ] Field data (CrUX or RUM at p75), not only a Lighthouse run
 
 ### SSR (if using @angular/ssr)
-- [ ] `TransferState` used for all API responses fetched during server render
-- [ ] `withIncrementalHydration()` enabled for below-fold sections
-- [ ] No `document` or `window` access in services without `isPlatformBrowser()` guard
+- [ ] `provideClientHydration()` in the browser config — it caches HttpClient GET/HEAD responses from the server render; no manual `TransferState` around HttpClient
+- [ ] `withIncrementalHydration()` (opt-in in v21) with `hydrate on …` triggers for below-fold sections
+- [ ] Browser-only work in `afterNextRender`; never branch rendered template content on `isPlatformBrowser` (hydration mismatch, CLS)
 
 ---
 
@@ -488,10 +490,9 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 - **Web Vitals Chrome Extension** — Overlay CWV metrics on any live page
 
 ### Bundle Analysis
-- `ng build --configuration=production --stats-json` — generate `stats.json`
-- `npx webpack-bundle-analyzer dist/browser/stats.json` — visual treemap of all chunks
+- `ng build --stats-json` — esbuild metafile at `dist/<project>/stats.json`; open at https://esbuild.github.io/analyze/
 - **Bundlephobia** (https://bundlephobia.com) — check npm package size before installing
-- **source-map-explorer** — `npx source-map-explorer dist/browser/main*.js` — byte-level breakdown
+- **source-map-explorer** — build with source maps, then `npx -y source-map-explorer@2.5.3 dist/<project>/browser/main-*.js` — byte-level breakdown (do not deploy the maps)
 
 ### Image Optimization
 - **sharp** (`npm install --save-dev sharp`) — Node.js image conversion pipeline
@@ -500,5 +501,5 @@ With a CDN loader, you only set `ngSrc="/hero.jpg"` — the loader appends forma
 
 ### Monitoring (Post-Deploy)
 - **Google Search Console** — Core Web Vitals report from real users
-- **Sentry Performance** — Transaction tracing, INP tracking
-- **Datadog RUM** — Real User Monitoring with Angular integration
+- **web-vitals 6.x** — self-hosted field LCP/INP/CLS (`../SKILL.md` § Field Measurement)
+- Hosted RUM/error vendors are examples, not requirements; whichever you use, apply the redaction rules in `deployment-ci-cd/reference/web-frontend-delivery.md`

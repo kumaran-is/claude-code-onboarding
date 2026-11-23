@@ -80,7 +80,7 @@ take_screenshot({
 })
 ```
 
-**Critical:** Chrome DevTools screenshots are optimized and safe. Never use `browser_get_state` with screenshots — causes 126K+ character overflow.
+**Tip:** save large screenshots with `filePath` instead of returning them inline.
 
 ### list_console_messages
 Get all console output (errors, warnings, logs, etc.) since last navigation.
@@ -207,63 +207,41 @@ upload_file({
 ## JavaScript Execution
 
 ### evaluate_script
-Execute JavaScript in the page context.
+Execute JavaScript in the page context. Parameters (from the server's tool schema): `pageId` (required), `function` (JS source, e.g. `() => document.title`) or `sourcePath`, optional `args` (element uids), `format` (`function` default, or `script`), `filePath`.
 
 ```typescript
-evaluate_script({
-  script: "document.cookie",
-  includeSnapshot: false
-})
-
-evaluate_script({
-  script: "localStorage.getItem('authToken')"
-})
+evaluate_script({ pageId: 2, function: "() => document.title" })
+evaluate_script({ pageId: 2, function: "(el) => el.innerText", args: ["<uid from take_snapshot>"] })
 ```
 
-**Use cases:**
-- Check localStorage/sessionStorage
-- Inspect cookies
-- Query DOM state
-- Trigger JavaScript functions
-- Extract computed values
+**Use cases:** query DOM state, read computed values, `performance.getEntriesByType('navigation')`. Do not use it to "prove" sign-in by reading a token from `localStorage`: prove sign-in by the protected page and the API status. A token readable by page script is an XSS exfiltration target.
 
 ## Performance Analysis
 
 ### performance_start_trace
-Start recording performance trace.
+Navigate first (`new_page` / `navigate_page`), then start. With `reload: true` and `autoStop: true` (defaults) it reloads, records the load and returns the summary.
 
 ```typescript
-performance_start_trace({
-  categories: ["devtools.timeline", "v8"]
-})
+performance_start_trace({ pageId: 2, reload: true, autoStop: true, ignoreCache: true })
 ```
 
+The result lists LCP (with TTFB and render-delay subparts), CLS, the **insight set ids** (e.g. `NAVIGATION_0`) and the **insight names available for that trace**.
+
 ### performance_stop_trace
-Stop recording and save trace file.
+Only needed with `autoStop: false` (e.g. to record an interaction for INP).
 
 ```typescript
-performance_stop_trace({
-  filePath: "./trace.json"
-})
+performance_stop_trace({ pageId: 2, filePath: "./trace.json.gz" })
 ```
 
 ### performance_analyze_insight
-Extract specific performance insights from trace.
+Drill into one insight of one insight set. Use only names the trace summary listed.
 
 ```typescript
-performance_analyze_insight({ insight: "LCPBreakdown" })
-performance_analyze_insight({ insight: "RenderBlocking" })
-performance_analyze_insight({ insight: "CumulativeLayoutShift" })
-performance_analyze_insight({ insight: "InteractionToNextPaint" })
-performance_analyze_insight({ insight: "TotalBlockingTime" })
+performance_analyze_insight({ pageId: 2, insightSetId: "NAVIGATION_0", insightName: "LCPBreakdown" })
 ```
 
-**Available insights:**
-- `LCPBreakdown` — Largest Contentful Paint breakdown
-- `RenderBlocking` — Resources blocking first render
-- `CumulativeLayoutShift` — Layout shift events
-- `InteractionToNextPaint` — Interaction latency
-- `TotalBlockingTime` — Main thread blocking
+Insight names observed in a real trace this toolkit ran: `LCPBreakdown`, `CLSCulprits`, `DocumentLatency`, `NetworkDependencyTree`. Others (for example `RenderBlocking`, `INPBreakdown`) appear only when the trace contains them. There is no `CumulativeLayoutShift`, `InteractionToNextPaint` or `TotalBlockingTime` insight name; read those metrics from the trace summary.
 
 ## Emulation & Testing
 
@@ -365,6 +343,6 @@ mcp-server-chrome-devtools --autoConnect
 3. **Check network requests for API failures** — Verify response codes
 4. **Take screenshots sparingly** — Use snapshots for structure, screenshots for visuals
 5. **Emulate slow conditions for performance testing** — Test on 3G, slow CPU
-6. **Use evaluate_script for state inspection** — Check auth tokens, localStorage
+6. **Use evaluate_script for state inspection** — DOM state and computed values; never treat a stored token as proof of sign-in
 7. **Preserve requests across navigations** — Use `includePreservedRequests: true`
 8. **Save large responses to files** — Use `responseFilePath` to avoid token overflow

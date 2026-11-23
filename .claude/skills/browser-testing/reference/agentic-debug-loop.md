@@ -22,7 +22,7 @@ Do not read source first. Load the page and reproduce the failure.
 
 ```bash
 # 1a. Navigate to the failing flow
-playwright-cli -s=debug goto http://localhost:4200/signup
+playwright-cli -s=debug open http://localhost:4200/signup
 
 # 1b. Snapshot to get element refs
 playwright-cli -s=debug snapshot
@@ -35,8 +35,8 @@ playwright-cli -s=debug click [submit-ref]
 # 1d. Capture runtime evidence immediately after
 playwright-cli -s=debug console          # All console output
 playwright-cli -s=debug console error    # Errors only
-playwright-cli -s=debug network          # All network requests + status codes
-playwright-cli -s=debug screenshot --output before-fix.png
+playwright-cli -s=debug requests          # All network requests + status codes
+playwright-cli -s=debug screenshot --filename before-fix.png
 ```
 
 **What to capture and why:**
@@ -45,7 +45,7 @@ playwright-cli -s=debug screenshot --output before-fix.png
 |--------|------|-------------------|
 | Console errors | `playwright-cli console error` | JavaScript exceptions, unhandled rejections, framework errors |
 | Console logs | `playwright-cli console` | App-level logging, state at failure point |
-| Network requests | `playwright-cli network` | API responses, status codes, request payloads, error bodies |
+| Network requests | `playwright-cli requests`, then `request <n>` | API responses, status codes, request payloads, error bodies |
 | Page state | `playwright-cli snapshot` | What the DOM actually shows vs. what you expect |
 | Screenshot | `playwright-cli screenshot` | Visual proof of failure state |
 
@@ -125,13 +125,13 @@ playwright-cli -s=debug fill [email-ref] "test@example.com"
 playwright-cli -s=debug fill [password-ref] "1234"          # Same bad input — should now show helpful error
 playwright-cli -s=debug click [submit-ref]
 playwright-cli -s=debug console error                        # Should be clean
-playwright-cli -s=debug screenshot --output after-fix-bad-input.png
+playwright-cli -s=debug screenshot --filename after-fix-bad-input.png
 
 # Then verify the happy path works too
 playwright-cli -s=debug fill [password-ref] "Password123!"  # Valid input
 playwright-cli -s=debug click [submit-ref]
-playwright-cli -s=debug network                              # Should show 200/201
-playwright-cli -s=debug screenshot --output after-fix-success.png
+playwright-cli -s=debug requests                              # Should show 200/201
+playwright-cli -s=debug screenshot --filename after-fix-success.png
 ```
 
 **Re-verify checklist:**
@@ -168,7 +168,7 @@ Phase 1 — Observe:
   playwright-cli click [submit]
   playwright-cli console error
   → "Registration failed: APP_ERR_1003"
-  playwright-cli network
+  playwright-cli requests
   → POST /api/auth/register → 422 {"code":"APP_ERR_1003","message":"Password minimum 8 characters"}
 
 Phase 2 — Diagnose:

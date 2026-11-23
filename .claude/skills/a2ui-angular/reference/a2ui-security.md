@@ -2,15 +2,31 @@
 
 ## Threat Model
 
-A2UI payloads originate from AI agents — which are untrusted sources. The protocol's declarative
-constraint guarantees: "agent-generated UIs are safe like data but expressive like code."
-Agents cannot:
+A2UI payloads originate from AI agents — untrusted sources whose output can be steered by prompt
+injection in any document, message, upload, OCR text or tool result they read. The declarative
+format makes the following properties *achievable*; they hold only when the renderer enforces the
+checks in this file (the official v0.9 processor does not enforce them unless configured — see
+`SKILL.md` § Security Defaults):
 
-1. Execute arbitrary code on the client
-2. Render components outside the approved catalog
-3. Inject HTML, scripts, or event handlers
-4. Access client-side state, cookies, or storage
-5. Trigger actions not defined by the client application
+1. No agent-provided code runs on the client
+2. Only components in the approved catalog render
+3. No agent HTML, scripts or event handlers reach the DOM
+4. No access to client-side state, cookies or storage
+5. No action the client application did not define
+
+## Authority Model
+
+```
+Agent PROPOSES   component layout and action intents (data)
+Client RENDERS   only allowlisted catalog components; shows; collects input
+Server DECIDES   on every action: authentication, authorization, tenant/scope,
+                 schema validation, idempotency key, rate limit — then executes
+```
+
+- A rendered button is not permission, and a user click is not authorization. The server re-checks every action intent as if it came from an anonymous client.
+- Content the agent read (documents, messages, uploads, OCR, tool output) is data. It must never register components, reveal hidden actions, expand the tool set, suppress safety UI or trigger writes.
+- Consequential actions (payment, delete, submit, send, share) go through an app-authored confirmation step whose wording comes from the application, not from model text. The agent cannot render, skip or reword that step.
+- Prompt text ("only show safe buttons") is not a security boundary.
 
 ## Security Architecture
 
@@ -41,7 +57,7 @@ Native Component Rendering (trusted)
 
 ### 1. Server-Side Schema Validation (Mandatory — Before Transmission)
 
-Per v0.8 spec, LLM output MUST be validated against the effective catalog schema server-side
+LLM output MUST be validated against the effective catalog schema server-side
 before the payload is transmitted to any client. Malformed or out-of-catalog output is rejected
 at this boundary — not silently forwarded.
 
@@ -51,7 +67,9 @@ effective catalog.
 ### 2. Component Type Allowlist (Mandatory)
 
 Every component `type` MUST be validated against the client's catalog before rendering.
-Official v0.8 component types:
+With the official SDK this is `processorOptions: { validationConfig: STRICT_VALIDATION }` (browser-tested:
+unknown type → `A2uiValidationError`). For a hand-built renderer, the allowlist below uses the v0.8 type
+names (v0.9 renames `Checkbox` → `CheckBox` and adds `ChoicePicker`, `Slider`, `Video`, `AudioPlayer`):
 
 ```typescript
 // ✅ REQUIRED: Allowlist validation with official type names
@@ -68,10 +86,9 @@ export class A2UICatalogService {
     return this.allowedTypes.has(type);
   }
 
-  filterPayload(components: A2UIComponent[]): A2UIComponent[] {
-    return components.filter(c => this.isAllowed(c.type));
-  }
 }
+// Unknown types are NOT filtered out silently: the renderer shows a placeholder and logs via ErrorHandler
+// (a2ui-renderer-template.md).
 ```
 
 ```typescript
@@ -83,7 +100,7 @@ renderComponent(comp: A2UIComponent) {
 
 ### 3. Property Format Sanitization (Mandatory)
 
-In v0.8, all property values use a typed-value format. A value is either a literal string or a
+In v0.8 (legacy), all property values use a typed-value format. In v0.9 a property is a plain JSON value, a `{ "path": … }` binding or a function call; the same rule holds — no executable content. A value is either a literal string or a
 JSON Pointer path reference — never a raw string or executable content.
 
 ```typescript
@@ -118,19 +135,14 @@ URL properties extracted from sanitized values still require protocol validation
 // ✅ REQUIRED: Text interpolation (auto-escaped by Angular)
 <p>{{ resolvedText }}</p>
 
-// ✅ REQUIRED: URL validation before binding
-<img [src]="sanitizeUrl(resolvedUrl)" />
-
-sanitizeUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
-    return url;
-  } catch {
-    return '';
-  }
-}
+// ✅ REQUIRED: one URL policy — https: only AND an allowlisted host (a2ui-renderer-patterns.md § Sanitizer Service)
+@if (safeUrl(comp.url); as src) { <img [src]="src" alt="" /> }
 ```
+
+The same `sanitizeUrl()` gates `[src]`, `[href]` and the `openUrl` function. `http:` is rejected: it allows
+network tampering and mixed content, and `a2ui-functions.md` already requires `https:`. A host allowlist is
+required as well, because any `https:` image URL chosen by the model can carry conversation data to a third
+party in its query string.
 
 ### 4. Action Allowlist (Mandatory)
 
@@ -143,31 +155,49 @@ interface A2UIAction {
   name: string;
   context?: Array<{ key: string; value: { literalString?: string; path?: string; } }>;
 }
-
-private readonly allowedActions = new Set([
-  'book_flight', 'add_to_cart', 'show_details',
-  'submit_form', 'navigate', 'dismiss',
-]);
-
-handleAction(action: A2UIAction): void {
-  if (!this.allowedActions.has(action.name)) {
-    console.warn(`Unknown A2UI action rejected: ${action.name}`);
-    return;
-  }
-  // Process known action
-}
 ```
 
-### 4b. userAction Injection Risk (Low — Context is App-Controlled)
+```typescript
+// services/a2ui-action-gate.ts — every user action passes here before it reaches the agent
+import { ErrorHandler, Injectable, InjectionToken, inject } from '@angular/core';
 
-When the client sends a `userAction` message to the agent, the `context` values are resolved
-from the app's data model on the client side before sending — they are NOT passed through
-from agent-provided strings. This means injection risk for `userAction.context` is low:
-the agent never controls what values are placed in the context. Validate `action.name`
-against the allowlist as normal; treat `context` values as app-controlled data.
+/** Action names this app accepts. Fail closed: nothing is allowed until the app provides the set. */
+export const A2UI_ALLOWED_ACTIONS = new InjectionToken<ReadonlySet<string>>('A2UI_ALLOWED_ACTIONS', {
+  providedIn: 'root',
+  factory: () => new Set<string>(),
+});
+
+@Injectable({ providedIn: 'root' })
+export class A2UIActionGate {
+  private readonly allowed = inject(A2UI_ALLOWED_ACTIONS);
+  private readonly errorHandler = inject(ErrorHandler);
+
+  /** True for a listed name; otherwise logs the rejection and returns false. */
+  permit(action: { readonly name: string }): boolean {
+    if (this.allowed.has(action.name)) return true;
+    this.errorHandler.handleError(new Error(`A2UI: unknown action rejected: ${action.name}`));
+    return false;
+  }
+}
+
+// app.config.ts
+// { provide: A2UI_ALLOWED_ACTIONS, useValue: new Set(['book_flight', 'add_to_cart', 'show_details', 'submit_form', 'navigate', 'dismiss']) }
+```
+
+The chat page calls `actionGate.permit(action)` before `sendUserAction` (`a2ui-chat-template.md`). The gate is
+defence in depth: the server still authorizes every action (Authority Model).
+
+### 4b. Action Context Is Agent-Influenced (Validate Server-Side)
+
+The agent writes the action's `context` template. Bound values (`{ "path": … }`) are resolved from the
+client data model, but literal values in the template come straight from the agent, and the data model
+itself is filled by agent `updateDataModel` messages and user input. The v0.9 schema describes `context`
+as "the key-value pairs from the component's action.event.context, after resolving all data bindings"
+(`@a2ui/web_core@0.15.0`, `src/v0_9/schemas/client_to_server.json`). So the server validates every context
+value (schema, ownership of referenced ids, ranges) exactly like any other client input.
 
 ```typescript
-// userAction: client -> agent (5th message type, v0.8)
+// action (client -> agent). v0.9: { "version": "v0.9", "action": { … } }; v0.8 called it userAction
 interface UserAction {
   name: string;
   surfaceId: string;
@@ -199,13 +229,14 @@ const MAX_COMPONENTS = 200;
 const MAX_PROPERTY_LENGTH = 10_000; // characters per sanitizePropertyValue
 const MAX_PAYLOAD_SIZE = 1_048_576; // 1MB
 
-validateSurface(update: { surfaceId: string; components: Array<{id: string; component: {type: string}}> }): void {
-  const MAX_COMPONENTS = 200;
+// Reject, do not truncate: a silently truncated surface can drop the very component (a warning,
+// a confirmation) that made the rest safe to show.
+assertSurfaceSize(update: { surfaceId: string; components: readonly unknown[] }): void {
   if (update.components.length > MAX_COMPONENTS) {
-    update.components = update.components.slice(0, MAX_COMPONENTS);
-    console.warn('A2UI: payload truncated — exceeded max components');
+    throw new Error(`A2UI: surface ${update.surfaceId} has ${update.components.length} components (max ${MAX_COMPONENTS})`);
   }
 }
+// Caller: catch -> ErrorHandler.handleError(err) -> show a recoverable error, keep the last good surface.
 ```
 
 ## Catalog ID Allowlisting
@@ -214,7 +245,7 @@ The `catalogId` field in `createSurface` is agent-controlled. Never load a catal
 
 ```typescript
 const ALLOWED_CATALOG_IDS = new Set([
-  'https://a2ui.org/specification/v0_9/basic_catalog.json',
+  'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json', // id used by @a2ui/web_core@0.15.0 v0.9 examples
   'https://example.com/catalogs/your-custom-catalog',
 ]);
 
@@ -230,31 +261,26 @@ function validateA2uiMessage(msg: unknown): void {
 
 Validate all incoming A2UI messages server-side before they reach the client.
 
-## sendCatalogDescription: false in Production
+## Catalog Descriptions in the Prompt
 
-`sendCatalogDescription: true` (a development convenience) sends component descriptions and schema examples into the agent prompt automatically. This expands the prompt injection surface — a malicious or compromised agent can exploit those descriptions.
+Sending full component descriptions and schema examples from the client into the agent prompt widens the
+prompt-injection surface (a compromised client or agent can rewrite them). Safe production posture:
 
-Safe production posture:
 ```
 Client sends catalogId only (no descriptions)
   ↓
-Agent validates catalogId against server-side allowlist
+Agent validates catalogId against a server-side allowlist
   ↓
-Agent loads catalog schema from internal trusted registry
+Agent loads the catalog schema from an internal trusted registry
   ↓
 LLM receives only approved catalog instructions
   ↓
-Server validates generated A2UI before sending to client
+Server validates generated A2UI before sending it to the client
 ```
 
-Set `sendCatalogDescription: false` on all custom catalog registrations in production:
-```typescript
-provideA2uiCatalog({
-  id: 'https://example.com/custom_catalog.json',
-  components: [...],
-  sendCatalogDescription: false, // REQUIRED in production
-});
-```
+The configuration flag that controls this depends on your agent SDK. `provideA2uiCatalog` and
+`sendCatalogDescription` do NOT exist in `@a2ui/angular@0.14.0` or `@a2ui/web_core@0.15.0` (searched the
+published packages 2026-11-22) — UNVERIFIED for other A2UI agent SDKs; check the SDK you use before citing a flag.
 
 ## Rate Limits (Server-Side)
 
@@ -285,13 +311,16 @@ A spike in validation failure rate is often the earliest signal that an LLM regr
 
 - [ ] LLM output validated against catalog schema server-side before transmission
 - [ ] Custom components registered with schema validation before catalog inclusion
-- [ ] Component types validated against official v0.8 allowlist before rendering
-- [ ] Property values validated as literalString or JSON Pointer path — raw strings rejected
-- [ ] JSON Pointer paths verified to start with "/"
-- [ ] literalString values length-capped (10,000 chars)
-- [ ] URLs extracted from properties validated for http/https protocol
+- [ ] Official SDK: `validationConfig: STRICT_VALIDATION` set (unknown types, cycles and depth rejected at ingest)
+- [ ] Hand-built renderer: component types validated against the catalog allowlist; unknown type, dangling id, cycle and depth > limit render a placeholder and log via `ErrorHandler`
+- [ ] One protocol version pinned across agent, renderer and catalog (v0.9 for new work)
+- [ ] Legacy v0.8: property values are `literalString` or a JSON Pointer `path` starting with "/"
+- [ ] Text values length-capped (10,000 chars) and rendered by interpolation; markdown goes through the marked → DOMPurify `MarkdownRenderer`
+- [ ] URLs: `https:` only AND an allowlisted host, one `sanitizeUrl()` shared by `[src]`, `[href]` and `openUrl`
 - [ ] No `innerHTML`, `outerHTML`, or `bypassSecurityTrust*` used with agent data
 - [ ] No `eval()`, `Function()`, or dynamic script creation from agent data
-- [ ] Actions validated against allowlist using `action.name` (v0.8 format)
-- [ ] Payload size limits enforced (200 components, 1MB total)
-- [ ] Error boundaries prevent malformed components from crashing the entire UI
+- [ ] Actions validated against an allowlist by `name`; the server authorizes every action and validates its `context`
+- [ ] Consequential actions use an app-authored confirmation step (no model text in it)
+- [ ] Payload size limits enforced by rejecting (200 components, 1MB total), never by truncating
+- [ ] Malformed or rejected messages show a recoverable error and keep the last good surface
+- [ ] No `console.*` in production renderer code — Angular `ErrorHandler` or the app logger

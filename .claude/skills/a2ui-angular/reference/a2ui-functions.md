@@ -150,17 +150,22 @@ Used in component `visible` or `disabled` properties to conditionally show/hide 
 |----------|-----------|-------------|
 | `openUrl` | `openUrl(url)` | Opens the URL in a new browser tab — renderer validates URL protocol before executing |
 
-**Security:** `openUrl` URLs MUST be validated against an allowlist of permitted protocols (`https:` only) before execution. Never call `window.open()` with an agent-provided URL without validation.
+**Security:** `openUrl` uses the same `A2UISanitizerService.sanitizeUrl()` as `[src]`/`[href]` (`https:` only AND an allowlisted host — `a2ui-renderer-patterns.md`). Never call `window.open()` with an agent-provided URL that has not passed it.
 
 ---
 
 ## Angular Implementation Pattern
 
-Register function evaluators in the renderer. Use a dedicated `A2UIFunctionService`:
+Register function evaluators in the renderer. Use a dedicated `A2UIFunctionService` (illustrative — not compiled; `A2UISanitizerService` is the one in `a2ui-renderer-patterns.md`):
 
 ```typescript
+import { ErrorHandler, Injectable, inject } from '@angular/core';
+import { A2UISanitizerService } from './a2ui-sanitizer.service';
+
 @Injectable({ providedIn: 'root' })
 export class A2UIFunctionService {
+  private readonly errorHandler = inject(ErrorHandler);
+  private readonly sanitizer = inject(A2UISanitizerService);
   private readonly ALLOWED_FUNCTIONS = new Set([
     'required', 'regex', 'length', 'numeric', 'email',
     'formatString', 'formatNumber', 'formatCurrency', 'formatDate', 'pluralize',
@@ -169,7 +174,7 @@ export class A2UIFunctionService {
 
   evaluate(call: A2UIFunctionCall, dataModel: Record<string, unknown>): unknown {
     if (!this.ALLOWED_FUNCTIONS.has(call.name)) {
-      console.error(`A2UI: unknown function "${call.name}" — rejected`);
+      this.errorHandler.handleError(new Error(`A2UI: unknown function "${call.name}" rejected`));
       return null;
     }
     const args = call.args.map(a => this.resolveArg(a, dataModel));
@@ -194,8 +199,8 @@ export class A2UIFunctionService {
       case 'or': return args.some(Boolean);
       case 'not': return !args[0];
       case 'openUrl': {
-        const url = String(args[0]);
-        if (!url.startsWith('https://')) { console.error('A2UI: openUrl blocked non-https URL'); return; }
+        const url = this.sanitizer.sanitizeUrl(args[0]);
+        if (!url) { this.errorHandler.handleError(new Error('A2UI: openUrl blocked a URL outside the allowlist')); return; }
         window.open(url, '_blank', 'noopener,noreferrer');
         return;
       }

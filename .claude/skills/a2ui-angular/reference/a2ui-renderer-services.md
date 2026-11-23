@@ -5,96 +5,108 @@
 The `@a2ui/angular` package is the **official Angular renderer SDK** from Google. Use it for new projects instead of building a custom renderer from scratch.
 
 ```bash
-npm install @a2ui/angular
+npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0   # peer: @angular/* ^21.2.5
 ```
+
+Verified 2026-11-22 against the published packages and in Chromium (Angular 21.2.26). Exports used below:
+`provideA2Ui`, `MarkdownRenderer`, `A2uiRendererService` (`@a2ui/angular`); `SurfaceComponent`
+(selector `a2ui-v09-surface`), `BasicCatalog` (`@a2ui/angular/v0_9`); `STRICT_VALIDATION`, `ActionPayload`
+(`@a2ui/web_core/v0_9`). `provideA2uiRenderer` and `@a2ui/angular/catalogs` do not exist in 0.14.0. The
+package root `BasicCatalog` is the v1.0 catalog — import the v0.9 one from `@a2ui/angular/v0_9`.
 
 ### Provider Setup (app.config.ts)
 
 ```typescript
-import { ApplicationConfig } from '@angular/core';
-import { provideA2uiRenderer, A2UI_RENDERER_CONFIG, provideMarkdownRenderer } from '@a2ui/angular';
-import { BasicCatalog } from '@a2ui/angular/catalogs';
+// app.config.ts excerpt — official renderer, A2UI v0.9 wire format, strict validation
+import { EnvironmentProviders, Provider, inject, makeEnvironmentProviders } from '@angular/core';
+import { MarkdownRenderer, provideA2Ui } from '@a2ui/angular';
+import { BasicCatalog } from '@a2ui/angular/v0_9';
+import { STRICT_VALIDATION } from '@a2ui/web_core/v0_9';
+import { MarkdownService } from './features/chat/services/markdown.service'; // ai-chat: marked -> DOMPurify
+import { AgentActionsService } from './features/a2ui/agent-actions.service';   // your agent client
 
-export const appConfig: ApplicationConfig = {
-  providers: [
-    provideA2uiRenderer(),
-    provideMarkdownRenderer(),           // optional: enables Markdown text rendering
-    {
-      provide: A2UI_RENDERER_CONFIG,
-      useValue: {
-        catalogs: [BasicCatalog],        // register available component catalogs
-      },
-    },
-  ],
+// The v0.9 Text component binds rendered markdown to [innerHTML]. Route it through the
+// marked -> DOMPurify pipeline (ai-chat streaming-patterns.md) instead of the default renderer.
+const sanitizedMarkdown: Provider = {
+  provide: MarkdownRenderer,
+  useFactory: () => {
+    const markdown = inject(MarkdownService);
+    return { render: async (text: string) => markdown.render(text) };
+  },
 };
+
+export function provideA2uiStrict(): EnvironmentProviders {
+  return makeEnvironmentProviders([
+    provideA2Ui(() => {
+      const agent = inject(AgentActionsService); // factory runs in an injection context
+      return {
+        catalogs: [new BasicCatalog()],
+        // Without a validationConfig the v0.9 processor accepts self-referencing children,
+        // unknown component types and unbounded depth (web_core 0.15.0, verified). STRICT rejects them.
+        processorOptions: { validationConfig: STRICT_VALIDATION },
+        actionHandler: (action) => agent.forward(action), // the server re-authorizes every action
+      };
+    }),
+    sanitizedMarkdown,
+  ]);
+}
 ```
 
-### Service API
+### Feeding messages and rendering a surface
 
 ```typescript
+import { Component, ChangeDetectionStrategy, ErrorHandler, inject, signal } from '@angular/core';
 import { A2uiRendererService } from '@a2ui/angular';
+import { SurfaceComponent } from '@a2ui/angular/v0_9';
 
-@Component({ ... })
-export class ChatComponent {
-  private renderer = inject(A2uiRendererService);
+@Component({
+  selector: 'app-agent-surface',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [SurfaceComponent],
+  template: `
+    @if (rejected()) { <p role="alert">This content could not be displayed.</p> }
+    <a2ui-v09-surface surfaceId="main" />
+  `,
+})
+export class AgentSurfaceComponent {
+  private readonly renderer = inject(A2uiRendererService);
+  private readonly errorHandler = inject(ErrorHandler);
+  readonly rejected = signal(false);
 
-  // Feed A2UI messages to the renderer (createSurface, updateComponents, updateDataModel, deleteSurface)
-  handleAgentMessages(messages: A2UIMessage[]): void {
-    this.renderer.processMessages(messages);
-  }
-
-  // Subscribe to user actions (button clicks, form submits) from any surface
-  constructor() {
-    this.renderer.surfaceGroup.onAction.subscribe(action => {
-      // action: { name, surfaceId, sourceComponentId, timestamp, context }
-      this.sendActionToAgent(action);
-    });
+  /** Call with each validated batch of v0.9 messages from the agent (createSurface, updateComponents, …). */
+  ingest(messages: unknown[]): void {
+    try {
+      this.renderer.processMessages(messages);
+      this.rejected.set(false);
+    } catch (err) {
+      this.errorHandler.handleError(err); // STRICT_VALIDATION throws A2uiRecursionError / A2uiValidationError
+      this.rejected.set(true);            // the last good surface stays on screen
+    }
   }
 }
 ```
 
-### Surface Rendering (template)
-
-```html
-<!-- Renders a named surface by ID — the SDK handles all component mapping internally -->
-<a2ui-surface surfaceId="main" />
-```
+Browser-tested: a valid surface rendered and its Button forwarded
+`{"name":"submit","surfaceId":"s","sourceComponentId":"b","timestamp":"…","context":{"orderId":"o-1"}}` to
+the agent client; a cycle and an unknown type were rejected with the alert shown.
 
 ### Production vs Demo Action Handler
 
-A common demo pattern calls `processMessages` directly from the action handler:
+A common demo pattern answers an action inside the browser by calling `processMessages` directly:
 
 ```typescript
 // ⚠️ DEMO-ONLY — do NOT use in production
-this.renderer.surfaceGroup.onAction.subscribe(action => {
-  this.renderer.processMessages([{ version: 'v0.9', updateDataModel: { ... } }]);
-});
+actionHandler: () => renderer.processMessages([{ version: 'v0.9', updateDataModel: { /* … */ } }]),
 ```
 
 **This is wrong for production.** It:
 - Cuts the agent out of the loop — the agent never sees the action
 - Breaks observability — no trace of the action or its result
-- Bypasses server-side validation — the update goes straight to the renderer
+- Bypasses server-side validation and authorization
 - Creates state divergence between client and agent
 
-**Production pattern — forward to agent:**
-```typescript
-this.renderer.surfaceGroup.onAction.subscribe((action: A2uiClientAction) => {
-  this.agentService.sendUserAction(action).subscribe(messages => {
-    this.renderer.processMessages(messages); // messages come from the validated agent response
-  });
-});
-```
-
-Always forward actions to the agent. Let the agent decide whether to emit new A2UI messages.
-
-**Cleanup pattern (required):**
-```typescript
-constructor(private destroyRef: DestroyRef) {
-  const sub = this.renderer.surfaceGroup.onAction.subscribe(action => { ... });
-  this.destroyRef.onDestroy(() => sub.unsubscribe());
-}
-```
+Production: `actionHandler` forwards to the agent API (as above); the server authorizes the action, validates
+its `context` and decides which messages, if any, come back. Apply the response through `ingest()`.
 
 ### When to Use SDK vs Custom Renderer
 
@@ -116,10 +128,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import {
-  A2UIMessage, SurfaceState, UserAction,
-  A2UIComponentDef, DataModelContentsEntry,
-} from '../models/a2ui.model';
+import { A2UIMessage, SurfaceState, UserAction } from '../models/a2ui.model';
 
 @Injectable({ providedIn: 'root' })
 export class A2UIAgentService {
@@ -147,13 +156,14 @@ export class A2UIAgentService {
         const line = (event.data as string).trim();
         if (line) subject.next(JSON.parse(line) as A2UIMessage);
       } catch (e) {
-        console.error('A2UI: Failed to parse JSONL message', e);
+        // Fail visibly: the caller logs via ErrorHandler and shows a recoverable error; last good surface stays
+        subject.error(new Error('A2UI: malformed stream frame', { cause: e }));
+        eventSource.close();
       }
     };
     eventSource.addEventListener('done', () => { subject.complete(); eventSource.close(); });
     eventSource.onerror = () => {
-      console.error('A2UI: SSE stream error');
-      subject.complete();
+      subject.error(new Error('A2UI: SSE stream error')); // not complete(): a dropped stream is an error state
       eventSource.close();
     };
     return subject.asObservable();

@@ -4,10 +4,10 @@
 
 A2UI (Agent-to-User Interface) is a declarative protocol that enables AI agents to generate rich, interactive UIs safely. Agents describe UIs using structured JSONL messages; clients render using their own native components.
 
-- **Spec version:** v0.8 (public preview)
+- **Spec version used for new work:** v0.9 (`@a2ui/web_core@0.15.0` default `'0.9'`). Sections below that show `surfaceUpdate` / `beginRendering` / `dataModelUpdate` / `userAction` describe **v0.8 (legacy)**; see the v0.8 → v0.9 table at the end before using them.
 - **Official site:** https://a2ui.org/
 - **GitHub:** https://github.com/google/A2UI
-- **Angular package:** `npm install @a2ui/angular`
+- **Angular package:** `npm install -E @a2ui/angular@0.14.0 @a2ui/web_core@0.15.0`
 
 ## Core Principles
 
@@ -267,9 +267,10 @@ Sent from the **client to the agent** when the user interacts with an A2UI compo
 
 The most common migration gotcha — names changed completely:
 
-| Purpose | v0.8 (stable) | v0.9 (draft) |
+| Purpose | v0.8 (legacy) | v0.9 (current for new work) |
 |---------|--------------|--------------|
 | Create a surface | `surfaceUpdate` + `beginRendering` | `createSurface` |
+| User interaction (client → agent) | `userAction` | `action` |
 | Add/update components | `surfaceUpdate` | `updateComponents` |
 | Update data model | `dataModelUpdate` | `updateDataModel` |
 | Delete a surface | `deleteSurface` | `deleteSurface` |

@@ -1,5 +1,7 @@
 # A2UI Angular Renderer Patterns
 
+> **LEGACY v0.8 message shapes.** This hand-built renderer reads v0.8 payloads (`surfaceUpdate`, `beginRendering`, `{ "component": { "type" } }`, `literalString`). New work uses v0.9 through the official SDK with `STRICT_VALIDATION` (`SKILL.md` § Security Defaults). The security guards below (URL policy, cycle/depth guard, unknown-type placeholder) apply to any hand-built renderer whatever the version. The models, catalog, sanitizer and renderer here were compiled on Angular 21.2.26 and browser-tested in Chromium on 2026-11-22.
+
 ## Architecture Overview
 
 ```
@@ -56,7 +58,7 @@ export type A2UIValue =
   | { path: string; literalString?: string }   // literalString = default value when path resolves to nothing
   | { valueString: string }
   | { valueNumber: number }
-  | { valueMap: Array<{ key: string; value: A2UIValue }> };
+  | { valueMap: { key: string; value: A2UIValue }[] };
 
 // Children references
 export type A2UIChildren =
@@ -80,7 +82,7 @@ export interface A2UIComponentDef {
   text?: A2UIValue;
   usageHint?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'body' | 'caption';
   // Button
-  action?: { name: string; context?: Array<{ key: string; value: A2UIValue }> };
+  action?: { name: string; context?: { key: string; value: A2UIValue }[] };
   primary?: boolean;
   // TextField
   label?: A2UIValue;
@@ -92,7 +94,7 @@ export interface A2UIComponentDef {
   // Icon
   name?: A2UIValue;
   // Tabs
-  tabItems?: Array<{ title: A2UIValue; child: string }>;
+  tabItems?: { title: A2UIValue; child: string }[];
   // Modal
   entryPointChild?: string;
   contentChild?: string;
@@ -183,7 +185,7 @@ export class A2UICatalogService {
     // Layout
     'Row', 'Column',
     // Display
-    'Text', 'Image', 'Icon',
+    'Text', 'Image', 'Icon', 'Divider',
     // Interactive
     'Button', 'TextField', 'Checkbox', 'DateTimeInput',
     // Container
@@ -196,31 +198,46 @@ export class A2UICatalogService {
 }
 ```
 
-## Sanitizer Service
+## Sanitizer Service (single URL policy)
+
+`https:` only **and** a host allowlist, used by every `[src]`, `[href]` and `openUrl`. Browser-tested: with the allowlist `img.example.com`, only `https://img.example.com/a.png` rendered; `http://img.example.com/…`, `https://evil.example/…` and `javascript:…` produced no `<img>`.
 
 ```typescript
 // services/a2ui-sanitizer.service.ts
+import { Injectable, InjectionToken, inject } from '@angular/core';
 
-import { Injectable } from '@angular/core';
+/** Hosts that agent-supplied image/link URLs may point at. Empty (default) = every URL is rejected. */
+export const A2UI_ALLOWED_URL_HOSTS = new InjectionToken<ReadonlySet<string>>('A2UI_ALLOWED_URL_HOSTS', {
+  factory: () => new Set<string>(),
+});
 
 @Injectable({ providedIn: 'root' })
 export class A2UISanitizerService {
+  private readonly allowedHosts = inject(A2UI_ALLOWED_URL_HOSTS);
+
+  /** The one URL policy for [src], [href] and openUrl: https only + host allowlist. '' = rejected. */
   sanitizeUrl(url: unknown): string {
     if (typeof url !== 'string') return '';
     try {
       const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) return '';
-      return url;
+      if (parsed.protocol !== 'https:' || !this.allowedHosts.has(parsed.hostname)) return '';
+      return parsed.href;
     } catch {
-      return '';
+      return ''; // not an absolute URL
     }
   }
 
   sanitizeText(value: unknown): string {
     if (typeof value !== 'string') return '';
-    return value.slice(0, 10_000); // Length limit
+    return value.slice(0, 10_000); // length limit; rendered with {{ }} interpolation, never [innerHTML]
   }
 }
+```
+
+Provide the allowlist at application level (`app.config.ts`): the service is `providedIn: 'root'`, so a component-level provider of the token is never seen (verified — the component-level provider left every image blocked).
+
+```typescript
+{ provide: A2UI_ALLOWED_URL_HOSTS, useValue: new Set(['images.example.com']) }
 ```
 
 ## Renderer Component (Recursive)
@@ -236,10 +253,11 @@ Key patterns:
 - **Computed children (multi-child)**: `childIds = computed(() => { const comp = getComponent(); return comp?.children && 'explicitList' in comp.children ? comp.children.explicitList : []; })`
 - **Computed single child (Card)**: `childId = computed(() => getComponent()?.child ?? null)`
 - **Self-import**: `imports: [A2UIRendererComponent]` for recursive rendering
+- **Cycle/depth guard**: inputs `depth` (default 0) and `ancestors` (`ReadonlySet<string>`); every child gets `[depth]="depth() + 1" [ancestors]="lineage()"`. A node whose id is already among its ancestors, or deeper than `MAX_DEPTH` (32), renders a placeholder. Negative control: without the guard, `root → a → root` threw `RangeError: Maximum call stack size exceeded` and crashed the tab
 - **Action output**: `actionTriggered = output<UserAction>()`
 - **Text resolution**: `resolveText(comp, key)` handles `{literalString}` (static), `{path}` (data binding via `surface().dataModel`), and `{path, literalString}` (path with default)
-- **URL sanitization**: All `[src]`/`[href]` bindings go through `safeUrl()` which calls `sanitizeUrl()`
-- **Unknown type rejection**: `getComponent()` returns `undefined` and logs a warning for non-allowlisted types; template uses `@if (comp)` to skip rendering
+- **URL sanitization**: All `[src]`/`[href]` bindings go through `safeUrl()` which calls `sanitizeUrl()`; an empty result renders nothing
+- **Unknown type, dangling id, cycle, depth**: a `problem` computed returns the reason; the template renders a visible "can't be displayed" placeholder and an `effect` reports it through Angular `ErrorHandler` (no `console.*`, no silent skip)
 
 > Agent service (REST + SSE) and unit test templates are in `a2ui-renderer-services.md`.
 
@@ -263,10 +281,10 @@ All Image components rendered by the A2UI renderer MUST have explicit size const
 <img [src]="src" class="max-w-full max-h-64 object-contain rounded-lg" />
 ```
 
-For SVG components embedded via innerHTML or iframe, add a wrapper:
+SVG from an agent is rendered only as an image file (`<img [src]>` with an allowlisted `https:` URL) inside a wrapper — never through `[innerHTML]`, `bypassSecurityTrust*` or an `<iframe>` (inline SVG can carry script and event handlers):
 ```html
 <div class="w-full max-h-64 overflow-hidden flex items-center justify-center">
-  <!-- SVG or image here -->
+  <img [src]="src" alt="" class="max-w-full max-h-64 object-contain" />
 </div>
 ```
 

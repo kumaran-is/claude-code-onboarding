@@ -8,7 +8,9 @@ All text fields use typed value objects: `{"literalString": "value"}` for static
 
 ---
 
-## Official Component Types (v0.8)
+## Official Component Types (v0.8, legacy)
+
+> v0.9 basic catalog (`@a2ui/web_core@0.15.0` `src/v0_9/schemas/catalogs/basic/catalog.json`): `Text`, `Image`, `Icon`, `Video`, `AudioPlayer`, `Row`, `Column`, `List`, `Card`, `Tabs`, `Modal`, `Divider`, `Button`, `TextField`, `CheckBox`, `ChoicePicker`, `Slider`, `DateTimeInput`. Property shapes below are v0.8; in v0.9 the type is a string field (`"component": "Text"`) and properties sit beside it (`"text": "Hi"`).
 
 ### Layout Components
 
@@ -223,7 +225,7 @@ Text input for user data collection. Supports bidirectional data binding via `te
 | `text` | value object | `{"path": "/..."}` — bidirectional binding; reads initial value and writes user input back |
 | `textFieldType` | string | `shortText` (default), `longText`, `email` |
 
-**Angular/daisyUI mapping:** `<input class="input input-bordered">`
+**Angular/daisyUI mapping:** `<input class="input">` (daisyUI 5: bordered by default)
 
 ---
 

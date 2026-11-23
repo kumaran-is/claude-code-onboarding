@@ -6,7 +6,8 @@
 Frontend (Angular / Flutter / React)
   A2UI renderer (@a2ui/angular)
   AG-UI or A2A client
-  Trusted component catalog (sendCatalogDescription: false)
+  Trusted component catalog (client sends catalogId only — a2ui-security.md § Catalog Descriptions)
+  validationConfig: STRICT_VALIDATION (SKILL.md § Security Defaults)
         ↓
 Transport (SSE / WebSocket / HTTP streaming)
   AG-UI or A2A event protocol
@@ -72,6 +73,8 @@ Client renders
 ## Custom Catalog Patterns
 
 ### Component definition (v0.9 SDK)
+
+> Zod version: `@a2ui/web_core@0.15.0` depends on `zod@^3.25.76` and imports `'zod'`. Author catalog schemas with that same Zod 3 copy (`zod/v3` resolves to it); whether Zod 4 schemas are accepted is UNVERIFIED — do not mix. `@a2ui/angular@0.14.0` also exports `createComponentImplementation`, which keeps `allowedParents`/`allowedChildren` (enforced since 0.14.0) and avoids the `as unknown as` cast below; check its signature in the installed `.d.ts` before use. These two snippets are illustrative (not compiled).
 
 ```typescript
 import { AngularComponentImplementation } from '@a2ui/angular/v0_9';

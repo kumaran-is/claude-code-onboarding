@@ -5,15 +5,15 @@
 ```typescript
 // components/a2ui-chat/a2ui-chat.component.ts
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, ErrorHandler, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { A2UIRendererComponent } from '../a2ui-renderer/a2ui-renderer.component';
+import { A2UIActionGate } from '../../services/a2ui-action-gate';
 import { A2UIAgentService } from '../../services/a2ui-agent.service';
 import { ChatMessage, UserAction } from '../../models/a2ui.model';
 
 @Component({
   selector: 'app-a2ui-chat',
-  standalone: true,
   imports: [FormsModule, A2UIRendererComponent],
   template: `
     <div class="container mx-auto p-4 max-w-3xl">
@@ -38,6 +38,10 @@ import { ChatMessage, UserAction } from '../../models/a2ui.model';
         }
       </div>
 
+      @if (failed()) {
+        <div role="alert" class="alert alert-error mb-4">The assistant could not respond. Try again.</div>
+      }
+
       @if (loading()) {
         <div class="flex justify-center p-4">
           <span class="loading loading-dots loading-lg"></span>
@@ -45,7 +49,7 @@ import { ChatMessage, UserAction } from '../../models/a2ui.model';
       }
 
       <div class="flex gap-2 sticky bottom-4">
-        <input class="input input-bordered flex-1" [(ngModel)]="userInput"
+        <input class="input flex-1" aria-label="Message" [(ngModel)]="userInput"
                [disabled]="loading()" placeholder="Ask the assistant..."
                (keyup.enter)="send()" />
         <button class="btn btn-primary"
@@ -58,10 +62,13 @@ import { ChatMessage, UserAction } from '../../models/a2ui.model';
 })
 export class A2UIChatComponent {
   private agent = inject(A2UIAgentService);
+  private actionGate = inject(A2UIActionGate);
+  private errorHandler = inject(ErrorHandler);
 
   messages = signal<ChatMessage[]>([]);
   userInput = '';
   loading = signal(false);
+  failed = signal(false);
 
   send(): void {
     const text = this.userInput.trim();
@@ -76,13 +83,15 @@ export class A2UIChatComponent {
         this.loading.set(false);
       },
       error: (err) => {
-        console.error('A2UI agent error:', err);
+        this.errorHandler.handleError(err); // logged, never swallowed
+        this.failed.set(true);
         this.loading.set(false);
       },
     });
   }
 
   handleUserAction(action: UserAction): void {
+    if (!this.actionGate.permit(action)) return; // unlisted name: logged, never sent (a2ui-security.md §4)
     this.loading.set(true);
     this.agent.sendUserAction(action).subscribe({
       next: (surface) => {
@@ -90,7 +99,8 @@ export class A2UIChatComponent {
         this.loading.set(false);
       },
       error: (err) => {
-        console.error('A2UI action error:', err);
+        this.errorHandler.handleError(err); // logged, never swallowed
+        this.failed.set(true);
         this.loading.set(false);
       },
     });
@@ -137,7 +147,8 @@ sendStreaming(): void {
     },
     complete: () => this.loading.set(false),
     error: (err) => {
-      console.error('A2UI stream error:', err);
+      this.errorHandler.handleError(err); // logged, never swallowed
+        this.failed.set(true);
       this.loading.set(false);
     },
   });

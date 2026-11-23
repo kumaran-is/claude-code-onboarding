@@ -107,7 +107,7 @@ Dynamic scrollable list with template binding for repeated data.
 
 ## Extended Catalog (Angular/daisyUI Extensions)
 
-The following types are not in the A2UI v0.8 core spec but are supported as renderer extensions for Angular/daisyUI deployments. They must be explicitly added to `A2UICatalogService.allowedTypes` and documented here.
+The following types are not in the A2UI v0.8 core spec (v0.9's basic catalog includes `ChoicePicker`, `Slider`, `Video` and `AudioPlayer`) but are supported as renderer extensions for Angular/daisyUI deployments. They must be explicitly added to `A2UICatalogService.allowedTypes` and documented here.
 
 | Type | Purpose | daisyUI Mapping |
 |------|---------|-----------------|

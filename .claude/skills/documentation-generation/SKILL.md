@@ -1,6 +1,6 @@
 ---
 name: documentation-generation
-description: "Generates project documentation including READMEs, docstrings (JSDoc, JavaDoc, Python docstrings), OpenAPI prose, and CI/CD doc pipelines. Use when asked to generate docs, write docstrings, automate documentation, or create README files."
+description: "Generate READMEs, docstrings (JSDoc, JavaDoc, Python, dartdoc), OpenAPI prose and doc pipelines. Use when asked to write or automate documentation. Not for checking existing comments (comment-analyzer)."
 allowed-tools: Read, Grep, Glob, Bash, Write, Edit
 metadata:
   triggers: README, docstring, documentation, API docs, JSDoc, JavaDoc, doc generation, documentation pipeline

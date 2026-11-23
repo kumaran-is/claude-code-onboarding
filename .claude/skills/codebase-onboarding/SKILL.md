@@ -1,6 +1,6 @@
 ---
 name: codebase-onboarding
-description: Systematically analyze an unfamiliar codebase and produce structured onboarding artifacts — architecture map, key entry points, conventions, and a tailored CLAUDE.md. Use when joining a new repository, analyzing a client codebase, or generating/updating CLAUDE.md for an existing project.
+description: "Analyse an unfamiliar repository and produce an architecture map, entry points, conventions and a tailored CLAUDE.md. Use when joining a repo or generating/refreshing CLAUDE.md. Not for explaining one file (code-explainer)."
 allowed-tools: Glob, Grep, Read, Bash, Write
 metadata:
   triggers: analyze codebase, onboard to project, generate CLAUDE.md, understand project structure, map architecture, new repository, joining new team

@@ -1,6 +1,6 @@
 ---
 name: dedup-code-agent
-description: Code duplication detection and technical debt analysis skill. Provides methodology for finding duplicate code, dead code, and dependency bloat.
+description: "Technical-debt scan for duplicate code, dead/unused code and dependency bloat with file locations and counts (Flutter + Firebase first, any stack). Use when cleaning up, before a refactor, or when duplication is suspected. Not for single-diff code review (code-reviewer)."
 allowed-tools: Read, Glob, Grep, Bash
 agent: dedup-code-agent
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: analysis
   output-format: report
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,22 +20,19 @@ Never delete code labeled as duplicate without verifying all call sites are upda
 
 # Code Deduplication Skill
 
-## Purpose
+Thin entry point: this skill forks into the `dedup-code-agent` agent ([`.claude/agents/dedup-code-agent.md`](../../agents/dedup-code-agent.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-Provides systematic methodology for detecting code duplication, unused code, and dependency bloat -- primarily in Flutter + Firebase codebases but applicable to any project.
+## Reusable reference
 
-## Process
+- [reference/dedup-analysis-methodology.md](reference/dedup-analysis-methodology.md) — detection phases, patterns and report format (also loaded by the agent).
 
-1. **Discover** -- Map project structure, features, shared utilities, and test coverage
-2. **Scan** -- Run multi-phase analysis for duplicates, dead code, and unused dependencies
-3. **Classify** -- Categorize findings by severity (Critical / Warning / Suggestion)
-4. **Report** -- Output structured report with file locations, counts, and recommendations
+## Task for the forked agent
 
-For the complete analysis methodology, detection patterns, and report format:
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `dedup-code-agent` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-Read [reference/dedup-analysis-methodology.md](reference/dedup-analysis-methodology.md)
+## Not for
 
-## Error Handling
-
-If the target directory does not exist, report "Target not found" with the path searched.
-If no duplication is found, report "No duplicates detected" with the scan scope and file count.
+- Reviewing a single change for correctness → `code-reviewer`
+- Over-engineering inside one file → `code-simplifier`

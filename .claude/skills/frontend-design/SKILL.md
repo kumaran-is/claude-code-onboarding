@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: "Creative frontend design skill. Builds distinctive, production-grade interfaces with intentional aesthetics. Includes DFII scoring (go/no-go gate before coding), mandatory Design Thinking Phase (Purpose→Tone→Differentiation Anchor), Required Output Structure (Design Direction Summary, Design System Snapshot, Differentiation Callout), and Operator Checklist. Use when building or styling any web/mobile UI component, page, or dashboard."
+description: "Distinctive, production-grade UI design with an explicit aesthetic direction, DFII go/no-go score and design-thinking phase before code. Use when creating a new page, landing page, dashboard or visual refresh. Not for token compliance (design-system) or reviews (ui-standards-expert)."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch
 metadata:
   triggers: frontend design, UI design, landing page, visual design, UI component, design system, creative UI, DFII, design direction, aesthetic, memorable UI, distinctive design, non-generic UI

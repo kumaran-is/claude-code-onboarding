@@ -1,6 +1,6 @@
 ---
 name: clean-code
-description: "Applies principles from Robert C. Martin's 'Clean Code'. Use when writing, reviewing, or refactoring code to ensure high quality, readability, and maintainability. Covers naming, functions, comments, formatting, error handling, unit tests, classes, and code smells. Language-agnostic — applies to Java, TypeScript, Python, Dart, and all workspace stacks."
+description: "Clean Code principles (naming, small functions, comments, formatting, error handling, tests, classes, smells) for any stack. Use when writing or refactoring for readability. For a review of a diff use code-reviewer or code-simplifier."
 allowed-tools:
   - Read
   - Grep

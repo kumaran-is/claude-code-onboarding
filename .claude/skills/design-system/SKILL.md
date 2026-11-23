@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: "Unified design system enforcement for Flutter and web (Angular, React). Routes UI tasks to the correct tokens, rules and interaction contracts; owns the cross-stack async-state standard (loading, skeleton, empty, error, offline) and the i18n/RTL/Intl reference. Use when auditing UI compliance, reviewing design consistency, or building any user-facing surface."
+description: "Cross-stack design-system router for Flutter, Angular and React: tokens, interaction contracts, the async-state standard (loading, skeleton, empty, error, offline) and i18n/RTL. Use when building or auditing any user-facing surface. Flutter token scales live in ui-standards-tokens; WCAG in accessibility-audit."
 allowed-tools: Read, Glob, Grep, Write, Edit
 metadata:
   triggers: design system, UI audit, design tokens, design review, design lint, visual consistency, theme compliance, design drift, loading state, skeleton, empty state, error state, offline state, i18n, localization, RTL, Intl

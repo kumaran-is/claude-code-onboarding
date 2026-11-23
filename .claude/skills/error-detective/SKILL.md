@@ -1,6 +1,6 @@
 ---
 name: error-detective
-description: Runtime error investigation specialist. Use when diagnosing failures in running systems — parsing logs, stack traces, and production errors. NOT for code review; use silent-failure-hunter to catch swallowed exceptions at write time.
+description: "Runtime error investigation from logs, stack traces and production errors: extract, cluster, correlate trace IDs and rank root-cause hypotheses with log evidence. Use when a running service fails or a ticket has a stack trace. Not for source review of error handling (silent-failure-hunter) or local test failures (systematic-debugging)."
 allowed-tools: Read, Grep, Glob, Bash
 agent: error-detective
 context: fork
@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: investigation
   output-format: report
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,50 +20,15 @@ Never state a root cause without log evidence at file:line — hypothesis and co
 
 # Error Detective
 
-Runtime error investigation: analyzes logs, stack traces, and production errors to pinpoint root cause.
+Thin entry point: this skill forks into the `error-detective` agent ([`.claude/agents/error-detective.md`](../../agents/error-detective.md)). The agent is authoritative for the review criteria, severity levels, output format and verdict; this file does not repeat them.
 
-**Distinct from `silent-failure-hunter`:**
-- `silent-failure-hunter` -> preventive, reviews source code for swallowed exceptions at write time
-- `error-detective` -> investigative, analyzes runtime logs and stack traces after errors occur
+## Task for the forked agent
 
-## When to Use
+1. Scope: `$ARGUMENTS`. If empty, use the working-tree changes: `git diff --name-only HEAD` plus untracked files from `git status --porcelain`. If both are empty, report "No changes detected" and the paths searched.
+2. Follow the `error-detective` agent instructions end to end on that scope.
+3. Cite file:line for every finding and end with the agent's verdict line. Mark any test or check you did not run in this session as NOT RUN.
 
-- Service is throwing errors in production or staging
-- Investigating a support ticket with a stack trace
-- Correlating failures across multiple services
-- Log spike investigation
+## Not for
 
-## Investigation Protocol
-
-1. **Collect** — Identify all relevant log files and time window
-2. **Extract** — Pull error lines with surrounding context (`-C 5` lines)
-3. **Group** — Cluster by error type and frequency
-4. **Correlate** — Match trace IDs across services; reconstruct timeline
-5. **Hypothesize** — Form ranked hypotheses with evidence
-6. **Verify** — Confirm hypothesis against log evidence before concluding
-
-## Stack-Specific Log Formats
-
-| Stack | Error pattern to grep |
-|-------|-----------------------|
-| Spring Boot | `'"level":"ERROR"'` |
-| NestJS | `'ERROR \[.*\]'` |
-| Python/FastAPI | `'^ERROR:'` |
-| Flutter/Dart | `'\[ERROR:'` |
-
-## Output Format
-
-```
-ERROR INVESTIGATION REPORT
-
-SUMMARY:
-- Error type: [exception class / HTTP status]
-- Frequency: [N occurrences / hour]
-- Affected services: [list]
-
-ROOT CAUSE HYPOTHESIS (ranked):
-1. [85%] [Hypothesis] — evidence: [log line]
-2. [30%] [Hypothesis] — evidence: [log line]
-
-RECOMMENDED ACTION: [specific next step]
-```
+- Swallowed exceptions in source code → `silent-failure-hunter`
+- A failing test or build with a local reproduction → `systematic-debugging`

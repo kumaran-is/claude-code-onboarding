@@ -1,6 +1,6 @@
 ---
 name: mental-model-applier
-description: Use when stuck on any problem or decision and need frameworks that actually apply to the specific situation — not a generic list. Selects the three most relevant mental models for the problem at hand and applies each one to produce a specific insight. Triggers: "apply mental models", "I'm stuck on", "need a framework for", "different perspective on", "mental model", "thinking framework", "perspective shift", "been thinking about this too long".
+description: "Pick the three mental models that fit a specific problem and apply each to produce a concrete insight. Use when the user is stuck, asks for a framework or a different perspective. Not when they already named a framework (decision-frameworks)."
 allowed-tools: Read
 metadata:
   triggers: apply mental models, mental model, thinking framework, stuck on a problem, perspective shift, need a framework, different angle, been thinking about this too long, reframe this

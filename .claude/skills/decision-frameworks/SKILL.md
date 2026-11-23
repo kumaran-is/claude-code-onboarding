@@ -1,6 +1,6 @@
 ---
 name: decision-frameworks
-description: Use when working through a specific problem or decision using a single reasoning framework applied deeply and interactively. Covers First Principles (break assumptions, rebuild from truth), Inversion (guarantee failure, then flip), Regret Minimization (decide from age 80), and Opportunity Cost (make tradeoffs visible). Triggers: "first principles", "inversion", "regret minimization", "opportunity cost", "help me think through", "challenge my assumptions", "what am I giving up", "work backwards from failure", "what would I regret".
+description: "Apply ONE reasoning framework deeply and interactively to a decision: first principles, inversion, regret minimization or opportunity cost. Use when the user names one of these or asks \"help me think through\" / \"what am I giving up\". Not for picking frameworks (mental-model-applier), consequence chains (second-order-thinker) or attacking a plan (the-fool)."
 allowed-tools: Read
 metadata:
   triggers: first principles, inversion, regret minimization, opportunity cost, challenge my assumptions, think through this decision, work backwards, what am I giving up, what would I regret, break this down to fundamentals

@@ -1,6 +1,6 @@
 ---
 name: changelog-generator
-description: This skill should be used when preparing releases, writing app store updates, or maintaining a CHANGELOG.md. It parses conventional commits and outputs polished release notes.
+description: "Generate release notes and CHANGELOG.md entries from conventional commits, including store \"What's New\" text. Use when preparing a release or updating a changelog."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: changelog, release notes, CHANGELOG.md, git log, release preparation, conventional commits, app store update, version release
@@ -55,7 +55,7 @@ For output format examples (App Store, Keep a Changelog, internal/technical, Sla
 
 ## Automation Tip
 
-Suggest to the user: add a `pre-release` hook or CI step that runs this skill automatically when tagging a new version. Pair with the `/changelog` command for quick manual runs.
+Suggest to the user: add a `pre-release` hook or CI step that runs this skill automatically when tagging a new version. Invoke it manually with `/changelog-generator`.
 
 For tool configuration (`cliff.toml`, `release.config.js`, GitHub Actions release workflow) -> Read [reference/changelog-automation-tools.md](reference/changelog-automation-tools.md)
 

@@ -36,13 +36,17 @@ export interface ApiError {
   readonly detail?: string;
 }
 
+/** RFC 9457 `detail` first, then the JSON envelope's `message` (api-design-principles § Error Response Format). */
+function readServerText(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  if ('detail' in body && typeof body.detail === 'string') return body.detail;
+  if ('message' in body && typeof body.message === 'string') return body.message;
+  return undefined;
+}
+
 export function toApiError(err: unknown): ApiError {
   if (!(err instanceof HttpErrorResponse)) return { kind: 'server', status: -1 };
-  const body: unknown = err.error;
-  const detail =
-    typeof body === 'object' && body !== null && 'detail' in body && typeof body.detail === 'string'
-      ? body.detail
-      : undefined;
+  const detail = readServerText(err.error);
   const kind: ApiErrorKind =
     err.status === 0 ? 'network'
     : err.status === 401 ? 'unauthenticated'

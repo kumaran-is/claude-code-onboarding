@@ -1,6 +1,6 @@
 ---
 name: code-explainer
-description: Use when you need to explain any piece of code for handoff, onboarding, or knowledge transfer — produces a dual-audience explanation (user-facing and modifier-facing) plus the fragile part and key assumption. Triggers: "explain this code", "what does this do", "help me understand", "onboard someone to", "document this", "explain for handoff", "code walkthrough".
+description: "Explain a piece of code for handoff or onboarding: user-facing and modifier-facing views, the fragile part and the key assumption. Use for \"explain this code\", \"what does this do\", code walkthroughs. Not for whole-repo onboarding (codebase-onboarding)."
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   triggers: explain code, what does this do, code explanation, onboard, handoff, understand this code, document this function, code walkthrough

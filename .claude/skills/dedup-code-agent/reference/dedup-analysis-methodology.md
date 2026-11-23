@@ -110,7 +110,7 @@ Flag:
 
 ## Integration
 
-Run as part of `/workflows:review` or standalone:
+Run standalone (`/dedup-code-agent`) or alongside `/review-code`:
 
 ```
 User: Scan for duplicate code and unused dependencies

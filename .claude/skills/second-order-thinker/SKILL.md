@@ -1,6 +1,6 @@
 ---
 name: second-order-thinker
-description: Use before any significant decision, when analyzing a trend, or when evaluating the impact of any action beyond the obvious. Maps first, second, and third order consequences — the effects of the effects that most people miss. Triggers: "second order effects", "map consequences", "think ahead", "what happens after", "downstream effects", "systems thinking", "analyze this decision", "what are the ripple effects".
+description: "Map first-, second- and third-order consequences of a decision, action or trend. Use when asked about ripple, downstream or knock-on effects before a significant decision. Not for challenging a plan's assumptions (the-fool)."
 allowed-tools: Read
 metadata:
   triggers: second order effects, map consequences, think ahead, downstream effects, systems thinking, ripple effects, what happens after, analyze this decision, consequence mapping

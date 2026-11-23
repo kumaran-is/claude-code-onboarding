@@ -17,8 +17,10 @@
 #         the advisory cannot prove the input is the sanitized value. Decision recorded in .claude/rules/web-frontend.md.
 # Exempt: `xss-reviewed: <reason>` (reason required) on the flagged line, or on a comment-only line directly above
 #         (a trailing marker on a code line exempts that line only, never the next one).
-# Comment lines (// … , * … , <!-- … -->) are ignored. Known limit: lines inside multi-line block comments or
-#         template literals that do not start with a comment marker are still scanned (advisory false positive).
+# Comments are ignored: // lines, and /* … */ and <!-- … --> blocks across lines (a /* opens a block only at
+#         line start or after whitespace or ; , ( ) { } = :, so a glob string like '**/*.ts' does not). Code before
+#         an opener or after a closer on the same line is still scanned. Known limit: template-literal text that
+#         looks like a sink is scanned (advisory false positive).
 # Behavior: ADVISORY. Always exit 0, never blocks. Findings go to Claude as PostToolUse additionalContext JSON.
 #         Fails open (says so on stderr) if jq is missing.
 # Test:   bash .claude/hooks/post-edit-web-security-advisory.sh --selftest
@@ -50,16 +52,39 @@ is_candidate() { # $1 path
 scan_file() {
   awk '
     function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return substr(s, 1, 160) }
+    function js_open(s,   i, off, p) { # first "/*" that starts a comment (not inside a glob like **/*.ts)
+      off = 0
+      while ((i = index(s, "/*")) > 0) {
+        p = (off + i == 1) ? "" : substr(s, i - 1, 1)
+        if (off + i == 1 || p ~ /[[:space:];,(){}=:]/) return off + i
+        off += i + 1; s = substr(s, i + 2)
+      }
+      return 0
+    }
+    function strip_comments(s,   out, i, h) { # removes block comments; keeps state in the global `closer`
+      out = ""
+      while (1) {
+        if (closer != "") {
+          i = index(s, closer); if (i == 0) return out
+          s = substr(s, i + length(closer)); closer = ""; continue
+        }
+        i = js_open(s); h = index(s, "<!--")
+        if (i == 0 && h == 0) return out s
+        if (h > 0 && (i == 0 || h < i)) { out = out substr(s, 1, h - 1); s = substr(s, h + 4); closer = "-->" }
+        else { out = out substr(s, 1, i - 1); s = substr(s, i + 2); closer = "*/" }
+      }
+    }
     {
-      line = $0; kind = ""
-      if (line ~ /^[[:space:]]*(\/\/|\*|\/\*|<!--)/) { prevc = line; next }
+      kind = ""
+      line = strip_comments($0)
+      if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*\/\//) { prevc = $0; next }
       if (line ~ /bypassSecurityTrust(Html|Script|Style|Url|ResourceUrl)[[:space:]]*\(/) kind = "sanitizer bypass"
       else if (line ~ /dangerouslySetInnerHTML/) kind = "React raw HTML"
       else if (line ~ /\.(innerHTML|outerHTML)[[:space:]]*\+?=[^=]/ || line ~ /insertAdjacentHTML[[:space:]]*\(/ || line ~ /document\.write(ln)?[[:space:]]*\(/) kind = "raw DOM HTML sink"
       else if (tolower(line) ~ /\[innerhtml\][[:space:]]*=[[:space:]]*"[^"\x27]/ || tolower(line) ~ /[[:space:]]innerhtml[[:space:]]*=[[:space:]]*"[^"]*\{\{/) kind = "[innerHTML] binding"
       else if (line ~ /(localStorage|sessionStorage)\.setItem[[:space:]]*\(/ && tolower(line) ~ /setitem[[:space:]]*\([^,]*(token|jwt|refresh|access|auth|session|bearer|credential)/) kind = "token in web storage"
       else if (line ~ /(^|[^A-Za-z0-9_.])eval[[:space:]]*\(/ || line ~ /new[[:space:]]+Function[[:space:]]*\(/) kind = "string-to-code"
-      if (kind != "" && !(line ~ /xss-reviewed:[[:space:]]*[^[:space:]]/ || prevc ~ /xss-reviewed:[[:space:]]*[^[:space:]]/)) {
+      if (kind != "" && !($0 ~ /xss-reviewed:[[:space:]]*[^[:space:]]/ || prevc ~ /xss-reviewed:[[:space:]]*[^[:space:]]/)) {
         if (kind != "token in web storage" && kind != "string-to-code" && line ~ /sanitize[[:space:]]*\(/) kind = kind ", sanitized — confirm"
         printf "%d: [%s] %s\n", NR, kind, trim(line)
       }
@@ -118,6 +143,11 @@ selftest() {
   printf '<div [innerHtml]="msg"></div>\n' > "$ng/src/app/camel.component.html"
   printf '<div innerHTML="{{ msg }}"></div>\n' > "$ng/src/app/interp.component.html"
   printf 'el.innerHTML = A; // xss-reviewed: constant\nel.innerHTML = userInput;\n' > "$ng/src/app/bleed.ts"
+  printf '/*\n  Never write:\n  <div dangerouslySetInnerHTML={{ __html: md }} />\n  eval(src)\n*/\nexport const c = 1;\n' > "$rx/src/block.ts"
+  printf '/* note */ el.innerHTML = body;\n' > "$ng/src/app/afterblock.ts"
+  printf "const files = glob('src/**/*.ts');\nel.innerHTML = body;\n" > "$ng/src/app/glob.ts"
+  printf '<!--\n  <div [innerHTML]="msg"></div>\n-->\n<p>{{ msg }}</p>\n' > "$ng/src/app/htmlcomment.component.html"
+  printf 'const x = 1; /* start\n  el.innerHTML = a;\n*/ el.innerHTML = b;\n' > "$ng/src/app/close.ts"
   probe() { # label file expect(advise|silent) [content-needle]
     out=$(printf '{"tool_input":{"file_path":"%s"}}' "$2" | bash "$self" 2>/dev/null)
     case "$3" in
@@ -141,6 +171,11 @@ selftest() {
   probe "negative: literal [innerHTML] + text interpolation" "$ng/src/app/literal.component.html" silent
   probe "negative: textContent, theme key, .evaluate("     "$rx/src/benign.ts"                  silent
   probe "negative: comment lines ignored"                  "$rx/src/comment.ts"                 silent
+  probe "negative: multi-line /* */ block ignored"         "$rx/src/block.ts"                   silent
+  probe "negative: multi-line <!-- --> block ignored"      "$ng/src/app/htmlcomment.component.html" silent
+  probe "positive: code after an inline /* */ comment"     "$ng/src/app/afterblock.ts"          advise "1: [raw DOM HTML sink]"
+  probe "positive: glob string does not open a comment"    "$ng/src/app/glob.ts"                advise "2: [raw DOM HTML sink]"
+  probe "positive: code after a block closer is scanned"   "$ng/src/app/close.ts"               advise "3: [raw DOM HTML sink]"
   probe "negative: xss-reviewed marker exempts"            "$rx/src/Exempt.tsx"                 silent
   probe "negative: test file skipped"                      "$rx/src/Raw.test.tsx"               silent
   probe "negative: NestJS project out of scope"            "$nest/src/modules/render.ts"        silent

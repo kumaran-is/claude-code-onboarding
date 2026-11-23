@@ -70,11 +70,11 @@ OR reused across 2+ screens?
 
 ```dart
 // apps/mobile/lib/screens/tasks/tasks_screen.dart
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_ui/shared_ui.dart';
+import 'package:material_ui/material_ui.dart'; // flutter/material.dart is deprecated after 3.47
+import 'package:mobile/screens/providers/tasks_provider.dart'; // package import, not ../
 import 'package:shared_core/shared_core.dart';
-import '../providers/tasks_provider.dart';
+import 'package:shared_ui/shared_ui.dart';
 
 class TasksScreen extends ConsumerWidget {  // ✅ Smart: ConsumerWidget
   const TasksScreen({super.key});
@@ -108,7 +108,7 @@ class TasksScreen extends ConsumerWidget {  // ✅ Smart: ConsumerWidget
 
 ```dart
 // packages/shared_ui/lib/src/widgets/task_card.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart'; // shared_ui depends on material_ui: 1.11.1
 import 'package:shared_core/shared_core.dart';   // domain model only
 
 // ✅ Dumb: StatelessWidget — zero Riverpod dependency

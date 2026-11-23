@@ -25,9 +25,8 @@ Image.network(
 )
 
 // Exclude decorative elements from semantics
-Semantics(
-  excludeSemantics: true,
-  child: Icon(Icons.decorative_star, color: Colors.amber),
+ExcludeSemantics(
+  child: Icon(Icons.star, color: Theme.of(context).colorScheme.tertiary),
 )
 ```
 
@@ -94,7 +93,10 @@ Text('Workout Title', style: Theme.of(context).textTheme.headlineMedium)
 // DON'T:
 SizedBox(height: 24, child: Text('Workout Title')) // Clips at large font sizes
 
-// Test with: flutter run --dart-define=FLUTTER_TEXT_SCALE_FACTOR=2.0
+// Test at 200% with the widget-test harness in
+// accessibility-audit/reference/flutter-a11y-automated.md §3 (TextScaler.linear(2)),
+// then on a device/simulator via the system font-size setting.
+// textScaleFactor / textScaleFactorOf are deprecated: use textScaler / textScalerOf.
 ```
 
 ## Performance Templates
@@ -150,8 +152,8 @@ CachedNetworkImage(
   cacheKey: workout.id,
   memCacheWidth: 300,  // Match display size
   memCacheHeight: 300,
-  placeholder: (_, __) => const ShimmerPlaceholder(),
-  errorWidget: (_, __, ___) => const Icon(Icons.broken_image),
+  placeholder: (_, _) => const ShimmerPlaceholder(),
+  errorWidget: (_, _, _) => const Icon(Icons.broken_image),
   fadeInDuration: const Duration(milliseconds: 200),
 )
 ```
@@ -220,7 +222,7 @@ class WorkoutListSkeleton extends StatelessWidget {
     return ListView.builder(
       itemCount: 5,
       physics: const NeverScrollableScrollPhysics(),
-      itemBuilder: (_, __) => Padding(
+      itemBuilder: (_, _) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: ShimmerEffect(
           child: Container(
@@ -265,7 +267,18 @@ class _ShimmerEffectState extends State<ShimmerEffect>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduced motion: a static placeholder, no sweeping loop.
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override
@@ -276,6 +289,7 @@ class _ShimmerEffectState extends State<ShimmerEffect>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AnimatedBuilder(
       animation: _controller,
       builder: (_, child) => ShaderMask(
@@ -283,9 +297,9 @@ class _ShimmerEffectState extends State<ShimmerEffect>
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
           colors: [
-            Colors.grey.shade300,
-            Colors.grey.shade100,
-            Colors.grey.shade300,
+            scheme.surfaceContainerHighest,
+            scheme.surfaceContainerLow,
+            scheme.surfaceContainerHighest,
           ],
           stops: [
             _controller.value - 0.3,
@@ -307,8 +321,8 @@ class _ShimmerEffectState extends State<ShimmerEffect>
 ```dart
 // Page transitions with curves
 PageRouteBuilder(
-  pageBuilder: (_, __, ___) => const DetailScreen(),
-  transitionsBuilder: (_, animation, __, child) {
+  pageBuilder: (_, _, _) => const DetailScreen(),
+  transitionsBuilder: (_, animation, _, child) {
     return FadeTransition(
       opacity: CurvedAnimation(
         parent: animation,

@@ -80,8 +80,10 @@ Set<Color> paintedTextColors(WidgetTester t) => {
 - `tester.getSemantics(find.byKey(k))` resolves to the **nearest ancestor** semantics node, so a merged label can
   be what you read. Locate by `find.bySemanticsLabel(...)` (it also counts nodes, exposing double-node bugs). A label inside a
   labelled section can be child-count dependent (`"SECTION\nChild"`): dump the label first, then assert with an anchored `RegExp`.
-- Read merged flags through `getSemantics(...)`/`getSemanticsData()` and `data.flagsCollection.isButton`.
-  `SemanticsData.hasFlag` is **deprecated** (API docs: "deprecated after v3.32.0-0.0.pre", use `flagsCollection`).
+- Assert merged semantics with `expect(tester.getSemantics(f), isSemantics(label: 'Save', isButton: true))`, or read
+  `getSemantics(f).getSemanticsData().flagsCollection`. `getSemantics(f).flagsCollection` is the node's **own** flags:
+  on a merge boundary (a FAB) `isButton` is false while the merged data says true (tested, Flutter 3.50.1).
+  `containsSemantics` is deprecated after v3.40.0-1.0.pre (use `isSemantics`); `SemanticsData.hasFlag` after v3.32.0-0.0.pre.
 - Perform semantic actions with `tester.semantics.performAction(find.semantics.byLabel('Send'), SemanticsAction.tap)`
   (`SemanticsController.performAction` — the `semanticsOwner` route is the old way; check the deprecation notes on your SDK).
   Call `tester.ensureSemantics()` and **dispose the handle in the test body** (last statement or `finally`), not via
@@ -106,8 +108,8 @@ If you inject a clock, **every** time source must be virtual. A virtual clock wi
 it fails in a package your change never touched, so the first cost is attribution.
 
 ```dart
-// pubspec: dev_dependencies: fake_async: 1.3.3   (latest on pub.dev when written; flutter_test ships it transitively
-// but Dart requires a direct declaration to import it)
+// pubspec: dev_dependencies: fake_async: 1.3.3   (latest stable; verified on Flutter 3.50.1. flutter_test ships it
+// transitively but Dart requires a direct declaration to import it)
 test('emits null once the sample ages past the window', () {
   fakeAsync((async) {
     var now = DateTime(2025);
@@ -139,8 +141,10 @@ test('emits null once the sample ages past the window', () {
    never to turn CI green.
 5. Prefer goldens for shared components/tokens (light + dark, key states) over per-screen goldens.
 
-With `alchemist` (pub.dev: maintained; 0.14.1 supports Flutter ≥ 3.32, 0.15.0 needs Flutter ≥ 3.44 / Dart ^3.12 —
-pick the version your SDK supports and pin it; `CiGoldensConfig.diffThreshold` and the config below compile and run on alchemist 0.15.0 / Flutter 3.44.2):
+With `alchemist` (pub.dev: maintained; 0.15.0 needs Flutter ≥ 3.44 / Dart ^3.12 and already depends on `material_ui`, so
+its scenarios accept the `material_ui` `Theme`/`ThemeData`; pin it exactly). The config below compiles and runs on
+alchemist 0.15.0 / Flutter 3.50.1, and a 1-px layout change fails both an alchemist CI golden and a plain
+`matchesGoldenFile` golden (`Pixel test failed, 0.80%, 956px diff`):
 
 ```dart
 // test/flutter_test_config.dart — wraps every test in the package; a no-op for non-golden tests
@@ -215,7 +219,7 @@ about layout. Open the failure **screenshot** before naming a UI root cause ("no
 | Stale state | Tell | Clear |
 |-------------|------|-------|
 | Build artifacts (e.g. `build/ios/**`, pods) | All errors under that path; real-source error count 0 | Delete that artifact dir |
-| Generated code after a merge/branch switch | `Target of URI hasn't been generated`, `_$XFromJson isn't defined` | `dart run build_runner build --delete-conflicting-outputs` |
+| Generated code after a merge/branch switch | `Target of URI hasn't been generated`, `_$XFromJson isn't defined` | `dart run build_runner build` (build_runner 2.16.2 ignores `--delete-conflicting-outputs` / `-d` with a warning) |
 | Localization output out of sync with ARB files | `getter 'x' isn't defined for AppLocalizations` though the key exists | `flutter gen-l10n` |
 | **Orphaned** generated file (source deleted/renamed) | Many errors inside one generated file | Delete that file; regenerating does not remove it |
 
@@ -244,7 +248,7 @@ your project's runner for `flutter test` where it wraps one.
 | User-visible UI change | Co-changed widget test **and** E2E flow updated; scoped flow run | `maestro test <flow>.yaml` |
 | Backend-calling UI | One real-auth flow vs a seeded stack asserting a backend-answered success plus an injected failure | see e2e §2 |
 | Offline/airplane behaviour | Android emulator or physical device only; iOS simulator run → BLOCKED | see e2e §3 |
-| Generated code, l10n, merge, branch switch | Regenerate before any gate; orphan sweep | `dart run build_runner build -d`; `flutter gen-l10n` |
+| Generated code, l10n, merge, branch switch | Regenerate before any gate; orphan sweep | `dart run build_runner build`; `flutter gen-l10n` |
 | Pre-PR / release | Analyzer 0 issues, formatter clean, full tests, coverage floors on **hand-written** code (generated excluded), full E2E suite **last**, after version/changelog edits | `flutter analyze`; `dart format --set-exit-if-changed .`; `flutter test --coverage` |
 
 Run slow gates last: any edit after the full E2E run (version bump, changelog, docs inside the gate's scope) voids it.

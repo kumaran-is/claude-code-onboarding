@@ -40,71 +40,74 @@ color_tokens.dart  →  app_color_scheme.dart  →  app_theme_extension.dart  �
 
 ## pubspec.yaml Essentials
 
+Resolved together with `flutter pub get` and analyzed clean on Flutter 3.50.1 / Dart 3.14.0. Exact pins: bump them deliberately, re-resolve, re-run codegen and tests.
+
 ```yaml
 environment:
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.41.0"
+  sdk: ^3.14.0
+  flutter: ">=3.50.1"
 
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: 1.11.1             # replaces package:flutter/material.dart (deprecated after 3.47)
 
   # State management — Riverpod 3.x codegen-first
-  flutter_riverpod: ^3.2.1
-  riverpod_annotation: ^3.0.0
+  flutter_riverpod: 3.5.0
+  riverpod_annotation: 4.0.8
 
   # Navigation
-  go_router: ^15.0.0
+  go_router: 18.1.4
 
   # Data / serialisation
-  freezed_annotation: ^3.0.0
-  json_annotation: ^4.9.0
+  freezed_annotation: 3.1.0
+  json_annotation: 4.12.0
 
   # Network
-  dio: ^5.7.0
+  dio: 5.11.1
 
   # Storage
-  flutter_secure_storage: ^9.2.0  # sensitive data (tokens, keys)
-  hive_flutter: ^1.1.0            # non-sensitive local storage (preferences, cache)
+  flutter_secure_storage: 11.2.0  # sensitive data (tokens, keys)
+  shared_preferences: 2.5.6       # small non-sensitive preferences; cached data → drift (offline references)
 
   # Firebase (add only what the project uses)
-  firebase_core: ^3.8.0
-  firebase_auth: ^5.3.3
-  firebase_crashlytics: ^4.1.8
-  firebase_app_check: ^0.3.2
+  firebase_core: 5.2.0
+  firebase_auth: 7.1.0
+  firebase_crashlytics: 6.1.0
+  firebase_app_check: 0.5.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  riverpod_generator: ^3.0.0
-  freezed: ^3.0.0
-  json_serializable: ^6.8.0
-  build_runner: ^2.4.0
-  custom_lint: ^0.7.0
-  riverpod_lint: ^3.0.0
-  mocktail: ^1.0.4
+  flutter_lints: 6.0.0
+  build_runner: 2.17.1
+  riverpod_generator: 4.0.10
+  riverpod_lint: 3.2.0            # analyzer plugin; needs Dart >= 3.13
+  freezed: 4.0.3
+  json_serializable: 6.15.2
+  mocktail: 1.0.5
+
+flutter:
+  uses-material-design: true      # Icons still use the MaterialIcons font
 ```
+
+`hive_flutter` (last release 2021) is no longer recommended. `custom_lint` is no longer needed: `riverpod_lint` 3 is an `analysis_server_plugin` enabled from `analysis_options.yaml`.
 
 ## build.yaml
 
-Required for correct codegen behaviour — without this, json_serializable uses camelCase by default and freezed skips map/when helpers.
+Required for snake_case JSON — without it json_serializable keeps the Dart field names.
 
 ```yaml
 targets:
   $default:
     builders:
-      riverpod_generator:
-        options:
-          riverpod_version: 3
       json_serializable:
         options:
           explicit_to_json: true
           field_rename: snake
-      freezed:
-        options:
-          map: true
-          when: true
 ```
+
+Freezed 4 generates `when`/`map` by default, but prefer an exhaustive `switch` over the sealed union in new code. `riverpod_generator` 4 has no `riverpod_version` option; delete it from older `build.yaml` files.
 
 ## analysis_options.yaml
 
@@ -112,23 +115,23 @@ targets:
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
-  plugins:
-    - custom_lint          # enables riverpod_lint rules
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
   errors:
     missing_required_param: error
-    missing_return: error
+
+plugins:
+  riverpod_lint: 3.2.0   # top-level key, same version as the dev dependency
 
 linter:
   rules:
     - always_use_package_imports
     - avoid_dynamic_calls
     - prefer_final_locals
-    - prefer_const_constructors
-    - prefer_const_declarations
 ```
+
+Check that the plugin is live: a `ConsumerWidget` app without a `ProviderScope` must report `missing_provider_scope` in `flutter analyze`. With the old `analyzer: plugins: - custom_lint` block the same probe reports nothing.
 
 ## Entry Point Pattern (main / bootstrap / app)
 
@@ -142,34 +145,54 @@ void main() => bootstrap(() => const App());
 Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   // Framework-level error hook — catches Flutter rendering errors
-  FlutterError.onError = (details) {
-    FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-  };
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   // Dart async errors not caught by Flutter
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
   await FirebaseAppCheck.instance.activate(
-    androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider:   kDebugMode ? AppleProvider.debug   : AppleProvider.deviceCheck,
+    providerAndroid: kDebugMode
+        ? const AndroidDebugProvider()
+        : const AndroidPlayIntegrityProvider(),
+    providerApple: kDebugMode
+        ? const AppleDebugProvider()
+        : const AppleAppAttestWithDeviceCheckFallbackProvider(),
   );
 
   runApp(
     ProviderScope(
-      observers: kDebugMode ? [RiverpodLogger()] : [],
+      observers: [if (kDebugMode) const RiverpodLogger()],
       child: await builder(),
     ),
   );
 }
+
+/// Debug-only provider failure log. Riverpod 3 observers receive a context.
+final class RiverpodLogger extends ProviderObserver {
+  const RiverpodLogger();
+
+  @override
+  void providerDidFail(
+    ProviderObserverContext context,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    debugPrint('${context.provider} failed: $error');
+  }
+}
 ```
+
+Firebase is initialised before the Crashlytics hooks are installed (they call into an initialised app). App Check 0.5 takes provider objects (`providerAndroid`, `providerApple`); the old `androidProvider:`/`appleProvider:` enum parameters no longer compile.
 
 ### app.dart — MaterialApp.router only
 ```dart
+import 'package:material_ui/material_ui.dart'; // not package:flutter/material.dart
+
 class App extends ConsumerWidget {
   const App({super.key});
 
@@ -249,31 +272,30 @@ Container(color: ext.brandPrimary);
 
 ## Global DI Providers — core/di/providers.dart
 
-All `@Riverpod(keepAlive: true)` singletons live here. Never scatter them across features.
+All `@Riverpod(keepAlive: true)` singletons live here. Never scatter them across features. Generated providers take the plain `Ref` (Riverpod 3 removed the per-provider `DioRef`-style types).
 
 ```dart
-// Riverpod 3.x codegen generates a specific ref type per provider (e.g., DioRef, AuthRepositoryRef).
-// Always use the generated ref type, not the generic Ref, for type-safety and IDE support.
 part 'providers.g.dart';
 
 @Riverpod(keepAlive: true)
-Dio dio(DioRef ref) {
+Dio dio(Ref ref) {
   final dio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl));
   dio.interceptors.addAll([
     AuthInterceptor(ref),
-    LogInterceptor(logResponseBody: kDebugMode),
+    LogInterceptor(responseBody: kDebugMode),
   ]);
+  ref.onDispose(dio.close);
   return dio;
 }
 
 @Riverpod(keepAlive: true)
-FlutterSecureStorage secureStorage(SecureStorageRef ref) => const FlutterSecureStorage();
+FlutterSecureStorage secureStorage(Ref ref) => const FlutterSecureStorage();
 
 // Repository singletons — example
 @Riverpod(keepAlive: true)
-AuthRepository authRepository(AuthRepositoryRef ref) => AuthRepositoryImpl(
+AuthRepository authRepository(Ref ref) => AuthRepositoryImpl(
   remote: ref.watch(authRemoteDataSourceProvider),
-  local:  ref.watch(authLocalDataSourceProvider),
+  local: ref.watch(authLocalDataSourceProvider),
 );
 ```
 
@@ -319,36 +341,44 @@ class Password {
 
 ## Freezed Model Template
 
+Freezed 3+ requires `abstract` (or `sealed` for unions) on the class; a plain `class` no longer compiles.
+
 ```dart
-import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'user_model.freezed.dart';
 part 'user_model.g.dart';
 
 @freezed
-class UserModel with _$UserModel {
+abstract class UserModel with _$UserModel {
   const factory UserModel({
-    required String id,
+    @JsonKey(includeToJson: false) required String id, // the document id
     required String email,
     required String displayName,
     @Default('') String photoUrl,
-    required DateTime createdAt,
+    @TimestampConverter() required DateTime createdAt,
   }) = _UserModel;
 
   factory UserModel.fromJson(Map<String, dynamic> json) =>
       _$UserModelFromJson(json);
 
-  factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return UserModel(
-      id: doc.id,
-      email: data['email'] ?? '',
-      displayName: data['displayName'] ?? '',
-      photoUrl: data['photoUrl'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-    );
+  factory UserModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    if (data == null) throw StateError('users/${doc.id} does not exist');
+    return UserModel.fromJson({...data, 'id': doc.id});
   }
+}
+
+/// Firestore stores dates as Timestamp, not ISO strings.
+class TimestampConverter implements JsonConverter<DateTime, Timestamp> {
+  const TimestampConverter();
+
+  @override
+  DateTime fromJson(Timestamp json) => json.toDate().toUtc(); // toDate() is local time
+
+  @override
+  Timestamp toJson(DateTime object) => Timestamp.fromDate(object);
 }
 ```
 
@@ -362,20 +392,18 @@ part 'user_provider.g.dart';
 @riverpod
 class UserList extends _$UserList {
   @override
-  FutureOr<List<UserModel>> build() async {
-    return ref.read(userRepositoryProvider).getUsers();
-  }
+  Future<List<UserModel>> build() =>
+      ref.watch(userRepositoryProvider).getUsers();
 
-  Future<void> refresh() async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(
-      () => ref.read(userRepositoryProvider).getUsers(),
-    );
-  }
-
-  Future<void> add(CreateUserDto dto) async {
-    await ref.read(userRepositoryProvider).createUser(dto);
-    await refresh();
+  Future<void> add(UserModel user) async {
+    final repo = ref.read(userRepositoryProvider);
+    state = const AsyncLoading(); // keeps the previous list as `value`
+    final next = await AsyncValue.guard(() async {
+      await repo.createUser(user);
+      return repo.getUsers();
+    });
+    if (!ref.mounted) return; // screen closed while saving
+    state = next;
   }
 }
 ```
@@ -383,6 +411,10 @@ class UserList extends _$UserList {
 ## Screen Template
 
 ```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:material_ui/material_ui.dart';
+
 class UserListScreen extends ConsumerWidget {
   const UserListScreen({super.key});
 
@@ -418,42 +450,66 @@ class UserListScreen extends ConsumerWidget {
 
 ## GoRouter Configuration
 
+The router is a `keepAlive` provider, never a global reading `FirebaseAuth.instance` (a global cannot be overridden in tests and never re-runs `redirect` on sign-out). `authPhaseProvider` comes from [flutter-navigation-and-auth-boot.md](flutter-navigation-and-auth-boot.md). go_router 18 needs the `material_ui` `MaterialApp.router`; under the deprecated `flutter/material.dart` one it falls back to non-Material page transitions.
+
 ```dart
-final appRouter = GoRouter(
-  initialLocation: '/home',
-  routes: [
-    GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-    ShellRoute(
-      builder: (_, __, child) => AppShell(child: child),
-      routes: [
-        GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
-        GoRoute(path: '/users', builder: (_, __) => const UserListScreen()),
-        GoRoute(path: '/users/:id', builder: (_, state) =>
-          UserDetailScreen(userId: state.pathParameters['id']!)),
-      ],
-    ),
-  ],
-  redirect: (context, state) {
-    final isLoggedIn = FirebaseAuth.instance.currentUser != null;
-    if (!isLoggedIn && state.uri.path != '/login') return '/login';
-    if (isLoggedIn && state.uri.path == '/login') return '/home';
-    return null;
-  },
-);
+/// Built once (keepAlive); auth changes reach it through refreshListenable.
+@Riverpod(keepAlive: true)
+GoRouter appRouter(Ref ref) {
+  final refresh = ValueNotifier(ref.read(authPhaseProvider));
+  ref.listen(authPhaseProvider, (_, next) => refresh.value = next);
+  ref.onDispose(refresh.dispose);
+
+  final router = GoRouter(
+    initialLocation: '/home',
+    refreshListenable: refresh,
+    redirect: (context, state) {
+      final location = state.matchedLocation;
+      switch (ref.read(authPhaseProvider)) {
+        case AuthPhase.unresolved:
+          return location == '/splash' ? null : '/splash';
+        case AuthPhase.signedOut:
+          return location == '/login' ? null : '/login';
+        case AuthPhase.signedIn:
+          return location == '/login' || location == '/splash' ? '/home' : null;
+      }
+    },
+    routes: [
+      GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      ShellRoute(
+        builder: (_, _, child) => AppShell(child: child),
+        routes: [
+          GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+          GoRoute(path: '/users', builder: (_, _) => const UserListScreen()),
+          GoRoute(
+            path: '/users/:id',
+            builder: (_, state) =>
+                UserDetailScreen(userId: state.pathParameters['id']!),
+          ),
+        ],
+      ),
+    ],
+  );
+  ref.onDispose(router.dispose);
+  return router;
+}
 ```
 
 ## Widget Test Template
 
 ```dart
+// A class-based provider is overridden with a notifier, not a closure.
+class _FakeUserList extends UserList {
+  @override
+  Future<List<UserModel>> build() async => [_alice];
+}
+
 void main() {
   testWidgets('UserListScreen shows users', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          userListProvider.overrideWith((ref) => [
-            UserModel(id: '1', email: 'a@b.com', displayName: 'Alice', createdAt: DateTime.now()),
-          ]),
-        ],
+        overrides: [userListProvider.overrideWith(_FakeUserList.new)],
         child: const MaterialApp(home: UserListScreen()),
       ),
     );
@@ -485,8 +541,7 @@ class UserRemoteDataSource {
 
   Future<UserModel> getUser(String id) async {
     final doc = await _firestore.collection('users').doc(id).get();
-    if (!doc.exists) throw Exception('User not found');
-    return UserModel.fromFirestore(doc);
+    return UserModel.fromFirestore(doc); // throws StateError when missing
   }
 
   Future<void> createUser(UserModel user) async {
@@ -498,23 +553,20 @@ class UserRemoteDataSource {
 ### Firebase Auth Integration
 
 ```dart
-@riverpod
+@Riverpod(keepAlive: true)
+FirebaseAuth firebaseAuth(Ref ref) => FirebaseAuth.instance;
+
+/// Generates `authProvider` (the `Notifier` suffix is stripped).
+@Riverpod(keepAlive: true)
 class AuthNotifier extends _$AuthNotifier {
   @override
-  Stream<User?> build() {
-    return FirebaseAuth.instance.authStateChanges();
-  }
+  Stream<User?> build() => ref.watch(firebaseAuthProvider).authStateChanges();
 
-  Future<void> signInWithEmail(String email, String password) async {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-  }
+  Future<void> signInWithEmail(String email, String password) => ref
+      .read(firebaseAuthProvider)
+      .signInWithEmailAndPassword(email: email, password: password);
 
-  Future<void> signOut() async {
-    await FirebaseAuth.instance.signOut();
-  }
+  Future<void> signOut() => ref.read(firebaseAuthProvider).signOut();
 }
 ```
 
@@ -548,9 +600,22 @@ class UserRepositoryImpl implements UserRepository {
 
   @override
   Future<void> createUser(User user) async {
-    final model = UserModel.fromEntity(user);
-    await _remoteDataSource.createUser(model);
+    await _remoteDataSource.createUser(user.toModel());
   }
+}
+
+// Data layer - mappers keep the domain entity free of JSON/Firestore types
+extension UserModelMapper on UserModel {
+  User toEntity() => User(id: id, email: email, displayName: displayName);
+}
+
+extension UserEntityMapper on User {
+  UserModel toModel() => UserModel(
+    id: id,
+    email: email,
+    displayName: displayName,
+    createdAt: DateTime.now().toUtc(),
+  );
 }
 ```
 
@@ -847,7 +912,7 @@ class ThemeModeNotifier extends _$ThemeModeNotifier {
 }
 
 // In app.dart:
-//   themeMode: ref.watch(themeModeNotifierProvider)
+//   themeMode: ref.watch(themeModeProvider)   // `Notifier` suffix is stripped
 ```
 
 ---

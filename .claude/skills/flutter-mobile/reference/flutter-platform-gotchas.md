@@ -50,13 +50,19 @@ flutter run --device-id emulator-5554 \
 
 ## 2. DevicePreview Android Gate
 
-**Iron Law:** `DevicePreview(enabled: kDebugMode, ...)` silently breaks `adb shell input tap`
-and Maestro `tapOn` on Android.
+**Iron Law:** Device Preview never runs under device automation. Turn it on only by explicit
+opt-in, never on Android, never in release.
 
-DevicePreview's `InteractiveViewer` wraps the entire app and intercepts all pointer events
-before they reach the Flutter widget tree. Screenshots look correct, but no taps register.
-Android emulators already provide the correct device frame — DevicePreview adds zero value
-and actively blocks automation.
+`device_preview` 3.0.0 (requires Flutter >= 3.47) is a rebuild: a custom `WidgetsBinding`
+simulates screen metrics, safe areas, locale, text scale and the target platform below the
+widget layer, and its UI moved to a Flutter DevTools tab. The 2.x widget wrapper
+(`DevicePreview(enabled:, builder:)`, `DevicePreview.appBuilder`, `DevicePreview.locale(context)`)
+no longer exists and fails to compile against 3.0.0 (tested). In 2.x the wrapper's
+`InteractiveViewer` swallowed `adb shell input tap` and Maestro `tapOn` on Android. In 3.0 the
+binding rescales the simulated screen and rewrites pointer input (mouse reported as a finger),
+so coordinates sent by a device tool no longer map one-to-one either; whether taps still land on
+an Android emulator under 3.0 is UNVERIFIED. Either way, an emulator or simulator already is the
+device: simulation adds nothing there.
 
 ### Required Pattern
 
@@ -65,6 +71,7 @@ import 'dart:io' show Platform;
 
 import 'package:device_preview/device_preview.dart';
 import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
 
 const bool _devicePreviewRequested = bool.fromEnvironment(
   'DEVICE_PREVIEW',
@@ -78,22 +85,23 @@ bool _shouldEnableDevicePreview() {
   return !Platform.isAndroid;
 }
 
-void main() => runApp(
-  DevicePreview(
-    enabled: _shouldEnableDevicePreview(),
-    builder: (_) => const MyApp(),
-  ),
-);
+void main() {
+  // Install the simulation binding only when gated on; otherwise the normal
+  // binding runs and the package does nothing.
+  if (_shouldEnableDevicePreview()) DevicePreview.enable();
+  runApp(const MyApp());
+}
 ```
 
 ### Hard Rules
 
-- Never `DevicePreview(enabled: kDebugMode, ...)` — breaks Android automation
-- Never `DevicePreview(enabled: !kReleaseMode, ...)` — same failure mode
+- Never call `DevicePreview.enable()` unconditionally — it defaults to `!kReleaseMode`, i.e. on in
+  debug **and profile** builds, including on an emulator under Maestro
 - Always require explicit `--dart-define=DEVICE_PREVIEW=true` opt-in (default OFF)
-- When the preview wrapper feeds the same `MaterialApp` property as a user preference (locale,
-  theme), precedence must be `test override > user preference > preview > system`; a
-  `DevicePreview.locale(context) ?? userPref` chain swallows the preference whenever the chrome is on
+- Delete 2.x glue when upgrading: the `DevicePreview(builder:)` wrapper and the `MaterialApp`
+  `useInheritedMediaQuery`, `locale: DevicePreview.locale(context)` and `builder: DevicePreview.appBuilder` lines
+- Locale and theme precedence stays `test override > user preference > system`; Device Preview 3
+  simulates the system locale below the widget tree, so it no longer competes with an app setting
 - Keep one shared gate helper, not per-app copies
 - Always exclude Android (`!Platform.isAndroid`) — even when explicitly requested
 - Web is exempt (`kIsWeb` returns true) — safe for responsive design exploration
@@ -101,14 +109,14 @@ void main() => runApp(
 
 ### Diagnostic Signal
 
-If `adb shell input tap` or Maestro `tapOn` silently no-op on an Android emulator while
-visual screenshots look correct → check `main.dart`. Grep:
+If `adb shell input tap` or Maestro `tapOn` silently no-op or hit the wrong widget on an
+Android emulator while screenshots look correct → check `main.dart`. Grep:
 
 ```bash
-grep -rn "DevicePreview(" apps/*/lib/main.dart
-# Every hit must call _shouldEnableDevicePreview() — no exceptions
-grep -rn "DevicePreview(enabled: kDebugMode" apps/  # must return 0
-grep -rn "DevicePreview(enabled: !kReleaseMode" apps/  # must return 0
+grep -rn "DevicePreview" apps/*/lib/main.dart
+# Every DevicePreview.enable( call must sit behind _shouldEnableDevicePreview() — no exceptions
+grep -rn "DevicePreview(enabled:" apps/  # 2.x wrapper: must return 0 on device_preview 3
+grep -rn "DevicePreview.appBuilder\|DevicePreview.locale(" apps/  # 2.x glue: must return 0
 ```
 
 ---
@@ -262,6 +270,24 @@ When you own the engine, **nothing else delivers URLs, links or lifecycle to Flu
 
 Cold-link and warm-link flows both need a device test; a build with the splash disabled hides the dropped-link case.
 
+## 5. Native Toolchain Floors (Flutter 3.50)
+
+Read from the Flutter 3.50.1 tool templates (`gradle_utils.dart`, iOS project template) and confirmed by a debug APK and an iOS simulator build of a template app on these values (both exit 0). Move an older project to the same set; the tool's compatibility table pairs each AGP line with a minimum Gradle (AGP 9.3.x needs Gradle 9.5.0, AGP 9.1.x needs 9.3.1).
+
+| Setting | Flutter 3.50 template | Where |
+|---------|-----------------------|-------|
+| Gradle | 9.5.0 (the minimum for AGP 9.3.x) | `android/gradle/wrapper/gradle-wrapper.properties` |
+| Android Gradle Plugin | 9.3.1 | `android/settings.gradle.kts` (`com.android.application`) |
+| Kotlin Gradle plugin | 2.4.20 | `android/settings.gradle.kts` (`org.jetbrains.kotlin.android`) |
+| Java source/target, `jvmTarget` | 17 | `android/app/build.gradle.kts` |
+| `minSdk` / `compileSdk` / `targetSdk` | `flutter.minSdkVersion` 24 / `flutter.compileSdkVersion` 36 / `flutter.targetSdkVersion` 36 | `android/app/build.gradle.kts` — keep the `flutter.*` values unless a plugin needs more (`compileSdk = 37` for `permission_handler` 13.0.2 via `permission_handler_android` 14.1.1, and for `flutter_local_notifications` 23.0.4, which also needs core library desugaring: `isCoreLibraryDesugaringEnabled = true` plus `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")`; build fails on 36 without them) |
+| iOS deployment target | 15.0 (the tool raises 13.0 automatically on first build) | Xcode project; several plugins (e.g. `image_picker_ios`, `google_maps_flutter_ios`) require 15.0 |
+| iOS dependency manager | Swift Package Manager, on by default on stable | Plugins without a `Package.swift` (e.g. `google_maps_flutter_ios`) still use CocoaPods: the project runs in mixed mode |
+
+- Under Swift Package Manager, `permission_handler` enables a permission only when its `Info.plist` usage key is present; the old `Podfile` `GCC_PREPROCESSOR_DEFINITIONS` macros no longer apply.
+- Native assets (build hooks that compile or bundle native code, e.g. `sqlite3` 3.x) are enabled by default on stable; do not add the end-of-life `sqlite3_flutter_libs` / `sqlcipher_flutter_libs` packages (see the offline-sync reference).
+- Upgrade path for an existing app: set the wrapper, AGP and Kotlin versions above, then run `flutter build apk --debug` and `flutter build ios --simulator --debug`, each with its own exit code.
+
 ## Pre-Commit Checklist (Platform/Emulator)
 
 ```
@@ -271,9 +297,9 @@ Monorepo flutter run
   □ Absolute path used for --dart-define-from-file
 
 DevicePreview
-  □ grep -rn "DevicePreview(" apps/*/lib/main.dart → every hit calls _shouldEnableDevicePreview()
-  □ grep -rn "DevicePreview(enabled: kDebugMode" apps/ → must return 0
-  □ grep -rn "DevicePreview(enabled: !kReleaseMode" apps/ → must return 0
+  □ device_preview 3.x: DevicePreview.enable() only behind _shouldEnableDevicePreview()
+  □ grep -rn "DevicePreview(enabled:" apps/ → must return 0 (2.x wrapper)
+  □ grep -rn "DevicePreview.appBuilder\|DevicePreview.locale(" apps/ → must return 0 (2.x glue)
 
 Android Cleartext Config (Firebase emulator)
   □ android/app/src/debug/AndroidManifest.xml has networkSecurityConfig + tools:replace
@@ -281,6 +307,11 @@ Android Cleartext Config (Firebase emulator)
   □ grep -r "networkSecurityConfig" android/app/src/main/ → must return 0
   □ grep -r "cleartextTrafficPermitted.*true" android/app/src/release/ → must return 0
   □ xmlns:tools on root <manifest>, not <application>
+
+Toolchain floors
+  □ Gradle 9.5.0, AGP 9.3.1, Kotlin 2.4.20, Java 17; minSdk/compileSdk/targetSdk from flutter.*
+  □ iOS deployment target 15.0; SwiftPM on; usage-description keys present for every requested permission
+  □ flutter build apk --debug and flutter build ios --simulator --debug exit 0
 
 iOS UIScene
   □ Followed the current Flutter UIScene migration guide (FlutterSceneDelegate or FlutterSceneLifeCycleProvider)

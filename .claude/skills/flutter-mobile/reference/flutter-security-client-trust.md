@@ -1,6 +1,6 @@
 # Flutter Security — Client Trust, Debug Gates, Fail-Closed Settings
 
-Read this when deciding what may live in the app binary (keys, secrets, privileged calls), adding a debug/test affordance, encrypting a local database, implementing an app-lock or other security preference, or auditing logs for sensitive data. Companion to [flutter-security-hardening.md](flutter-security-hardening.md) (storage, pinning, biometrics, token refresh, privacy) — this file does not repeat those.
+Read this when deciding what may live in the app binary (keys, secrets, privileged calls), adding a debug/test affordance, encrypting a local database, implementing an app-lock or other security preference, auditing logs for sensitive data, or handling push messages. Companion to [flutter-security-hardening.md](flutter-security-hardening.md) (storage, pinning, biometrics, token refresh, privacy) — this file does not repeat those.
 
 ---
 
@@ -66,11 +66,45 @@ Backends often have a log-PII scanner; Dart usually does not, and the app logger
 - Never interpolate the exception itself: `FormatException.toString()` embeds a snippet of its source (possibly the user's text). For telemetry log `e.runtimeType`.
 
 ```dart
+// package:logging 1.3.0 (error and stack trace are positional)
 // wrong: user text can leak through the message
-logger.warning('parse failed for note: $note, $e');
+_log.warning('parse failed for note: $note, $e');
 // right
-logger.warning('note parse failed', error: e, stackTrace: st);
+_log.warning('note parse failed', e.runtimeType, st);
 ```
+
+Add a redactor in the one log sink (the `Logger.root.onRecord` listener that forwards to the console or Crashlytics) as a second line of defence. Tested on Flutter 3.50.1 (`redact_test.dart`, with a positive control that the leak detector fires on the raw line; deleting the JWT rule fails the suite):
+
+```dart
+// lib/core/logging/redact.dart
+final _patterns = <RegExp, String>{
+  RegExp(r'Bearer\s+[A-Za-z0-9\-._~+/]+=*', caseSensitive: false):
+      'Bearer [REDACTED]',
+  // JWT: three base64url segments, the first starting with eyJ ({"...).
+  RegExp(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*'): '[JWT]',
+  RegExp(
+    r'("?(?:access_token|refresh_token|id_token|password|client_secret)"?\s*[:=]\s*)"?[^",&\s}]+"?',
+    caseSensitive: false,
+  ): r'$1"[REDACTED]"',
+  RegExp(r'[\w.+-]+@[\w-]+\.[\w.-]+'): '[EMAIL]',
+  RegExp(r'\+?\d[\d\s().-]{8,}\d'): '[PHONE]',
+};
+
+String redact(String input) {
+  var out = input;
+  _patterns.forEach((pattern, replacement) {
+    out = out.replaceAllMapped(pattern, (m) {
+      // Re-insert capture group 1 when the replacement references it.
+      return replacement.contains(r'$1')
+          ? replacement.replaceFirst(r'$1', m.group(1) ?? '')
+          : replacement;
+    });
+  });
+  return out;
+}
+```
+
+A redactor is a net, not the policy: it cannot recognise a name or an address, so the static-message rule above still applies.
 
 ---
 
@@ -109,6 +143,93 @@ A feed the app only reads is still untrusted input if anyone else can write to i
 
 ---
 
+## 8. Push Messages (firebase_messaging 17.1.0, flutter_local_notifications 23.0.4)
+
+A push payload is attacker-influenced input that can arrive while the app is terminated. Compiled on Flutter 3.50.1; the allowlist and the top-level-handler check are unit-tested (`firebase_test.dart`), delivery on a device is NOT RUN (needs a real Firebase project and APNs/FCM credentials).
+
+```dart
+// lib/core/messaging/background_handler.dart
+/// Runs in a separate isolate when a message arrives while the app is in the
+/// background or terminated. Must be a top-level (or static) function, and the
+/// pragma keeps it from being tree-shaken in release (AOT) builds.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // New isolate: nothing from main() exists here.
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Log the id only: data payloads can carry personal data.
+  Logger('fcm.background').info('background message ${message.messageId}');
+}
+
+// main(), BEFORE runApp, so the handler is registered on a cold start:
+// FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+/// Push payloads are attacker-controllable: map them through an allowlist.
+const _routeAllowlist = {'order': '/orders', 'inbox': '/inbox'};
+
+String? routeForMessage(RemoteMessage message) {
+  final type = message.data['type'];
+  final id = message.data['id'];
+  final base = _routeAllowlist[type];
+  if (base == null ||
+      id is! String ||
+      !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id)) {
+    return null;
+  }
+  return '$base/$id';
+}
+```
+
+```dart
+// After sign-in, at a moment where asking makes sense (not at launch):
+final settings = await FirebaseMessaging.instance.requestPermission();
+if (settings.authorizationStatus == AuthorizationStatus.denied) return; // show the denied state in settings
+// Foreground messages are not displayed by FCM: show them locally.
+FirebaseMessaging.onMessage.listen((m) {
+  final n = m.notification;
+  if (n != null) showForeground(id: m.hashCode, title: n.title, body: n.body);
+});
+// Taps from background (stream) and terminated (initial message) both go
+// through routeForMessage; a null route opens nothing.
+void open(RemoteMessage m) {
+  final route = routeForMessage(m);
+  if (route != null) navigate(route);
+}
+
+FirebaseMessaging.onMessageOpenedApp.listen(open);
+final initial = await FirebaseMessaging.instance.getInitialMessage();
+if (initial != null) open(initial);
+```
+
+flutter_local_notifications 23 takes named arguments: `initialize(settings: InitializationSettings(...), onDidReceiveNotificationResponse: ...)` and `show(id: ..., title: ..., body: ..., notificationDetails: ...)`. Set the Darwin `request*Permission` flags to `false` so the plugin does not prompt at launch.
+
+Android build requirements (proved with `flutter build apk --debug` on 3.50.1: fails without them, passes with them): `compileSdk = 37` (flutter_local_notifications 23.0.4 and androidx.core 1.19 require it; the 3.50.1 template default is 36), and core library desugaring:
+
+```kotlin
+// android/app/build.gradle.kts
+android {
+    compileSdk = 37
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+```
+
+Badges (`app_badge_plus` 1.4.0): set the count from server state (`if (await AppBadgePlus.isSupported()) await AppBadgePlus.updateBadge(unread);`), never by counting received pushes; clear it on sign-out.
+
+Rules:
+- The background handler is top-level with `@pragma('vm:entry-point')`, initialises Firebase itself, and does no UI work
+- Never navigate to a path, URL or screen name taken from the payload; only allowlisted types plus a validated id
+- Never put personal data or secrets in the notification payload: it is shown on the lock screen and stored by the OS
+- Log message ids, not payloads
+- The FCM token is a device address, not a credential: send it to the backend after sign-in and delete it (`deleteToken()`) in the sign-out coordinator
+
+---
+
 ## Security Review Checklist (client trust)
 
 ```
@@ -117,7 +238,8 @@ A feed the app only reads is still untrusted input if anyone else can write to i
 □ Secret scanner has a positive and a negative control
 □ Debug/test affordances gated by a compile-time const, checked once, verified in a release build
 □ Permission-gated data withheld server-side, not just hidden in UI
-□ Push/deep-link payloads mapped through allowlists
+□ Push/deep-link payloads mapped through allowlists; background handler top-level with @pragma('vm:entry-point')
+□ Log sink runs a redactor; no token values in logs
 □ No user-typed text or exception.toString() interpolated into logs
 □ DB key: secure RNG, keychain/keystore, destroyed on sign-out, single wipe coordinator
 □ Unreadable security preference resolves fail-closed, with two-tier tests

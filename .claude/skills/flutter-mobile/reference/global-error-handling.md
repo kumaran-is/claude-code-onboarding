@@ -1,74 +1,95 @@
-# Global Error Handling — Flutter 3.41.x+ / Dart 3.10.9+
+# Global Error Handling — Flutter 3.50.x / Dart 3.14.0
 
 ## Why global error handling is required
 
-Flutter has **4 error entry points**. Missing any one means some errors reach users silently.
-Production apps MUST configure all 4 before calling `runApp()`.
+Flutter routes uncaught errors through **3 hooks**. Missing one means some errors reach users silently.
+Production apps MUST configure all 3 before calling `runApp()`. This matches the current
+Flutter "Handling errors" guide, which no longer wraps `main` in `runZonedGuarded`.
 
-| Entry Point | What it catches |
+| Hook | What it catches |
 |---|---|
-| `runZonedGuarded` | Async errors that escape the Flutter framework (timers, Futures, Streams) |
-| `FlutterError.onError` | Widget build errors, rendering errors, framework-internal errors |
-| `PlatformDispatcher.instance.onError` | Platform channel errors, isolate errors, errors not caught by the zone |
+| `FlutterError.onError` | Widget build errors, layout/paint errors, framework-internal errors |
+| `PlatformDispatcher.instance.onError` | Errors with no Flutter callback on the stack: uncaught async errors (timers, Futures, Streams), platform-channel errors |
 | `ErrorWidget.builder` | Replaces the red error screen shown when a widget fails to build |
+
+`runZonedGuarded` is optional and no longer needed to catch async errors. If a project keeps a
+custom zone, call `WidgetsFlutterBinding.ensureInitialized()` **and** `runApp()` inside that same
+zone: initialising the binding in one zone and calling `runApp` in another triggers Flutter's
+"Zone mismatch" check.
 
 ---
 
-## Section 1 — The 4 Error Entry Points (complete setup)
+## Section 1 — The 3 hooks (complete setup)
+
+Keep the reporter behind an interface so the hooks can be unit-tested without Firebase:
 
 ```dart
-void main() {
-  // Entry Point 1: runZonedGuarded catches async errors not handled by Flutter framework
-  runZonedGuarded(
-    () async {
-      WidgetsFlutterBinding.ensureInitialized();
+// lib/core/errors/error_handlers.dart
+import 'package:flutter/foundation.dart'; // FlutterError, kReleaseMode, PlatformDispatcher
+import 'package:material_ui/material_ui.dart'; // ErrorWidget, Material, Icons
 
-      // Entry Point 2: FlutterError.onError catches widget/rendering errors
-      FlutterError.onError = (FlutterErrorDetails details) {
-        if (kReleaseMode) {
-          // Forward to crash reporting (e.g., Firebase Crashlytics)
-          // FirebaseCrashlytics.instance.recordFlutterFatalError(details);
-          Zone.current.handleUncaughtError(details.exception, details.stack!);
-        } else {
-          // Debug: use default Flutter handler (prints red screen + console output)
-          FlutterError.presentError(details);
-        }
-      };
+abstract interface class CrashReporter {
+  void recordFlutterError(FlutterErrorDetails details);
+  void recordError(Object error, StackTrace stack);
+}
 
-      // Entry Point 3: PlatformDispatcher catches platform/isolate errors
-      PlatformDispatcher.instance.onError = (error, stack) {
-        if (kReleaseMode) {
-          // FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-        }
-        // return true = error is handled (suppressed from OS crash handler)
-        // return false = error is NOT handled (will propagate and may crash)
-        return true;
-      };
-
-      // Entry Point 4 (ErrorWidget): replace red error screen in release mode
-      if (kReleaseMode) {
-        ErrorWidget.builder = (FlutterErrorDetails details) {
-          return const ErrorFallbackWidget();
-        };
-      }
-
-      runApp(const MyApp());
-    },
-    // Entry Point 1 handler: errors thrown inside the zone
-    (error, stack) {
-      if (kReleaseMode) {
-        // FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      }
-      debugPrint('Unhandled zone error: $error\n$stack');
-    },
-  );
+/// Installs the global error hooks. Call before runApp.
+void installErrorHandlers(CrashReporter reporter) {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details); // keep console/IDE output in every mode
+    reporter.recordFlutterError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    reporter.recordError(error, stack);
+    return true; // handled: logged and reported
+  };
+  if (kReleaseMode) {
+    ErrorWidget.builder = (details) => const ErrorFallbackWidget();
+  }
 }
 ```
 
-> **Relationship to `flutter-templates.md` bootstrap pattern:** The `bootstrap.dart` template
-> shows the Firebase Crashlytics wiring for `FlutterError.onError` and
-> `PlatformDispatcher.instance.onError`. This file covers all 4 entry points, the
-> debug/release branching, and the `ErrorWidget.builder` — which the bootstrap template omits.
+```dart
+// lib/main.dart
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  installErrorHandlers(CrashlyticsReporter(FirebaseCrashlytics.instance));
+  runApp(const ProviderScope(child: App()));
+}
+```
+
+`CrashlyticsReporter` forwards to `recordFlutterFatalError(details)` and
+`recordError(error, stack, fatal: true)`; see the `bootstrap.dart` template in
+[flutter-templates.md](flutter-templates.md).
+
+Unit test (no device, no Firebase) — proves both hooks forward and report "handled":
+
+```dart
+test('global hooks forward framework and platform errors', () {
+  final savedFlutter = FlutterError.onError;
+  final savedPlatform = PlatformDispatcher.instance.onError;
+  final savedPresent = FlutterError.presentError;
+  addTearDown(() {
+    FlutterError.onError = savedFlutter;
+    PlatformDispatcher.instance.onError = savedPlatform;
+    FlutterError.presentError = savedPresent;
+  });
+  FlutterError.presentError = (_) {}; // keep the test output quiet
+  final reporter = RecordingReporter();
+  installErrorHandlers(reporter);
+
+  FlutterError.reportError(FlutterErrorDetails(exception: StateError('build')));
+  final handled = PlatformDispatcher.instance.onError!(
+    StateError('async'),
+    StackTrace.current,
+  );
+
+  expect(reporter.flutterErrors, hasLength(1));
+  expect(reporter.errors, hasLength(1));
+  expect(handled, isTrue);
+});
+```
 
 ---
 
@@ -105,19 +126,21 @@ class ErrorFallbackWidget extends StatelessWidget {
 }
 ```
 
+`ErrorWidget.builder` receives only the error details, no `BuildContext`, so its copy cannot come
+from `AppLocalizations.of(context)` at that point; keep it short and generic, or build it with the
+`MaterialApp.builder` pattern from the Flutter errors guide.
+
 ---
 
 ## Section 3 — Required imports
 
 ```dart
-import 'dart:async';
-import 'dart:ui' show PlatformDispatcher;
-
-import 'package:flutter/foundation.dart'; // kReleaseMode, kDebugMode
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // FlutterError, kReleaseMode, kDebugMode
+import 'package:material_ui/material_ui.dart'; // not package:flutter/material.dart (deprecated after 3.47)
 ```
 
-`PlatformDispatcher` lives in `dart:ui`. The `flutter/services.dart` import does NOT expose it.
+`PlatformDispatcher` comes from `dart:ui` and is re-exported by `package:flutter/foundation.dart`;
+a separate `import 'dart:ui'` is flagged as `unnecessary_import`.
 
 ---
 
@@ -125,8 +148,8 @@ import 'package:flutter/material.dart';
 
 | Mistake | Why it breaks |
 |---|---|
-| Only setting `FlutterError.onError` | Misses platform errors (Entry Point 3) and zone async errors (Entry Point 1) |
-| Wrapping just `runApp()` in `runZonedGuarded` instead of the full body | Async errors triggered before `runApp()` (e.g., init logic) escape the zone |
+| Only setting `FlutterError.onError` | Misses uncaught async and platform errors (`PlatformDispatcher.instance.onError`) |
+| `ensureInitialized()` outside a custom zone and `runApp()` inside it | Flutter reports "Zone mismatch"; keep both in one zone or drop the custom zone |
 | `return false` from `PlatformDispatcher.instance.onError` | `false` = error is NOT handled — it propagates to the OS crash handler. If you logged it, return `true`. |
 | Showing the red error widget in release | Leaks implementation details and stack traces to users |
 | Silencing debug errors | Debug mode should use `FlutterError.presentError(details)` — never suppress errors in debug |
@@ -136,12 +159,12 @@ import 'package:flutter/material.dart';
 
 ## Section 5 — Integration checklist
 
-- [ ] `runZonedGuarded` wraps the **entire** `main()` body (not just `runApp()`)
+- [ ] No custom zone, or binding init and `runApp()` in the same zone
 - [ ] `FlutterError.onError` set **before** `runApp()`
 - [ ] `PlatformDispatcher.instance.onError` set **before** `runApp()`
 - [ ] `ErrorWidget.builder` overridden for release mode
 - [ ] Debug mode uses `FlutterError.presentError(details)` — debug errors are visible
-- [ ] Release mode sends errors to crash reporting SDK (replace `debugPrint` stubs)
+- [ ] Errors reach the crash reporting SDK through a `CrashReporter` the hooks receive; a unit test proves both hooks forward
 - [ ] `PlatformDispatcher.instance.onError` returns `true` after handling
 
 ---
@@ -159,6 +182,5 @@ import 'package:flutter/material.dart';
 
 ## Stack version
 
-Applies to: Flutter 3.41.x+ / Dart 3.10.9+ (this workspace's stack).
-`PlatformDispatcher.instance.onError` was stabilised in Flutter 3.x — do not use the older
-`FlutterError.onError`-only pattern from pre-3.x guides.
+Applies to: Flutter 3.50.x / Dart 3.14.0 (this workspace's stack); hooks unit-tested on Flutter 3.50.1.
+Do not use the older `FlutterError.onError`-only or `runZonedGuarded`-first patterns from older guides.

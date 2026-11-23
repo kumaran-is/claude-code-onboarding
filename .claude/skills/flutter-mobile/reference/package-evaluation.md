@@ -1,6 +1,6 @@
-# Package Evaluation — Flutter 3.41.x / Dart 3.10.9
+# Package Evaluation — Flutter 3.50.x / Dart 3.14.0
 
-Use before adding any pub.dev dependency. Applies to: Flutter 3.41.x / Dart 3.10.9 / pub.dev (as of 2026).
+Use before adding any pub.dev dependency. Applies to: Flutter 3.50.x / Dart 3.14.0 (verified on 3.50.1) / pub.dev (as of November 2026).
 
 ---
 
@@ -86,9 +86,13 @@ flutter pub get
 ```
 
 Run `pub get`/`pub upgrade` output review after every add or upgrade. Pub's advisory feed is the
-verified mechanism; a dedicated `audit` subcommand was not confirmed when this file was written, so
-check `dart pub --help` on your SDK before scripting around one. Add your org's CI dependency
-scanner on top for transitive coverage.
+verified mechanism: Dart 3.14.0's `dart pub --help` lists no `audit` subcommand, so do not script
+around one. Add your org's CI dependency scanner on top for transitive coverage.
+
+Check the SDK floor too: pub.dev shows each version's `environment` (`sdk`, `flutter`). Many
+current packages need Flutter >= 3.44 or >= 3.47 (go_router 18, material_ui, a2ui_flutter); a
+package whose latest release is several years old and caps the SDK below 3.0 (for example
+`hive_flutter` 1.1.0, SDK `<3.0.0`) is stale and must not be added.
 
 ---
 

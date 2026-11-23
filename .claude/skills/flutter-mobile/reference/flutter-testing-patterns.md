@@ -1,7 +1,11 @@
 # Flutter Testing Patterns
 
-Complete testing reference for Flutter 3.41 + Riverpod 3.x + mocktail + Dart 3.4+.
-Covers all layers: unit, widget, golden, and integration.
+Testing reference for Flutter 3.50.1 / Dart 3.14.0 + Riverpod 3.5 + mocktail 1.0.5, with `material_ui` 1.11.1 as the
+Material import (`package:flutter/material.dart` is deprecated since 3.47). Covers unit, widget, golden and integration.
+Every snippet in §2–§7 compiles and passes on Flutter 3.50.1 (format 0, analyze 0 issues, 13/13 tests), and each test
+fails when the behaviour it guards is broken (2026-11-23). The examples assume a sealed `AuthState`
+(`AuthState.unauthenticated/loading/authenticated(user)/error(message)` with value equality, hand-written or freezed);
+they read it with Dart patterns, never generated `when`/`maybeWhen` helpers.
 
 ## 1. Testing Pyramid
 
@@ -21,8 +25,20 @@ handling: [flutter-testing-traps.md](flutter-testing-traps.md).
 
 ## 2. Unit Tests — Use Case with mocktail
 
-Tests the domain layer in isolation. The use case depends on an `AuthRepository` interface;
-the test provides a `FakeAuthRepository` that satisfies the interface without touching Firebase.
+Tests the domain layer in isolation. The use case depends on an `AuthRepository` interface; the test drives a
+mocktail **`Mock`** of it. Stubbing needs `Mock`: `when()` on a class that `extends Fake` throws
+`UnimplementedError` (tested), so `Fake` is only for hand-written fakes and `registerFallbackValue` arguments.
+
+File: `test/helpers/fakes/mock_auth_repository.dart`
+
+```dart
+import 'package:mocktail/mocktail.dart';
+import 'package:your_app/features/auth/domain/repositories/auth_repository.dart';
+
+/// mocktail mock of [AuthRepository]. Stub per test with `when(() => repo.method()).thenAnswer(...)`.
+/// It must extend `Mock`: `when()` on a `Fake` subclass throws UnimplementedError.
+class MockAuthRepository extends Mock implements AuthRepository {}
+```
 
 File: `test/unit/features/auth/usecases/sign_in_usecase_test.dart`
 
@@ -32,28 +48,17 @@ import 'package:mocktail/mocktail.dart';
 import 'package:your_app/core/errors/app_exception.dart';
 import 'package:your_app/core/result/result.dart';
 import 'package:your_app/features/auth/domain/entities/user.dart';
-import 'package:your_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:your_app/features/auth/domain/usecases/sign_in_usecase.dart';
 
-// --- Fake (in test/helpers/fakes/ — see section 6) ---
-class FakeAuthRepository extends Fake implements AuthRepository {
-  // Overrides declared per-test via mocktail stubs
-}
-
-// Register fallback values for any custom types used in argument matchers
-class FakeUser extends Fake implements User {}
+import '../../../../helpers/fakes/mock_auth_repository.dart';
 
 void main() {
-  late FakeAuthRepository fakeRepo;
+  late MockAuthRepository repository;
   late SignInUseCase useCase;
 
-  setUpAll(() {
-    registerFallbackValue(FakeUser());
-  });
-
   setUp(() {
-    fakeRepo = FakeAuthRepository();
-    useCase = SignInUseCase(fakeRepo);
+    repository = MockAuthRepository();
+    useCase = SignInUseCase(repository);
   });
 
   group('SignInUseCase', () {
@@ -68,45 +73,41 @@ void main() {
           displayName: 'Alice',
           createdAt: DateTime(2025),
         );
-
-        when(
-          () => fakeRepo.signIn(email: email, password: password),
-        ).thenAnswer((_) async => Success(expectedUser));
+        when(() => repository.signIn(email: email, password: password))
+            .thenAnswer((_) async => Success(expectedUser));
 
         final result = await useCase(email: email, password: password);
 
         expect(result, isA<Success<User>>());
         expect((result as Success<User>).value, equals(expectedUser));
-        verify(() => fakeRepo.signIn(email: email, password: password))
+        verify(() => repository.signIn(email: email, password: password))
             .called(1);
       });
     });
 
     group('failure path', () {
       test('propagates NetworkException from repository', () async {
-        final exception = NetworkException('No internet');
-
-        when(
-          () => fakeRepo.signIn(email: email, password: password),
-        ).thenAnswer((_) async => Failure(exception));
+        when(() => repository.signIn(email: email, password: password))
+            .thenAnswer(
+              (_) async => const Failure(NetworkException('No internet')),
+            );
 
         final result = await useCase(email: email, password: password);
 
         expect(result, isA<Failure<User>>());
-        expect((result as Failure<User>).error, isA<NetworkException>());
-        expect((result).error.message, equals('No internet'));
+        final error = (result as Failure<User>).error;
+        expect(error, isA<NetworkException>());
+        expect(error.message, equals('No internet'));
       });
 
       test('propagates AuthException when credentials are invalid', () async {
-        final exception = AuthException('Invalid credentials');
-
-        when(
-          () => fakeRepo.signIn(email: email, password: password),
-        ).thenAnswer((_) async => Failure(exception));
+        when(() => repository.signIn(email: email, password: password))
+            .thenAnswer(
+              (_) async => const Failure(AuthException('Invalid credentials')),
+            );
 
         final result = await useCase(email: email, password: password);
 
-        expect(result, isA<Failure<User>>());
         expect((result as Failure<User>).error, isA<AuthException>());
       });
     });
@@ -115,16 +116,17 @@ void main() {
 ```
 
 **Rules for use case tests:**
-- One `group()` per use case class.
-- Nest `group('success path', ...)` and `group('failure path', ...)` inside.
-- Always call `verify(...)` on the happy path to confirm the method was invoked.
+- One `group()` per use case class, with `group('success path', ...)` and `group('failure path', ...)` inside.
+- Always call `verify(...)` on the happy path to confirm the method was invoked with the right arguments.
+- `registerFallbackValue(...)` is needed only when `any()` matches a custom type; `any(named: ...)` on `String` needs none.
 - Never instantiate Firebase or real HTTP clients.
 
 ---
 
-## 3. Unit Tests — AsyncNotifier with mocktail
+## 3. Unit Tests — Notifier with mocktail
 
-Tests a Riverpod `AsyncNotifier` via `ProviderContainer`. No widget tree needed.
+Tests a Riverpod `Notifier` through a `ProviderContainer`. No widget tree needed. `ProviderContainer.test()`
+(Riverpod 3) disposes itself at the end of the test, so no manual `addTearDown(container.dispose)`.
 
 File: `test/unit/features/auth/providers/auth_provider_test.dart`
 
@@ -135,82 +137,66 @@ import 'package:mocktail/mocktail.dart';
 import 'package:your_app/core/errors/app_exception.dart';
 import 'package:your_app/core/result/result.dart';
 import 'package:your_app/features/auth/domain/entities/user.dart';
-import 'package:your_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:your_app/features/auth/presentation/providers/auth_provider.dart';
 
-class FakeAuthRepository extends Fake implements AuthRepository {}
+import '../../../../helpers/fakes/mock_auth_repository.dart';
 
 void main() {
-  late FakeAuthRepository fakeRepo;
+  late MockAuthRepository repository;
 
-  setUp(() {
-    fakeRepo = FakeAuthRepository();
-  });
+  setUp(() => repository = MockAuthRepository());
 
-  ProviderContainer makeContainer() {
-    final container = ProviderContainer(
-      overrides: [
-        authRepositoryProvider.overrideWithValue(fakeRepo),
-      ],
-    );
-    // Always dispose — prevents state leaking between tests
-    addTearDown(container.dispose);
-    return container;
-  }
+  // ProviderContainer.test() registers its own dispose with addTearDown.
+  ProviderContainer makeContainer() => ProviderContainer.test(
+    overrides: [authRepositoryProvider.overrideWithValue(repository)],
+  );
 
-  group('AuthProvider', () {
+  group('AuthNotifier', () {
     group('build()', () {
-      test('initial state is unauthenticated when no session exists', () async {
-        when(() => fakeRepo.currentUser()).thenReturn(null);
+      test('initial state is unauthenticated when no session exists', () {
+        when(() => repository.currentUser()).thenReturn(null);
 
         final container = makeContainer();
-        // Reading the provider triggers build()
-        final state = container.read(authProvider);
 
-        expect(state, const AuthState.unauthenticated());
+        expect(container.read(authProvider), const AuthState.unauthenticated());
       });
 
-      test('initial state is authenticated when session exists', () async {
+      test('initial state is authenticated when a session exists', () {
         final user = User(
           id: 'uid-1',
           email: 'alice@example.com',
           displayName: 'Alice',
           createdAt: DateTime(2025),
         );
-        when(() => fakeRepo.currentUser()).thenReturn(user);
+        when(() => repository.currentUser()).thenReturn(user);
 
         final container = makeContainer();
-        final state = container.read(authProvider);
 
-        expect(state, AuthState.authenticated(user));
+        expect(container.read(authProvider), AuthState.authenticated(user));
       });
     });
 
     group('signIn()', () {
       test('transitions loading -> authenticated on success', () async {
-        when(() => fakeRepo.currentUser()).thenReturn(null);
-
         final user = User(
           id: 'uid-2',
           email: 'bob@example.com',
           displayName: 'Bob',
           createdAt: DateTime(2025),
         );
+        when(() => repository.currentUser()).thenReturn(null);
         when(
-          () => fakeRepo.signIn(
-            email: 'bob@example.com',
-            password: 'pass',
-          ),
+          () => repository.signIn(email: 'bob@example.com', password: 'pass'),
         ).thenAnswer((_) async => Success(user));
 
         final container = makeContainer();
-        final notifier = container.read(authProvider.notifier);
-
-        // Collect state transitions
+        // Listen BEFORE acting, so the first transition is captured.
         final states = <AuthState>[];
         container.listen(authProvider, (_, next) => states.add(next));
 
-        await notifier.signIn(email: 'bob@example.com', password: 'pass');
+        await container
+            .read(authProvider.notifier)
+            .signIn(email: 'bob@example.com', password: 'pass');
 
         expect(states, [
           const AuthState.loading(),
@@ -219,28 +205,33 @@ void main() {
       });
 
       test('transitions loading -> error on failure', () async {
-        when(() => fakeRepo.currentUser()).thenReturn(null);
+        when(() => repository.currentUser()).thenReturn(null);
         when(
-          () => fakeRepo.signIn(
+          () => repository.signIn(
             email: any(named: 'email'),
             password: any(named: 'password'),
           ),
-        ).thenAnswer((_) async => Failure(AuthException('Bad credentials')));
+        ).thenAnswer(
+          (_) async => const Failure(AuthException('Bad credentials')),
+        );
 
         final container = makeContainer();
-        final notifier = container.read(authProvider.notifier);
-
         final states = <AuthState>[];
         container.listen(authProvider, (_, next) => states.add(next));
 
-        await notifier.signIn(email: 'x@x.com', password: 'wrong');
+        await container
+            .read(authProvider.notifier)
+            .signIn(email: 'x@x.com', password: 'wrong');
 
         expect(states.first, const AuthState.loading());
-        // AuthState is a sealed/freezed union: read the error arm through its public API.
-        // (Never reference generated private subclasses such as `_Error` from a test.)
+        // Read the error arm with a pattern on the sealed state, never a generated private subclass.
         expect(
-          states.last.maybeWhen(error: (msg) => msg, orElse: () => null),
-          contains('Bad credentials'),
+          states.last,
+          isA<AuthError>().having(
+            (e) => e.message,
+            'message',
+            'Bad credentials',
+          ),
         );
       });
     });
@@ -249,121 +240,84 @@ void main() {
 ```
 
 **Key patterns:**
-- `makeContainer()` factory + `addTearDown(container.dispose)` — always tear down.
-- `container.listen()` to capture state transitions in a list — more reliable than polling.
-- Never call `container.read(authProvider.notifier)` before setting up the listener.
+- `ProviderContainer.test(overrides: ...)` per test: no state leaks between tests.
+- `container.listen()` collects state transitions in a list; set it up **before** calling the notifier method, or the
+  first transition (`loading`) is missed.
+- Assert the error arm with `isA<AuthError>().having(...)` (or a `switch` pattern), not generated private classes.
 
 ---
 
 ## 4. Widget Tests — Screen with ProviderScope
 
 Tests the full screen widget with Riverpod providers overridden. Does not require a real device.
+`find.byType(ElevatedButton)` matches the `material_ui` class, so the screen and the test must import the same library.
 
 File: `test/widget/features/auth/screens/login_screen_test.dart`
 
 ```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:your_app/features/auth/domain/entities/user.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:your_app/core/keys/widget_keys.dart';
 import 'package:your_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:your_app/features/auth/presentation/screens/login_screen.dart';
 
-import '../../../../helpers/pump_app.dart';
 import '../../../../helpers/fakes/fake_auth_notifier.dart';
+import '../../../../helpers/pump_app.dart';
 
 void main() {
   group('LoginScreen', () {
-    testWidgets('shows CircularProgressIndicator while loading', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(const AuthState.loading()),
-            ),
-          ],
-          child: const MaterialApp(home: LoginScreen()),
-        ),
+    testWidgets('shows CircularProgressIndicator while loading', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const LoginScreen(),
+        overrides: [
+          authProvider.overrideWith(
+            () => FakeAuthNotifier(const AuthState.loading()),
+          ),
+        ],
       );
-
-      // pump() — single frame, does NOT settle animations
-      // Use pump() when you want to inspect mid-animation state
+      // pump(): one frame. A spinner never settles, so pumpAndSettle() would time out here.
       await tester.pump();
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(find.byType(ElevatedButton), findsNothing);
     });
 
-    testWidgets('shows error banner when state is error', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(
-                const AuthState.error('Invalid credentials'),
-              ),
-            ),
-          ],
-          child: const MaterialApp(home: LoginScreen()),
-        ),
+    testWidgets('shows the error message when state is error', (tester) async {
+      await tester.pumpApp(
+        const LoginScreen(),
+        overrides: [
+          authProvider.overrideWith(
+            () =>
+                FakeAuthNotifier(const AuthState.error('Invalid credentials')),
+          ),
+        ],
       );
-
-      // pumpAndSettle() — runs frames until no more scheduled, settles animations
-      // Use pumpAndSettle() for normal rendering where you expect a stable frame
       await tester.pumpAndSettle();
 
       expect(find.text('Invalid credentials'), findsOneWidget);
       expect(find.byType(ElevatedButton), findsOneWidget);
     });
 
-    testWidgets('shows email field and sign in button when unauthenticated',
-        (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(const AuthState.unauthenticated()),
-            ),
-          ],
-          child: const MaterialApp(home: LoginScreen()),
-        ),
+    testWidgets('calls signIn with the entered email on tap', (tester) async {
+      final notifier = FakeAuthNotifier(const AuthState.unauthenticated());
+      await tester.pumpApp(
+        const LoginScreen(),
+        overrides: [authProvider.overrideWith(() => notifier)],
       );
-
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('email_field')), findsOneWidget);
-      expect(find.byKey(const Key('password_field')), findsOneWidget);
-      expect(find.byKey(const Key('sign_in_button')), findsOneWidget);
-    });
-
-    testWidgets('calls signIn on button tap', (tester) async {
-      final fakeNotifier = FakeAuthNotifier(const AuthState.unauthenticated());
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(() => fakeNotifier),
-          ],
-          child: const MaterialApp(home: LoginScreen()),
-        ),
-      );
-
       await tester.pumpAndSettle();
 
       await tester.enterText(
-        find.byKey(const Key('email_field')),
+        find.byKey(WidgetKeys.emailField),
         'alice@example.com',
       );
-      await tester.enterText(
-        find.byKey(const Key('password_field')),
-        'secret123',
-      );
-      await tester.tap(find.byKey(const Key('sign_in_button')));
+      await tester.enterText(find.byKey(WidgetKeys.passwordField), 'secret123');
+      await tester.tap(find.byKey(WidgetKeys.signInButton));
       await tester.pumpAndSettle();
 
-      expect(fakeNotifier.signInCallCount, 1);
-      expect(fakeNotifier.lastEmail, 'alice@example.com');
+      expect(notifier.signInCallCount, 1);
+      expect(notifier.lastEmail, 'alice@example.com');
     });
   });
 }
@@ -390,32 +344,37 @@ Determinism rules (fonts, cross-platform tolerance, update policy) are in [flutt
 File: `test/golden/features/auth/login_screen_golden_test.dart`
 
 ```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:your_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:your_app/features/auth/presentation/screens/login_screen.dart';
 
-import '../../helpers/fakes/fake_auth_notifier.dart';
+import '../../../helpers/fakes/fake_auth_notifier.dart';
+import '../../../helpers/pump_app.dart';
 
 void main() {
-  const testSize = Size(390, 844); // fixed surface: the render must not depend on the machine
+  const testSize = Size(
+    390,
+    844,
+  ); // fixed surface: the render must not depend on the machine
 
-  for (final (name, theme) in [('light', ThemeData.light()), ('dark', ThemeData.dark())]) {
+  for (final (name, theme) in [
+    ('light', ThemeData.light()),
+    ('dark', ThemeData.dark()),
+  ]) {
     testWidgets('login screen, unauthenticated, $name theme', (tester) async {
       tester.view.physicalSize = testSize;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            authProvider.overrideWith(
-              () => FakeAuthNotifier(const AuthState.unauthenticated()),
-            ),
-          ],
-          child: MaterialApp(theme: theme, home: const LoginScreen()),
-        ),
+      await tester.pumpApp(
+        const LoginScreen(),
+        theme: theme,
+        overrides: [
+          authProvider.overrideWith(
+            () => FakeAuthNotifier(const AuthState.unauthenticated()),
+          ),
+        ],
       );
       await tester.pumpAndSettle();
 
@@ -429,7 +388,8 @@ void main() {
 ```
 
 Each iteration is its own `testWidgets` with its own pump, so the element-reuse trap
-([traps](flutter-testing-traps.md) §2) does not apply here.
+([traps](flutter-testing-traps.md) §2) does not apply here. Changing one padding value by 1 px fails both
+goldens (`Pixel test failed, 1.04%`).
 
 **Golden workflow:**
 
@@ -446,28 +406,15 @@ test file. Commit the PNGs: they are the source of truth. `golden_toolkit` is **
 
 ---
 
-## 6. Repository Fake Pattern (mocktail)
+## 6. Mocks and Fakes (mocktail)
 
-All fakes live in `test/helpers/fakes/` and are imported by test files.
-Never define a `Fake` inline inside a test file — it must be reusable.
-
-File: `test/helpers/fakes/fake_auth_repository.dart`
-
-```dart
-import 'package:mocktail/mocktail.dart';
-import 'package:your_app/core/result/result.dart';
-import 'package:your_app/features/auth/domain/entities/user.dart';
-import 'package:your_app/features/auth/domain/repositories/auth_repository.dart';
-
-/// Fake implementation of [AuthRepository] backed by mocktail stubs.
-/// Configure stubs in each test with `when(() => fake.method()).thenAnswer(...)`.
-class FakeAuthRepository extends Fake implements AuthRepository {}
-```
+All mocks and fakes live in `test/helpers/fakes/` and are imported by test files; never define one inline in a test
+file. Use a `Mock` (§2) when the test stubs or verifies calls; use a hand-written subclass when a widget test needs a
+preset state and a call record:
 
 File: `test/helpers/fakes/fake_auth_notifier.dart`
 
 ```dart
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:your_app/features/auth/presentation/providers/auth_provider.dart';
 
 /// A notifier that starts with a preset state and records method calls.
@@ -486,34 +433,31 @@ class FakeAuthNotifier extends AuthNotifier {
   Future<void> signIn({required String email, required String password}) async {
     signInCallCount++;
     lastEmail = email;
-    // Subclasses can override to simulate state changes
   }
 }
 ```
+
+mockito 5.8.1 with `@GenerateNiceMocks([MockSpec<T>()])` also works on 3.50.1, but its codegen needs
+`build_runner` 2.16.2 (2.17.1 requires `build` 5, which mockito 5.8.1 does not allow). Prefer mocktail: no codegen.
 
 **Configuring stubs in a test:**
 
 ```dart
 // Success stub
 when(
-  () => fakeRepo.signIn(
-    email: 'alice@example.com',
-    password: 'secret123',
-  ),
+  () => repository.signIn(email: 'alice@example.com', password: 'secret123'),
 ).thenAnswer((_) async => Success(testUser));
 
-// Failure stub — throws the exception wrapped in Failure
+// Failure stub: the error travels inside Failure
 when(
-  () => fakeRepo.signIn(
+  () => repository.signIn(
     email: any(named: 'email'),
     password: any(named: 'password'),
   ),
-).thenAnswer((_) async => Failure(NetworkException('No internet')));
+).thenAnswer((_) async => const Failure(NetworkException('No internet')));
 
-// Stub that throws directly (for catching in try/catch paths)
-when(
-  () => fakeRepo.getProfile(),
-).thenThrow(UnauthorizedException('Token expired'));
+// Stub that throws directly (for try/catch paths)
+when(() => repository.getProfile()).thenThrow(const UnauthorizedException('Token expired'));
 ```
 
 ---
@@ -527,7 +471,7 @@ File: `test/helpers/fixtures/fixture_reader.dart`
 ```dart
 import 'dart:io';
 
-/// Reads a JSON fixture file from test/helpers/fixtures/<name>.
+/// Reads a JSON fixture file from `test/helpers/fixtures/<name>`.
 ///
 /// Usage:
 ///   final json = fixture('user.json');
@@ -572,26 +516,18 @@ User createTestUser({
 
 ### `pumpApp()` Helper
 
-Wraps a widget with `ProviderScope` + `MaterialApp` + `GoRouter` so every widget test
+Wraps a widget with `ProviderScope` + `MaterialApp` so every widget test
 starts from the same baseline without repeating boilerplate.
 
 File: `test/helpers/pump_app.dart`
 
 ```dart
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Pumps [child] inside a full app shell (ProviderScope + MaterialApp).
-///
-/// Pass [overrides] to replace providers with fakes.
-/// Pass [theme] to test a specific theme variant.
-///
-/// Usage:
-///   await tester.pumpApp(
-///     const LoginScreen(),
-///     overrides: [authProvider.overrideWith(() => FakeAuthNotifier(...))],
-///   );
 extension PumpApp on WidgetTester {
   Future<void> pumpApp(
     Widget child, {
@@ -603,15 +539,14 @@ extension PumpApp on WidgetTester {
       ProviderScope(
         key: key,
         overrides: overrides,
-        child: MaterialApp(
-          theme: theme ?? ThemeData.light(),
-          home: child,
-        ),
+        child: MaterialApp(theme: theme ?? ThemeData.light(), home: child),
       ),
     );
   }
 }
 ```
+
+`Override` is exported from `package:flutter_riverpod/misc.dart` in Riverpod 3, not from the main library.
 
 Usage in tests:
 
@@ -646,8 +581,16 @@ A Robot keeps every finder, tap and assertion for one screen in one class, so te
 
 Never tap via `find.byType(SomeButton)` when the screen has more than one. It is the most common source of flaky Robot tests.
 
+File: `test/helpers/robots/login_robot.dart` (keys from `lib/core/keys/widget_keys.dart`)
+
 ```dart
-// test/helpers/robots/login_robot.dart
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:your_app/core/keys/widget_keys.dart';
+import 'package:your_app/features/auth/presentation/screens/login_screen.dart';
+
+import '../pump_app.dart';
+
 class LoginRobot {
   LoginRobot(this.tester);
   final WidgetTester tester;
@@ -658,8 +601,10 @@ class LoginRobot {
     return this;
   }
 
-  Future<void> enterEmail(String v) => tester.enterText(find.byKey(WidgetKeys.emailField), v);
-  Future<void> enterPassword(String v) => tester.enterText(find.byKey(WidgetKeys.passwordField), v);
+  Future<void> enterEmail(String v) =>
+      tester.enterText(find.byKey(WidgetKeys.emailField), v);
+  Future<void> enterPassword(String v) =>
+      tester.enterText(find.byKey(WidgetKeys.passwordField), v);
   Future<void> tapSignIn() async {
     await tester.tap(find.bySemanticsLabel('Sign in'));
     await tester.pumpAndSettle();
@@ -669,15 +614,43 @@ class LoginRobot {
   void expectError(String msg) => expect(find.text(msg), findsOneWidget);
   void expectNoError(String msg) => expect(find.text(msg), findsNothing);
 }
+```
 
-testWidgets('should show an error when sign in fails', (tester) async {
-  final robot = await LoginRobot(tester).pump(overrides: [/* fake auth */]);
-  robot.expectNoError('Invalid credentials');   // before
-  await robot.enterEmail('a@example.com');
-  await robot.enterPassword('wrong');
-  await robot.tapSignIn();
-  robot.expectError('Invalid credentials');     // after
-});
+File: `test/widget/features/auth/screens/login_robot_test.dart`
+
+```dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:your_app/core/errors/app_exception.dart';
+import 'package:your_app/core/result/result.dart';
+import 'package:your_app/features/auth/presentation/providers/auth_provider.dart';
+import 'package:mocktail/mocktail.dart';
+
+import '../../../../helpers/fakes/mock_auth_repository.dart';
+import '../../../../helpers/robots/login_robot.dart';
+
+void main() {
+  testWidgets('should show an error when sign in fails', (tester) async {
+    final repository = MockAuthRepository();
+    when(() => repository.currentUser()).thenReturn(null);
+    when(
+      () => repository.signIn(
+        email: any(named: 'email'),
+        password: any(named: 'password'),
+      ),
+    ).thenAnswer(
+      (_) async => const Failure(AuthException('Invalid credentials')),
+    );
+
+    final robot = await LoginRobot(
+      tester,
+    ).pump(overrides: [authRepositoryProvider.overrideWithValue(repository)]);
+    robot.expectNoError('Invalid credentials'); // before
+    await robot.enterEmail('a@example.com');
+    await robot.enterPassword('wrong');
+    await robot.tapSignIn();
+    robot.expectError('Invalid credentials'); // after
+  });
+}
 ```
 
 **Symmetry rule (mandatory).** Every `expectXVisible` has an `expectXNotVisible`, and a flow test asserts the state **before** and **after** the action. This catches an assertion that passed because the widget was already there, or never changed.
@@ -693,7 +666,7 @@ Conventions: name tests `should <behaviour> when <condition>`; lay each body out
 - Screens with loading and error states MUST test each state explicitly.
 
 **Fake placement:**
-- All `Fake` and `Mock` classes go in `test/helpers/fakes/` — never inline in test files.
+- All `Fake` and `Mock` classes go in `test/helpers/fakes/` — never inline in test files. Stubbed classes extend `Mock`.
 - All factory methods go in `test/helpers/factories/` — never inline in test files.
 
 **No real I/O:**
@@ -752,8 +725,10 @@ test/
           login_screen_dark.png
   helpers/
     fakes/
-      fake_auth_repository.dart
+      mock_auth_repository.dart
       fake_auth_notifier.dart
+    robots/
+      login_robot.dart
     factories/
       user_factory.dart
     fixtures/

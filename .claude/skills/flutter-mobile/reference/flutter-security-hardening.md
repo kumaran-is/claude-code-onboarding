@@ -37,90 +37,70 @@ Use `local_auth` to gate sensitive screens (payment confirmation, viewing secret
 
 ```yaml
 dependencies:
-  local_auth: 3.0.2   # verified on pub.dev; v3 removed AuthenticationOptions/stickyAuth
+  local_auth: 3.0.2   # v3: LocalAuthException + LocalAuthExceptionCode; AuthenticationOptions/stickyAuth removed
 ```
 
-### Pattern — gate a sensitive action
+### Pattern: gate a sensitive action on an explicit outcome
+
+A boolean hides the difference between "cancelled", "locked out" and "no hardware". Return an outcome, and let only `verified` unlock the action. Compiled and tested on Flutter 3.50.1 (`biometric_test.dart`: success, lockout/cancel/error never map to verified, unsupported device is unavailable; a mutation mapping `userCanceled` to verified fails the suite).
 
 ```dart
 // lib/core/security/biometric_service.dart
 import 'package:local_auth/local_auth.dart';
+import 'package:logging/logging.dart';
+
+final _log = Logger('BiometricService');
+
+/// Outcome of a local re-authentication. Only [verified] may unlock an action.
+enum BiometricOutcome { verified, failed, unavailable, lockedOut, error }
 
 class BiometricService {
-  final LocalAuthentication _auth = LocalAuthentication();
+  BiometricService([LocalAuthentication? auth])
+    : _auth = auth ?? LocalAuthentication();
 
-  /// Returns true if device supports and has enrolled biometrics.
-  Future<bool> isAvailable() async {
-    final canCheck = await _auth.canCheckBiometrics;
-    final isDeviceSupported = await _auth.isDeviceSupported();
-    return canCheck && isDeviceSupported;
-  }
+  final LocalAuthentication _auth;
 
-  /// Prompts the user. Returns true on success, false if the user failed/cancelled.
-  /// Unexpected platform errors are logged and surface as `false` so the caller
-  /// shows a visible "could not verify" state — never treat `false` as success.
-  Future<bool> authenticate({required String reason}) async {
+  Future<BiometricOutcome> authenticate({required String reason}) async {
     try {
-      return await _auth.authenticate(
+      if (!await _auth.isDeviceSupported()) {
+        return BiometricOutcome.unavailable;
+      }
+      final ok = await _auth.authenticate(
         localizedReason: reason,
-        biometricOnly: false,              // allow device PIN/passcode fallback
-        persistAcrossBackgrounding: true,  // retry if the system cancels on backgrounding
+        persistAcrossBackgrounding: true, // retry after the app returns
       );
-    } on LocalAuthException catch (e, stack) {
-      // e.code is a LocalAuthExceptionCode (noBiometricHardware, temporaryLockout,
-      // biometricLockout, userCanceled, ...) — branch on it for user-facing copy.
-      FirebaseCrashlytics.instance.log('[BiometricService] auth failed: ${e.code}');
-      await FirebaseCrashlytics.instance.recordError(e, stack,
-          reason: 'BiometricService.authenticate', printDetails: false);
-      return false;
+      return ok ? BiometricOutcome.verified : BiometricOutcome.failed;
+    } on LocalAuthException catch (e) {
+      _log.warning('local auth failed (${e.code.name})');
+      return switch (e.code) {
+        LocalAuthExceptionCode.userCanceled ||
+        LocalAuthExceptionCode.systemCanceled ||
+        LocalAuthExceptionCode.timeout => BiometricOutcome.failed,
+        LocalAuthExceptionCode.temporaryLockout ||
+        LocalAuthExceptionCode.biometricLockout => BiometricOutcome.lockedOut,
+        LocalAuthExceptionCode.noBiometricHardware ||
+        LocalAuthExceptionCode.noCredentialsSet => BiometricOutcome.unavailable,
+        _ => BiometricOutcome.error,
+      };
     }
   }
 }
 ```
 
-```dart
-// Riverpod provider
-@Riverpod(keepAlive: true)
-BiometricService biometricService(Ref ref) => BiometricService();
-```
+The caller decides per action what `unavailable` means (for example: fall back to re-entering the password, never "skip the check"), and shows a visible message for `failed`, `lockedOut` and `error`.
 
-```dart
-// Usage — gate a payment confirmation action
-Future<void> confirmPayment() async {
-  final bio = ref.read(biometricServiceProvider);
-  final available = await bio.isAvailable();
+### Platform setup
 
-  if (available) {
-    final passed = await bio.authenticate(
-      reason: 'Confirm your identity to complete the payment',
-    );
-    if (!passed) return;   // user cancelled or failed — do nothing silently
-  }
-
-  // Proceed only if biometrics passed (or not available on this device)
-  await ref.read(paymentProvider.notifier).submit();
-}
-```
-
-### iOS — `Info.plist`
-
-```xml
-<key>NSFaceIDUsageDescription</key>
-<string>Confirm your identity to authorize sensitive actions</string>
-```
-
-### Android — `AndroidManifest.xml`
-
-```xml
-<uses-permission android:name="android.permission.USE_BIOMETRIC" />
-```
+- iOS `Info.plist`: `NSFaceIDUsageDescription` (Face ID devices reject the prompt without it).
+- Android: `MainActivity` extends `FlutterFragmentActivity` (local_auth needs a `FragmentActivity`; flutter_stripe needs the same), and `<uses-permission android:name="android.permission.USE_BIOMETRIC" />`.
 
 ### Rules
 
-- **Always check `isAvailable()` first** — degrade gracefully on devices without biometrics
+- **Only `verified` unlocks** — cancelled, locked out, unavailable and error are distinct, visible states
 - **Never block the entire app** behind biometrics — only gate specific sensitive actions
-- **`biometricOnly: false`** (the default in `local_auth` 3.x) — allow PIN/pattern fallback so users with damaged fingerprint sensors are not locked out
-- **Do not store biometric templates yourself** — `local_auth` delegates to the OS secure enclave; your app never sees raw biometric data
+- **`biometricOnly: false`** (the default in `local_auth` 3.x) — allow the device PIN/passcode so users with damaged sensors are not locked out
+- **Biometrics are a local second factor** — they never replace the server session or a server-side authorization check
+- **Do not store biometric templates yourself** — `local_auth` delegates to the OS; the app never sees biometric data
 
 ---
 
@@ -128,125 +108,203 @@ Future<void> confirmPayment() async {
 
 Access tokens expire. Refresh them transparently using a Dio interceptor so the user is never interrupted mid-session.
 
-### Pattern — Dio interceptor with queued retry
+### Pattern: single-flight refresh interceptor (dio 5.11.1)
+
+A plain `Interceptor` plus one shared refresh `Future`: concurrent 401s wait for the same refresh, and each failed request is replayed once on a separate client that has no auth interceptor (no recursion, no deadlock). `QueuedInterceptor` (dio README) also avoids duplicate refreshes, by running its handlers one task at a time; this pattern keeps requests concurrent and pins the single-flight behaviour with a test instead.
+
+Compiled and tested on Flutter 3.50.1 / Dart 3.14.0 with a fake `HttpClientAdapter` (`network_test.dart`). Negative controls, each a planted defect that makes the suite fail: removing the shared future (concurrent 401s trigger two refreshes), wiping on a connection drop, and logging the token value.
 
 ```dart
-// lib/core/network/interceptors/auth_interceptor.dart
+// lib/core/network/auth_interceptor.dart
+import 'dart:async';
+
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:logging/logging.dart';
 
-class AuthInterceptor extends QueuedInterceptor {
-  AuthInterceptor({required this.secureStorage, required this.dio});
+import '../security/token_store.dart';
 
-  final FlutterSecureStorage secureStorage;
-  final Dio dio;   // the SAME Dio instance — used to replay failed requests
+final _log = Logger('AuthInterceptor');
 
-  static const _accessTokenKey  = 'access_token';
-  static const _refreshTokenKey = 'refresh_token';
+/// Calls the refresh endpoint and returns the new token pair. Must use a Dio
+/// instance WITHOUT this interceptor (no recursion) and with its own timeouts.
+typedef RefreshTokens = Future<TokenPair> Function(String refreshToken);
+
+/// Adds the bearer token, and on a 401 refreshes once for all concurrent
+/// callers (single flight), then replays each failed request once.
+class AuthInterceptor extends Interceptor {
+  // Dart 3.12+ private named parameters: callers still write `tokens:` etc.
+  AuthInterceptor({
+    required this._tokens,
+    required this._retryClient,
+    required this._refresh,
+    required this._onSessionExpired,
+  });
+
+  final TokenStore _tokens;
+  final Dio _retryClient;
+  final RefreshTokens _refresh;
+  final Future<void> Function() _onSessionExpired;
+
+  static const _retriedFlag = 'auth_retried';
+  Future<String>? _inFlightRefresh;
 
   @override
-  void onRequest(
+  Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final token = await secureStorage.read(key: _accessTokenKey);
-    if (token != null) {
-      options.headers['Authorization'] = 'Bearer $token';
+    try {
+      final token = await _tokens.readAccessToken();
+      if (token != null) options.headers['Authorization'] = 'Bearer $token';
+      handler.next(options);
+    } on SecureStorageFailure catch (e) {
+      // Keystore broken: fail the request, never send it unauthenticated.
+      handler.reject(DioException(requestOptions: options, error: e));
     }
-    handler.next(options);
   }
 
   @override
-  void onError(DioException err, ErrorInterceptorHandler handler) async {
-    if (err.response?.statusCode != 401) {
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    final request = err.requestOptions;
+    final sentAuth = request.headers['Authorization'] != null;
+    if (err.response?.statusCode != 401 ||
+        !sentAuth || // 401 before any credentials existed: not a dead session
+        request.extra[_retriedFlag] == true) {
       handler.next(err);
       return;
     }
-
-    // 401 — attempt token refresh
     try {
-      final newToken = await _refresh();
-      // Replay original request with new token
-      final retryOptions = err.requestOptions
-        ..headers['Authorization'] = 'Bearer $newToken';
-      final response = await dio.fetch(retryOptions);
-      handler.resolve(response);
-    } on DioException catch (refreshError) {
-      // Only a definitive server rejection of the refresh token ends the session.
-      // Connection errors, timeouts and 5xx are TRANSIENT: keep credentials and
-      // surface the failure (the user is offline, not signed out).
-      if (_isCredentialRejection(refreshError)) {
-        await secureStorage.deleteAll(); // in production route through ONE sign-out coordinator
+      // A request that left with an older token than the stored one raced a
+      // refresh that already finished: replay it, do not refresh again.
+      final current = await _tokens.readAccessToken();
+      final sentToken = request.headers['Authorization'];
+      final token = (current != null && sentToken != 'Bearer $current')
+          ? current
+          : await (_inFlightRefresh ??= _refreshOnce());
+      request
+        ..headers['Authorization'] = 'Bearer $token'
+        ..extra[_retriedFlag] = true;
+      handler.resolve(await _retryClient.fetch<dynamic>(request));
+    } on DioException catch (e) {
+      handler.next(e);
+    } on SecureStorageFailure catch (e) {
+      handler.next(DioException(requestOptions: request, error: e));
+    }
+  }
+
+  Future<String> _refreshOnce() async {
+    try {
+      final refreshToken = await _tokens.readRefreshToken();
+      if (refreshToken == null) {
+        await _onSessionExpired();
+        throw DioException(
+          requestOptions: RequestOptions(path: 'auth/refresh'),
+          type: DioExceptionType.badResponse,
+          response: Response(
+            requestOptions: RequestOptions(path: 'auth/refresh'),
+            statusCode: 401,
+          ),
+        );
       }
-      handler.reject(err);
+      final pair = await _refresh(refreshToken);
+      await _tokens.save(pair);
+      _log.info('token refreshed'); // never the token value
+      return pair.accessToken;
+    } on DioException catch (e) {
+      // Only a definitive rejection of the refresh token ends the session.
+      // Timeouts, connection errors and 5xx keep credentials.
+      final status = e.response?.statusCode;
+      if (status == 400 || status == 401 || status == 403) {
+        _log.warning('refresh rejected ($status); signing out');
+        await _onSessionExpired();
+      } else {
+        _log.warning('refresh failed transiently (${e.type.name})');
+      }
+      rethrow;
+    } finally {
+      _inFlightRefresh = null;
     }
   }
+}
+```
 
-  /// Refresh endpoint answered 400/401/403 = refresh token invalid or revoked.
-  /// Classify by response status/error code, never by message text.
-  bool _isCredentialRejection(DioException e) {
-    final status = e.response?.statusCode;
-    return status == 400 || status == 401 || status == 403;
-  }
+`TokenStore` wraps `flutter_secure_storage` 11.2.0 and turns a `PlatformException` into a typed `SecureStorageFailure` ("unknown", never "signed out"):
 
-  Future<String> _refresh() async {
-    final refreshToken = await secureStorage.read(key: _refreshTokenKey);
-    if (refreshToken == null) {
-      // No credentials at all: a request made before sign-in is not a dead session.
-      throw DioException(
-        requestOptions: RequestOptions(),
-        response: Response(requestOptions: RequestOptions(), statusCode: 401),
+```dart
+// lib/core/security/token_store.dart (excerpt)
+class TokenStore {
+  TokenStore([FlutterSecureStorage? storage])
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock_this_device,
+            ),
+          );
+
+  final FlutterSecureStorage _storage;
+
+  Future<String?> readAccessToken() =>
+      _guard('read', () => _storage.read(key: 'access_token'));
+
+  Future<T> _guard<T>(String operation, Future<T> Function() body) async {
+    try {
+      return await body();
+    } on PlatformException catch (e, st) {
+      // Log the code only: the message can contain key names or values.
+      _log.severe(
+        'secure storage $operation failed (${e.code})',
+        e.runtimeType,
+        st,
       );
+      throw SecureStorageFailure(operation);
     }
-
-    final response = await Dio().post(
-      '${Env.apiBaseUrl}/auth/refresh',
-      data: {'refresh_token': refreshToken},
-    );
-
-    final newAccessToken  = response.data['access_token']  as String;
-    final newRefreshToken = response.data['refresh_token'] as String;
-
-    await secureStorage.write(key: _accessTokenKey,  value: newAccessToken);
-    await secureStorage.write(key: _refreshTokenKey, value: newRefreshToken);
-    return newAccessToken;
   }
+  // readRefreshToken, save(TokenPair) and clear() follow the same _guard pattern.
 }
 ```
 
-Register on the Dio instance in `core/di/providers.dart`:
-```dart
-@Riverpod(keepAlive: true)
-Dio dio(Ref ref) {
-  final dio = Dio(BaseOptions(baseUrl: Env.apiBaseUrl));
-  final storage = ref.watch(secureStorageProvider);
-  dio.interceptors.add(AuthInterceptor(secureStorage: storage, dio: dio));
-  return dio;
-}
-```
-
-### Token storage keys
+Wire both clients in one factory (full version with timeouts and the HTTPS assert: [flutter-api-contract-parity.md](flutter-api-contract-parity.md) §3–4):
 
 ```dart
-// lib/core/constants/storage_keys.dart
-abstract final class StorageKeys {
-  static const accessToken  = 'access_token';
-  static const refreshToken = 'refresh_token';
-  static const userId       = 'user_id';
-}
+final plain = Dio(_options(baseUrl)); // refresh call + replay: no auth interceptor
+final api = Dio(_options(baseUrl))
+  ..interceptors.add(
+    AuthInterceptor(
+      tokens: tokens,
+      retryClient: plain,
+      onSessionExpired: onSessionExpired, // the ONE sign-out coordinator
+      refresh: (refreshToken) async {
+        final res = await plain.post<Map<String, dynamic>>(
+          '/auth/refresh',
+          data: {'refresh_token': refreshToken},
+        );
+        final body = res.data!;
+        return TokenPair(
+          accessToken: body['access_token'] as String,
+          refreshToken: body['refresh_token'] as String,
+        );
+      },
+    ),
+  );
 ```
+
+Firebase Auth apps do not need this interceptor for Firebase services: send `await user.getIdToken()` to your backend instead (the SDK refreshes it) and treat a `null` user as signed out with no anonymous fallback.
 
 ### Rules
 
-- **`QueuedInterceptor`** — queues concurrent 401 requests; prevents multiple simultaneous refresh calls
-- **Store tokens in `flutter_secure_storage` only** — never in `SharedPreferences` or in-memory globals
-- **Wipe only on credential rejection, never on a transient failure** — `deleteAll()` + redirect to login only when the refresh endpoint definitively rejects the refresh token (or the user signs out). A connection error or timeout during refresh keeps credentials and reports offline; wiping there deletes queued work for a user who merely lost signal
+- **Single flight** — one shared refresh `Future` for all concurrent 401s; each request is replayed at most once (`extra` flag), so a still-401 replay cannot loop
+- **Separate replay/refresh client** — the refresh call and the replay go through a `Dio` without the auth interceptor
+- **Store tokens in `flutter_secure_storage` only** — never in `SharedPreferences` or in-memory globals; a keystore read failure fails the request instead of sending it unauthenticated
+- **Wipe only on credential rejection, never on a transient failure** — only a 400/401/403 from the refresh endpoint (or a user sign-out) reaches the sign-out coordinator. A connection error, timeout or 5xx during refresh keeps credentials and reports the failure; wiping there deletes queued work for a user who merely lost signal
 - **Classify by error type/status, never message text** — a substring match on "network" can skip a needed sign-out
-- **One sign-out coordinator** — all wipes (tokens, local DB, keys, caches) go through one function; only a real sign-out reaches it
+- **One sign-out coordinator** — all wipes (tokens, local DB, keys, caches, purchase identity) go through one function; only a real sign-out reaches it
 - **A 401 on a request made before any credentials existed is not a dead session** — pass it through; do not wipe
 - **Cache last verified claims/roles per user** for transient-error reuse; clear them on sign-out and on a null auth-state emission. No TTL on the cache (a TTL would sign the user out while offline)
-- **Refresh endpoint uses a fresh `Dio()` instance** — avoids circular interception of the refresh call itself
-- **Never log token values** — log `'token refreshed'` not the token content
+- **Never log token values** — log `'token refreshed'`, never the token; run log lines through a redactor ([flutter-security-client-trust.md](flutter-security-client-trust.md) §4)
 
 ---
 
@@ -265,15 +323,15 @@ Future<void> main() async {
 
   // Activate App Check before any other Firebase service
   await FirebaseAppCheck.instance.activate(
-    // Android: Play Integrity in production; iOS: App Attest (with DeviceCheck fallback) or DeviceCheck.
+    // Android: Play Integrity in production; iOS: App Attest with DeviceCheck fallback.
     // Debug providers ONLY in debug builds. The `providerAndroid` / `providerApple` provider
     // objects replace the older `androidProvider` / `appleProvider` enum parameters.
     providerAndroid: kDebugMode
-        ? AndroidDebugProvider()
-        : AndroidPlayIntegrityProvider(),
+        ? const AndroidDebugProvider()
+        : const AndroidPlayIntegrityProvider(),
     providerApple: kDebugMode
-        ? AppleDebugProvider()
-        : AppleAppAttestWithDeviceCheckFallbackProvider(),
+        ? const AppleDebugProvider()
+        : const AppleAppAttestWithDeviceCheckFallbackProvider(),
   );
 
   runApp(const ProviderScope(child: App()));
@@ -283,8 +341,11 @@ Future<void> main() async {
 ### `pubspec.yaml`
 ```yaml
 dependencies:
-  firebase_app_check: 0.5.2   # verified on pub.dev; re-check before pinning
+  firebase_core: 5.2.0
+  firebase_app_check: 0.5.2   # FlutterFire family below resolves together on Flutter 3.50.1
 ```
+
+The FlutterFire family pinned together and resolved on Flutter 3.50.1 / Dart 3.14.0: `firebase_core 5.2.0`, `firebase_auth 7.1.0`, `cloud_firestore 7.2.0`, `firebase_messaging 17.1.0`, `firebase_crashlytics 6.1.0`, `firebase_app_check 0.5.2` (Firebase native SDK 35.2.0). Floors from the plugin sources: Flutter >= 3.44, Dart ^3.12, Android `minSdk 24`, iOS 15.0. Upgrade the family as one unit; mixing majors fails resolution through the shared platform interfaces.
 
 ### Rules
 
@@ -327,7 +388,7 @@ Add to the checklist in this file:
 - [ ] Dependencies checked for known vulnerabilities (pub surfaces advisories on `dart pub get`; add the CI scanner your org uses)
 - [ ] No service secrets in the client; secret-scan gate passes ([flutter-security-client-trust.md](flutter-security-client-trust.md))
 - [ ] Biometric auth gates all sensitive actions (payment, secrets view)
-- [ ] Token refresh interceptor handles 401 transparently with QueuedInterceptor
+- [ ] Token refresh interceptor is single-flight (one refresh for concurrent 401s, one replay per request)
 - [ ] Only a definitive refresh-token rejection clears storage and redirects to login; connection errors/timeouts do not
 
 ## Crashlytics Structured Error Reporting
@@ -348,7 +409,7 @@ Future<Result<Order>> fetchById(String id) async {
     return Success(Order.fromFirestore(doc));
   } on FirebaseException catch (e, stack) {
     // 1. Human-readable breadcrumb (searchable in Crashlytics console)
-    FirebaseCrashlytics.instance.log(
+    await FirebaseCrashlytics.instance.log(
       '[OrderRepository.fetchById] FirebaseException for order $id: ${e.code}',
     );
     // 2. Full error + stack trace — always await, dropping it loses the report
@@ -360,8 +421,9 @@ Future<Result<Order>> fetchById(String id) async {
     );
     return Failure(e);
   } catch (e, stack) {
-    FirebaseCrashlytics.instance.log(
-      '[OrderRepository.fetchById] Unexpected error for order $id: $e',
+    await FirebaseCrashlytics.instance.log(
+      // runtimeType, never $e: an exception message can carry user text
+      '[OrderRepository.fetchById] Unexpected ${e.runtimeType} for order $id',
     );
     await FirebaseCrashlytics.instance.recordError(
       e,
@@ -369,7 +431,7 @@ Future<Result<Order>> fetchById(String id) async {
       reason: 'OrderRepository.fetchById unexpected — id: $id',
       printDetails: false,
     );
-    return Failure(UnexpectedException(e.toString()));
+    return Failure(UnexpectedException(e.runtimeType.toString()));
   }
 }
 ```

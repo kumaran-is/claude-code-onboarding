@@ -45,9 +45,13 @@ Mobile security and privacy compliance specialist for Flutter applications. Cove
 | **Deep Link Security** | Intent filter validation, URL scheme hijacking prevention |
 | **Build Security** | No debug flags in release; ProGuard/R8 enabled for Android; debug affordances behind compile-time `const` gates |
 | **Client Trust** | No service/HMAC/private-key secrets reachable from Dart or `--dart-define`; privileged calls go through a user-authenticated backend; per-request-billed keys named |
-| **Token / Session Lifecycle** | Refresh failure wipes credentials only on definitive rejection, never on connection errors/timeouts; one sign-out coordinator |
+| **Token / Session Lifecycle** | Single-flight refresh (one refresh for concurrent 401s, one replay per request, separate client without the auth interceptor); credentials wiped only on a 400/401/403 from the refresh endpoint, never on connection errors/timeouts/5xx; keystore read failure fails the request; one sign-out coordinator (tokens, DB key, FCM token, purchase identity) |
+| **Firebase** | App Check activated before other Firebase calls with debug providers behind `kDebugMode`; Firestore rules tested on the emulator with a `demo-*` project and a permissive-rule negative; no real Firebase config in fixtures |
+| **Push Messages** | Background handler top-level with `@pragma('vm:entry-point')`; payload routes through an allowlist plus id validation; no personal data in notification payloads; payloads not logged |
+| **Biometrics** | `local_auth` 3.x result mapped to an explicit outcome; only "verified" unlocks; cancel/lockout/error visible; never the only authorization |
+| **Payments** | Only publishable/public SDK keys in the app (`pk_`, RevenueCat `appl_`/`goog_`); fulfilment and entitlements decided server-side (webhook, RevenueCat REST) |
 | **Security Preferences** | App-lock/permission settings fail closed when unreadable |
-| **Log Hygiene** | No user text or `exception.toString()` interpolated into logs/Crashlytics messages |
+| **Log Hygiene** | No user text, token or `exception.toString()` interpolated into logs/Crashlytics messages; the log sink runs a redactor |
 
 ## Process
 

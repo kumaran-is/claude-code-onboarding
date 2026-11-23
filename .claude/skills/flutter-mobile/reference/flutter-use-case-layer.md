@@ -42,13 +42,14 @@ successful order into a failure, but it must not vanish silently either — log 
 // lib/features/orders/domain/use_cases/place_order_use_case.dart
 
 class PlaceOrderUseCase {
+  // Dart 3.14: a private field can be a named initializing formal; callers still
+  // pass `orderRepo:`. The older `: _orderRepo = orderRepo` initializer list now
+  // triggers `prefer_initializing_formals`.
   const PlaceOrderUseCase({
-    required OrderRepository orderRepo,
-    required InventoryRepository inventoryRepo,
-    required AppLogger logger,
-  })  : _orderRepo = orderRepo,
-        _inventoryRepo = inventoryRepo,
-        _logger = logger;
+    required this._orderRepo,
+    required this._inventoryRepo,
+    required this._logger,
+  });
 
   final OrderRepository _orderRepo;
   final InventoryRepository _inventoryRepo;
@@ -56,9 +57,13 @@ class PlaceOrderUseCase {
 
   Future<Result<Order>> execute(PlaceOrderParams params) async {
     // Step 1 — the operation that defines success
-    final result = await _orderRepo.create(params);
-    if (result case Failure(:final error)) return Failure(error);
-    final order = (result as Success<Order>).value;
+    final Order order;
+    switch (await _orderRepo.create(params)) {
+      case Failure(:final error):
+        return Failure(error);
+      case Success(:final value):
+        order = value; // exhaustive switch: no `as Success<Order>` cast
+    }
 
     // Step 2 — best-effort follow-up: failure is logged and surfaced to the caller
     // through a retry path, never swallowed
@@ -90,14 +95,16 @@ ViewModel calls the use case, not the repositories directly:
 
 ```dart
 Future<void> submit(PlaceOrderParams params) async {
-  state = const AsyncValue.loading();
-  state = await AsyncValue.guard(() async {
+  state = const AsyncLoading();
+  final next = await AsyncValue.guard(() async {
     final result = await ref.read(placeOrderProvider).execute(params);
     return switch (result) {
       Success(:final value) => value,
       Failure(:final error) => throw error,
     };
   });
+  if (!ref.mounted) return; // screen closed while placing the order
+  state = next;
 }
 ```
 
@@ -142,6 +149,23 @@ void main() {
 
     expect(result, isA<Success<Order>>());
     expect(logger.errors, hasLength(1));
+  });
+
+  test('a failed order is returned as Failure and nothing is reserved', () async {
+    final inventoryRepo = FakeInventoryRepository();
+    final useCase = PlaceOrderUseCase(
+      orderRepo: FakeOrderRepository(fail: true),
+      inventoryRepo: inventoryRepo,
+      logger: FakeLogger(),
+    );
+
+    final result = await useCase.execute(const PlaceOrderParams(
+      customerId: 'c1',
+      lines: [OrderLine(sku: 'sku-1', quantity: 2)],
+    ));
+
+    expect(result, isA<Failure<Order>>());
+    expect(inventoryRepo.reserved, isFalse);
   });
 }
 ```

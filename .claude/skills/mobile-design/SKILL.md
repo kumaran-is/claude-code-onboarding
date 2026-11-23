@@ -79,7 +79,7 @@ If any of the following are not explicitly stated, you MUST ask before proceedin
 | Devices | Phone only or tablet too? | Layout and density rules |
 | Audience | Consumer, enterprise, accessibility needs? | Touch and readability |
 
-**Flutter note:** This workspace uses Flutter 3.41.x exclusively. Framework is not a question — it is Flutter. If the request is for React Native, redirect to the mobile-developer skill.
+**Flutter note:** This workspace uses Flutter 3.50.x (Dart 3.14) exclusively; Material widgets come from `package:material_ui` (pinned 1.11.1), not the deprecated `package:flutter/material.dart`. Framework is not a question — it is Flutter. If the request is for React Native, redirect to the mobile-developer skill.
 
 Never default to your favorite stack or pattern.
 
@@ -98,6 +98,7 @@ Read these files in this order before designing any screen:
 | `reference/mobile-backend.md` | Offline sync, push notifications, Firebase | When feature uses network |
 | `reference/mobile-testing.md` | Device testing, E2E flows, flutter_test | Before writing tests |
 | `reference/mobile-debugging.md` | Flutter DevTools, Dart Observatory, xcodebuild MCP | When debugging |
+| `reference/flutter-native-capabilities.md` | Camera, media, location, maps, files, PDF, speech, sharing: verified plugin pins, Android/iOS floors, permission keys | Before adding any device-capability plugin |
 
 If you have not read `touch-psychology.md`, you are not allowed to design any UI.
 
@@ -179,7 +180,7 @@ Complete this before writing any widget code. If you cannot fill it in, go back 
 ```
 MOBILE CHECKPOINT
 Platform:     [ ] iOS  [ ] Android  [ ] Both
-Framework:    Flutter 3.41.x
+Framework:    Flutter 3.50.x (material_ui)
 Files Read:   [ ] touch-psychology  [ ] mobile-performance  [ ] platform-specific
 MFRI Score:   ___  (must be >= 3)
 

@@ -1,6 +1,6 @@
 ---
 name: wireframe-reviewer
-description: "Reviews wireframe HTML files and UI designs using dual-persona evaluation (efficiency + delight). Scores out of 100 with actionable feedback. Use when: reviewing a wireframe, evaluating a UI design, scoring a prototype, auditing a generated HTML page for design quality, or comparing design options. Uses Read, Glob, Grep tools — no MCP required."
+description: "Reviews wireframe HTML files and UI designs using dual-persona evaluation (efficiency + delight). Scores out of 100 with actionable feedback. Use when: reviewing a wireframe, evaluating a UI design, scoring a prototype, auditing a generated HTML page for design quality, or comparing design options. Uses Read, Glob, Grep tools — no MCP required. Read-only scoring. Applying the feedback is wireframe-iterator."
 tools: Read, Glob, Grep
 disallowedTools: Write, Edit
 model: sonnet

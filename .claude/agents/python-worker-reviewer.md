@@ -57,9 +57,10 @@ and `pubsub-firestore-patterns.md`: read the relevant section before flagging.
 
 Verdict (final line): `VERDICT: [APPROVE|NEEDS_REVIEW|BLOCK] — CRITICAL: N | HIGH: N | MEDIUM: N`
 
-- **APPROVE**: zero CRITICAL, zero HIGH
-- **NEEDS_REVIEW**: HIGH findings with a documented remediation plan
-- **BLOCK**: any CRITICAL finding
+- **APPROVE**: zero CRITICAL, zero HIGH unresolved; MEDIUM/LOW listed as advisories
+- **NEEDS_REVIEW**: zero CRITICAL, one or more HIGH: each needs a fix or a written justification in the PR before merge (also when a required check is NOT RUN or BLOCKED)
+- **BLOCK**: any CRITICAL finding — must fix before merge
+- Policy: `.claude/rules/verification-and-reporting.md` → Review Severity Policy
 
 ## Output Format
 

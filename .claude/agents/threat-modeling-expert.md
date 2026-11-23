@@ -1,6 +1,6 @@
 ---
 name: threat-modeling-expert
-description: Expert in threat modeling methodologies, security architecture review, and risk assessment. Masters STRIDE, PASTA, attack trees, and security requirement extraction. Use when designing new systems, reviewing architecture for security gaps, preparing for security audits, or identifying attack vectors before implementation starts.
+description: Expert in threat modeling methodologies, security architecture review, and risk assessment. Masters STRIDE, PASTA, attack trees, and security requirement extraction. Use when designing new systems, reviewing architecture for security gaps, preparing for security audits, or identifying attack vectors before implementation starts. Design-time only. Not for reviewing implemented code (security-reviewer, ai-security-reviewer, flutter-security-expert).
 tools: Read, Glob, Grep, Bash
 disallowedTools: Write, Edit
 model: sonnet

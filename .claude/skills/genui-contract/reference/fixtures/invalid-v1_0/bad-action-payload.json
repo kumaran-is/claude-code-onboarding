@@ -1,0 +1,74 @@
+{
+  "description": "Renderer-to-agent approval.approve without requestId and with an unexpected isAdmin flag.",
+  "expectedError": "ACTION_PAYLOAD_INVALID",
+  "messages": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "appr-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json",
+        "components": [
+          {
+            "id": "root",
+            "component": "ApprovalForm",
+            "title": "Refund approval",
+            "summary": {
+              "@path": "/request/summary"
+            },
+            "requestId": "req-881",
+            "riskLevel": "high",
+            "comment": {
+              "@path": "/request/comment"
+            },
+            "@accessibility": {
+              "label": "Refund approval request"
+            },
+            "approveAction": {
+              "event": {
+                "name": "approval.approve",
+                "context": {
+                  "requestId": "req-881",
+                  "comment": {
+                    "@path": "/request/comment"
+                  }
+                }
+              }
+            },
+            "rejectAction": {
+              "event": {
+                "name": "approval.reject",
+                "context": {
+                  "requestId": "req-881",
+                  "reason": {
+                    "@path": "/request/comment"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "dataModel": {
+          "request": {
+            "summary": "Refund 120 EUR for order 5521.",
+            "comment": ""
+          }
+        }
+      }
+    }
+  ],
+  "rendererMessages": [
+    {
+      "version": "1.0",
+      "action": {
+        "name": "approval.approve",
+        "surfaceId": "appr-1",
+        "sourceComponentId": "root",
+        "timestamp": "2026-11-23T12:00:00.000Z",
+        "context": {
+          "comment": "ok",
+          "isAdmin": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "description": "A v0.9 frame inside a 1.0 stream is MIXED_VERSIONS and is not applied; a 1.0 updateDataModel without value is SCHEMA_INVALID (value is required in 1.0); the stream continues.",
+  "errors": [{"line": 2, "code": "MIXED_VERSIONS"}, {"line": 3, "code": "SCHEMA_INVALID"}],
+  "finalState": {}
+}

@@ -1,6 +1,6 @@
 {
-  "description": "Version 'v0.9.1' is not the pinned wire version v0.9; reject explicitly, never best-effort parse.",
-  "expectedError": "UNSUPPORTED_VERSION",
+  "description": "Stream mixes wire versions: the first message declares 'v0.9.1', later messages declare 'v0.9'. v0.9.1 alone is accepted on the compatibility path; mixing exact version strings in one stream is rejected.",
+  "expectedError": "MIXED_VERSIONS",
   "messages": [
     {
       "version": "v0.9.1",

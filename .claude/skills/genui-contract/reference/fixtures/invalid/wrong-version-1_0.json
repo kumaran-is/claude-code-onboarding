@@ -1,12 +1,12 @@
 {
-  "description": "Version '1.0' is not the pinned wire version v0.9; reject explicitly, never best-effort parse.",
-  "expectedError": "UNSUPPORTED_VERSION",
+  "description": "Stream mixes wire versions: the first message declares '1.0' (target contract), later messages declare 'v0.9'. One stream uses one exact version; reject, never best-effort parse or translate.",
+  "expectedError": "MIXED_VERSIONS",
   "messages": [
     {
       "version": "1.0",
       "createSurface": {
         "surfaceId": "card-1",
-        "catalogId": "https://catalogs.example.com/genui/canonical/v1/catalog.json"
+        "catalogId": "https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json"
       }
     },
     {

@@ -1,0 +1,5 @@
+{
+  "description": "1.0 single-message surface init with a child that arrives later; updateDataModel value null deletes the key.",
+  "errors": [],
+  "finalState": {"s1": {"componentIds": ["root", "status"], "dataModel": {"order": {}}}}
+}

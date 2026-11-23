@@ -1,0 +1,94 @@
+{
+  "description": "EditableForm submitAction names an action that is not allowlisted for that component.",
+  "expectedError": "ACTION_NOT_ALLOWED",
+  "messages": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "form-1",
+        "catalogId": "https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json"
+      }
+    },
+    {
+      "version": "1.0",
+      "updateComponents": {
+        "surfaceId": "form-1",
+        "components": [
+          {
+            "id": "root",
+            "component": "InputForm",
+            "title": "Edit contact details",
+            "formId": "profile-7",
+            "fields": [
+              {
+                "name": "displayName",
+                "label": "Display name",
+                "inputType": "text",
+                "value": {
+                  "@path": "/profile/displayName"
+                },
+                "required": true,
+                "maxLength": 80
+              },
+              {
+                "name": "email",
+                "label": "Email",
+                "inputType": "email",
+                "value": {
+                  "@path": "/profile/email"
+                },
+                "required": true,
+                "checks": [
+                  {
+                    "condition": {
+                      "@call": "required",
+                      "args": {
+                        "value": {
+                          "@path": "/profile/email"
+                        }
+                      }
+                    },
+                    "message": "Email is required."
+                  }
+                ]
+              }
+            ],
+            "submitLabel": "Save",
+            "submitAction": {
+              "event": {
+                "name": "approval.approve",
+                "context": {
+                  "formId": "profile-7",
+                  "values": {
+                    "@path": "/profile"
+                  }
+                }
+              }
+            },
+            "cancelAction": {
+              "event": {
+                "name": "form.cancel",
+                "context": {
+                  "formId": "profile-7"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "version": "1.0",
+      "updateDataModel": {
+        "surfaceId": "form-1",
+        "path": "/",
+        "value": {
+          "profile": {
+            "displayName": "Ada",
+            "email": "ada@example.com"
+          }
+        }
+      }
+    }
+  ]
+}

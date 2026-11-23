@@ -1,0 +1,4 @@
+{"version":"1.0","createSurface":{"surfaceId":"s1","catalogId":"https://catalogs.example.com/genui/canonical-a2ui-1_0/v1/catalog.json","components":[{"id":"root","component":"StatusIndicator","label":"Build","status":"pending"}]}}
+{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"id":"root","component":"StatusIndicator","label":"Build","status":"success"}]}}
+{"version":"1.0","updateDataModel":{"surfaceId":"s1","path":"/x"}}
+{"version":"1.0","deleteSurface":{"surfaceId":"s1"}}

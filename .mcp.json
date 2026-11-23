@@ -16,7 +16,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@angular/cli@21.2.31",
+        "@angular/cli@22.3.0",
         "mcp"
       ],
       "timeout": 60000

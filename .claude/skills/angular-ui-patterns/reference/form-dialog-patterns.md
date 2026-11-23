@@ -1,13 +1,13 @@
 # Form Patterns & Dialog/Modal Patterns
 
-Forms here use **typed reactive forms** — the production default on Angular 21.x. Signal Forms
-(`@angular/forms/signals`) are EXPERIMENTAL in 21.x; see `angular/references/signal-forms.md` before
+Forms here use **typed reactive forms** — the production default on Angular 22.x. Signal Forms
+(`@angular/forms/signals`) are stable in v22 and the default for new forms; see `angular/references/signal-forms.md` before
 using them. Field-level validation catalogues live in `angular-spa/reference/angular-forms-validation.md`.
 
 ## Form with Validation, In-Flight Guard and Server Errors
 
 ```typescript
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -20,7 +20,6 @@ type FieldName = 'name' | 'email';
 @Component({
   selector: 'app-user-form',
   imports: [ReactiveFormsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
       <label for="name">Name</label>
@@ -113,7 +112,7 @@ the request is in flight, and show the failure in place.
 
 ```typescript
 import { DIALOG_DATA, Dialog, DialogRef } from '@angular/cdk/dialog';
-import { ChangeDetectionStrategy, Component, Injectable, inject, signal } from '@angular/core';
+import { Component, Service, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Logger } from '../core/logging/logger';
 
@@ -126,7 +125,6 @@ export interface ConfirmOptions {
 
 @Component({
   selector: 'app-confirm-dialog',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2 id="confirm-title">{{ data.title }}</h2>
     <p>{{ data.message }}</p>
@@ -164,7 +162,7 @@ export class ConfirmDialog {
   }
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ConfirmService {
   private readonly dialog = inject(Dialog);
 
@@ -192,7 +190,7 @@ async remove(item: Item): Promise<void> {
 }
 ```
 
-Verified with Vitest on Angular 21.2 + CDK 21.2: Escape is ignored while the action is pending and the
+Verified with Vitest on Angular 21.2 + CDK 21.2 (not re-run on 22.3): Escape is ignored while the action is pending and the
 error renders in the still-open dialog; with `disableClose` removed the same test fails (negative control).
 If you use a native `<dialog>` instead, open it with `showModal()` inside `afterNextRender(…, { injector })`
 so it has an accessible name and a focus target, and cancel the `cancel` event while busy.

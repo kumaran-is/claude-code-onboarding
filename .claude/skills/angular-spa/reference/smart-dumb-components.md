@@ -1,6 +1,6 @@
 # Smart (Container) vs Dumb (Presentational) Component Pattern
 
-> **Applies to:** Angular 21.2.x, signals, standalone components, `input()`/`output()` APIs.
+> **Applies to:** Angular 22.3.x, signals, standalone components, `input()`/`output()` APIs.
 
 ---
 
@@ -54,13 +54,13 @@ Is this component reused in 2+ places OR is it a leaf UI element?
 
 ---
 
-## 3. Angular 21 Signal-Based Examples
+## 3. Angular 22 Signal-Based Examples
 
 ### Smart Component (page-level container)
 
 ```typescript
 // features/items/items-page.component.ts
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { resource } from '@angular/core';
 import { ItemCardComponent } from '../../shared/components/item-card/item-card.component';
 import { LoadingSpinnerComponent } from '../../shared/components/loading-spinner/loading-spinner.component';
@@ -71,7 +71,6 @@ import { Item } from '../../shared/models/item.model';
 @Component({
   selector: 'app-items-page',
   imports: [ItemCardComponent, LoadingSpinnerComponent, ErrorStateComponent],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- error → hasValue → loading: a reload after an error keeps showing the error, not a bare spinner -->
     @if (itemsResource.error(); as err) {
@@ -94,10 +93,10 @@ export class ItemsPageComponent {
   // ✅ Smart: injects service
   private itemService = inject(ItemService);
 
-  // ✅ Smart: owns async state via resource() — EXPERIMENTAL in Angular 21 (`@experimental` in the
-  // 21.2 typings; the API may change). `loader` must return a Promise: here `getAll(): Promise<Item[]>`.
+  // ✅ Smart: owns async state via resource() — stable in Angular 22 (`@publicApi 22.0` in the
+  // 22.3 typings). `loader` must return a Promise: here `getAll(): Promise<Item[]>`.
   // For an Observable-returning service use rxResource({ stream: () => this.itemService.getAll() })
-  // from '@angular/core/rxjs-interop' (also experimental).
+  // from '@angular/core/rxjs-interop' (also stable).
   protected itemsResource = resource({
     loader: () => this.itemService.getAll(),
   });
@@ -113,12 +112,11 @@ export class ItemsPageComponent {
 
 ```typescript
 // shared/components/item-card/item-card.component.ts
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { Item } from '../../models/item.model';
 
 @Component({
   selector: 'app-item-card',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <article class="card bg-base-100 shadow-md hover:shadow-xl transition-shadow duration-200">
       <div class="card-body">
@@ -154,11 +152,10 @@ Local UI state (e.g. hover, open/closed) that does not affect business logic is 
 
 ```typescript
 // shared/components/accordion-item/accordion-item.component.ts
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 
 @Component({
   selector: 'app-accordion-item',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="collapse collapse-arrow bg-base-200">
       <input type="checkbox" [checked]="isOpen()" (change)="toggle()" />
@@ -202,7 +199,7 @@ export class AccordionItemComponent {
 ✅ ALWAYS use input.required<T>() for mandatory data
 ✅ ALWAYS use input<T>(defaultValue) for optional data
 ✅ ALWAYS use output<T>() for user-triggered events
-✅ ALWAYS use ChangeDetectionStrategy.OnPush
+✅ Rely on the Angular 22 OnPush default (do not set `changeDetection`; never opt back into `Eager`/`Default` without a written reason)
 ✅ ALWAYS place in shared/components/<component-name>/
 ```
 
@@ -370,6 +367,6 @@ Before committing any component:
 □ Does it have local UI-only state (hover, toggle, open/closed)?
   → Allowed in dumb components — this is the one exception
 
-□ Does it use ChangeDetectionStrategy.OnPush?
+□ Does it keep the v22 OnPush default (no `changeDetection` override)?
   → Required on ALL components — smart and dumb alike
 ```

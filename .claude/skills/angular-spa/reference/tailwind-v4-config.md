@@ -1,6 +1,6 @@
 > **Official Angular+Tailwind guide:** https://angular.dev/guide/tailwind
 
-# TailwindCSS v4.x Configuration
+# Tailwind CSS 4.3.5 Configuration
 
 ## Angular Official Setup (from angular.dev)
 
@@ -47,14 +47,14 @@ For SCSS projects, add to `src/styles.scss`:
 | SCSS `@use 'tailwindcss'` supported | CSS only (`src/styles.css`) | Sass intercepts `@import`/`@theme`/`@plugin` — CSS is required |
 | `@import "tailwindcss"` | `@import "tailwindcss";` + `@plugin "daisyui";` | daisyUI 5 is a Tailwind 4 plugin |
 
-> Angular 21 does **not** use Tailwind v4 by default — it must be installed explicitly via `ng add tailwindcss` or manual setup. The `ng add` command installs Tailwind v4 when run in Angular 17+ projects using the `@angular/build:application` (esbuild) builder.
+> Angular 22 does **not** use Tailwind v4 by default — it must be installed explicitly via `ng add tailwindcss` or manual setup. The `ng add` command installs Tailwind v4 when run in Angular 17+ projects using the `@angular/build:application` (esbuild) builder.
 
 ## CSS-Native Configuration (No tailwind.config.js)
 
 TailwindCSS v4 is a complete rewrite using CSS-native configuration:
 
 ```css
-/* src/styles.css (NOT .scss — TailwindCSS 4.x directives conflict with Sass) */
+/* src/styles.css (NOT .scss — Tailwind CSS 4.3.5 directives conflict with Sass) */
 @import "tailwindcss";
 
 @theme {
@@ -79,7 +79,7 @@ TailwindCSS v4 is a complete rewrite using CSS-native configuration:
   themes: light --default, dark --prefersdark, corporate, business;
 }
 ```
-> **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in TailwindCSS 4.x. The global stylesheet must be `.css` (not `.scss`) to avoid Sass intercepting CSS-native directives like `@import`, `@theme`, and `@plugin`.
+> **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in Tailwind CSS 4.3.5. The global stylesheet must be `.css` (not `.scss`) to avoid Sass intercepting CSS-native directives like `@import`, `@theme`, and `@plugin`.
 
 ## Breaking Changes from v3
 
@@ -123,9 +123,9 @@ TailwindCSS v4 is a complete rewrite using CSS-native configuration:
 @plugin "daisyui";
 ```
 
-Install pinned: `npm install --save-exact tailwindcss@4.3.5 @tailwindcss/postcss@4.3.5 postcss@8.5.33 daisyui@5.5.5`.
+Install pinned: `npm install --save-exact tailwindcss@4.3.5 @tailwindcss/postcss@4.3.5 postcss@8.5.33 daisyui@5.8.2`.
 
-Verified on Angular 21.2.30 (`ng build` exit 0): with `.postcssrc.json` present, `@plugin "daisyui"` emits
+Verified on Angular CLI 22.3.0 (`ng build` exit 0): with `.postcssrc.json` present, `@plugin "daisyui"` emits
 daisyUI component classes (`.btn-primary` found in `dist/<app>/browser/styles-*.css`) and no `@plugin`
 text remains. The `@plugin` failure people report is a **wrong PostCSS file**: Angular reads
 `.postcssrc.json` or `postcss.config.json`, **not** `postcss.config.js`. Symptom: the build still exits
@@ -147,9 +147,9 @@ classes that live outside the project (for example a library in `node_modules`).
 After scaffolding, ALWAYS verify these before writing any UI components:
 
 1. **Packages installed** — check package.json:
-   - `tailwindcss` (v4.x)
-   - `@tailwindcss/postcss`
-   - `daisyui` (v5.x)
+   - `tailwindcss` `4.3.5`
+   - `@tailwindcss/postcss` `4.3.5`
+   - `daisyui` `5.8.2` (exact pins, no caret)
 
 2. **CSS entry point** (`src/styles.css`) must contain:
    ```css

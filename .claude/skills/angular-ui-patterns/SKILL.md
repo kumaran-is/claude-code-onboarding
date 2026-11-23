@@ -1,6 +1,6 @@
 ---
 name: angular-ui-patterns
-description: "Angular 21.x UI/UX state patterns — canonical load-state union derived from resources (error → hasValue → value), typed API error model, 401 vs 403 UX, error hierarchy (inline→toast→banner→full-screen), empty states, button in-flight guards, typed reactive forms with server errors, confirmation dialogs that stay open while a mutation runs. Load when building any Angular UI component that handles async data or user actions."
+description: "Angular 22.x UI/UX state patterns — canonical load-state union derived from resources (error → hasValue → value), typed API error model, 401 vs 403 UX, error hierarchy (inline→toast→banner→full-screen), empty states, button in-flight guards, typed reactive forms with server errors, confirmation dialogs that stay open while a mutation runs. Load when building any Angular UI component that handles async data or user actions."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
 metadata:
   triggers: Angular loading state, Angular error state, Angular empty state, Angular skeleton, Angular spinner, Angular form validation, Angular button loading, Angular dialog, Angular async UI, Angular UX patterns
@@ -14,7 +14,7 @@ last-reviewed: "2026-11-22"
 
 ## Iron Law
 
-**LOAD `angular-spa` FIRST for daisyUI component classes and TailwindCSS 4.x tokens. This skill provides UI state doctrine — use `angular-spa` reference files for the actual component HTML/CSS.**
+**LOAD `angular-spa` FIRST for daisyUI component classes and Tailwind CSS 4.3.5 tokens. This skill provides UI state doctrine — use `angular-spa` reference files for the actual component HTML/CSS.**
 
 ## When to Use This Skill
 
@@ -34,7 +34,7 @@ Load this skill when:
 4. **Guard every mutation** — in-flight early return + disabled trigger; read with resources, mutate with `HttpClient`, then `reload()`
 5. **Progressive disclosure** — use `@defer` for non-critical content; partial data beats a blank page, but never fake data
 
-> `resource` / `rxResource` / `httpResource` are **EXPERIMENTAL in Angular 21.x**. Signal Forms are EXPERIMENTAL; typed reactive forms are the 21.x production default.
+> `resource` / `rxResource` / `httpResource` are stable in Angular 22 (`@publicApi 22.0`). Signal Forms are stable and the default for new forms; existing typed reactive forms stay supported.
 
 ---
 
@@ -107,7 +107,7 @@ reversible, low-risk actions.
 
 Verify Angular APIs with the `angular-cli` MCP: `search_documentation` with `version: 21`, and
 `get_best_practices` **with the workspace path** (without it the tool returns the latest-major guide —
-v22 guidance that is wrong for 21.2). Context7 remains a fallback for other libraries.
+the bundled generic guide). Context7 remains a fallback for other libraries.
 
 ## Related Skills
 

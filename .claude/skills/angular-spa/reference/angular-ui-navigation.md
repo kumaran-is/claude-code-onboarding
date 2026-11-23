@@ -1,6 +1,6 @@
 # Angular UI Navigation Patterns
 
-Angular 21+ navigation, sidebar, and expandable section components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Angular 22+ navigation, sidebar, and expandable section components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 All components use standalone, OnPush, and signal-based APIs.
 
 ---
@@ -9,7 +9,7 @@ All components use standalone, OnPush, and signal-based APIs.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, input
+  Component, signal, input
 } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 
@@ -66,7 +66,6 @@ interface NavItem { label: string; path: string; icon?: string; }
       </aside>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ResponsiveNavComponent {
   title = input<string>('App');
@@ -92,7 +91,7 @@ export class ResponsiveNavComponent {
 ## Expandable Section (Accordion)
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, signal } from '@angular/core';
+import { Component, input, signal } from '@angular/core';
 
 @Component({
   selector: 'app-expandable-section',
@@ -115,7 +114,6 @@ import { Component, ChangeDetectionStrategy, input, signal } from '@angular/core
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExpandableSectionComponent {
   title = input.required<string>();
@@ -140,7 +138,7 @@ export class ExpandableSectionComponent {
 ## Breadcrumb Pattern
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 interface BreadcrumbItem { label: string; path?: string; }
@@ -163,7 +161,6 @@ interface BreadcrumbItem { label: string; path?: string; }
       </ul>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BreadcrumbComponent {
   items = input.required<BreadcrumbItem[]>();
@@ -189,7 +186,7 @@ nothing (`NG8103` is only a warning).
 
 ```typescript
 import {
-  ChangeDetectionStrategy, Component, Directive, TemplateRef, computed, contentChildren, inject, input, signal,
+  Component, Directive, TemplateRef, computed, contentChildren, inject, input, signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
@@ -205,7 +202,6 @@ export class TabPanel {
 @Component({
   selector: 'app-tabs',
   imports: [NgTemplateOutlet],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div role="tablist" class="tabs tabs-border">
       @for (tab of tabs(); track tab.id) {

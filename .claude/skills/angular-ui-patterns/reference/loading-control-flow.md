@@ -4,8 +4,8 @@ Canonical home for the **load-state union**: how a page turns an async read into
 loading / empty / ready / error. Resource API details (options, stability) live in
 `angular/references/signals-core.md`; error typing and 401/403 copy live in `error-handling.md`.
 
-> `resource`, `rxResource` and `httpResource` are **EXPERIMENTAL in Angular 21.x** (`@experimental` in the
-> 21.2 `.d.ts`). Pin the Angular version and re-check the API on every upgrade.
+> `resource`, `rxResource` and `httpResource` are stable in Angular 22 (`@publicApi 22.0` in the
+> 22.3 `.d.ts`). Re-check the tags on every major upgrade.
 
 ## The Golden Rule
 
@@ -22,7 +22,7 @@ resource, in this order:
 3. **`value()`** — now safe; split empty vs ready.
 
 ```typescript
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { ApiErrorKind, toApiError } from '../core/http/api-error'; // see error-handling.md
@@ -39,7 +39,6 @@ type LoadState =
 @Component({
   selector: 'app-item-list-page',
   imports: [ErrorState],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @switch (state().kind) {
       @case ('loading') { <div class="skeleton h-8 w-full" role="status" aria-label="Loading items"></div> }
@@ -61,7 +60,7 @@ export class ItemListPage {
   /** Route param bound by withComponentInputBinding(). */
   readonly folder = input<string>();
 
-  // EXPERIMENTAL (21.x). params() returning undefined → status 'idle', no request is made.
+  // Stable in v22. params() returning undefined → status 'idle', no request is made.
   readonly items = rxResource({
     params: () => this.folder() || undefined,
     stream: ({ params }) =>
@@ -92,7 +91,7 @@ export class ItemListPage {
 }
 ```
 
-Verified against Angular 21.2.26 with Vitest: `value()` throws after a 403; `params` returning `undefined`
+Verified against Angular 21.2.26 with Vitest (not re-run on 22.3; the resource API is unchanged apart from becoming stable): `value()` throws after a 403; `params` returning `undefined`
 leaves `status()` at `'idle'` with no request; `reload()` keeps `state()` at `ready` while `status()` is
 `'reloading'`.
 
@@ -129,7 +128,7 @@ readonly lastGood = linkedSignal<Page<User> | undefined, Page<User> | undefined>
 //   then render lastGood()?.items.
 ```
 
-Verified (Vitest, 21.2.26): after a successful load and a 503 on `reload()`, the list stays on screen
+Verified (Vitest, 21.2.26; not re-run on 22.3): after a successful load and a 503 on `reload()`, the list stays on screen
 with the inline alert. Clear `lastGood` when params change to a different entity (different user,
 different tenant) — stale data from another context is worse than a spinner. Skeletons carry
 `aria-hidden="true"` inside an `aria-busy="true"` region; timing thresholds are in §6b.

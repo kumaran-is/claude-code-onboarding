@@ -1,11 +1,11 @@
-# Angular 21.2 Unit Testing with Vitest — Canonical Reference
+# Angular 22.3 Unit Testing with Vitest — Canonical Reference
 
-Canonical home for Angular unit/component tests. Facts were verified with `ng new` from
-`@angular/cli@21.2.30` (`@angular/*@21.2.26`, Vitest 4.1, jsdom 28) and every spec below passed with
-`ng test --watch=false`. E2E belongs to the `browser-testing` skill (Playwright); tool choice per target:
+Canonical home for Angular unit/component tests. The builder facts below were re-checked on an Angular CLI 22.3.0
+workspace (`@angular/*@22.3.0`, TypeScript 6.0.3, Vitest 5.1.1, jsdom 31.0.1, Node 26.13.1). The specs below
+were first run green on 21.2.26; on 22.3 their code was re-compiled but the specs were not re-run (NOT RUN). E2E belongs to the `browser-testing` skill (Playwright); tool choice per target:
 `.claude/rules/testing-tool-selection.md`.
 
-## What `ng new` 21.2 gives you
+## What a CLI 22.3 workspace gives you
 
 - `angular.json` → `"test": { "builder": "@angular/build:unit-test" }`, runner **Vitest** (default),
   environment **jsdom**. No `vitest.config.ts`, no `karma.conf.js`, no `test.ts`, no zone.js.
@@ -21,7 +21,7 @@ ng test --watch=false --coverage               # coverage (v8)
 ng test --browsers ChromeHeadless              # real browser instead of jsdom (needs @vitest/browser + provider)
 ```
 
-Migrating an existing Karma/Jasmine project (schematics present in `@schematics/angular` 21.2.30):
+Migrating an existing Karma/Jasmine project (schematic `refactor-jasmine-vitest` in `@schematics/angular`; re-verify its presence in your CLI version):
 switch the `test` target builder to `@angular/build:unit-test`, add `vitest` + `jsdom`, set
 `types: ["vitest/globals"]`, then run `ng generate @schematics/angular:refactor-jasmine-vitest` to
 rewrite Jasmine APIs (`jasmine.createSpyObj` → `vi.fn()` objects, `spyOn` → `vi.spyOn`). Review the
@@ -41,14 +41,14 @@ diff; remove every `fakeAsync`/`waitForAsync` by hand (see below). Browser mode 
 ## Component with HttpTestingController and a CDK harness
 
 Harnesses come from `@angular/cdk`, which `ng new` does not install. Add it once, on the same minor as the
-framework: `npm install --save-dev @angular/cdk@~21.2.14` (then pin it like the other `@angular/*` packages).
+framework: `npm install --save-dev @angular/cdk@22.3.0` (then pin it like the other `@angular/*` packages).
 
 The component under test (`user-list.ts`): an `rxResource` list with the error → hasValue → loading order,
 a 403 shown as "not authorised" without a retry button, and Retry for other failures.
 
 ```typescript
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 
 interface User {
@@ -71,7 +71,6 @@ function httpStatus(error: unknown): number | null {
 
 @Component({
   selector: 'app-user-list',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (users.error()) {
       <p role="alert">{{ errorMessage() }}</p>
@@ -91,7 +90,7 @@ function httpStatus(error: unknown): number | null {
 })
 export class UserList {
   private readonly http = inject(HttpClient);
-  // rxResource is EXPERIMENTAL in Angular 21 (@experimental in @angular/core/rxjs-interop).
+  // rxResource is stable in Angular 22 (@publicApi 22.0 in @angular/core/rxjs-interop).
   protected readonly users = rxResource({ stream: () => this.http.get<Page<User>>(USERS_URL) });
   private readonly status = computed(() => httpStatus(this.users.error()));
   // 401/403 will not change on retry: show the reason, offer no retry button.
@@ -102,7 +101,7 @@ export class UserList {
 }
 ```
 
-The spec and harness below ran green against it (`ng test`, Angular 21.2, 3 tests, exit 0); removing the
+The spec and harness below ran green against it on Angular 21.2.26 (`ng test`, 3 tests, exit 0; not re-run on 22.3); removing the
 403 message or the Retry button each fails one test (exit 1).
 
 ```typescript

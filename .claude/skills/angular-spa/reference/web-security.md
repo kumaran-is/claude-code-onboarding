@@ -1,4 +1,4 @@
-# Angular 21.2 Auth and Web Security — Canonical Reference
+# Angular 22.3 Auth and Web Security — Canonical Reference
 
 Canonical home for Angular authentication plumbing: credential allow-list, token refresh, auth
 guard, safe `returnUrl`, token storage and Angular XSS rules. Framework-neutral browser security
@@ -6,7 +6,8 @@ guard, safe `returnUrl`, token storage and Angular XSS rules. Framework-neutral 
 `../../security-reviewer/reference/web-frontend-security.md`.
 
 Every file below compiled against `@angular/*@21.2.26`, TypeScript 5.9.3, `strictTemplates`, and the
-specs in §Testing passed under `ng test` (Vitest). Negative controls (the old interceptor and guard
+specs in §Testing passed under `ng test` (Vitest); on 22.3.0 / TypeScript 6.0.3 the code was re-compiled
+but the specs were not re-run. Negative controls (the old interceptor and guard
 from earlier versions of this skill) were run and **failed** the same specs — see the report for
 commands.
 
@@ -73,7 +74,7 @@ export function isAllowlisted(url: string, roots: readonly string[], base: strin
 ```typescript
 // core/auth/auth-session.ts
 import { HttpClient, HttpContext, HttpContextToken, HttpErrorResponse } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Service, computed, inject, signal } from '@angular/core';
 import { Observable, catchError, finalize, firstValueFrom, map, of, shareReplay, tap, throwError } from 'rxjs';
 import { API_CONFIG } from '../config/api-config';
 
@@ -82,7 +83,7 @@ export const SKIP_AUTH = new HttpContextToken<boolean>(() => false);
 
 type SessionStatus = 'restoring' | 'signed-in' | 'signed-out';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class AuthSession {
   private readonly http = inject(HttpClient);
   private readonly config = inject(API_CONFIG);
@@ -191,7 +192,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 };
 ```
 
-Register: `provideHttpClient(withFetch(), withInterceptors([authInterceptor]))` plus an `API_CONFIG`
+Register: `provideHttpClient(withInterceptors([authInterceptor]))` plus an `API_CONFIG`
 provider (see `angular-templates.md` §app.config.ts).
 
 ## Guard that waits for session restore

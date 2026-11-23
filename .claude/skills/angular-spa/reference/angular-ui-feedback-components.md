@@ -1,17 +1,17 @@
 # Angular UI Feedback & Utility Components
 
-Reusable Angular 21+ feedback and utility components using daisyUI 5.5.5 + TailwindCSS 4.x. All components use standalone, OnPush, and signal-based APIs.
+Reusable Angular 22+ feedback and utility components using daisyUI 5.8.2 + Tailwind CSS 4.3.5. All components use standalone, OnPush, and signal-based APIs.
 
 ## Toast Service & Component
 
 ```typescript
 // toast.service.ts
-import { Injectable, signal } from '@angular/core';
+import { Service, signal } from '@angular/core';
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error';
 export interface Toast { id: string; type: ToastType; message: string; title?: string; }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ToastService {
   private readonly _toasts = signal<Toast[]>([]);
   readonly toasts = this._toasts.asReadonly();
@@ -33,7 +33,7 @@ export class ToastService {
 }
 
 // toast-container.component.ts
-import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { ToastService } from './toast.service';
 
 @Component({
@@ -57,7 +57,6 @@ import { ToastService } from './toast.service';
       }
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ToastContainerComponent {
   protected readonly toastService = inject(ToastService);
@@ -67,7 +66,7 @@ export class ToastContainerComponent {
 ## Theme Toggle Component
 
 ```typescript
-import { Component, ChangeDetectionStrategy, signal, inject, PLATFORM_ID, afterNextRender } from '@angular/core';
+import { Component, signal, inject, PLATFORM_ID, afterNextRender } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 
 @Component({
@@ -80,7 +79,6 @@ import { isPlatformBrowser } from '@angular/common';
       <!-- moon icon svg class="swap-on h-8 w-8 fill-current" aria-hidden="true" -->
     </label>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ThemeToggleComponent {
   private readonly platformId = inject(PLATFORM_ID);
@@ -109,7 +107,7 @@ export class ThemeToggleComponent {
 ## Theme Service
 
 ```typescript
-import { Injectable, signal, computed, inject, PLATFORM_ID, effect } from '@angular/core';
+import { Service, signal, computed, inject, PLATFORM_ID, effect } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 
 export const DAISY_THEMES = [
@@ -121,7 +119,7 @@ export const DAISY_THEMES = [
 
 export type ThemeName = typeof DAISY_THEMES[number]['name'];
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ThemeService {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
@@ -160,7 +158,7 @@ export class ThemeService {
 
 ```typescript
 // confirm-dialog.service.ts
-import { Injectable, signal, computed } from '@angular/core';
+import { Service, signal, computed } from '@angular/core';
 
 export interface ConfirmDialogOptions {
   title: string; message: string;
@@ -168,7 +166,7 @@ export interface ConfirmDialogOptions {
   variant?: 'danger' | 'warning' | 'info';
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ConfirmDialogService {
   private readonly _state = signal<{
     isOpen: boolean; title: string; message: string;
@@ -193,7 +191,7 @@ export class ConfirmDialogService {
 }
 
 // confirm-dialog.component.ts
-import { Component, ChangeDetectionStrategy, inject, effect, viewChild, ElementRef } from '@angular/core';
+import { Component, inject, effect, viewChild, ElementRef } from '@angular/core';
 import { ConfirmDialogService } from './confirm-dialog.service';
 
 @Component({
@@ -219,7 +217,6 @@ import { ConfirmDialogService } from './confirm-dialog.service';
       <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ConfirmDialogComponent {
   protected readonly service = inject(ConfirmDialogService);
@@ -238,7 +235,7 @@ export class ConfirmDialogComponent {
 ## Error Boundary
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, signal, output } from '@angular/core';
+import { Component, input, signal, output } from '@angular/core';
 
 @Component({
   selector: 'app-error-boundary',
@@ -255,7 +252,6 @@ import { Component, ChangeDetectionStrategy, input, signal, output } from '@angu
       <ng-content></ng-content>
     }
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ErrorBoundaryComponent {
   errorTitle = input<string>('Something went wrong');

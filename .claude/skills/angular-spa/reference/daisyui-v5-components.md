@@ -1,11 +1,11 @@
-# daisyUI v5.5.5 Component Reference
+# daisyUI 5.8.2 Component Reference
 
 ## Quick Reference
 
-### TailwindCSS 4.x Setup
+### Tailwind CSS 4.3.5 Setup
 
 ```css
-/* src/styles.css (NOT .scss — TailwindCSS 4.x directives conflict with Sass) */
+/* src/styles.css (NOT .scss — Tailwind CSS 4.3.5 directives conflict with Sass) */
 @import "tailwindcss";
 
 @theme {
@@ -16,9 +16,9 @@
   themes: light --default, dark --prefersdark, corporate, business;
 }
 ```
-> **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in TailwindCSS 4.x.
+> **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in Tailwind CSS 4.3.5.
 
-### daisyUI v5.5.5 Modal (required pattern)
+### daisyUI 5.8.2 Modal (required pattern)
 
 ```html
 <dialog id="my_modal" class="modal">
@@ -33,7 +33,7 @@
 </dialog>
 ```
 
-### daisyUI v5.5.5 Drawer (required pattern)
+### daisyUI 5.8.2 Drawer (required pattern)
 
 ```html
 <div class="drawer lg:drawer-open">
@@ -68,11 +68,11 @@ border-base-300         — default borders
 `<html>` is outside the Angular root, so it cannot be template-bound. Set the attribute from a service:
 
 ```typescript
-import { DOCUMENT, Injectable, effect, inject, signal } from '@angular/core';
+import { DOCUMENT, Service, effect, inject, signal } from '@angular/core';
 
 export type ThemeName = 'light' | 'dark';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ThemeService {
   private readonly document = inject(DOCUMENT); // SSR-safe: no global `document`
   readonly theme = signal<ThemeName>('light');
@@ -121,7 +121,7 @@ border-error             /* Error border */
 
 ## Changes from v4 to v5
 
-| Component | v4 | v5.5.5 | Notes |
+| Component | v4 | v5.8.2 | Notes |
 |-----------|-----|--------|-------|
 | Button soft | N/A | `btn-soft` | New: subtle background variant |
 | Button XL | N/A | `btn-xl` | New size |
@@ -137,7 +137,7 @@ border-error             /* Error border */
 | Bottom navigation | `btm-nav` | `dock` | |
 | Avatar placeholder | `avatar placeholder` | `avatar avatar-placeholder` | |
 
-## Required Patterns (v5.5.5)
+## Required Patterns (v5.8.2)
 
 ### Modal
 ```html

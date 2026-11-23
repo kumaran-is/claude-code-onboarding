@@ -1,6 +1,6 @@
 # Angular UI Form Components
 
-Reusable Angular 21+ form components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Reusable Angular 22+ form components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 All components use standalone, OnPush, and signal-based APIs.
 
 ---
@@ -103,11 +103,11 @@ setupProgressiveValidation(): void {
 
 ## Section D: Multi-Step Wizard Pattern
 
-Angular 21 signals-based wizard. Each step is a standalone component; the wizard orchestrates navigation and validates step-by-step.
+Angular 22 signals-based wizard. Each step is a standalone component; the wizard orchestrates navigation and validates step-by-step.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed, inject
+  Component, signal, computed, inject
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
@@ -158,7 +158,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WizardStepPersonalComponent {
   private readonly fb = inject(FormBuilder);
@@ -211,7 +210,6 @@ export class WizardStepPersonalComponent {
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WizardStepContactComponent {
   private readonly fb = inject(FormBuilder);
@@ -250,7 +248,6 @@ export class WizardStepContactComponent {
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class WizardStepReviewComponent {
   summaryEntries = input<{ label: string; value: string }[]>([]);
@@ -315,7 +312,6 @@ export class WizardStepReviewComponent {
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MultiStepWizardComponent {
   // ---- State signals ----
@@ -448,7 +444,7 @@ See `docs/workflows/file-uploads.md` for backend presigned URL endpoint implemen
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed, inject
+  Component, signal, computed, inject
 } from '@angular/core';
 import { HttpClient, HttpEventType, HttpErrorResponse } from '@angular/common/http';
 
@@ -535,7 +531,6 @@ const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
       </button>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FileUploadComponent {
   private readonly http = inject(HttpClient);
@@ -591,7 +586,7 @@ export class FileUploadComponent {
     this.progress.set(0);
 
     this.http.post<{ url: string }>('/api/upload', form, {
-      reportProgress: true,
+      reportUploadProgress: true,
       observe: 'events'
     }).subscribe({
       next: (event) => {
@@ -625,9 +620,9 @@ Flow:
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, computed, inject
+  Component, signal, computed, inject
 } from '@angular/core';
-import { HttpClient, HttpEventType, HttpErrorResponse, HttpRequest } from '@angular/common/http';
+import { HttpClient, HttpEventType, HttpErrorResponse, HttpHeaders, HttpRequest } from '@angular/common/http';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
 const MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
@@ -683,7 +678,6 @@ interface PresignedUrlResponse {
       </button>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class GcsUploadComponent {
   private readonly http = inject(HttpClient);
@@ -740,8 +734,8 @@ export class GcsUploadComponent {
         this.state.set('uploading');
         // Step 2: PUT directly to GCS — no backend bandwidth used
         const req = new HttpRequest('PUT', uploadUrl, file, {
-          headers: { 'Content-Type': file.type },
-          reportProgress: true
+          headers: new HttpHeaders({ 'Content-Type': file.type }),
+          reportUploadProgress: true
         });
         this.http.request(req).subscribe({
           next: (event) => {
@@ -775,7 +769,10 @@ export class GcsUploadComponent {
 ```
 
 **Key rules:**
-- `reportProgress: true` + `observe: 'events'` on the `HttpRequest` enables `HttpEventType.UploadProgress`
+- `reportUploadProgress: true` (+ `observe: 'events'` on `HttpClient` calls) enables `HttpEventType.UploadProgress`.
+  `reportProgress` is deprecated in v22. The default v22 backend is `FetchBackend`, which cannot report
+  upload progress and **throws** when `reportUploadProgress` is set: an app with upload progress must
+  register `provideHttpClient(withXhr())` (browser only; XHR on the server is deprecated).
 - For GCS PUT: set `Content-Type` header to match what was used when generating the signed URL — mismatch causes 403
 - Client-side type/size validation is UX only — the backend endpoint MUST also validate both before issuing a presigned URL
 - Never log or store the presigned URL — it is a credential valid for 15 minutes
@@ -789,7 +786,7 @@ export class GcsUploadComponent {
 ## Form Field Component
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
+import { Component, input, computed } from '@angular/core';
 
 @Component({
   selector: 'app-form-field',
@@ -820,7 +817,6 @@ import { Component, ChangeDetectionStrategy, input, computed } from '@angular/co
       }
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FormFieldComponent {
   label = input.required<string>();
@@ -839,7 +835,7 @@ export class FormFieldComponent {
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, signal, inject
+  Component, signal, inject
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FormFieldComponent } from './form-field.component';
@@ -874,7 +870,6 @@ import { FormFieldComponent } from './form-field.component';
       </div>
     </form>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ContactFormComponent {
   private readonly fb = inject(FormBuilder);

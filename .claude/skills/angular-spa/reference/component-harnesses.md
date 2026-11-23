@@ -1,6 +1,6 @@
 # Angular Component Harnesses — Testing UI Interactions
 
-Component harnesses (from `@angular/cdk/testing`) provide a stable testing API that abstracts away DOM details. Use them when testing component interactions in Angular 21.
+Component harnesses (from `@angular/cdk/testing`) provide a stable testing API that abstracts away DOM details. Use them when testing component interactions in Angular 22.
 
 ## When to use harnesses vs direct DOM queries
 

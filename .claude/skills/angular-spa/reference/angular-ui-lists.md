@@ -1,6 +1,6 @@
 # Angular UI List, Card, and Feed Patterns
 
-Angular 21+ list, card, skeleton, and chat/agent UI components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Angular 22+ list, card, skeleton, and chat/agent UI components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 All components use standalone, OnPush, and signal-based APIs.
 
 ---
@@ -9,7 +9,7 @@ All components use standalone, OnPush, and signal-based APIs.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, input, output
+  Component, input, output
 } from '@angular/core';
 
 @Component({
@@ -40,7 +40,6 @@ import {
       </div>
     </article>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExampleCardComponent {
   title = input.required<string>();
@@ -60,7 +59,7 @@ export class ExampleCardComponent {
 ## Empty State Component
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-empty-state',
@@ -80,7 +79,6 @@ import { Component, ChangeDetectionStrategy, input, output } from '@angular/core
       </div>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EmptyStateComponent {
   icon = input<string>('');
@@ -96,7 +94,7 @@ export class EmptyStateComponent {
 ## Skeleton Loader
 
 ```typescript
-import { Component, ChangeDetectionStrategy, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 
 @Component({
   selector: 'app-skeleton',
@@ -116,7 +114,6 @@ import { Component, ChangeDetectionStrategy, input } from '@angular/core';
       <span class="sr-only">Loading...</span>
     </div>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SkeletonComponent {
   rows = input<number>(3);

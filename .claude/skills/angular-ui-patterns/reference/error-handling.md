@@ -82,11 +82,11 @@ The one place in the app that may call `console.*`. Everything else injects `Log
 
 ```typescript
 // core/logging/logger.ts
-import { Injectable, isDevMode } from '@angular/core';
+import { Service, isDevMode } from '@angular/core';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class Logger {
   debug(message: string, context?: unknown): void { if (isDevMode()) this.write('debug', message, context); }
   info(message: string, context?: unknown): void { this.write('info', message, context); }
@@ -117,7 +117,7 @@ assert the error was logged; do not spy on `console`.
 production code) **and** surfaces something the user can see.
 
 ```typescript
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { toApiError } from '../core/http/api-error';
@@ -127,7 +127,6 @@ import { ToastService } from '../core/ui/toast.service';
 
 @Component({
   selector: 'app-create-item',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<button type="button" [disabled]="saving()" (click)="create({ name: 'New' })">Create</button>`,
 })
 export class CreateItem {
@@ -170,15 +169,14 @@ try {
 
 ## Error State Component
 
-`output()` returns an `OutputEmitterRef`, which has **no `.observed`** (TS2339 in 21.2). The parent states
+`output()` returns an `OutputEmitterRef`, which has **no `.observed`** (TS2339 in 22.3). The parent states
 whether a retry makes sense with an input:
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-error-state',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div role="alert" class="alert alert-error">
       <h3>{{ title() }}</h3>

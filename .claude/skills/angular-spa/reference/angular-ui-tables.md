@@ -1,6 +1,6 @@
 # Angular UI Table Patterns
 
-Angular 21+ table and grid components using daisyUI 5.5.5 + TailwindCSS 4.x.
+Angular 22+ table and grid components using daisyUI 5.8.2 + Tailwind CSS 4.3.5.
 Components are standalone by default (do not write `standalone: true`), use OnPush and signal-based APIs.
 
 ---
@@ -34,7 +34,7 @@ Choose the right implementation based on row count.
 
 ```typescript
 import {
-  Component, ChangeDetectionStrategy, input, output, computed
+  Component, input, output, computed
 } from '@angular/core';
 
 @Component({
@@ -80,7 +80,6 @@ import {
       </div>
     </nav>
   `,
-  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaginationComponent {
   total = input.required<number>();
@@ -134,7 +133,7 @@ home for the paged-fetch pattern; other files link here.
 
 - One `query` signal holds page, size, sort and filter. Changing the filter or sort resets `page` to 0.
 - `rxResource` re-fetches when `query()` changes and cancels the stale request (latest wins).
-  **`rxResource` is EXPERIMENTAL in Angular 21.x** — pin the Angular version and re-check on upgrade.
+  `rxResource` is stable in v22 (`@publicApi 22.0`).
 - Never wire `toObservable(...)` inside a method: it needs an injection context (throws `NG0203`) and
   each call adds another live subscription. Declare the resource as a field.
 - Never replace a failed load with `{ items: [], total: 0 }` — that renders a failure as "no data".
@@ -145,7 +144,7 @@ home for the paged-fetch pattern; other files link here.
 
 ```typescript
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, Injectable, computed, inject, signal } from '@angular/core';
+import { Component, Service, computed, inject, signal } from '@angular/core';
 import { rxResource } from '@angular/core/rxjs-interop';
 import { Observable } from 'rxjs';
 import { PaginationComponent } from './pagination.component';
@@ -160,7 +159,7 @@ export interface TableQuery {
   readonly filter: string;
 }
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class OrdersApi {
   private readonly http = inject(HttpClient);
 
@@ -177,7 +176,6 @@ export class OrdersApi {
 @Component({
   selector: 'app-orders-table',
   imports: [PaginationComponent],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (orders.error()) {
       <div class="alert alert-error" role="alert">
@@ -226,7 +224,7 @@ export class OrdersTableComponent {
     page: 0, pageSize: 25, sortField: null, sortDir: 'asc', filter: '',
   });
 
-  // EXPERIMENTAL (Angular 21.x). A params change moves status to 'loading' and clears value();
+  // Stable in v22. A params change moves status to 'loading' and clears value();
   // reload() keeps the previous value while status is 'reloading'.
   protected readonly orders = rxResource({
     params: () => this.query(),
@@ -271,13 +269,13 @@ export class OrdersTableComponent {
 
 ## Section D: Virtual Scrolling (10,000+ rows)
 
-**Install:** `npm install @angular/cdk@~21.2.0` (match the installed `@angular/core` minor).
+**Install:** `npm install @angular/cdk@22.3.0` (match the installed `@angular/core` minor).
 
 Virtual scrolling renders only the rows in the viewport, so DOM size stays fixed regardless of dataset size.
 `*cdkVirtualFor` is still the CDK API (there is no `@for` equivalent for virtual scroll).
 
 ```typescript
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 
 export interface VirtualRow { readonly id: string | number; readonly [key: string]: unknown; }
@@ -285,7 +283,6 @@ export interface VirtualRow { readonly id: string | number; readonly [key: strin
 @Component({
   selector: 'app-virtual-table',
   imports: [ScrollingModule],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="overflow-x-auto rounded-box border border-base-300">
       <!-- Header outside the viewport so it stays visible -->

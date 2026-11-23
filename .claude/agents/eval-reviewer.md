@@ -1,6 +1,6 @@
 ---
 name: eval-reviewer
-description: "Read-only reviewer for eval code after implementation: eval tests, golden dataset cases, CI eval gates, judge configuration, baseline comparators, prompt-registry code. Checks verdict precedence (deterministic beats judge), evidence accounting (skipped/errored never PASS), explicit and recorded judge model, declared judge trials with no rerun-until-green, tier marks and an R1 with no live model, golden-set leakage and closed case schemas, metric formula correctness, score directions (e.g. ADK hallucinations_v1), current Ragas/DeepEval/Giskard APIs, fail-closed baselines, and security-blocker coverage asserted on tool calls and persisted state. Returns APPROVE / NEEDS_WORK / BLOCK with severity-bucketed findings."
+description: "Read-only reviewer for eval code after implementation: eval tests, golden dataset cases, CI eval gates, judge configuration, baseline comparators, prompt-registry code. Checks verdict precedence (deterministic beats judge), evidence accounting (skipped/errored never PASS), explicit and recorded judge model, declared judge trials with no rerun-until-green, tier marks and an R1 with no live model, golden-set leakage and closed case schemas, metric formula correctness, score directions (e.g. ADK hallucinations_v1), current Ragas/DeepEval/Giskard APIs, fail-closed baselines, and security-blocker coverage asserted on tool calls and persisted state. Returns APPROVE / NEEDS_REVIEW / BLOCK with severity-bucketed findings. Not for designing eval sets (ai-eval-designer) or running them (rag-eval-runner)."
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: sonnet
@@ -108,12 +108,12 @@ The AST script was validated with a positive control (unmarked test, `@pytest.ma
 | MEDIUM | Hygiene, calibration record, schema/manifest gaps outside the safety set |
 | LOW | Naming, comments |
 
-Verdict: **BLOCK** if any CRITICAL; **NEEDS_WORK** if any HIGH; otherwise **APPROVE** (MEDIUM/LOW listed for the author).
+Verdict: **BLOCK** if any CRITICAL; **NEEDS_REVIEW** if any HIGH (fix or written justification before merge); otherwise **APPROVE** with MEDIUM/LOW listed as advisories. Policy: `.claude/rules/verification-and-reporting.md` → Review Severity Policy.
 
 ## Output format
 
 ```
-## Eval Reviewer Verdict: APPROVE | NEEDS_WORK | BLOCK
+## Eval Reviewer Verdict: APPROVE | NEEDS_REVIEW | BLOCK
 
 ### Findings
 - [CRITICAL|HIGH|MEDIUM|LOW] #<check> <title>

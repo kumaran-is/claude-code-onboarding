@@ -33,9 +33,10 @@ Do not claim a test, eval or runtime check passed unless you executed it in this
 
 Verdict: **APPROVE** | **NEEDS_REVIEW** | **BLOCK**
 
-- **APPROVE**: zero CRITICAL, zero HIGH findings
-- **NEEDS_REVIEW**: MEDIUM findings only — can merge with caution, document exceptions
-- **BLOCK**: any CRITICAL or HIGH finding — must fix before merge
+- **APPROVE**: zero CRITICAL, zero HIGH unresolved; MEDIUM/LOW listed as advisories
+- **NEEDS_REVIEW**: zero CRITICAL, one or more HIGH: each needs a fix or a written justification in the PR before merge (also when a required check is NOT RUN or BLOCKED)
+- **BLOCK**: any CRITICAL finding — must fix before merge
+- Policy: `.claude/rules/verification-and-reporting.md` → Review Severity Policy
 
 Emit the verdict as the **final line** of your report in this format:
 ```

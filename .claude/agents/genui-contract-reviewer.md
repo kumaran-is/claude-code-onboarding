@@ -30,6 +30,8 @@ Not your scope (route instead): general OWASP review of non-GenUI code → `secu
 4. **Verify what you can (read-only commands only)** — the contract validator on the catalog and fixtures (see the skill for its arguments), `npx tsc --noEmit`, `flutter analyze`, the existing unit tests (`ng test --no-watch`, `vitest run`, `flutter test`). Quote each command and its own exit code. Never install, format, build artefacts into the repo, or run device/browser flows yourself: mark those NOT RUN and name `/validate-genui-feature`.
 5. **Report** — findings by severity, the parity matrix, then the verdict line.
 
+For a NEW GenUI surface, also check that a suitability verdict exists (`.claude/skills/genui-contract/reference/genui-suitability.md`) or that the short form KEEP DETERMINISTIC / NOT APPLICABLE is recorded; a missing verdict is a MEDIUM finding.
+
 ## Review areas
 
 | # | Area | What to check |
@@ -74,9 +76,10 @@ Not your scope (route instead): general OWASP review of non-GenUI code → `secu
 
 Verdict: **APPROVE** | **NEEDS_REVIEW** | **BLOCK**
 
-- **APPROVE**: zero CRITICAL, zero HIGH findings
-- **NEEDS_REVIEW**: MEDIUM findings only — can merge with caution, document exceptions
-- **BLOCK**: any CRITICAL or HIGH finding — must fix before merge
+- **APPROVE**: zero CRITICAL, zero HIGH unresolved; MEDIUM/LOW listed as advisories
+- **NEEDS_REVIEW**: zero CRITICAL, one or more HIGH: each needs a fix or a written justification in the PR before merge (also when a required check is NOT RUN or BLOCKED)
+- **BLOCK**: any CRITICAL finding — must fix before merge
+- Policy: `.claude/rules/verification-and-reporting.md` → Review Severity Policy
 
 Emit the verdict as the **final line** of your report in this format:
 ```

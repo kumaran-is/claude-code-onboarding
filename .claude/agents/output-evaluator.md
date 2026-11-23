@@ -1,6 +1,6 @@
 ---
 name: output-evaluator
-description: LLM-as-a-Judge advisory pre-commit check (probabilistic; not a merge gate and not an eval of AI-feature behaviour — use eval-guide / eval-reviewer for that). Evaluates staged code changes for correctness, completeness, and safety before commit. Returns a JSON verdict (APPROVE / NEEDS_REVIEW / REJECT) with scores and specific issues. Use via /validate-changes command or dispatch directly before significant commits.
+description: LLM-as-a-Judge advisory pre-commit check (probabilistic; not a merge gate and not an eval of AI-feature behaviour — use eval-guide / eval-reviewer for that). Evaluates staged code changes for correctness, completeness, and safety before commit. Returns a JSON verdict (APPROVE / NEEDS_REVIEW / REJECT) with scores and specific issues. Use via /validate-changes command or dispatch directly before significant commits. Not a full review (code-reviewer) and not a merge gate (reality-checker).
 model: haiku
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit, Bash

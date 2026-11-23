@@ -76,6 +76,8 @@ INFO: N — [backlog]
 
 ## Stack-Specific Anti-Pattern Checklists
 
+N+1 and per-item fan-out on collection reads: the stack-neutral pattern and fixes are in `.claude/skills/api-design-principles/reference/collection-read-fanout.md`; the rows below are the per-stack detection signals.
+
 ### Java / Spring WebFlux
 
 | Pattern | Estimated Impact | Detection |

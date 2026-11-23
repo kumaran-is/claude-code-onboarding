@@ -1,8 +1,8 @@
 ---
 name: flutter-security-expert
-description: Flutter mobile security and privacy compliance specialist. Use for secure storage reviews, certificate pinning, GDPR/CCPA compliance, obfuscation, and mobile-specific security hardening. Examples:\n\n<example>\nContext: The Flutter app is approaching its first public release and needs a security review.\nUser: "Check the Flutter app for security issues and GDPR compliance before we release."\nAssistant: "I'll use the flutter-security-expert agent to audit secure storage, certificate pinning, data retention, and mobile-specific hardening. For general OWASP issues use security-reviewer instead."\n</example>
+description: Flutter mobile security and privacy compliance specialist. Use for secure storage reviews, certificate pinning, GDPR/CCPA compliance, obfuscation, and mobile-specific security hardening. Read-only. Not for backend/web OWASP issues (security-reviewer) or AI-feature security (ai-security-reviewer). Examples:\n\n<example>\nContext: The Flutter app is approaching its first public release and needs a security review.\nUser: "Check the Flutter app for security issues and GDPR compliance before we release."\nAssistant: "I'll use the flutter-security-expert agent to audit secure storage, certificate pinning, data retention, and mobile-specific hardening. For general OWASP issues use security-reviewer instead."\n</example>
 model: sonnet
-permissionMode: acceptEdits
+permissionMode: default
 tools: Bash, Read, Glob, Grep
 disallowedTools: Write, Edit
 skills:

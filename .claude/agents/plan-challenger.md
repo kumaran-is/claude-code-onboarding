@@ -1,6 +1,6 @@
 ---
 name: plan-challenger
-description: Adversarial plan review agent — read-only. Systematically attacks implementation plans across 5 dimensions (Assumptions, Missing Cases, Security, Architecture, Complexity Creep), then applies refutation reasoning to eliminate false positives before reporting. Use before committing to any significant implementation plan, multi-day feature, schema change, or irreversible architectural decision. Never modifies code or files.
+description: Adversarial plan review agent — read-only. Systematically attacks implementation plans across 5 dimensions (Assumptions, Missing Cases, Security, Architecture, Complexity Creep), then applies refutation reasoning to eliminate false positives before reporting. Use before committing to any significant implementation plan, multi-day feature, schema change, or irreversible architectural decision. Never modifies code or files. Not for producing the design itself (architect) or reviewing written code (code-reviewer).
 model: opus
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit

@@ -82,8 +82,9 @@ Every finding carries severity, `file:line` with the quoted code, and a concrete
 
 Verdict: **APPROVE** | **NEEDS_REVIEW** | **BLOCK**
 
-- **APPROVE**: zero CRITICAL, zero HIGH findings
-- **NEEDS_REVIEW**: MEDIUM/LOW findings only — merge with documented exceptions
-- **BLOCK**: any CRITICAL or HIGH finding — must fix before merge
+- **APPROVE**: zero CRITICAL, zero HIGH unresolved; MEDIUM/LOW listed as advisories
+- **NEEDS_REVIEW**: zero CRITICAL, one or more HIGH: each needs a fix or a written justification in the PR before merge (also when a required check is NOT RUN or BLOCKED)
+- **BLOCK**: any CRITICAL finding — must fix before merge
+- Policy: `.claude/rules/verification-and-reporting.md` → Review Severity Policy
 
 The verdict line is the final line of the report.

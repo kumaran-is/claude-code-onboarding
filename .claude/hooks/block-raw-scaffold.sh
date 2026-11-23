@@ -23,10 +23,11 @@ LOG_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude/state"
 # <scaffold command>#<raw-creator ERE>#<label>#<technology>   ('#' is the field separator; the ERE may contain '|')
 RULES=(
   'scaffold-flutter-app#flutter[[:space:]]+create#flutter create#Flutter / Dart'
-  'scaffold-angular-app#(ng[[:space:]]+new|npx[[:space:]]+@angular/cli(@[^[:space:]]+)?[[:space:]]+new)#ng new / npx @angular/cli new#Angular'
-  'scaffold-nestjs-api#(npx[[:space:]]+@nestjs/cli[[:space:]]+new|nest[[:space:]]+new)#npx @nestjs/cli new / nest new#NestJS'
+  'scaffold-angular-app#(ng[[:space:]]+new|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+@angular/cli(@[^[:space:]]+)?[[:space:]]+new)#ng new / npx @angular/cli new#Angular'
+  'scaffold-nestjs-api#((npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+@nestjs/cli(@[^[:space:]]+)?[[:space:]]+new|nest[[:space:]]+new)#npx @nestjs/cli new / nest new#NestJS'
   'scaffold-python-api#django-admin[[:space:]]+startproject#django-admin startproject#Python / Django'
   'scaffold-spring-api#(spring[[:space:]]+init|mvn[[:space:]]+archetype:generate)#spring init / mvn archetype:generate#Java / Spring Boot'
+  'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+vite(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-vite(@[^[:space:]]+)?|([^[:space:]]*/)?create-vite(@[^[:space:]]+)?)#npm create vite / npx create-vite#React (Vite)'
 )
 
 block() { # $1 matched label, $2 scaffold command, $3 tech
@@ -47,11 +48,12 @@ evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 
   for rule in "${RULES[@]}"; do
     IFS='#' read -r name rx label tech <<<"$rule"
     # A creator counts as a command whether or not VAR=value assignments precede it (FOO=1 flutter create ...).
-    lead='(^|[;&|][[:space:]]*)([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+    # Command starts: line start, after ; & | or an opening ( / $( / backtick (subshells).
+    lead='(^|[;&|(`][[:space:]]*)([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
     # Replace each AUTHORIZED occurrence with a neutral token, then see whether a raw one is left.
     # '#' is the sed delimiter because the creator patterns contain '/'. If sed fails, keep the original
     # command so the raw check below still runs (fail closed, never fail open).
-    remaining=$(printf '%s' "$cmd" | sed -E "s#(^|[;&|][[:space:]]*)CC_SCAFFOLD=${name}[[:space:]]+${rx}#\1AUTHORIZED_SCAFFOLD#g" 2>/dev/null) || remaining="$cmd"
+    remaining=$(printf '%s' "$cmd" | sed -E "s#(^|[;&|(\`][[:space:]]*)CC_SCAFFOLD=${name}[[:space:]]+${rx}#\1AUTHORIZED_SCAFFOLD#g" 2>/dev/null) || remaining="$cmd"
     [ -n "$remaining" ] || remaining="$cmd"
     if printf '%s' "$remaining" | grep -qE "${lead}${rx}([[:space:]]|\$)"; then
       block "$label" "$name" "$tech"
@@ -90,12 +92,29 @@ selftest() {
   chk "adversarial: made-up marker value is blocked"                     2 'CC_SCAFFOLD=yes flutter create my_app'
   chk "adversarial: second raw create after an authorized one is blocked" 2 'CC_SCAFFOLD=scaffold-flutter-app flutter create a; flutter create b'
   chk "adversarial: marker on an unrelated command does not authorize"   2 'CC_SCAFFOLD=scaffold-flutter-app echo hi; flutter create b'
+  chk "positive: npm create vite is blocked"                             2 'npm create vite@9.3.4 web -- --template react-ts'
+  chk "positive: npx create-vite after cd is blocked"                    2 'cd /tmp && npx create-vite@9.3.4 web --template react-ts'
+  chk "negative: authorized react scaffold is allowed"                   0 'CC_SCAFFOLD=scaffold-react-app npx create-vite@9.3.4 web --template react-ts --no-interactive'
+  chk "adversarial: angular marker does not authorize create-vite"       2 'CC_SCAFFOLD=scaffold-angular-app npx create-vite@9.3.4 web'
+  chk "negative: the exact documented react scaffold is allowed"          0 'CC_SCAFFOLD=scaffold-react-app npx --yes create-vite@9.3.4 web --template react-ts --no-interactive --no-immediate'
+  chk "positive: npx --yes create-vite without marker is blocked"        2 'npx --yes create-vite@9.3.4 web --template react-ts'
+  chk "positive: bunx create-vite is blocked"                            2 'bunx create-vite web'
+  chk "positive: pnpm dlx create-vite is blocked"                        2 'pnpm dlx create-vite web'
+  chk "positive: npm exec -- create-vite is blocked"                     2 'npm exec -- create-vite web'
+  chk "positive: local .bin/create-vite is blocked"                      2 './node_modules/.bin/create-vite web'
+  chk "positive: create-vite in a subshell is blocked"                   2 '(cd /tmp && npx create-vite web)'
+  chk "positive: create-vite in command substitution is blocked"         2 'echo $(npx create-vite web)'
+  chk "positive: npx -y @angular/cli new is blocked"                     2 'npx -y @angular/cli@21.2.30 new web'
+  chk "negative: text that only mentions create-vite"                    0 'grep -rn "create-vite" docs'
+  chk "negative: vite build/dev commands are untouched"                  0 'npx vite build && npm run dev && npx vitest run'
   chk "negative: unrelated flutter commands are untouched"               0 'flutter pub get && flutter test && flutter analyze'
   chk "negative: text that only mentions flutter create"                 0 'grep -rn "flutter create" docs'
   chk "negative: ordinary commands are untouched"                        0 'ls -la && git status'
   # the audit trail records authorized calls
   ( evaluate 'CC_SCAFFOLD=scaffold-flutter-app flutter create audited_app' ) >/dev/null 2>&1
   if grep -q 'scaffold-flutter-app | CC_SCAFFOLD' "$t/scaffold-audit.log" 2>/dev/null; then echo "  ok   authorized call is written to the audit log"; else echo "  FAIL audit log entry missing"; fail=1; fi
+  ( evaluate 'CC_SCAFFOLD=scaffold-react-app npx --yes create-vite@9.3.4 audited_web --template react-ts --no-interactive --no-immediate' ) >/dev/null 2>&1
+  if grep -q 'scaffold-react-app | CC_SCAFFOLD' "$t/scaffold-audit.log" 2>/dev/null; then echo "  ok   documented react scaffold is written to the audit log"; else echo "  FAIL react audit log entry missing"; fail=1; fi
   rm -rf "$t"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"

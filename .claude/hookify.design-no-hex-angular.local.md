@@ -6,12 +6,12 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: src/.*\.(html|scss|css|ts)$
+    pattern: ^(?!.*(?:\.service\.ts|\.spec\.tsx?|\.test\.[jt]sx?|(?:^|/)[^/]*(?:tokens?|theme)[^/]*\.s?css)$)(?:.*(?:^|/)src/app/.*\.(?:html|scss|css|ts)|.*(?:^|/)src/(?!main/).*\.(?:css|scss)|.*\.(?:tsx|jsx))$
   - field: content
     operator: regex_match
-    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:bg-\[#[0-9A-Fa-f]+\]|text-\[#[0-9A-Fa-f]+\]|border-\[#[0-9A-Fa-f]+\]|color\s*:\s*#[0-9A-Fa-f]{3,8}|\brgba?\s*\(|\bhsla?\s*\()
+    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:\b(?:bg|text|border|ring|fill|stroke|from|via|to|outline|decoration|accent|caret|shadow)-\[(?:#|(?:rgba?|hsla?|oklch|oklab|hwb|lab|lch)\()|(?:background(?:-color)?|backgroundColor|(?<![a-z-])color|border(?:-[a-z]+)?(?:-color)?|border[A-Z][a-z]*Color|borderColor|outline(?:-color)?|fill|stroke|box-shadow|boxShadow)\s*:\s*['\"]?[^;'\"}\n]*?(?:#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|hwb|lab|lch)\())
 ---
-Hardcoded color detected in Angular file. Use daisyUI semantic tokens instead:
+Literal color (hex, rgb/hsl, oklch/oklab/hwb/lab/lch) in a web UI file (Angular `src/app/**`, React `*.tsx`/`*.jsx`, app stylesheets; specs and `*token*`/`*theme*` stylesheets are excluded because they define the tokens). Use theme tokens (daisyUI semantic classes, `var(--color-…)`, `color-mix(in oklch, var(--color-…) …)`) instead:
 - `bg-primary` not `bg-[#3b82f6]`
 - `text-base-content` not `text-[#333333]`
 - `border-base-300` not `border-[#e5e7eb]`

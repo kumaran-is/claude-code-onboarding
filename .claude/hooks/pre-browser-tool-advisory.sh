@@ -5,7 +5,7 @@
 #   Flutter Android/iOS UI/E2E -> Maestro CLI/MCP only; browser automation is for web targets.
 #
 # Fires when the call is a browser tool (mcp__chrome-devtools__*, mcp__browser-use__*, mcp__claude-in-chrome__*,
-# or a Bash command that starts playwright-cli / npx playwright / puppeteer / cypress / selenium) AND the
+# or a Bash command that starts playwright-cli / npx|pnpm exec|yarn|bunx playwright / puppeteer / cypress / selenium) AND the
 # workspace contains a Flutter MOBILE app (a pubspec.yaml that depends on the Flutter SDK with an android/ or
 # ios/ directory beside it, up to 4 levels deep). A web-only repo, or a Flutter project with no mobile target,
 # is silent. In a hybrid repo it is a reminder, not a block: the call may well target the Angular/React side.
@@ -16,7 +16,7 @@
 set -uo pipefail
 
 BROWSER_TOOL='^mcp__(chrome-devtools|browser-use|claude-in-chrome|playwright)__'
-BROWSER_CMD='(^|[;&|])[[:space:]]*(npx[[:space:]]+(-y[[:space:]]+)?)?(playwright-cli|playwright[[:space:]]+(test|codegen|install|open)|puppeteer|cypress[[:space:]]+(run|open)|selenium)'
+BROWSER_CMD='(^|[;&|])[[:space:]]*(npx[[:space:]]+(-y[[:space:]]+)?|pnpm[[:space:]]+((exec|dlx)[[:space:]]+)?|yarn[[:space:]]+(dlx[[:space:]]+)?|bunx[[:space:]]+)?(playwright-cli|playwright[[:space:]]+(test|codegen|install|open)|puppeteer|cypress[[:space:]]+(run|open)|selenium)'
 
 flutter_mobile_app() { # $1 = root; prints the first mobile app dir found
   local root="$1" f d
@@ -59,6 +59,11 @@ selftest() {
   chk "Flutter app + claude-in-chrome -> advises"                   advise mcp__claude-in-chrome__navigate "" "$t/mobile" s3
   chk "Flutter app + Bash playwright-cli -> advises"                advise Bash "playwright-cli goto http://localhost:4200" "$t/mobile" s4
   chk "Flutter app + npx playwright test -> advises"                advise Bash "cd web && npx playwright test" "$t/mobile" s5
+  chk "Flutter app + pnpm exec playwright test -> advises"          advise Bash "pnpm exec playwright test" "$t/mobile" s13
+  chk "Flutter app + yarn playwright test -> advises"               advise Bash "yarn playwright test --project=desktop" "$t/hybrid" s14
+  chk "Flutter app + bunx playwright-cli -> advises"                advise Bash "bunx playwright-cli open http://x" "$t/mobile" s15
+  chk "web-only repo + pnpm exec playwright test -> silent"         silent Bash "pnpm exec playwright test" "$t/web" s16
+  chk "Flutter app + pnpm install (not a browser run) -> silent"    silent Bash "pnpm install" "$t/mobile" s17
   chk "same session again -> throttled"                             silent mcp__chrome-devtools__click "" "$t/mobile" s1
   chk "web-only repo + Chrome DevTools MCP -> silent"               silent mcp__chrome-devtools__navigate_page "" "$t/web" s6
   chk "web-only repo + playwright-cli -> silent"                    silent Bash "playwright-cli goto http://x" "$t/web" s7

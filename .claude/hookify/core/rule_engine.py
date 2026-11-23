@@ -15,6 +15,21 @@ def compile_regex(pattern: str) -> re.Pattern:
     return re.compile(pattern, re.IGNORECASE)
 
 
+def invalid_regex_conditions(rule: Rule) -> List[str]:
+    """Return 'rule: pattern -> error' for each regex condition that does not compile.
+
+    An invalid pattern can never match, so the rule would silently enforce nothing.
+    """
+    problems = []
+    for c in rule.conditions or []:
+        if c.operator in ('regex_match',) and c.pattern:
+            try:
+                compile_regex(c.pattern)
+            except re.error as e:
+                problems.append(f"{rule.name}: field '{c.field}' pattern is not a valid Python regex ({e})")
+    return problems
+
+
 class RuleEngine:
     """Evaluates rules against hook input data."""
 
@@ -35,13 +50,29 @@ class RuleEngine:
         hook_event = input_data.get('hook_event_name', '')
         blocking_rules = []
         warning_rules = []
+        broken = []
 
         for rule in rules:
+            problems = invalid_regex_conditions(rule)
+            if problems:  # fail loudly: an uncompilable rule must not look like a passing one
+                broken.extend(problems)
+                continue
             if self._rule_matches(rule, input_data):
                 if rule.action == 'block':
                     blocking_rules.append(rule)
                 else:
                     warning_rules.append(rule)
+
+        if broken:
+            warning_rules.append(Rule(
+                name='hookify-invalid-rule',
+                enabled=True,
+                event='all',
+                conditions=[],
+                action='warn',
+                message=("These hookify rules are NOT enforced because a pattern does not compile "
+                         "(run python3 .claude/hookify/tests/test_rules.py):\n- " + "\n- ".join(broken)),
+            ))
 
         if blocking_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in blocking_rules]

@@ -6,15 +6,14 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: src/app/features/.*\.html$
+    pattern: (?:^|/)src/app/features/.*\.html$
   - field: content
     operator: regex_match
-    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:<input\s(?![^>]*formControl)|<select\s(?![^>]*formControl)|<textarea\s(?![^>]*formControl))
+    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:<input\s(?![^>]*(?:formControl|formField|ngModel|type=\"(?:checkbox|radio|file|hidden|submit|button|range)\"))|<select\s(?![^>]*(?:formControl|formField|ngModel))|<textarea\s(?![^>]*(?:formControl|formField|ngModel)))
 ---
-Raw form input detected without reactive form binding. Use daisyUI form components with Angular reactive forms:
-- `<input class="input input-bordered" formControlName="...">` not bare `<input>`
-- `<select class="select select-bordered" formControlName="...">` not bare `<select>`
-- Wrap in `<label class="form-control">` for consistent spacing and labels
-- For Flutter: use shared form field wrapper widgets, not raw `TextFormField`
+Form input without a form binding detected in an Angular feature template. Bind it to a form model (reactive `formControlName`/`[formControl]`, template `ngModel`, or experimental Signal Forms `[formField]`) and use daisyUI form classes:
+- `<input class="input" formControlName="...">` not bare `<input>` (daisyUI 5: `input-bordered` no longer exists)
+- `<select class="select" formControlName="...">` not bare `<select>`
+- Group with `<fieldset class="fieldset">` + `<legend class="fieldset-legend">`, and give every control a `<label class="label" for="...">` (daisyUI 5 replaces `form-control`)
 Reference: .claude/skills/angular-spa/reference/angular-conventions.md
 Exemption: a justified one-off may carry `ignore-design: <reason>` (reason required) on the same line or the line directly above. A marker elsewhere in the file does not exempt it.

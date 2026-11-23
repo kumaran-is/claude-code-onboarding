@@ -6,12 +6,12 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: src/.*\.(html|scss|css|ts)$
+    pattern: ^(?!.*(?:\.service\.ts|\.spec\.tsx?|\.test\.[jt]sx?|(?:^|/)[^/]*(?:tokens?|theme)[^/]*\.s?css)$)(?:.*(?:^|/)src/app/.*\.(?:html|scss|css|ts)|.*(?:^|/)src/(?!main/).*\.(?:css|scss)|.*\.(?:tsx|jsx))$
   - field: content
     operator: regex_match
-    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:text-\[\d+px\]|text-\[\d+rem\]|text-\[\d+em\]|font-\[.*\]|font-size\s*:\s*\d+)
+    pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:\btext-\[[0-9.]+(?:px|rem|em)\]|\bfont-\[(?!var\()[^\]]+\]|\bleading-\[[0-9.]+(?:px|rem|em)?\]|font-size\s*:\s*['\"]?[0-9.]+|fontSize\s*:\s*['\"]?[0-9.]+)
 ---
-Raw typography value detected in Angular file. Use Tailwind's typography scale or daisyUI text utilities:
+Raw typography value detected in a web UI file (Angular `src/app/**`, React `*.tsx`/`*.jsx`, app stylesheets). Use Tailwind's typography scale or daisyUI text utilities:
 - `text-sm`, `text-base`, `text-lg`, `text-xl` not `text-[14px]`
 - `font-sans`, `font-mono` not `font-[Arial]`
 - daisyUI component classes handle typography automatically

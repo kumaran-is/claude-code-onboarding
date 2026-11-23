@@ -12,7 +12,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.0.7-1C3C3C?style=flat)
 ![Google ADK](https://img.shields.io/badge/Google%20ADK-1.28.0-4285F4?style=flat&logo=google&logoColor=white)
 ![Angular](https://img.shields.io/badge/Angular-21.2.x-DD0031?style=flat&logo=angular&logoColor=white)
-![A2UI](https://img.shields.io/badge/A2UI-v0.8-0F9D58?style=flat&logo=google&logoColor=white)
+![A2UI](https://img.shields.io/badge/A2UI-v0.9-0F9D58?style=flat&logo=google&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9.x-3178C6?style=flat&logo=typescript&logoColor=white)
 ![Flutter](https://img.shields.io/badge/Flutter-3.41.x-02569B?style=flat&logo=flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/Dart-3.10.9-0175C2?style=flat&logo=dart&logoColor=white)
@@ -39,7 +39,7 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 |---|---|
 | **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.2.x, Python v3.14 |
 | **Agentic AI** | Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, Google ADK, FastAPI 0.135.2 |
-| **Frontend** | Angular 21.2.x, TypeScript 5.9.x, A2UI v0.8 (Agent-to-User Interface renderer), Three.js r160+ (3D/WebGL) |
+| **Frontend** | Angular 21.2.x, TypeScript 5.9.x, A2UI v0.9 (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
 | **Mobile** | Flutter 3.41.x, Dart 3.10.9, three_dart (3D in Flutter) |
 | **Data & Infra** | PostgreSQL, pgvector (vector search), Weaviate Serverless, Firebase |
 | **AI Tooling** | Claude Code, MCP servers |
@@ -1901,6 +1901,7 @@ claude-code-onboarding/
     │   ├── google-adk.md                 # Google ADK (Gemini agents) builder
     │   ├── angular-spa.md                # Angular frontend expert
     │   ├── a2ui-angular.md              # A2UI renderer developer (Angular)
+    │   ├── genui-contract-reviewer.md   # Read-only A2UI contract + cross-platform parity reviewer
     │   ├── flutter-mobile.md             # Flutter mobile expert
     │   ├── frontend-design.md            # Creative UI/UX design specialist
     │   ├── database-designer.md          # PostgreSQL + Firestore architect
@@ -1937,6 +1938,9 @@ claude-code-onboarding/
     │   ├── scaffold-google-adk.md        # /scaffold-google-adk <name>
     │   ├── scaffold-angular-app.md       # /scaffold-angular-app <name>
     │   ├── scaffold-a2ui.md             # /scaffold-a2ui <name> — A2UI renderer module
+    │   ├── scaffold-genui-feature.md    # /scaffold-genui-feature — contract-first GenUI feature (Angular/React/Flutter)
+    │   ├── audit-a2ui-parity.md         # /audit-a2ui-parity — catalog vs renderer parity (PASS/FAIL/BLOCKED/NOT RUN)
+    │   ├── validate-genui-feature.md    # /validate-genui-feature — schema, tests, a11y, streaming evidence
     │   ├── scaffold-flutter-app.md       # /scaffold-flutter-app <name>
     │   │
     │   │  # — Design —
@@ -2625,9 +2629,13 @@ This is the real-world workflow — a single command that triggers scaffolding, 
 
 **Components used:** Slash Command + Agent + Skill + MCP
 
-A2UI is Google's declarative protocol (v0.8) that lets AI agents describe rich, interactive UIs as structured JSONL instead of generating executable code. The agent sends four message types (`surfaceUpdate`, `dataModelUpdate`, `beginRendering`, `deleteSurface`); your Angular app validates each component type against an approved catalog and renders it with native daisyUI components.
+A2UI is Google's declarative protocol (v0.9) that lets AI agents describe rich, interactive UIs as structured JSON instead of generating executable code. The agent sends four message types (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`); your app validates each component against an approved catalog and renders it with native components. One framework-neutral catalog (`genui-contract` skill) serves Angular, React and Flutter, from one shared backend or from independent backends. Start a cross-platform feature with `/scaffold-genui-feature`, and gate it with `/audit-a2ui-parity` and `/validate-genui-feature`.
 
-**Official component types:** Row, Column, Text, Image, Icon, Button, TextField, CheckBox, DateTimeInput, Card, Modal, Tabs, List. Components reference their children via `{"explicitList": ["id1", "id2"]}` and all text fields use typed value objects: `{"literalString": "value"}` or `{"path": "/data/pointer"}` for reactive data binding.
+**v0.9 basic catalog:** Text, Image, Icon, Video, AudioPlayer, Row, Column, List, Card, Tabs, Modal, Divider, Button, TextField, CheckBox, ChoicePicker, Slider, DateTimeInput.
+
+- Each component is a flat object, for example `{"id": "title", "component": "Text", "text": "Hello"}`.
+- Children are an array of IDs, `["id1", "id2"]`, or a template `{"componentId": "row", "path": "/items"}`.
+- A value is either a literal or a data binding: `"Hello"` or `{"path": "/data/pointer"}`.
 
 **Scaffold with the slash command:**
 
@@ -2648,10 +2656,10 @@ This creates a complete A2UI feature module: models (`SurfaceState`, `A2UIMessag
 ```
 
 ```
-> @a2ui-angular Review our A2UI renderer for security issues — make sure all component types are validated against the catalog allowlist and property values use the literalString/path format.
+> @a2ui-angular Review our A2UI renderer for security issues — make sure every component is validated against the catalog allowlist, actions are on the action allowlist, and the protocol version is exactly v0.9.
 ```
 
-**Key concept:** A2UI payloads are untrusted. Every component type from the agent is validated against a client-side catalog allowlist before rendering. Unknown types are silently skipped. Agent-provided code is never executed. Actions use a structured format `{"name": "...", "context": [...]}` — never executable strings.
+**Key concept:** A2UI payloads are untrusted. Every component type from the agent is validated against a client-side catalog allowlist before rendering. An unknown component rejects the message and the user sees an error, never a silent skip. Agent-provided code is never executed. An action is a v0.9 client message, `{"version": "v0.9", "action": {"name", "surfaceId", "sourceComponentId", "timestamp", "context": {...}}}`. The server authorizes every action, because the renderer is not a security boundary.
 
 ### Exercise 12: Build a Google ADK Agent Service
 

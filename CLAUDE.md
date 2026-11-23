@@ -47,7 +47,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 >
 > **Test tool selection** (`.claude/rules/testing-tool-selection.md`, always loaded): Flutter Android/iOS UI/E2E → Maestro CLI/MCP only; Angular/React web → Playwright / Chrome DevTools (unit: Angular `ng test` on Vitest, React Vitest + Testing Library). Choose by the app target under test, not the repo's stack. Missing Maestro/device → BLOCKED/NOT RUN, never a browser substitute.
 >
-> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), `typescript-node-backend.md` for NestJS, plain Node and MCP server files (controllers, `src/app.module.ts`, `src/modules/**`, `nest-cli.json`, `**/mcp/**`, `src/server.ts`; never Angular/React app files), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
+> **Path-scoped rules** (`paths:` frontmatter) load only when matching files are touched — e.g. `.claude/rules/flutter-engineering.md` and `flutter-verification.md` for Dart/pubspec files, `python-backend.md` for Python/`pyproject.toml`/`alembic/**`/Dockerfiles, `ai-engineering.md` for AI/agent/RAG/eval/prompt code (`**/ai/**`, `**/agents/**`, `**/llm/**`, `**/rag/**`, `**/evals/**`, `**/prompts/**` and similar), `web-frontend.md` for Angular/React app files (`src/app/**`, `*.component.*`, `*.tsx`/`*.jsx`, `angular.json`, `vite.config.*`, `playwright.config.*`), `typescript-node-backend.md` for NestJS, plain Node and MCP server files (controllers, `src/app.module.ts`, `src/modules/**`, `nest-cli.json`, `**/mcp/**`, `src/server.ts`; never Angular/React app files), `genui-a2ui.md` for GenUI files (`**/a2ui/**`, `**/genui/**`, `**/*catalog*.json`), and `hook-and-gate-authoring.md` for `.claude/hooks`, `.claude/scripts` and CI workflows. Keep always-loaded rules short; put stack detail in skills and path-scoped rules.
 
 ## Communication
 
@@ -69,6 +69,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app` |
 | React (web SPA; not React Native, not Next.js/SSR) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
+| GenUI contract (A2UI v0.9, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
 | Angular GenUI (A2UI renderer) | `.claude/skills/a2ui-angular/` | `a2ui-angular` | `/scaffold-a2ui` |
 | Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |
 | Web performance + SEO (public sites only) | `.claude/skills/web-performance-optimization/` | `performance-oracle` | — |
@@ -126,6 +127,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | Database | `postgresql-database-reviewer` |
 | pgvector schema | `pgvector-schema-reviewer` |
 | Weaviate schema | `weaviate-schema-reviewer` |
+| GenUI / A2UI contract + renderer parity | `genui-contract-reviewer` |
 | RAG code + full system (canonical RAG reviewer) | `rag-implementation-reviewer` |
 | RAG eval execution | `rag-eval-runner` |
 | UI/UX (tokens/theming; shared component library) | `ui-standards-expert`, `design-system-reviewer` |

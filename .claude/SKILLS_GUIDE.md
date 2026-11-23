@@ -54,7 +54,18 @@
 - **workflow-orchestration-patterns**: Durable workflow orchestration with Temporal for distributed systems. Use when building long-running, failure-resilient distributed business processes in Java 21, Python 3.14, or NestJS 11.x — covers Workflow vs Activity separation, Saga pattern with compensation, Entity workflows (actor model), Fan-out/Fan-in parallel execution, determinism constraints, retry policies, and idempotency. Reference: `reference/implementation-playbook.md` (full workflow + activity code for all 3 SDKs).
 
 ### Frontend (19 skills)
-- **a2ui-angular**: A2UI (Agent-to-User Interface) renderer development for Angular 21.x — protocol implementation, component catalog, recursive renderer, action handling, streaming A2UI payloads, and security validation. Reference files: `a2ui-protocol.md`, `a2ui-protocol-advanced.md`, `a2ui-security.md`, `a2ui-component-catalog.md`, `a2ui-component-containers.md`, `a2ui-renderer-patterns.md`, `a2ui-renderer-template.md`, `a2ui-chat-template.md`, `a2ui-renderer-services.md`, `a2ui-client-integration.md` (agUiResource service pattern, demo-only vs production action handler warning, rate limits).
+- **genui-contract**: Framework-neutral generative UI contract on A2UI **v0.9**. Covers:
+  - one canonical catalog (ActionCard, DataSummaryTable, ApprovalForm, SelectionList, DetailPanel, StatusIndicator, InputForm, ConfirmationDialog)
+  - action allowlist with golden payloads, plus valid and invalid fixtures and a deterministic validator (`scripts/validate_a2ui_contract.py`)
+  - `shared-backend` vs `standalone-backend` topologies, with Mermaid diagrams
+  - carrying A2UI over AG-UI (`ACTIVITY_SNAPSHOT` `a2ui-surface`)
+  - server-side action security: authz, idempotency, approvals
+  - runtime lifecycle: partial delivery, cancel, reconnect
+  - the Angular/React/Flutter compatibility matrix
+  - when to use A2UI, AG-UI, CopilotKit or Flutter GenUI
+
+  Reference files: `catalog-contract.md`, `backend-topologies.md`, `ag-ui-transport.md`, `action-security.md`, `runtime-lifecycle.md`, `backend-emitters.md`, `compatibility-matrix.md`. Reviewer: `genui-contract-reviewer`. Commands: `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature`. Rule: `genui-a2ui.md`. Hook: `post-edit-genui-advisory.sh`, an advisory that flags protocol-version drift.
+- **a2ui-angular**: A2UI **v0.9** (`@a2ui/angular@0.14.0`) renderer development for Angular 21.x, direct or with CopilotKit Angular 0.3.1 (optional). Additional reference files: `canonical-catalog-angular.md`, `copilotkit-angular.md`. Also covers protocol implementation, component catalog, recursive renderer, action handling, streaming A2UI payloads, and security validation. Reference files: `a2ui-protocol.md`, `a2ui-protocol-advanced.md`, `a2ui-security.md`, `a2ui-component-catalog.md`, `a2ui-component-containers.md`, `a2ui-renderer-patterns.md`, `a2ui-renderer-template.md`, `a2ui-chat-template.md`, `a2ui-renderer-services.md`, `a2ui-client-integration.md` (agUiResource service pattern, demo-only vs production action handler warning, rate limits).
 - **streaming-protocols**: Three-layer mental model (Transport/Framing/Message) for AI streaming: SSE vs HTTP streaming vs NDJSON vs WebSocket, wire formats, proxy buffering/compression/reconnection pitfalls, and the server-side stream lifecycle (`reference/server-stream-lifecycle.md`: client disconnect cancels the upstream model call, exactly one terminal done/error frame, never persist or act on partial structured output, WebSocket auth before accept).
 - **ai-chat**: AI chat interface patterns for Angular 21.x and Flutter 3.41.x — streaming markdown rendering, auto-scroll heuristics, memoized computed(), token context indicators, thumbs up/down feedback, multi-modal input, and AI error states.
 - **react-spa**: React 19 web SPA (RECOMMENDED PRACTICE) — Vite 8, TypeScript 5.9.3 pinned, React Router 8 data mode (imports from `react-router`), TanStack Query 5 server state with loading/empty/error states, React Hook Form + zod 4, typed API client with runtime validation, auth plumbing (no tokens in Web Storage, allow-listed credential origins, validated `returnUrl`), React Compiler, Vitest + Testing Library + MSW, Playwright + axe. Agent `react-spa` (builder); command `/scaffold-react-app`. Not React Native (`mobile-developer`), not Next.js/SSR.
@@ -358,6 +369,12 @@ Loaded from `rules/titan-methodology.md`. Dual-lens scoring for product decision
 4. **adk-deploy-guide** — Deploy to Agent Engine or Cloud Run with Terraform
 5. **security-reviewer** — Review tools that call external APIs or handle user PII
 
+### Cross-Platform Generative UI (A2UI contract: Angular, React, Flutter)
+1. **genui-contract** — Design or extend the canonical catalog and actions, and pick the topology (`/scaffold-genui-feature`)
+2. **a2ui-angular** / **react-spa** (`reference/generative-ui-a2ui.md`) / **flutter-genui** — Register the catalog IDs on each declared platform
+3. **google-adk** or **agentic-ai-dev** — Agent backend that emits A2UI v0.9 (`genui-contract/reference/backend-emitters.md`)
+4. **genui-contract-reviewer** agent, then `/audit-a2ui-parity` and `/validate-genui-feature`
+
 ### A2UI Agent-Driven UI (Angular)
 1. **a2ui-angular** — Build A2UI renderer, catalog, and action handler
 2. **angular-spa** — Platform-specific Angular component patterns
@@ -413,6 +430,7 @@ Loaded from `rules/titan-methodology.md`. Dual-lens scoring for product decision
 - **pytest infrastructure, fixtures, or coverage config** -> python-testing-patterns
 - **AI agent or RAG pipeline** -> agentic-ai-dev
 - **Google ADK agent (Gemini-based)** -> google-adk
+- **Cross-platform generative UI / A2UI catalog contract** -> genui-contract
 - **A2UI agent-driven UI** -> a2ui-angular
 - **AI chat UI (streaming, copilot, chatbot)** -> ai-chat
 - **Angular SPA** -> angular-spa
@@ -566,6 +584,9 @@ writing-skills + subagent-driven-development + plan-mode-review
 ### Google ADK Agent (Full Stack)
 google-adk + adk-eval-guide + adk-observability-guide + adk-deploy-guide + security-reviewer
 
+### Cross-Platform Generative UI
+genui-contract + a2ui-angular + react-spa + flutter-genui + genui-contract-reviewer + security-reviewer
+
 ### A2UI Agent-Driven UI (Angular)
 a2ui-angular + angular-spa + google-adk + security-reviewer
 
@@ -645,6 +666,7 @@ a2ui-angular + angular-spa + google-adk + security-reviewer
 | Skill | Domain | Role | Scope | Output |
 |-------|--------|------|-------|--------|
 | a2ui-angular | frontend | specialist | implementation | code |
+| genui-contract | frontend | architect | design | spec |
 | adk-deploy-guide | infrastructure | specialist | deployment | code |
 | adk-eval-guide | agentic-ai | specialist | evaluation | code |
 | adk-observability-guide | backend | specialist | observability | code |

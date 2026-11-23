@@ -331,6 +331,13 @@ task_distribution:
     secondary:
       - angular-spa                 # For framework correctness
       - security-reviewer           # A2UI payloads require input validation
+      - genui-contract-reviewer     # Catalog, action contract and cross-platform parity
+
+  - pattern: "genui/**"
+    signals: ["A2UI catalog", "GenUI contract", "agent-driven UI"]
+    primary: genui-contract-reviewer
+    secondary:
+      - security-reviewer           # Generated UI is untrusted input
 
   # Flutter / Dart
   - pattern: "*.dart"

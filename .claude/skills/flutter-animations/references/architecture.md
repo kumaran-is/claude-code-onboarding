@@ -1,19 +1,19 @@
 # Architecture — Enterprise Flutter Animation Service Layer
 
 ## Table of Contents
-1. [Full Directory Structure](#structure)
-2. [DI Wiring (get_it / Riverpod)](#di)
-3. [AnimationService — Unified Facade](#service)
-4. [AnimationPlaceholder Widget](#placeholder)
-5. [Accessibility — Reduce Motion](#accessibility)
-6. [Typed Asset Constants](#constants)
-7. [pubspec.yaml Setup](#pubspec)
-8. [CI/CD Size Checks](#ci)
-9. [Code Review Checklist](#review)
+1. [Full Directory Structure](#1-full-directory-structure)
+2. [DI Wiring (get_it / Riverpod)](#2-di-wiring)
+3. [AnimationService — Unified Facade](#3-animationservice--unified-facade)
+4. [AnimationPlaceholder Widget](#4-animationplaceholder-widget)
+5. [Accessibility — Reduce Motion](#5-accessibility--reduce-motion)
+6. [Typed Asset Constants](#6-typed-asset-constants)
+7. [pubspec.yaml Setup](#7-pubspecyaml-setup)
+8. [CI/CD Size Checks](#8-cicd-size-checks)
+9. [Code Review Checklist](#9-code-review-checklist)
 
 ---
 
-## 1. Full Directory Structure {#structure}
+## 1. Full Directory Structure
 
 ```
 lib/
@@ -45,7 +45,7 @@ assets/
 
 ---
 
-## 2. DI Wiring {#di}
+## 2. DI Wiring
 
 ### get_it
 ```dart
@@ -86,7 +86,7 @@ final animationPreloadProvider = FutureProvider<void>((ref) async {
 
 ---
 
-## 3. AnimationService — Unified Facade {#service}
+## 3. AnimationService — Unified Facade
 
 ```dart
 // lib/core/animations/animation_service.dart
@@ -122,7 +122,7 @@ class AnimationService {
 
 ---
 
-## 4. AnimationPlaceholder Widget {#placeholder}
+## 4. AnimationPlaceholder Widget
 
 Show while compositions load. Uses ThemeData colorScheme tokens — no hardcoded colors.
 
@@ -214,7 +214,7 @@ class _ShimmerBoxState extends State<_ShimmerBox>
 
 ---
 
-## 5. Accessibility — Reduce Motion {#accessibility}
+## 5. Accessibility — Reduce Motion
 
 Every animation widget must check `MediaQuery.disableAnimationsOf(context)`.
 
@@ -244,7 +244,7 @@ mixin ReducedMotionMixin<T extends StatefulWidget> on State<T> {
 
 ---
 
-## 6. Typed Asset Constants {#constants}
+## 6. Typed Asset Constants
 
 ```dart
 // lib/core/animations/animation_assets.dart
@@ -268,7 +268,7 @@ abstract final class AnimationAssets {
 
 ---
 
-## 7. pubspec.yaml Setup {#pubspec}
+## 7. pubspec.yaml Setup
 
 ```yaml
 dependencies:
@@ -287,7 +287,7 @@ flutter:
 
 ---
 
-## 8. CI/CD Size Checks {#ci}
+## 8. CI/CD Size Checks
 
 Add to `.github/workflows/flutter.yml`:
 
@@ -315,7 +315,7 @@ Add to `.github/workflows/flutter.yml`:
 
 ---
 
-## 9. Code Review Checklist {#review}
+## 9. Code Review Checklist
 
 Use as PR checklist for any animation PR:
 

@@ -1,5 +1,10 @@
 # A2UI Chat Page Component Templates
 
+> **LEGACY v0.8.** These templates drive the hand-built renderer (`a2ui-renderer-patterns.md`) and the wire
+> format reference below documents v0.8 messages. New work uses v0.9 through the SDK
+> (`a2ui-renderer-services.md` § Feeding messages) and the shared contract in the `genui-contract` skill
+> (`../../genui-contract/reference/catalog-contract.md`). v0.8 → v0.9 names: `a2ui-protocol.md` (end of file).
+
 ## Chat Page Component
 
 ```typescript

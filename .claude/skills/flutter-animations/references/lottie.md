@@ -1,20 +1,20 @@
 # Lottie — Enterprise Flutter Reference
 
 ## Table of Contents
-1. [Core Widget Patterns](#core-patterns)
-2. [Composition Caching](#caching)
-3. [RenderCache — Production Performance](#rendercache)
-4. [Runtime Delegates — Dynamic Colors & Text](#delegates)
-5. [Frame Rate Control](#framerate)
-6. [dotLottie & TGS Support](#formats)
-7. [Network Animations](#network)
-8. [Error Handling & Fallbacks](#errors)
-9. [Testing](#testing)
-10. [Performance Checklist](#performance)
+1. [Core Widget Patterns](#1-core-widget-patterns)
+2. [Composition Caching](#2-composition-caching)
+3. [RenderCache — Production Performance](#3-rendercache--production-performance)
+4. [Runtime Delegates — Dynamic Colors & Text](#4-runtime-delegates--dynamic-colors--text)
+5. [Frame Rate Control](#5-frame-rate-control)
+6. [dotLottie & TGS Support](#6-dotlottie--tgs-support)
+7. [Network Animations](#7-network-animations)
+8. [Error Handling & Fallbacks](#8-error-handling--fallbacks)
+9. [Testing](#9-testing)
+10. [Performance Checklist](#10-performance-checklist)
 
 ---
 
-## 1. Core Widget Patterns {#core-patterns}
+## 1. Core Widget Patterns
 
 ### Play-Once (splash, success confirmation)
 ```dart
@@ -138,7 +138,7 @@ class _LoopingLottieState extends State<LoopingLottie>
 
 ---
 
-## 2. Composition Caching {#caching}
+## 2. Composition Caching
 
 Lottie parses JSON on load. In lists or repeated use, cache the `LottieComposition`.
 
@@ -173,7 +173,7 @@ class LottieCacheManager {
 
 ---
 
-## 3. RenderCache — Production Performance {#rendercache}
+## 3. RenderCache — Production Performance
 
 `renderCache` is the single most impactful Lottie performance setting.
 
@@ -193,7 +193,7 @@ For very large animations (> 500 frames at high res), prefer `RenderCache.drawin
 
 ---
 
-## 4. Runtime Delegates — Dynamic Colors & Text {#delegates}
+## 4. Runtime Delegates — Dynamic Colors & Text
 
 Use `LottieDelegates` to theme animations at runtime without modifying the source `.json`.
 
@@ -242,7 +242,7 @@ Dynamic per-frame delegate values → `RenderCache.none` required.
 
 ---
 
-## 5. Frame Rate Control {#framerate}
+## 5. Frame Rate Control
 
 ```dart
 // FrameRate.composition  -- exported FPS from After Effects (default, power-friendly)
@@ -257,7 +257,7 @@ Dynamic per-frame delegate values → `RenderCache.none` required.
 
 ---
 
-## 6. dotLottie & TGS Support {#formats}
+## 6. dotLottie & TGS Support
 
 ### dotLottie (.lottie) — preferred format for production
 ```dart
@@ -284,7 +284,7 @@ Lottie.asset(
 
 ---
 
-## 7. Network Animations {#network}
+## 7. Network Animations
 
 ```dart
 class RemoteLottie extends StatefulWidget {
@@ -353,7 +353,7 @@ class _RemoteLottieState extends State<RemoteLottie>
 
 ---
 
-## 8. Error Handling & Fallbacks {#errors}
+## 8. Error Handling & Fallbacks
 
 All Lottie widgets must surface failures — never produce a blank widget silently.
 Wrap composition loads in try/catch. Show `errorWidget` for missing/corrupt assets, unsupported JSON schema, and network failures.
@@ -362,7 +362,7 @@ See `RemoteLottie` above for the full pattern.
 
 ---
 
-## 9. Testing {#testing}
+## 9. Testing
 
 ```dart
 testWidgets('LoopingLottie pauses when reduce motion enabled', (tester) async {
@@ -398,7 +398,7 @@ testWidgets('PlayOnceLottie calls onComplete', (tester) async {
 
 ---
 
-## 10. Performance Checklist {#performance}
+## 10. Performance Checklist
 
 - [ ] `.json` file size < 300 KB; prefer `.lottie` (dotLottie zip) format
 - [ ] `renderCache: RenderCache.raster` on all looping animations

@@ -112,14 +112,21 @@ its `context` and decides which messages, if any, come back. Apply the response 
 
 | Scenario | Use |
 |----------|-----|
-| New project, standard catalog sufficient | `@a2ui/angular` SDK |
-| Need custom component types (chart, map, etc.) | Custom renderer (see `a2ui-renderer-patterns.md`) |
-| Need custom security policy or data binding | Custom renderer |
-| Need catalog extensions beyond BasicCatalog | Register additional catalogs via `A2UI_RENDERER_CONFIG` |
+| New project, standard catalog sufficient | `@a2ui/angular` SDK with `BasicCatalog` (v0.9) |
+| Need custom component types (chart, map, etc.) or the shared canonical catalog | SDK + an `AngularCatalog` custom catalog (`canonical-catalog-angular.md`) |
+| Need a custom security policy | SDK + the ingest guard that runs before `processMessages` (`canonical-catalog-angular.md` § Ingest guard) |
+| Agent still emits v0.8 payloads | LEGACY hand-built renderer (`a2ui-renderer-patterns.md`), until the agent moves to v0.9 |
 
 ---
 
-## Agent Service (REST + SSE)
+## Agent Service (REST + SSE) — LEGACY v0.8
+
+> **LEGACY v0.8.** This service and the unit test template below belong to the hand-built renderer in
+> `a2ui-renderer-patterns.md`: `buildSurfaceState` folds v0.8 messages (`surfaceUpdate`, `dataModelUpdate`,
+> `beginRendering`) into its `SurfaceState`. With the SDK (above) do not fold state yourself: pass each
+> v0.9 message (`createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`) through the ingest
+> guard and then `AgentSurfaceComponent.ingest()`; `processMessages` owns the surface state. Keep the
+> transport rules from this section (a malformed frame or a dropped stream is an error, never a silent complete).
 
 ```typescript
 // services/a2ui-agent.service.ts
@@ -214,7 +221,9 @@ export class A2UIAgentService {
 
 ---
 
-## Unit Test Template
+## Unit Test Template — LEGACY v0.8 hand-built renderer
+
+For the SDK path, test the ingest guard and the action gateway instead (`canonical-catalog-angular.md`).
 
 ```typescript
 // components/a2ui-renderer/a2ui-renderer.component.spec.ts

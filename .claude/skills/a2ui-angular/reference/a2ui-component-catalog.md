@@ -4,7 +4,7 @@
 
 This catalog defines the component types an A2UI renderer must support. Each component type has a fixed property schema. Agents request these types by name; the renderer validates the type against this catalog (allowlist) and maps it to a native Angular/daisyUI component.
 
-All text fields use typed value objects: `{"literalString": "value"}` for static text or `{"path": "/json/pointer"}` for reactive data binding. The combined form `{"path": "/...", "literalString": "default"}` binds to the path and falls back to the literal when the path is absent. Plain strings are not valid for text fields.
+In v0.8 (legacy, the shapes in this file) all text fields use typed value objects: `{"literalString": "value"}` for static text or `{"path": "/json/pointer"}` for reactive data binding. The combined form `{"path": "/...", "literalString": "default"}` binds to the path and falls back to the literal when the path is absent. Plain strings are not valid for text fields.
 
 ---
 

@@ -1,5 +1,11 @@
 # A2UI Protocol — Action Model, Streaming, and A2A Integration
 
+> **LEGACY v0.8 payloads.** The JSON and backend snippets in this file use v0.8 shapes (`surfaceUpdate`,
+> `beginRendering`, `literalString`, `userAction`). The backend rules (bypass the LLM for search results,
+> action context limited to what the user selected, never an empty agent turn) apply unchanged to v0.9. For v0.9
+> message shapes, actions and streaming lifecycle use the `genui-contract` skill
+> (`../../genui-contract/reference/catalog-contract.md`, `../../genui-contract/reference/runtime-lifecycle.md`).
+
 ## Action Model
 
 Actions are declared on interactive components (e.g., Button). When a user triggers the action, the renderer resolves any `{"path": "..."}` references against the current data model and sends a `userAction` message to the agent.
@@ -75,7 +81,7 @@ A2UI integrates with the Agent-to-Agent (A2A) protocol for multi-agent orchestra
 
 | Integration Detail | Value |
 |--------------------|-------|
-| A2A extension URI | `https://a2ui.org/a2a-extension/a2ui/v0.8` |
+| A2A extension URI | `https://a2ui.org/a2a-extension/a2ui/v0.8` (v0.8; the v0.9 URI is UNVERIFIED, confirm on a2ui.org before use) |
 | MIME type | `application/json+a2ui` |
 
 ### Agent Card (server advertises capabilities)

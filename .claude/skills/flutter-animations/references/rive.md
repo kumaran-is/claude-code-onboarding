@@ -1,21 +1,21 @@
 # Rive — Enterprise Flutter Reference
 
 ## Table of Contents
-1. [Renderer Selection](#renderer-selection)
-2. [State Machines](#state-machines)
-3. [Inputs — Bool, Number, Trigger](#inputs)
-4. [Data Binding](#data-binding)
-5. [Multi-Artboard Strategy](#multi-artboard)
-6. [Preloading & Caching](#preloading)
-7. [Error Handling](#error-handling)
-8. [RiveNative.init()](#rivenative-init)
-9. [RivePanel — Shared Texture](#rivepanel)
-10. [Testing](#testing)
-11. [Performance Checklist](#performance)
+1. [Renderer Selection](#1-renderer-selection)
+2. [State Machines](#2-state-machines--modern-api-rive-014x)
+3. [Inputs — Bool, Number, Trigger](#3-inputs--bool-number-trigger)
+4. [Data Binding](#4-data-binding)
+5. [Multi-Artboard Strategy](#5-multi-artboard-strategy)
+6. [Preloading & Caching](#6-preloading--caching)
+7. [Error Handling](#7-error-handling)
+8. [RiveNative.init()](#8-rivenativeinit)
+9. [RivePanel — Shared Texture](#9-rivepanel--shared-texture)
+10. [Testing](#10-testing)
+11. [Performance Checklist](#11-performance-checklist)
 
 ---
 
-## 1. Renderer Selection {#renderer-selection}
+## 1. Renderer Selection
 
 Always declare the renderer explicitly. Never rely on defaults in production.
 
@@ -46,7 +46,7 @@ File Rive issues at github.com/rive-app/rive-flutter.
 
 ---
 
-## 2. State Machines — Modern API (rive 0.14.x) {#state-machines}
+## 2. State Machines — Modern API (rive 0.14.x)
 
 > **The `RiveAnimation` widget + `StateMachineController.fromArtboard` is the legacy API.**
 > All new enterprise code must use `FileLoader` + `RiveWidgetController` + `RiveWidgetBuilder`.
@@ -126,7 +126,7 @@ void _onRiveInit(Artboard artboard) {
 
 ---
 
-## 3. Inputs — Bool, Number, Trigger {#inputs}
+## 3. Inputs — Bool, Number, Trigger
 
 ### Safe Input Access (modern controller)
 
@@ -184,7 +184,7 @@ void _syncState(LoadingState state) {
 
 ---
 
-## 4. Data Binding {#data-binding}
+## 4. Data Binding
 
 Rive data binding (rive 0.14.x) allows direct wiring of Dart values to Rive viewmodel properties.
 Prefer this over manual SMINumber updates for progress rings, charts, and real-time displays.
@@ -210,7 +210,7 @@ Prefer it for any animation driven by live/streaming data.
 
 ---
 
-## 5. Multi-Artboard Strategy {#multi-artboard}
+## 5. Multi-Artboard Strategy
 
 For large `.riv` files with multiple artboards (e.g., onboarding with 5 screens):
 
@@ -251,7 +251,7 @@ class _OnboardingAnimationState extends State<OnboardingAnimation> {
 
 ---
 
-## 6. Preloading & Caching {#preloading}
+## 6. Preloading & Caching
 
 Never let the first frame trigger an asset load. Preload at app startup.
 
@@ -292,7 +292,7 @@ class RivePreloader {
 
 ---
 
-## 7. Error Handling {#error-handling}
+## 7. Error Handling
 
 ```dart
 // In your app setup — log Rive errors to crash analytics
@@ -312,7 +312,7 @@ Always use `RiveWidgetBuilder` with explicit `RiveFailed` state — never let fa
 
 ---
 
-## 8. RiveNative.init() {#rivenative-init}
+## 8. RiveNative.init()
 
 Required for `rive 0.14.x`. Must be called before `runApp`.
 
@@ -329,7 +329,7 @@ Omitting `RiveNative.init()` causes blank/flash first frame and unpredictable st
 
 ---
 
-## 9. RivePanel — Shared Texture {#rivepanel}
+## 9. RivePanel — Shared Texture
 
 When rendering 3+ Rive widgets on the same screen, wrap in `RivePanel(useSharedTexture: true)`.
 Shares a single GPU texture atlas — reduces VRAM usage and draw calls significantly.
@@ -360,7 +360,7 @@ class AnimatedBottomNav extends StatelessWidget {
 
 ---
 
-## 10. Testing {#testing}
+## 10. Testing
 
 ```dart
 testWidgets('AnimatedToggle renders fallback when motion disabled', (tester) async {
@@ -391,7 +391,7 @@ testWidgets('AnimatedToggle calls onChanged on tap', (tester) async {
 
 ---
 
-## 11. Performance Checklist {#performance}
+## 11. Performance Checklist
 
 - [ ] `.riv` file size < 500 KB
 - [ ] `await RiveNative.init()` called in `main()` before `runApp`

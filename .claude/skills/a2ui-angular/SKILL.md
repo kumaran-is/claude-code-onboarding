@@ -112,7 +112,7 @@ Detailed patterns are in `reference/`:
 
 ### A2UI Protocol
 - `a2ui-protocol.md` — Protocol specification, JSON format, adjacency list structure, message types, userAction
-- `a2ui-protocol-advanced.md` — Action model, streaming (JSONL/SSE/WebSocket/REST/A2A), A2A integration, versioning
+- `a2ui-protocol-advanced.md` — Action model, streaming (JSONL/SSE/WebSocket/REST/A2A), A2A integration, versioning, backend rules (payload examples are LEGACY v0.8)
 - `a2ui-security.md` — Allowlist enforcement, injection prevention, untrusted payload handling
 - `a2ui-component-catalog.md` — Layout (Row, Column) + Display (Text, Image, Icon, Divider) + Interactive (Button, TextField, Checkbox, DateTimeInput) component schemas
 - `a2ui-component-containers.md` — Container types (Card, Modal, Tabs, List), extended catalog (ChoicePicker, Slider, AudioPlayer, Video), how to add new types
@@ -123,8 +123,8 @@ Detailed patterns are in `reference/`:
 - `copilotkit-angular.md` — CopilotKit Angular compatibility (0.6.0 needs Angular 22; 0.3.1 supports 21), built-in Lit A2UI renderer facts, bridge from CopilotKit activities to `@a2ui/angular`
 - `a2ui-renderer-patterns.md` — LEGACY v0.8 hand-built renderer: architecture, models, catalog service, URL policy (https + host allowlist), cycle/depth guard
 - `a2ui-renderer-template.md` — LEGACY v0.8 `A2UIRendererComponent` (compiled + browser-tested guards: cycle/depth placeholder, unknown type, URL allowlist, accessible tabs)
-- `a2ui-chat-template.md` — Chat page component, streaming variant (SSE + JSONL), wire format reference with JSON examples
-- `a2ui-renderer-services.md` — Official `@a2ui/angular` SDK setup (A2uiRendererService, SurfaceComponent, A2UI_RENDERER_CONFIG), A2UIAgentService (REST + SSE), unit test template
+- `a2ui-chat-template.md` — LEGACY v0.8 chat page for the hand-built renderer, streaming variant (SSE + JSONL), v0.8 wire format reference
+- `a2ui-renderer-services.md` — Official `@a2ui/angular` SDK setup on v0.9 (`provideA2Ui`, `A2uiRendererService.processMessages`, `SurfaceComponent`), production vs demo action handler; LEGACY v0.8 agent service + unit test template for the hand-built renderer
 - `a2ui-production-architecture.md` — Production stack, AG-UI `a2ui_operations` envelope, Domain DSL, Custom Catalog patterns (`AngularCatalog` constructor, BoundProperty, FunctionImplementation), Charts/Dashboard, Testing patterns, Observability metrics
 - `a2ui-client-integration.md` — `agUiResource` service pattern, `registerHandlers`, widget template, **demo-only vs production action handler warning**, rate limits (surfaces/session, actions/sec, payload size)
 

@@ -1,9 +1,9 @@
 ---
 name: genui-contract
-description: "Framework-neutral generative UI contract on A2UI protocol v0.9: one canonical component catalog (ActionCard, DataSummaryTable, ApprovalForm, SelectionList, DetailPanel, StatusIndicator, InputForm, ConfirmationDialog), action allowlist and payload schemas, golden action payloads, message fixtures and a deterministic validator shared by Angular, React and Flutter renderers and any backend. Use when designing or changing a GenUI catalog, adding a component or action, choosing A2UI vs AG-UI vs CopilotKit vs Flutter GenUI, checking cross-platform parity, versioning a catalog, or planning the v0.9 to v1.0 migration."
+description: "Framework-neutral GenUI contract on A2UI v0.9: canonical component catalog, action allowlist and payload schemas, fixtures and the deterministic validator shared by Angular, React, Flutter and backends. Use when deciding whether a workflow should use GenUI, changing a GenUI catalog, component or action, choosing A2UI vs AG-UI vs CopilotKit, checking cross-platform parity or planning v0.9→v1.0."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
 metadata:
-  triggers: GenUI contract, generative UI, A2UI catalog, A2UI v0.9, canonical catalog, component catalog, catalogId, action allowlist, golden action payload, A2UI fixtures, contract-first, cross-platform GenUI, AG-UI, CopilotKit, A2UI vs AG-UI, catalog versioning, A2UI v1.0 migration
+  triggers: GenUI contract, generative UI, should this use GenUI, GenUI suitability, A2UI catalog, A2UI v0.9, canonical catalog, component catalog, catalogId, action allowlist, golden action payload, A2UI fixtures, contract-first, cross-platform GenUI, AG-UI, CopilotKit, A2UI vs AG-UI, catalog versioning, A2UI v1.0 migration
   related-skills: a2ui-angular, flutter-genui, react-spa, streaming-protocols, security-reviewer, agentic-ai-dev, google-adk
   domain: frontend
   role: specialist
@@ -24,6 +24,7 @@ The contract is the single source of truth between whatever generates UI (agent,
 
 | Situation | Use |
 |---|---|
+| Should this workflow use GenUI at all? Which subflows stay deterministic? | [genui-suitability.md](reference/genui-suitability.md): hard gates, the deterministic baseline, verdict. Run it before the workflow below |
 | New GenUI feature on any platform | Start here: pick components and actions from the canonical catalog, then go to the platform skill |
 | Adding or changing a component, prop or action | [catalog-contract.md](reference/catalog-contract.md) §Versioning, then regenerate fixtures and run the validator |
 | Angular renderer code | `a2ui-angular` skill (`@a2ui/angular@0.14.0`, `@a2ui/web_core@0.15.0`) |
@@ -43,7 +44,7 @@ Do not use this skill for a chat UI with no generated components (`ai-chat`) or 
 | **CopilotKit** | App-level copilot framework for Angular and React | Optional. Never required just to render A2UI | Angular, React | Use it only for its copilot features. The A2UI renderer works without it |
 | **Flutter GenUI (`a2ui_flutter`)** | Flutter renderer for A2UI | Yes for Flutter | Flutter | Sits behind an app-owned adapter. It does not consume AG-UI or CopilotKit streams directly |
 
-## Contract-first workflow
+## Contract-first workflow (after the suitability review)
 
 1. **Pick from the catalog.** Use the 8 canonical components ([canonical-catalog.json](reference/canonical-catalog.json)). If none fits, propose a catalog change. Do not add a platform-only component.
 2. **Name the actions.** Every interactive control emits one allowlisted action ID (`item.open`, `approval.approve`, …). Each ID has a payload schema, a risk level, a side-effect flag, an idempotency requirement and a human-approval requirement in `x-genui.actions`.
@@ -106,3 +107,4 @@ The validator checks the catalog against `catalog-schema.json` and the JSON Sche
 | [runtime-lifecycle.md](reference/runtime-lifecycle.md) | this skill | Stream open, partial delivery, cancel, reconnect, delete |
 | [backend-emitters.md](reference/backend-emitters.md) | this skill | Emitting validated v0.9 messages from a Python (FastAPI) backend; Google ADK and LangGraph hand-off |
 | [compatibility-matrix.md](reference/compatibility-matrix.md) | this skill | Pinned versions per platform and evidence level |
+| [genui-suitability.md](reference/genui-suitability.md) | this skill | Whether to use GenUI: 8 hard gates, CONTROLLED vs DECLARATIVE per subflow, failure handling, scoring, verdicts |

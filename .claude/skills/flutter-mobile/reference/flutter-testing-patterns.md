@@ -625,6 +625,64 @@ await tester.pumpApp(
 await tester.pumpAndSettle();
 ```
 
+
+### Robot pattern (page objects) for screen widget tests
+
+A Robot keeps every finder, tap and assertion for one screen in one class, so test bodies read as intent (`robot.enterEmail(...)`, `robot.tapSignIn()`). When a widget moves or a key changes, you fix one Robot instead of every test.
+
+| Test type | Use a Robot? |
+|---|---|
+| Screen widget tests with several interactions | Yes |
+| Single shared-component (atom) tests | No: `find.byType` / `find.text` is enough |
+| Use-case and notifier unit tests | No: there is no widget tree |
+
+**Placement.** Robots import `package:flutter_test`, so they are test code: `test/helpers/robots/`, never a package's `lib/` (that would ship the test framework in the app). Dart cannot import another package's `test/` directory, so helpers shared by 3+ packages (`pumpApp`, base Robot, fakes) go in a dev-only `test_support` package used as a `dev_dependency`. Widget `Key` constants contain no test imports, so they can live in `lib/` (for example `lib/core/keys/widget_keys.dart`, or the shared UI package for shared screens).
+
+**Finder priority:**
+
+1. `find.bySemanticsLabel(...)` / `find.byTooltip(...)`: they reuse the accessibility labels the screen must have anyway, so the test also fails when accessibility regresses. Maestro matches on the same labels.
+2. `find.byKey(WidgetKeys.x)` from a central keys class: for unlabelled or repeated widgets where `byType` is ambiguous (two text fields, several primary buttons). Never inline `Key('...')` strings.
+3. `find.text(...)`: only to assert visible copy, never to tap a control whose label is localised.
+
+Never tap via `find.byType(SomeButton)` when the screen has more than one. It is the most common source of flaky Robot tests.
+
+```dart
+// test/helpers/robots/login_robot.dart
+class LoginRobot {
+  LoginRobot(this.tester);
+  final WidgetTester tester;
+
+  Future<LoginRobot> pump({List<Override> overrides = const []}) async {
+    await tester.pumpApp(const LoginScreen(), overrides: overrides);
+    await tester.pumpAndSettle();
+    return this;
+  }
+
+  Future<void> enterEmail(String v) => tester.enterText(find.byKey(WidgetKeys.emailField), v);
+  Future<void> enterPassword(String v) => tester.enterText(find.byKey(WidgetKeys.passwordField), v);
+  Future<void> tapSignIn() async {
+    await tester.tap(find.bySemanticsLabel('Sign in'));
+    await tester.pumpAndSettle();
+  }
+
+  // Symmetry rule: every "visible" assertion has a "not visible" twin.
+  void expectError(String msg) => expect(find.text(msg), findsOneWidget);
+  void expectNoError(String msg) => expect(find.text(msg), findsNothing);
+}
+
+testWidgets('should show an error when sign in fails', (tester) async {
+  final robot = await LoginRobot(tester).pump(overrides: [/* fake auth */]);
+  robot.expectNoError('Invalid credentials');   // before
+  await robot.enterEmail('a@example.com');
+  await robot.enterPassword('wrong');
+  await robot.tapSignIn();
+  robot.expectError('Invalid credentials');     // after
+});
+```
+
+**Symmetry rule (mandatory).** Every `expectXVisible` has an `expectXNotVisible`, and a flow test asserts the state **before** and **after** the action. This catches an assertion that passed because the widget was already there, or never changed.
+
+Conventions: name tests `should <behaviour> when <condition>`; lay each body out as Arrange → Act → Assert; one Robot per screen, never copied between apps; stub both `state` and `stream` on fakes so `pumpAndSettle()` cannot hang. Device UI/E2E flows are Maestro, not `integration_test` Robots: see [flutter-e2e-maestro.md](flutter-e2e-maestro.md).
 ---
 
 ## 8. Rules

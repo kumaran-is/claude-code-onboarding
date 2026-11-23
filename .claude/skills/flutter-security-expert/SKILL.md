@@ -11,7 +11,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -63,6 +63,6 @@ OVERALL RISK: [CRITICAL|HIGH|MEDIUM|LOW]
 VERDICT: [PASS|CONDITIONAL PASS|BLOCK]
 ```
 
-- **BLOCK**: any CRITICAL finding (hardcoded or client-held service secret, no cert pinning in prod, insecure token storage, credential wipe on transient network error)
-- **CONDITIONAL PASS**: HIGH findings with written remediation plan
+- **BLOCK**: any CRITICAL finding (hardcoded or client-held service secret, TLS validation disabled (`badCertificateCallback` returning `true`), insecure token storage, credential wipe on transient network error)
+- **CONDITIONAL PASS**: HIGH findings with written remediation plan. Missing certificate pinning is HIGH when the threat model requires it (MASVS-NETWORK-2: payments, health, regulated data) and MEDIUM otherwise; pinning without a backup pin and a rotation plan is itself HIGH (an expired certificate locks every user out)
 - **PASS**: zero CRITICAL, zero HIGH

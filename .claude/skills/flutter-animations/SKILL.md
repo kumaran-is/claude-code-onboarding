@@ -1,6 +1,6 @@
 ---
 name: flutter-animations
-description: "Enterprise Flutter animation skill — Rive + Lottie dual-engine strategy for production mobile apps. Use when adding animations to Flutter, asking about Rive, Lottie, animated UI components, motion design, interactive states, loading indicators, onboarding flows, micro-interactions, character animations, splash screens, empty states, or any animated widget. Load BEFORE writing any Flutter animation code — enforces correct engine choice, architecture patterns, performance constraints, and accessibility."
+description: "Flutter animation with a Rive + Lottie dual-engine strategy: engine choice, architecture, performance and reduced-motion accessibility for loaders, onboarding, micro-interactions, splash and empty states. Load before writing Flutter animation code. Not for web animation performance (fixing-motion-performance)."
 risk: low
 source: community (adapted for workspace)
 date_added: "2026-03-15"

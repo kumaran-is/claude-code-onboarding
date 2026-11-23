@@ -1,6 +1,6 @@
 # Interaction Contracts
 
-Cross-stack behavioral contracts for common UI surfaces. Every surface listed below must follow its contract regardless of framework (Flutter or Angular).
+Cross-stack behavioral contracts for common UI surfaces. Every surface listed below must follow its contract regardless of framework (Flutter, Angular or React; the "Angular" column is plain HTML and applies to any web stack). Accessibility criteria referenced here are defined in `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`.
 
 ---
 
@@ -8,11 +8,12 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 
 | Requirement | Flutter | Angular |
 |-------------|---------|---------|
-| Focus trap — keyboard focus must not escape the modal | `FocusScope` with `autofocus: true` | daisyUI `<dialog>` element (native focus trap) or `cdkTrapFocus` |
-| Close on backdrop click | `GestureDetector` on barrier OR `barrierDismissible: true` | `modal.close()` on `<form method="dialog">` or backdrop click handler |
-| Close on Escape key | Default in `showDialog` | Default in `<dialog>` element |
-| Announce to screen readers | `semanticsLabel` on dialog | `aria-labelledby` pointing to dialog title |
-| Return focus to trigger on close | Automatic in Flutter `Navigator.pop` | Manual: save `document.activeElement` before open, restore on close |
+| Open as modal | `showDialog` | Native `<dialog class="modal">` opened with `dialog.showModal()`. This gives initial focus inside, an inert background, Esc to close and focus return to the opener (verified in Chromium). It is not a strict trap: Tab can leave to the browser chrome, which is allowed. `dialog.show()` is non-modal and leaves the background focusable |
+| Background inert while open | `ModalBarrier` (default) | Automatic with `showModal()`. Use `cdkTrapFocus` only for non-native overlays |
+| Close on backdrop click | `GestureDetector` on barrier OR `barrierDismissible: true` | `<form method="dialog" class="modal-backdrop"><button>close</button></form>` |
+| Close on Escape key | Default in `showDialog` | Default with `showModal()` |
+| Announce to screen readers | `semanticsLabel` on dialog | `aria-labelledby` pointing to the dialog title. Do **not** add `role="dialog"` to `<dialog>`; set `aria-modal` only on non-native overlays |
+| Return focus to trigger on close | Automatic in Flutter `Navigator.pop` | Automatic with `showModal()`/`close()`. Hand-rolled restore only for non-native overlays. Test: Tab, Shift+Tab, Esc, then assert `document.activeElement` is the opener |
 | Max width constraint | `ConstrainedBox(maxWidth: 480)` | `max-w-lg` or `max-w-xl` on dialog box |
 | Scroll internal content, not the dialog shell | `SingleChildScrollView` inside dialog body | `overflow-y-auto` on body div, not on dialog element |
 
@@ -26,9 +27,12 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 
 | Requirement | Flutter | Angular |
 |-------------|---------|---------|
-| Every input has a visible label | `InputDecoration(labelText:)` | `<label class="form-control"><span class="label-text">` |
-| Validation errors show inline below the field | `InputDecoration(errorText:)` | `@if (control.invalid && control.touched)` with `<span class="text-error">` |
-| Submit button shows loading state during async | `ElevatedButton` with `CircularProgressIndicator` swap | `<button class="btn btn-primary" [disabled]="loading()">` with spinner |
+| Every input has a visible label (a placeholder is not a label) | `InputDecoration(labelText:)` | daisyUI 5: `<fieldset class="fieldset"><label class="label" for="email">Email</label><input id="email" class="input" …>` (`form-control` and `label-text` are daisyUI 4 and emit no CSS in v5) |
+| Validation errors show inline below the field | `InputDecoration(errorText:)` | `<p id="email-err">` in body text colour with an "Error:" prefix (daisyUI 5 light `text-error` on `base-100` is 2.87:1, an AA failure), linked with `aria-describedby="email-err"` and `[attr.aria-invalid]="invalid"` on the input |
+| Error summary on submit | Scroll to and focus the first invalid field | Summary linking to each field; move focus to the summary or the first invalid field |
+| Do not re-ask for data (WCAG 3.3.7) | Pre-fill from earlier steps | Pre-fill, or offer "same as billing" |
+| Allow paste and password managers (WCAG 3.3.8) | `autofillHints` | `autocomplete="username"`, `"current-password"`, `"one-time-code"`; never block `paste` |
+| Submit button shows loading state during async | `ElevatedButton` with `CircularProgressIndicator` swap | `<button class="btn btn-primary" [disabled]="loading()"><span class="loading loading-spinner" aria-hidden="true"></span>Save</button>` (v5: the spinner is a child span, not a `loading` class on the button) |
 | Disable submit when form is invalid | `onPressed: formValid ? submit : null` | `[disabled]="form.invalid"` |
 | Show success feedback after submit | `SnackBar` or inline success message | daisyUI `alert alert-success` or toast |
 | Show error feedback on submit failure | `SnackBar` with error + retry option | daisyUI `alert alert-error` with retry action |
@@ -47,14 +51,15 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 
 | Requirement | Flutter | Angular |
 |-------------|---------|---------|
-| Empty state — message when no data | Dedicated empty state widget with icon + message + optional CTA | `@if (items().length === 0)` with illustration + message |
-| Loading state — cold read only (see §6b) | `Shimmer` placeholder mirroring the loaded layout, or `CircularProgressIndicator` | daisyUI `loading loading-spinner` or skeleton divs |
-| Error state — retry action | Error widget with "Retry" button calling reload | `@if (error())` with `alert alert-error` + retry button |
-| Pagination or virtual scroll for 50+ items | `ListView.builder` (virtual by default) | Virtual scroll (`@for` with `trackBy`) or paginated API |
+| Empty state — message when no data, only after a settled load (§6b) | Dedicated empty state widget with icon + message + optional CTA | Empty branch only when the load succeeded and `items().length === 0`; never before the first load settles |
+| Loading state — cold read only (see §6b) | `Shimmer` placeholder mirroring the loaded layout, or `CircularProgressIndicator` | daisyUI `skeleton` divs with `aria-hidden="true"`, region `aria-busy` |
+| Error state — retry action | Error widget with "Retry" button calling reload | No data: blocking `alert alert-error` + retry. Data already shown: keep it and add an inline retry (§6b) |
+| Pagination or virtual scroll for 50+ items | `ListView.builder` (virtual by default) | `@for (item of items(); track item.id)` with CDK virtual scroll or a paginated API |
 | Row actions (edit, delete) | `Dismissible` or trailing icon buttons | Icon buttons in last column or dropdown menu |
 | Delete confirmation | `showDialog` with confirm/cancel | daisyUI modal with confirm/cancel buttons |
 | Sortable columns (tables) | Custom sort state + header tap handler | Click handler on `<th>` with sort indicator icon |
-| Responsive — table → card on mobile | `LayoutBuilder` switching between `DataTable` and `Card` list | `hidden lg:table` for table, `lg:hidden` for card layout |
+| Responsive — table → card on mobile | `LayoutBuilder` switching between `DataTable` and `Card` list | `hidden lg:table` for table, `lg:hidden` for card layout; or fold secondary columns into the primary cell (`hidden md:table-cell` plus an `md:hidden` sub-line). Do not rely on sideways scrolling for core data; check at 320 CSS px |
+| Reorder by drag (WCAG 2.5.7) | `ReorderableListView` plus move up/down actions | Drag handle plus move up/down buttons or arrow keys |
 
 **NEVER:**
 - Show a blank page when data is loading — always show a loading state for a cold read
@@ -71,6 +76,8 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 |-------------|---------|---------|
 | Active link highlighted | `NavigationBar` with `selectedIndex` | `routerLinkActive="active"` with active class styling |
 | Loading indicator on route change | `NavigatorObserver` or global loading overlay | Router events subscription showing `loading loading-spinner` |
+| Title and focus on route change (WCAG 2.4.2, 2.4.3) | `Semantics(namesRoute: true)` on the route title | Unique title per route (route `title`/`TitleStrategy` in Angular; `document.title` in React). After navigation ends, focus the view's `<h1 tabindex="-1">` or `<main>`. Do not move focus for query-string or fragment-only changes |
+| Sticky header does not hide focus (WCAG 2.4.11) | Scroll the focused field into view above the keyboard | `scroll-padding-top` equal to the sticky header height |
 | Preserve scroll position on back navigation | `PageStorageKey` on scrollable widgets | `scrollPositionRestoration: 'enabled'` in router config |
 | 404 / not-found route | Wildcard route to `NotFoundScreen` | Wildcard route `**` to `NotFoundComponent` |
 | Breadcrumbs for nested routes (3+ levels) | Custom breadcrumb widget from route data | Component reading `ActivatedRoute` chain |
@@ -81,14 +88,17 @@ Cross-stack behavioral contracts for common UI surfaces. Every surface listed be
 
 | Requirement | Flutter | Angular |
 |-------------|---------|---------|
-| Success feedback | `SnackBar` with green theme, 3s auto-dismiss | daisyUI `toast` with `alert-success`, 3s auto-dismiss |
+| Success feedback | `SnackBar` with green theme, ~4 s auto-dismiss | daisyUI `toast` with `alert-success`, auto-dismiss that pauses on hover and focus |
 | Error feedback | `SnackBar` with error theme, manual dismiss + retry | daisyUI `toast` with `alert-error`, manual dismiss + retry |
+| Toast with an action (Undo, Retry) — WCAG 2.2.1 | `SnackBar(action:, persist: true)` or a long duration | No auto-dismiss, or pause on hover and focus; the action is keyboard reachable |
 | Warning feedback | `SnackBar` with warning theme | daisyUI `toast` with `alert-warning` |
 | Position | Bottom center (Flutter default) | Bottom right (`toast` default) |
 | Max visible | 1 at a time (queue others) | Max 3 stacked |
-| Screen reader announcement | `SnackBar` uses `Semantics` automatically | `aria-live="polite"` on toast container |
+| Screen reader announcement | `SnackBar` uses `Semantics` automatically | `aria-live="polite"` on a toast container that exists in the DOM **before** the first message is inserted (a region created together with its message is often not announced) |
+| Focus not obscured (WCAG 2.4.11) | Snack bars float above the bottom inset | Toasts never cover the focused element; keep them out of the focus path |
 
 **NEVER:**
+- Put the only copy of important information in a toast
 - Use `print()` or `console.log()` as user feedback — always use visible UI
 - Show success and error at the same time
 - Auto-dismiss error messages — user must acknowledge errors
@@ -126,9 +136,49 @@ Applies to every screen or section that reads remote data.
 | C | Action/mutation (submit, save, pay) | Inline progress on the control; never a page skeleton |
 | D | Local, static or already hydrated content | No loader |
 
+**State model.** Model each remote region as one discriminated union, not several booleans: `idle | loading | refreshing | success | empty | error | offline`, plus "has data" (cached or partial content is present). Render in this order, so cached content always wins (stale-while-error):
+
+| State | Has data? | Render |
+|---|---|---|
+| loading | no | Skeleton (class A) after the delay below |
+| loading / refreshing | yes | The content, plus a compact refresh indicator. Never a skeleton |
+| error | no | Blocking error state with Retry |
+| error | yes | The content, plus an inline "Couldn't refresh" notice with Retry and a "last updated" time |
+| offline | yes / no | Cached content with an "Offline" notice / an offline empty state. Say "offline" only when it is known |
+| success, zero items | — | Empty state (only after the load settled) |
+| success | yes | Content |
+
+```html
+<!-- web sketch (Angular control flow; the same order applies in React/Flutter) -->
+@if (state() === 'loading' && !hasData()) { <app-skeleton-list /> }
+@else if (state() === 'error' && !hasData()) { <app-error-state (retry)="reload()" /> }
+@else if (state() === 'success' && items().length === 0) { <app-empty-state /> }
+@else {
+  @if (state() === 'error') { <app-inline-retry (retry)="reload()" /> }
+  <app-item-list [items]="items()" />
+}
+```
+
+**Skeleton vs spinner**
+
+| Situation | Indicator |
+|---|---|
+| Cold read of a region with known layout (lists, cards, detail pages) | Skeleton mirroring the loaded layout |
+| Mutation / action (save, pay, submit) | Inline spinner on the control; the control is disabled while in flight. Never a page skeleton |
+| Short unknown-layout wait inside a component (< ~1 s typical) | Small spinner |
+| Streamed or generated text | "Analyzing" indicator, then the streamed text; never a skeleton or fake determinate progress |
+| Known-length long task (upload, export) | Determinate progress bar with a percentage |
+
 **Loading and refresh**
 - Never replace usable (cached/partial) content with a loader on refresh, refresh failure, next-page load or reconnect. Pull-to-refresh keeps content visible and never renders a skeleton.
-- Show the skeleton only after a short delay (~150 ms) and, once shown, hold it briefly (~400 ms) so it never flashes. Every loading state needs a terminal exit: content, empty, cached-offline or explicit error.
+- Flash guard: show nothing for the first ~150 ms, then the skeleton; once shown, hold it at least ~400 ms so it never flashes. Implement this once in a shared async-view host, not per screen.
+- Every loading state needs a terminal exit: content, empty, cached-offline or explicit error. Fetches have bounded timeouts. After ~10 s of loading, show a presentation-only "Taking longer than usual" message with Retry; it does not blame the network and gives way to the real error.
+- Under reduced motion, keep the skeleton geometry and drop the shimmer (daisyUI 5 `.skeleton` already stops animating under `prefers-reduced-motion: reduce`).
+
+**Announcements (web `aria-*` / Flutter `Semantics`)**
+- The loading region gets `aria-busy="true"` and one visually hidden label ("Loading orders"); skeleton bars get `aria-hidden="true"`. Flutter: exclude shimmer from semantics and give the region one label.
+- Announce completion or failure once through a persistent `aria-live="polite"` region (or `SemanticsService.announce` once). Never put the whole content in a live region, and never re-announce on a background refresh.
+- Errors that block the task may use `role="alert"`; use it sparingly.
 - Streamed/generated text is not class A; show an "analyzing → streaming" state, and keep partial text visible if the stream fails mid-answer.
 - Choose a refresh strategy per remote-read screen (background, automatic, realtime, pull-to-refresh, explicit action or none); pull-to-refresh is not a default wrapper.
 

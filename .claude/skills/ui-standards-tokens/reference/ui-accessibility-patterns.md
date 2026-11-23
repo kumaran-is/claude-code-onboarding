@@ -24,7 +24,7 @@ AnimatedContainer(
 )
 ```
 
-## Touch Target (minimum 48x48)
+## Touch Target (48x48 dp platform guideline; WCAG 2.5.8 AA floor is 24x24)
 ```dart
 SizedBox(
   width: AppSize.touchTarget,

@@ -126,12 +126,11 @@ Primitive → Semantic → Component
   --space-6: 24px;
   --space-8: 32px;
 
-  /* Semantic */
-  --spacing-sm: var(--space-2);
-  --spacing-md: var(--space-4);
-  --spacing-lg: var(--space-6);
+  /* Semantic (prefixed names; see the warning below) */
+  --space-gutter: var(--space-4);
+  --space-section: var(--space-8);
   ```
-  Tailwind mapping: `p-2` = 8px, `p-4` = 16px, `p-6` = 24px.
+  Tailwind 4: the scale is one multiplier, `@theme { --spacing: 0.25rem; }`, so `p-2` = 8px, `p-4` = 16px, `p-6` = 24px. Numeric utilities **are** the token scale. Never define `--spacing-xs/sm/md/lg/xl` inside `@theme`: Tailwind then compiles `max-w-md` to `max-width: var(--spacing-md)` and every `max-w-*` container collapses (verified, Tailwind 4.3.5). Details: `tailwind-patterns` §2.
 
 ### 3. Typography Tokens
 
@@ -287,9 +286,22 @@ MaterialApp(
 
 | Context | Minimum ratio |
 |---|---|
-| Normal text (< 18px or < 14px bold) | 4.5:1 |
-| Large text (>= 18px, or >= 14px bold) | 3:1 |
-| UI components (buttons, inputs, focus rings) | 3:1 |
-| High-contrast theme target (WCAG AAA) | 7:1 |
+| Normal text (< 24 CSS px, or < 18.66 px bold) | 4.5:1 (1.4.3, AA) |
+| Large text (≥ 24 CSS px = 18 pt, or ≥ 18.66 px = 14 pt bold) | 3:1 (1.4.3, AA) |
+| UI components and graphics (input borders, icons, focus rings) | 3:1 (1.4.11, AA) |
+| High-contrast theme target (WCAG AAA, 1.4.6) | 7:1 |
+
+**daisyUI 5 secondary ("muted") text.** Opacity on `text-base-content` is a contrast decision. Measured with axe-core 4.14.1 `color-contrast` in Chromium against the default daisyUI 5.5.5 themes:
+
+| Class | `base-100` light | `base-100` dark | `base-300` light |
+|---|---|---|---|
+| `text-base-content/40` | 2.52:1 FAIL | 3.56:1 FAIL | — |
+| `text-base-content/50` | 3.4:1 FAIL | 4.73:1 pass | — |
+| `text-base-content/60` | 4.66:1 pass | 6.16:1 pass | 4.39:1 FAIL |
+| `text-base-content/70` | 6.56:1 pass | 7.91:1 pass | 6.11:1 pass |
+
+`text-error` (default light theme) on `base-100` measures 2.87:1: **fails** for error text. Use body text with an "Error:" prefix, or a darker custom `--color-error`. The default dark theme passes.
+
+Use `/60` as the floor on `base-100` and `/70` on `base-200`/`base-300` or any tinted surface. Lower opacities are fine only for decorative or disabled elements. Re-run the axe check for every custom theme, in light and dark.
 
 Flutter: `ColorScheme.fromSeed` generates Material 3 tonal palettes designed to meet WCAG AA by default. Do not override role colors with arbitrary hex values — doing so breaks the contrast guarantees.

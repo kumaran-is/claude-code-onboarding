@@ -1,15 +1,15 @@
 ---
 name: design-system
-description: "Unified design system enforcement for Flutter and Angular. Routes all UI tasks through the correct stack-specific tokens, rules, and interaction contracts. Use when auditing UI compliance, reviewing design consistency, or building any user-facing surface."
+description: "Unified design system enforcement for Flutter and web (Angular, React). Routes UI tasks to the correct tokens, rules and interaction contracts; owns the cross-stack async-state standard (loading, skeleton, empty, error, offline) and the i18n/RTL/Intl reference. Use when auditing UI compliance, reviewing design consistency, or building any user-facing surface."
 allowed-tools: Read, Glob, Grep, Write, Edit
 metadata:
-  triggers: design system, UI audit, design tokens, design review, design lint, visual consistency, theme compliance, design drift
-  related-skills: ui-standards-tokens, angular-spa, flutter-mobile, frontend-design, accessibility-auditor
+  triggers: design system, UI audit, design tokens, design review, design lint, visual consistency, theme compliance, design drift, loading state, skeleton, empty state, error state, offline state, i18n, localization, RTL, Intl
+  related-skills: ui-standards-tokens, angular-spa, flutter-mobile, frontend-design, accessibility-audit, tailwind-patterns
   domain: frontend
   role: specialist
   scope: design
   output-format: document
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-22"
 ---
 
 **Iron Law:** Never hardcode colors, spacing, or typography — always use design tokens; run /lint-design-system before declaring any UI change complete.
@@ -50,12 +50,24 @@ What are you working on?
     |   |   → Read: .claude/skills/angular-spa/reference/angular-conventions.md
     |   |
     |   +-- Animations (timing, keyframes, reduced motion)
-    |       → Read: .claude/skills/angular-spa/reference/animations.md
+    |   |   → Read: .claude/skills/angular-spa/reference/animations.md
+    |   |
+    |   +-- Tailwind 4 / daisyUI 5 patterns (themes, dark mode, layers, RTL utilities)
+    |       → Read: .claude/skills/tailwind-patterns/SKILL.md
     |
-    +-- Cross-stack (interaction contracts, visual direction)
+    +-- Cross-stack (interaction contracts, states, i18n, accessibility, visual direction)
         |
-        +-- Surface/interaction contracts (modals, forms, lists, errors)
+        +-- Surface/interaction contracts (modals, forms, lists, toasts, navigation)
         |   → Read: .claude/skills/design-system/reference/interaction-contracts.md
+        |
+        +-- Loading / skeleton / empty / error / offline states (canonical standard)
+        |   → Read: interaction-contracts.md §6b
+        |
+        +-- i18n, l10n, RTL, Intl formatting
+        |   → Read: .claude/skills/design-system/reference/i18n-rtl-intl.md
+        |
+        +-- Accessibility (WCAG 2.2 AA, all stacks)
+        |   → Load the accessibility-audit skill (reference/wcag22-checklist.md)
         |
         +-- Visual design direction (anti-patterns, typography philosophy)
             → Read: .claude/skills/frontend-design/reference/frontend-design-principles.md
@@ -86,9 +98,9 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 - **Angular:** Use daisyUI semantic tokens (`bg-primary`, `text-base-content`)
 
 ### Spacing
-- **NEVER** use raw numeric spacing (`EdgeInsets.all(16)`, `mt-3`)
+- **NEVER** use raw numeric spacing in Flutter (`EdgeInsets.all(16)`) or arbitrary values on the web (`p-[13px]`, `style="margin: 12px"`)
 - **Flutter:** Use `AppSpacing.xs/sm/md/lg/xl/xxl`
-- **Angular:** Use Tailwind semantic scale or daisyUI component spacing
+- **Web:** Tailwind 4 numeric utilities (`p-4`, `gap-2`, `mt-6`) are the token scale (multiples of `--spacing`); use them or daisyUI component spacing
 
 ### Typography
 - **NEVER** use raw font sizes (`TextStyle(fontSize: 14)`, `text-[14px]`)
@@ -96,12 +108,14 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 - **Angular:** Use Tailwind typography scale (`text-sm`, `text-lg`, `text-xl`)
 
 ### Forms
-- **NEVER** use bare `<input>`, `<select>`, `<textarea>` without framework bindings
-- **Angular:** Use daisyUI form classes + reactive form `formControlName`
+- **NEVER** use an input without a form binding or without a visible, associated label
+- **Web:** daisyUI 5 form classes (`fieldset`, `label`, `input`, `select`, `validator`) plus a form binding (`formControlName`, `[formField]` (experimental Signal Forms), `ngModel`, or the React form library). daisyUI 4 names (`form-control`, `label-text`, `*-bordered`) emit no CSS in v5
 - **Flutter:** Use shared form field wrapper widgets
 
 ### Touch Targets
-- **Minimum 48dp** (Flutter) / **44px** (Angular) for all interactive elements
+- **WCAG 2.5.8 (AA) floor:** 24×24 CSS px on every stack; below it is an accessibility failure
+- **House / platform standard:** 44×44 CSS px web, 48×48 dp Flutter (Android guideline; iOS 44×44 pt). A miss that is still ≥ 24 px is a design finding, not a WCAG failure
+- Full policy: `.claude/skills/accessibility-audit/reference/wcag22-checklist.md` §1
 
 ### Inline Styles
 - **NEVER** use `style="..."` in Angular templates — use Tailwind utilities or SCSS
@@ -116,12 +130,12 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 | `hookify.design-no-hardcoded-colors-dart` | Flutter | `Color(0xFF...)`, `Colors.blue` |
 | `hookify.design-no-raw-spacing-dart` | Flutter | `EdgeInsets.all(16)`, `SizedBox(height: 8)` |
 | `hookify.design-no-raw-textstyle-dart` | Flutter | `TextStyle(fontSize: N)` |
-| `hookify.design-no-hex-angular` | Angular | `bg-[#...]`, `color: #...`, `rgb()`, `hsl()` |
-| `hookify.design-no-raw-spacing-angular` | Angular | `mt-3`, `px-4`, `gap-2` |
-| `hookify.design-no-raw-typography-angular` | Angular | `text-[14px]`, `font-[...]`, `font-size: N` |
-| `hookify.design-no-raw-form-inputs` | Angular | bare `<input>`, `<select>` without `formControl` |
+| `hookify.design-no-hex-angular` | Web (Angular, React) | `bg-[#...]`, `color: #...`, `rgb()`/`hsl()`/`oklch()` literals (token/theme stylesheets excluded) |
+| `hookify.design-no-raw-spacing-angular` | Web (Angular, React) | arbitrary `p-[13px]`, `gap-x-[1.1rem]`, inline `style="margin: 12px"` (numeric `p-4` is allowed: it is the scale) |
+| `hookify.design-no-raw-typography-angular` | Web (Angular, React) | `text-[14px]`, `font-[...]`, `font-size: N` |
+| `hookify.design-no-raw-form-inputs` | Angular | `<input>`/`<select>`/`<textarea>` without `formControl`, `formField` or `ngModel` (checkbox, radio, file and button types allowed) |
 
-All rules respect `// ignore-design: [reason]` exception markers.
+All rules respect `ignore-design: <reason>` markers on the same line or the line above; the reason is required. Label association is an accessibility check, not a regex check: use the `accessibility-auditor` agent.
 
 ### Lint Commands
 
@@ -138,9 +152,14 @@ Before declaring any UI work done, these must pass (from `verification-and-repor
 - [ ] No hardcoded colors — all colors use theme tokens
 - [ ] No raw spacing values — all spacing uses semantic tokens
 - [ ] No inline TextStyles — all typography uses theme text styles
-- [ ] Touch targets >= 48dp (Flutter) / 44px (Angular)
+- [ ] Touch targets ≥ 24×24 CSS px everywhere (WCAG 2.5.8); house standard ≥ 48 dp Flutter / 44 px web
+- [ ] Every async region implements the §6b state matrix (cold loading, cached refresh, empty, error with and without data, offline)
 - [ ] `/lint-design-system` run with zero violations
 - [ ] Exception markers (`// ignore-design: [reason]`) reviewed and justified
+
+## Shared Component Documentation
+
+Document every shared component with: its tier (Atom / Molecule / Organism), every state (default, hover, focus-visible, disabled, loading, error), both themes, 200 % text, one RTL rendering, and accessibility notes (name, role, keyboard). Structure is reviewed by the `design-system-reviewer` agent; accessibility by `accessibility-auditor`.
 
 ## Exception Policy
 
@@ -185,12 +204,12 @@ Score the current UI across these 10 dimensions (0–10 each). For each dimensio
 
 1. **Color consistency** — Are colors using theme tokens (`bg-primary`, `colorScheme.primary`) or hardcoded hex values (`Color(0xFF3b82f6)`, `#3b82f6` in SCSS)?
 2. **Typography hierarchy** — Clear h1 > h2 > h3 > body > caption scale using `Theme.of(context).textTheme.*` (Flutter) or Tailwind typography scale (`text-sm`, `text-lg`, `text-xl`) (Angular)? Or raw `TextStyle(fontSize: N)` / `text-[14px]` scattered throughout?
-3. **Spacing rhythm** — Consistent 4px/8px/16px scale via `AppSpacing.*` (Flutter) or Tailwind semantic scale (Angular)? Or arbitrary `EdgeInsets.all(16)` / `mt-3` / `px-4` that break the grid?
+3. **Spacing rhythm** — Consistent 4px/8px/16px scale via `AppSpacing.*` (Flutter) or the Tailwind numeric scale (web)? Or raw `EdgeInsets.all(16)` / arbitrary `p-[13px]` that break the grid?
 4. **Component consistency** — Do similar elements (buttons, cards, list items, form fields) use the same widget/component patterns, or are there one-off inline implementations?
 5. **Responsive behavior** — Fluid across breakpoints? Angular: Tailwind `sm:`/`md:`/`lg:` breakpoints applied? Flutter: `LayoutBuilder` / `MediaQuery` used for adaptive layouts?
 6. **Dark mode** — Complete theme coverage using `colorScheme` (Flutter) / daisyUI semantic tokens (Angular)? Or half-done with hardcoded light values that break in dark mode?
 7. **Animation** — Purposeful (entrance transitions, state changes, feedback)? Or gratuitous scroll-triggered animations on every section that distract rather than guide?
-8. **Accessibility** — Color contrast ≥ 4.5:1 for normal text / ≥ 3:1 for large text, focus states present, touch targets ≥ 48dp (Flutter) / 44px (Angular), semantic labels on interactive elements?
+8. **Accessibility signals** — Contrast ≥ 4.5:1 / 3:1 in both themes, visible focus states, targets ≥ 24 px (house 44 px / 48 dp), labels on interactive elements? This is a design score only; accessibility verdicts come from the `accessibility-auditor` agent.
 9. **Information density** — Cluttered (too many competing elements) or too sparse (wasted space)? Empty states handled with meaningful UI rather than blank screens or raw `null` renders?
 10. **Polish** — Hover states (Angular), loading states (`CircularProgressIndicator` / skeleton screens), error states (user-visible feedback), and micro-transitions present and consistent?
 

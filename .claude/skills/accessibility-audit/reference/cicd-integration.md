@@ -19,7 +19,8 @@ Add these steps to your existing Angular GitHub Actions workflow (after `ng buil
       - name: Run axe accessibility scan
         run: npm run test:a11y
         working-directory: ./frontend
-        # Requires: package.json script "test:a11y": "playwright test e2e/accessibility.spec.ts"
+        # Requires: package.json script "test:a11y": "playwright test e2e/a11y.spec.ts"
+        # The spec uses .withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']) (angular-a11y-automated.md §1)
 
       - name: Run pa11y-ci scan
         run: npx pa11y-ci --config .pa11yci.json
@@ -42,7 +43,7 @@ Add these steps to your existing Angular GitHub Actions workflow (after `ng buil
 ```json
 {
   "scripts": {
-    "test:a11y": "playwright test e2e/accessibility.spec.ts --reporter=html --output=a11y-report"
+    "test:a11y": "playwright test e2e/a11y.spec.ts --reporter=html --output=a11y-report"
   }
 }
 ```
@@ -52,6 +53,7 @@ Add these steps to your existing Angular GitHub Actions workflow (after `ng buil
 {
   "defaults": {
     "standard": "WCAG2AA",
+    "runners": ["axe"],
     "threshold": 0,
     "timeout": 30000,
     "wait": 2000
@@ -176,6 +178,6 @@ jobs:
 
 ## Gate: Fail PR on Any Violation
 
-Both jobs use `--threshold 0` (pa11y) and `expect(results.violations).toEqual([])` (axe) — any WCAG AA violation fails the PR.
+Both jobs use `--threshold 0` (pa11y) and `expect(results.violations).toEqual([])` (axe): any automated violation fails the PR.
 
-**Do not merge PRs with accessibility failures.** WCAG AA compliance is enforced at the same level as test failures.
+**Do not merge PRs with automated accessibility failures.** A green gate means "no automated violations" only. It is not WCAG 2.2 AA conformance: the manual checks in `wcag22-checklist.md` §4 are still required and are recorded as PASS / FAIL / NOT RUN.

@@ -1,98 +1,88 @@
 ---
 name: accessibility-audit
-description: WCAG 2.1 AA accessibility audit skill for Angular 21.x and Flutter 3.41.x. Use when auditing UI for accessibility compliance, identifying barriers, establishing automated testing, or preparing compliance evidence. Covers axe-core automated scanning, keyboard navigation, screen reader compatibility, color contrast, cognitive accessibility, and CI/CD integration.
+description: WCAG 2.2 AA accessibility audit and fix guidance for web (Angular 21.x, React) and Flutter 3.41.x. Use when auditing or fixing UI accessibility, identifying barriers, adding automated a11y tests, or preparing accessibility evidence. Owns the canonical WCAG 2.2 checklist. Covers axe-core with Playwright, flutter_test guidelines, Maestro flows for Flutter mobile, keyboard and screen-reader checks, contrast, target size, focus, forms, and CI integration.
 allowed-tools: Read, Grep, Glob, Bash
 agent: accessibility-auditor
 context: fork
 metadata:
-  triggers: accessibility audit, WCAG, a11y, screen reader, keyboard navigation, color contrast, focus management, ARIA, Semantics widget, axe, pa11y, inclusive design, accessibility compliance
-  related-skills: angular-spa, flutter-mobile, ui-standards-tokens, design-system, browser-testing
+  triggers: accessibility audit, WCAG, WCAG 2.2, a11y, screen reader, keyboard navigation, color contrast, focus management, ARIA, Semantics widget, axe, pa11y, target size, inclusive design, accessibility review
+  related-skills: fixing-accessibility, angular-spa, flutter-mobile, ui-standards-tokens, design-system, browser-testing
   domain: quality
   role: specialist
   scope: review
   output-format: report
   source: "adapted from community (antigravity-awesome-skills)"
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-22"
 ---
 
 # Accessibility Audit
 
 > **Iron Law:** Before auditing any component, READ the actual file first.
-> Do not flag violations based on memory — verify at file:line and show evidence.
+> Do not flag violations from memory. Verify at file:line and show evidence.
 
-WCAG 2.1 AA compliance audit for Angular 21.x and Flutter 3.41.x. Use to audit UI components, establish automated testing, identify accessibility barriers, and prepare compliance evidence.
+The bar is WCAG 2.2 Level AA for web (Angular, React) and Flutter (Android, iOS). The canonical checklist is [reference/wcag22-checklist.md](reference/wcag22-checklist.md). Every other skill, agent and workflow links to it.
+
+**Automated results never prove conformance.** A clean axe or `flutter_test` run is reported as "no automated violations; manual checks required". The manual checks (keyboard walk, screen-reader smoke test, 200 %/400 % zoom, 320 px reflow) are listed in checklist §4. Each is recorded as PASS, FAIL or NOT RUN.
 
 ## When to Use
 
-- Auditing Angular or Flutter UI for WCAG 2.1 AA compliance
-- Adding automated accessibility tests to CI/CD
-- Identifying and remediating accessibility barriers
-- Preparing compliance evidence for stakeholders
-- Reviewing a PR that adds UI components
+- Auditing web or Flutter UI against WCAG 2.2 AA
+- Adding automated accessibility tests to a project or to CI
+- Fixing reported accessibility barriers (fix discipline: `fixing-accessibility` skill)
+- Reviewing a PR that adds or changes UI
 
 ## Do Not Use
 
-- For general UI design review without accessibility scope
-- For backend services with no UI (Java, NestJS, Python, FastAPI)
-- When you cannot access the UI files or artifacts
+- General design-token or theming review: use `design-system` and the `ui-standards-expert` agent
+- Backend services with no UI
 
 ## Process
 
-1. **Confirm scope** — which components, pages, or user journeys to audit
-2. **Run automated scan** — axe-core (Angular) or flutter_test semantics (Flutter) for baseline violations
-3. **Perform manual checks** — keyboard, screen reader, focus order, contrast
-4. **Map findings to WCAG criteria** — severity (Critical / Important / Suggestion) and WCAG criterion
-5. **Provide remediation** — exact code fixes with file:line evidence
-6. **Re-test after fixes** — confirm each finding is resolved
+1. **Confirm scope:** the components, routes or screens and the target (web or Flutter mobile).
+2. **Run the automated layer** (tool choice follows `.claude/rules/testing-tool-selection.md`):
+   - Web: Playwright + `@axe-core/playwright` with the tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa`.
+   - Flutter: `flutter test` with the four guideline matchers. UI/E2E flows on a device use Maestro only, never a browser.
+3. **Do the manual checks** in checklist §4. Anything not performed is NOT RUN.
+4. **Map findings to criteria** with severity (CRITICAL / HIGH / MEDIUM / ADVISORY) and file:line.
+5. **Give remediation** as exact code; prefer native semantics over ARIA.
+6. **Re-test** each fix and show the command and its output.
 
 ## Reference Files
 
-| File | Contents | Load When |
+| File | Contents | Load when |
 |------|----------|-----------|
-| `reference/angular-a11y-automated.md` | axe-core Angular integration, keyboard trap detection, heading structure validation, pa11y | Adding automated a11y tests to Angular project |
-| `reference/flutter-a11y-automated.md` | flutter_test semantics testing, SemanticsController patterns, widget test accessibility | Adding automated a11y tests to Flutter project |
-| `reference/manual-testing-checklist.md` | Keyboard, screen reader, visual, cognitive manual checklists for both stacks | Running manual audit session |
-| `reference/cicd-integration.md` | GitHub Actions workflows for Angular (axe + pa11y) and Flutter (semantic tests) | Integrating a11y into CI/CD pipeline |
+| `reference/wcag22-checklist.md` | Canonical WCAG 2.2 AA checklist, target-size policy, manual checks, tooling by target | Every audit |
+| `reference/angular-a11y-automated.md` | Playwright + axe, Vitest component checks, keyboard and dialog tests, forms markup (daisyUI 5) | Web automated tests (the patterns also apply to React) |
+| `reference/flutter-a11y-automated.md` | `flutter_test` semantics and guideline matchers | Flutter automated tests |
+| `reference/manual-testing-checklist.md` | Keyboard, screen-reader, zoom and reflow scripts | Manual session |
+| `reference/cicd-integration.md` | GitHub Actions steps | CI integration |
 
-## Existing Platform Checklists
-
-These checklists already exist in the workspace — load them during audit:
-
-- **Angular**: `.claude/skills/angular-spa/reference/accessibility-checklist.md` — WCAG 2.1 AA checklist, ARIA patterns
-- **Flutter**: `.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md` — Semantics, contrast, touch targets, focus management
-- **UI Patterns**: `.claude/skills/ui-standards-tokens/reference/ui-accessibility-patterns.md` — Flutter Semantics, FocusTraversalGroup, SemanticsService code patterns
+Flutter widget-level depth: `.claude/skills/flutter-mobile/reference/accessibility-audit-checklist.md`, plus Flutter `Semantics` code patterns in `.claude/skills/ui-standards-tokens/reference/ui-accessibility-patterns.md`.
 
 ## Output Format
 
 ```markdown
-## Accessibility Audit — [Component/Page Name]
+## Accessibility Audit — [Component/Page/Screen]
+Target: web (Angular|React) | Flutter (Android|iOS)
 
-### Critical (Blocks users with disabilities)
-- **[A11Y-001]** [Short description]
-  - File: `path/to/file.dart:42` or `path/to/component.html:18`
-  - WCAG: [criterion, e.g. 1.1.1 Non-text Content]
-  - Issue: [what is wrong]
-  - Fix: [exact code fix]
-
-### Important (Degrades experience significantly)
-- **[A11Y-002]** [Short description]
+### Findings
+- **[A11Y-001] [CRITICAL|HIGH|MEDIUM|ADVISORY]** [short description]
   - File: `path/to/file:line`
-  - WCAG: [criterion]
+  - WCAG: [criterion, e.g. 2.5.8 Target Size (Minimum)]  (or "house standard" / "best practice")
   - Issue: [what is wrong]
-  - Fix: [exact code fix]
+  - Fix: [exact code]
 
-### Suggestions (Enhances experience)
-- **[A11Y-003]** [Short description]
-  - File: `path/to/file:line`
-  - Recommendation: [what to add/improve]
+### Evidence
+- Automated: [command] → [exit code, violation ids], or NOT RUN
+- Manual M1–M7: PASS / FAIL / NOT RUN for each
 
-### Audit Summary
-- Automated scan: [axe violations count] / [flutter semantics findings count]
-- Manual checks: [passed/failed per category]
-- WCAG 2.1 AA: [PASS / FAIL — N critical, N important]
+### Result
+No automated violations; manual checks required | FINDINGS (N critical, N high) | BLOCK
 ```
+
+Never write "WCAG compliant" or "conformant" on the strength of automated output.
 
 ## Agents
 
-- `accessibility-auditor` — WCAG 2.1 compliance, Semantics widgets, touch targets, focus, contrast
-- `ui-standards-expert` — design token usage, Material 3 theming, interaction contracts
+- `accessibility-auditor`: the one read-only WCAG 2.2 reviewer for web and Flutter
+- `ui-standards-expert`: tokens, theming and consistency (no accessibility verdicts)

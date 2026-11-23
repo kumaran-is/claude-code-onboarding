@@ -29,7 +29,7 @@ Design token system and accessibility patterns for Flutter applications.
    - Design tokens, theme colors, typography, responsive layouts → Read `reference/ui-design-tokens.md`
    - Accessibility, semantics, focus management, reduced motion → Read `reference/ui-accessibility-patterns.md`
 3. **Apply patterns** using loaded reference
-4. **Verify:** No hardcoded colors, all touch targets >= 48px, semantic widgets on interactive elements
+4. **Verify:** No hardcoded colors, all touch targets >= 48 dp (Flutter platform guideline; the WCAG 2.2 AA floor is 24×24, see `accessibility-audit/reference/wcag22-checklist.md` §1), semantic widgets on interactive elements
 
 ## Error Handling
 

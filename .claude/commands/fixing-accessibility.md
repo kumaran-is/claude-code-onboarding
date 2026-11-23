@@ -1,95 +1,39 @@
 ---
-description: Audit a file or session for WCAG 2.1 AA accessibility violations — ARIA labels, keyboard navigation, focus management, color contrast, form errors. Angular and Flutter supported.
-allowed-tools: Read, Grep, Glob, Bash, Agent
+description: Review a file for WCAG 2.2 AA accessibility violations (web Angular/React or Flutter) and apply minimal fixes, or apply the accessibility checklist to all UI work in this session.
+allowed-tools: Read, Grep, Glob, Bash, Edit, Agent
 ---
 
 # /fixing-accessibility
 
-Audit for accessibility violations and produce targeted, minimal fixes.
+Find accessibility violations and fix them with targeted, minimal changes.
 
 ## Usage
 
-- `/fixing-accessibility` — apply accessibility constraints to all UI work in this session
-- `/fixing-accessibility <file>` — audit the specified file and report violations with fixes
+- `/fixing-accessibility <file>`: review the file, then fix its violations
+- `/fixing-accessibility`: session mode. Apply the checklist to all UI work in this session
 
 ## Process
 
-### 1. Load Skill
+1. **Load skills.** Load `accessibility-audit` (canonical checklist: `reference/wcag22-checklist.md`) and `fixing-accessibility` (fix discipline).
+2. **Detect the target.** `*.dart` means Flutter. `*.html`, `*.component.ts`, `*.tsx`, `*.jsx`, `*.css` or `*.scss` means web.
+3. **File mode.** Dispatch the `accessibility-auditor` agent (read-only; it covers web and Flutter) on the file. Then fix each CRITICAL and HIGH finding following the `fixing-accessibility` skill. List MEDIUM and ADVISORY findings for the user to decide on.
+4. **Session mode.** Before writing any interactive element, apply the checklist rows for: accessible names, keyboard access, focus (route change, dialogs, focus not obscured), forms and errors, contrast, and target size (≥ 24×24 CSS px is AA; 44 px web and 48 dp Android are house/platform recommendations), plus the 2.2 additions (dragging alternatives, redundant entry, accessible authentication).
+5. **Re-test** with the tools for the target (`.claude/rules/testing-tool-selection.md`). Web: Playwright + `@axe-core/playwright` with `wcag22aa` included. Flutter: `flutter test` guideline matchers; Maestro for device flows. Show the command and its output, or mark the check NOT RUN.
 
-Load the `accessibility-audit` skill to get platform-specific patterns and checklists.
+## Report
 
-### 2. Detect Stack
-
-- If argument is a `*.dart` file → Flutter audit (use `flutter-mobile/reference/accessibility-audit-checklist.md`)
-- If argument is a `*.html`, `*.ts`, or `*.scss` file → Angular audit (use `angular-spa/reference/accessibility-checklist.md`)
-- If no argument → session mode: apply constraints from both checklists to all subsequent UI work
-
-### 3. File Audit Mode (`/fixing-accessibility <file>`)
-
-Dispatch `accessibility-auditor` agent against the specified file.
-
-For each violation found, report:
 ```
-## Accessibility Audit: <file>
-
-### Violations
-
-| Priority | Rule | Line | Snippet | Fix |
-|----------|------|------|---------|-----|
-| CRITICAL | Accessible name missing | :42 | `<button><svg>...</svg></button>` | Add `aria-label="Close"` to button, `aria-hidden="true"` to SVG |
-| HIGH     | aria-invalid not set | :87 | `<input id="email" />` | Add `aria-invalid="true"` and `aria-describedby="email-err"` |
-
-### Summary
-- Critical: N
-- High: N
-- Medium: N
-- Low: N
-- Status: PASS (0 violations) / FAIL (N violations)
+## Accessibility: <file>
+| Severity | SC | Line | Snippet | Fix | Re-test |
+Manual checks M1–M7: PASS / FAIL / NOT RUN
+Result: no automated violations; manual checks required | FINDINGS | BLOCK
 ```
 
-### 4. Session Mode (`/fixing-accessibility`)
-
-Apply these constraints to all UI work in this conversation:
-
-**Angular — enforce before writing any interactive element:**
-- Every `<button>`, `<a>`, `<input>`, `<select>`, `<textarea>` must have an accessible name
-- Icon-only buttons: `aria-label` required, SVG gets `aria-hidden="true"`
-- Form errors: `aria-describedby` + `aria-invalid="true"` on the field
-- Modals: trap focus, restore on close, `Escape` dismisses
-- Dynamic content: `aria-live` for errors and status updates
-- No `tabindex > 0`
-- Touch targets: minimum 44x44px
-
-**Flutter — enforce before writing any interactive widget:**
-- Every `GestureDetector`, `InkWell`, `IconButton` must have a `Semantics` label
-- Decorative images: `Semantics(excludeSemantics: true)`
-- Errors: `Semantics(liveRegion: true)` for dynamic announcements
-- Touch targets: minimum 48x48dp
-- Focus traversal: `FocusTraversalGroup` for complex widgets
-
-### 5. Fix Discipline
-
-- Fix only the violation — do not refactor unrelated code
-- Prefer native HTML elements over ARIA role-based workarounds
-- Do not add ARIA when native semantics already solve the problem
-- Do not migrate UI libraries unless requested
-
-## Rule Priority Reference
-
-| Priority | Category | Impact |
-|----------|----------|--------|
-| 1 | Accessible names | CRITICAL |
-| 2 | Keyboard access | CRITICAL |
-| 3 | Focus and dialogs | CRITICAL |
-| 4 | Semantics | HIGH |
-| 5 | Forms and errors | HIGH |
-| 6 | Announcements (aria-live) | MEDIUM-HIGH |
-| 7 | Contrast and states | MEDIUM |
-| 8 | Media and motion | LOW-MEDIUM |
+Never report "compliant" from automated results.
 
 ## Related
 
-- `accessibility-audit` skill — full automated test setup (axe-core, flutter_test SemanticsController)
-- `accessibility-auditor` agent — deep WCAG 2.1 AA code review with file:line findings
-- `docs/workflows/accessibility-audit.md` — 5-phase audit process with CI/CD gate
-- `/lint-design-system` — design token compliance (run alongside this for full UI quality gate)
+- `accessibility-audit` skill: the checklist, automated test setup and CI
+- `accessibility-auditor` agent: read-only WCAG 2.2 AA review with file:line findings
+- `docs/workflows/accessibility-audit.md`: the end-to-end audit workflow
+- `/lint-design-system`: token compliance (run alongside for the full UI gate)

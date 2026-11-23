@@ -165,10 +165,13 @@ Reading controls:       Swipe up then right → choose Headings/Links/Controls
 
 | Check | Threshold | Tools |
 |-------|-----------|-------|
-| Text contrast | >= 4.5:1 normal, >= 3:1 large (18px+) | Browser DevTools, Colour Contrast Analyser |
+| Text contrast (light and dark themes) | >= 4.5:1 normal, >= 3:1 large (>= 24px, or >= 18.66px bold) | Browser DevTools, Colour Contrast Analyser |
 | UI component contrast | >= 3:1 against adjacent colors | Same |
 | Text resizes to 200% | No truncation, no overlap | Browser zoom |
-| Content reflows at 320px | No horizontal scroll | Responsive mode |
+| Zoom to 400% / content reflows at 320 CSS px | No two-dimensional scroll (data tables, maps, code excepted) | Browser zoom, responsive mode |
+| Forced colours (Windows High Contrast) | Focus rings, borders and icons stay visible | DevTools → Rendering → Emulate `forced-colors: active` |
+| Focus not obscured (2.4.11) | Sticky header, toast or cookie bar never fully hides the focused element | Tab through with sticky UI visible |
+| Target size (2.5.8) | Every target ≥ 24×24 CSS px or adequately spaced | axe `target-size` + visual check |
 | Focus indicators visible | Min 2px, high contrast | Visual inspection |
 | Color not sole indicator | Error icons, patterns, text | Grayscale mode (DevTools) |
 | Animations can be paused | Prefers-reduced-motion honored | OS reduced motion setting |
@@ -178,6 +181,9 @@ Reading controls:       Swipe up then right → choose Headings/Links/Controls
 2. Resize to 320px width — check no horizontal scroll appears
 3. Enable grayscale (DevTools → Rendering → Emulate CSS media) — check all info still conveyed
 4. Enable OS reduced motion — check animations stop or reduce
+5. Emulate `forced-colors: active` — check focus rings and control borders remain visible
+6. Tab through every page with sticky UI present — the focused element is never fully covered
+7. New 2.2 criteria: every drag has a button or keyboard alternative (2.5.7); help links sit in the same place on every page (3.2.6); no data is re-asked in a flow (3.3.7); login allows paste and password managers (3.3.8)
 
 ---
 
@@ -330,5 +336,8 @@ Cognitive: PASS / FAIL
 Mobile (Flutter only): PASS / FAIL
 - [Finding, if any]
 
-Overall: WCAG 2.1 AA PASS / FAIL
+Each row: PASS / FAIL / NOT RUN (a check not performed is NOT RUN, never PASS)
+
+Overall: manual checks against WCAG 2.2 AA — all PASS | FAIL (list) | INCOMPLETE (rows NOT RUN)
+Automated results are reported separately as "no automated violations"; they never make this section PASS.
 ```

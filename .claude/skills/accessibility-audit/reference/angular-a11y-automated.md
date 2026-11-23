@@ -1,257 +1,181 @@
-# Angular Automated Accessibility Testing
+# Web Automated Accessibility Testing (Angular 21.x; patterns also apply to React)
 
-Automated accessibility testing patterns for Angular 21.x using axe-core and pa11y. These patterns complement the manual checklist at `.claude/skills/angular-spa/reference/accessibility-checklist.md`.
+Automated accessibility tests for web targets. The criteria they check are defined in [wcag22-checklist.md](wcag22-checklist.md). Tool choice per target: `.claude/rules/testing-tool-selection.md` (web → Playwright; Flutter mobile → `flutter test` + Maestro, never a browser).
 
-## 1. axe-core with Angular Testing Library
+**What a green run means:** "no automated violations; manual checks required". axe-core 4.14 automates only one new 2.2 criterion (`target-size`, 2.5.8) and accepts a `placeholder` as an accessible name, so a passing run never establishes WCAG conformance. Record the manual checks (checklist §4) as PASS / FAIL / NOT RUN.
 
-Install:
+Verified in this repo's validation sandbox: Playwright 1.65.1 + `@axe-core/playwright` 4.14.0 (axe-core 4.14.1) in Chromium; Angular 21.2 with its default Vitest runner.
+
+## 1. Playwright + axe (primary gate, real browser)
+
 ```bash
-npm install --save-dev @axe-core/playwright axe-core jest-axe @testing-library/angular
+npm install --save-dev @playwright/test @axe-core/playwright   # pin the versions your lockfile resolves
 ```
 
-### Component Unit Test (jest-axe)
-
 ```typescript
-// src/app/components/order-form/order-form.component.spec.ts
-import { render } from '@testing-library/angular';
-import { axe, toHaveNoViolations } from 'jest-axe';
-import { OrderFormComponent } from './order-form.component';
-
-expect.extend(toHaveNoViolations);
-
-describe('OrderFormComponent — Accessibility', () => {
-  it('has no WCAG 2.1 AA violations', async () => {
-    const { container } = await render(OrderFormComponent, {
-      componentProperties: { title: 'Create Order' },
-    });
-    const results = await axe(container, {
-      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] },
-    });
-    expect(results).toHaveNoViolations();
-  });
-
-  it('icon-only buttons have aria-label', async () => {
-    const { container } = await render(OrderFormComponent);
-    const results = await axe(container, {
-      runOnly: { type: 'rule', values: ['button-name'] },
-    });
-    expect(results).toHaveNoViolations();
-  });
-});
-```
-
-### E2E Test with Playwright + axe-core
-
-```typescript
-// e2e/accessibility.spec.ts
+// e2e/a11y.spec.ts
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-test.describe('Accessibility — WCAG 2.1 AA', () => {
-  test('home page has no violations', async ({ page }) => {
-    await page.goto('/');
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .exclude('.no-a11y-check')
-      .analyze();
-    expect(results.violations).toEqual([]);
-  });
+const WCAG22_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
-  test('order form keyboard navigation', async ({ page }) => {
-    await page.goto('/orders/new');
-    // Tab through all interactive elements
-    const focusable = await page.locator('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])').all();
-    for (const el of focusable) {
-      await page.keyboard.press('Tab');
-      const focused = await page.evaluate(() => document.activeElement?.tagName);
-      expect(focused).not.toBe('BODY'); // focus should not escape to body
-    }
+for (const path of ['/', '/orders', '/orders/new']) {
+  test(`no automated WCAG 2.2 AA violations: ${path}`, async ({ page }) => {
+    await page.goto(path);
+    const results = await new AxeBuilder({ page }).withTags(WCAG22_AA).analyze();
+    expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+  });
+}
+
+test('dark theme contrast', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  const results = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
+  expect(results.violations).toEqual([]);
+});
+```
+
+- **Include `wcag22aa`.** Without it, 16×16 px icon buttons produce zero violations; with it, axe reports `target-size` (verified). 24×24 px buttons pass.
+- Use the `page` fixture from `@playwright/test`. Outside the test runner, create the page with `browser.newContext()` then `context.newPage()`: `@axe-core/playwright` throws "Please use browser.newContext()" for a page from `browser.newPage()`.
+- Scan each meaningful state (dialog open, error shown, empty state), not only the initial load.
+- `.exclude()` is for third-party widgets you do not control; record each exclusion with a reason.
+
+## 2. Component-level checks (Vitest, jsdom)
+
+Angular 21 runs unit tests with Vitest by default. Call `axe-core` directly on the rendered element. jsdom has no layout or computed colours, so **disable `color-contrast`** there and check contrast in Playwright (§1).
+
+```typescript
+// order-form.spec.ts
+import { TestBed } from '@angular/core/testing';
+import axe from 'axe-core';
+import { OrderForm } from './order-form';
+
+describe('OrderForm accessibility', () => {
+  it('has no automated WCAG 2.2 AA violations (contrast is checked in Playwright)', async () => {
+    const fixture = TestBed.createComponent(OrderForm);
+    await fixture.whenStable();
+    const results = await axe.run(fixture.nativeElement, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] },
+      rules: { 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations.map((v) => v.id)).toEqual([]);
   });
 });
 ```
 
-## 2. Keyboard Navigation Testing
+## 3. Keyboard, dialog and route-change tests
 
 ```typescript
-// keyboard-navigation.spec.ts
+// e2e/keyboard.spec.ts
 import { test, expect } from '@playwright/test';
 
-test('modal traps focus correctly', async ({ page }) => {
+test('modal dialog: focus moves in, Esc closes, focus returns to the opener', async ({ page }) => {
   await page.goto('/dashboard');
-  await page.click('[data-testid="open-modal"]');
-
-  // Focus should be inside modal
-  await page.keyboard.press('Tab');
-  const focusedEl = await page.evaluate(() => {
-    const el = document.activeElement;
-    return el?.closest('[role="dialog"]') !== null;
-  });
-  expect(focusedEl).toBe(true);
-
-  // Esc closes modal
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible();
-});
-
-test('skip link navigates to main content', async ({ page }) => {
-  await page.goto('/');
-  await page.keyboard.press('Tab'); // first tab = skip link
-  const skipLink = page.locator('a[href="#main-content"]');
-  await expect(skipLink).toBeFocused();
+  const opener = page.getByRole('button', { name: 'Details' });
+  await opener.focus();
   await page.keyboard.press('Enter');
-  const mainFocused = await page.evaluate(() => document.activeElement?.id);
-  expect(mainFocused).toBe('main-content');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog'))).toBe(true);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.evaluate(() => !!document.activeElement?.closest('dialog'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
+test('route change moves focus to the new view heading and updates the title', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Orders' }).click();
+  await expect(page).toHaveTitle(/Orders/);
+  await expect(page.locator('main h1')).toBeFocused();
+});
+
+test('skip link moves focus to main content', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: /skip to main content/i })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
 });
 ```
 
-## 3. Heading Structure Validation
+`getByRole('dialog')` matches a native `<dialog>`; do not add `role="dialog"` to it. A `<dialog>` opened with `showModal()` keeps focus inside, makes the page inert, closes on Esc and returns focus to the opener (verified in Chromium).
+
+## 4. Headings (ADVISORY, not a WCAG failure)
+
+"Exactly one `h1`" and "no skipped levels" are best practice. Empty headings are a 2.4.6 failure. Report the rest as ADVISORY so they never block a merge:
 
 ```typescript
-// heading-structure.spec.ts — validates WCAG 2.4.6 Headings
-import { test, expect } from '@playwright/test';
-
-test('heading hierarchy has no skipped levels', async ({ page }) => {
+test('headings: no empty headings (fail); outline issues are advisory', async ({ page }, testInfo) => {
   await page.goto('/');
-  const headings = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map(h => ({
-      level: parseInt(h.tagName[1]),
-      text: h.textContent?.trim() ?? '',
-      isEmpty: !h.textContent?.trim(),
-    }))
-  );
-
-  // Must have exactly one h1
-  const h1Count = headings.filter(h => h.level === 1).length;
-  expect(h1Count).toBe(1);
-
-  // No empty headings
-  const emptyHeadings = headings.filter(h => h.isEmpty);
-  expect(emptyHeadings).toHaveLength(0);
-
-  // No skipped levels
-  let previousLevel = 0;
-  for (const heading of headings) {
-    if (previousLevel > 0) {
-      expect(heading.level).toBeLessThanOrEqual(previousLevel + 1);
-    }
-    previousLevel = heading.level;
+  const levels = await page.$$eval('h1,h2,h3,h4,h5,h6', (hs) =>
+    hs.map((h) => ({ level: Number(h.tagName[1]), empty: !h.textContent?.trim() })));
+  expect(levels.filter((h) => h.empty)).toEqual([]);
+  const skips = levels.filter((h, i) => i > 0 && h.level > levels[i - 1].level + 1).length;
+  const h1s = levels.filter((h) => h.level === 1).length;
+  if (skips > 0 || h1s !== 1) {
+    testInfo.annotations.push({ type: 'advisory', description: `h1 count ${h1s}, skipped levels ${skips}` });
   }
 });
 ```
 
-## 4. Color Contrast Validation
+## 5. Forced colours and reduced motion (CSS)
 
-```typescript
-// contrast.spec.ts — validates WCAG 1.4.3
-import { test, expect } from '@playwright/test';
-
-function relativeLuminance(r: number, g: number, b: number): number {
-  const [rs, gs, bs] = [r, g, b].map(c => {
-    c = c / 255;
-    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
-}
-
-function contrastRatio(l1: number, l2: number): number {
-  const lighter = Math.max(l1, l2);
-  const darker = Math.min(l1, l2);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-test('text elements meet WCAG AA contrast', async ({ page }) => {
-  await page.goto('/');
-  // axe-core handles contrast automatically — use it instead of manual calculation
-  const results = await new (await import('@axe-core/playwright')).default({ page })
-    .withRules(['color-contrast'])
-    .analyze();
-  expect(results.violations).toHaveLength(0);
-});
-```
-
-## 5. High Contrast Mode CSS (Angular)
-
-Add to global styles (`src/styles.scss`):
-
-```scss
-// High contrast media query — WCAG 1.4.11 Non-text Contrast
-@media (prefers-contrast: high) {
-  :root {
-    --text-primary: #000000;
-    --bg-primary: #ffffff;
-    --border-color: #000000;
-  }
-
-  a {
-    text-decoration: underline !important;
-  }
-
-  button,
-  input,
-  select,
-  textarea {
-    border: 2px solid var(--border-color) !important;
-  }
-
-  .btn {
-    outline: 2px solid currentColor;
-  }
-}
-
-// Reduced motion — WCAG 2.3.3
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+```css
+/* styles.css: keep focus rings and control borders visible in Windows forced-colors mode */
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid CanvasText; outline-offset: 2px; }
+  .btn, .input, .select, .textarea { border: 1px solid ButtonText; }
 }
 ```
 
-## 6. Form Accessibility Patterns
+Reduced motion: gate each animation (`motion-safe:` / `motion-reduce:` utilities, or `@media (prefers-reduced-motion: no-preference)` around keyframes) instead of a global `* { animation-duration: 0.01ms !important }`, which also breaks code waiting for `animationend`. AA motion duties are 2.2.2 (Pause, Stop, Hide) and 2.3.1 (Three Flashes); 2.3.3 is AAA. Details: `fixing-motion-performance` skill §8b.
+
+## 6. Form pattern (daisyUI 5)
 
 ```html
-<!-- order-form.component.html -->
-
-<!-- Required field with visible indicator -->
-<div class="form-control">
-  <label class="label" for="item-id">
-    <span class="label-text">Item ID <span aria-label="required" class="text-error">*</span></span>
-  </label>
+<!-- order-form.html: visible label, native required, error linked to the field -->
+<fieldset class="fieldset">
+  <legend class="fieldset-legend">Item</legend>
+  <label class="label" for="item-id">Item ID (required)</label>
   <input
     id="item-id"
     type="text"
-    class="input input-bordered"
+    class="input"
+    required
+    autocomplete="off"
     [formControl]="itemIdControl"
-    aria-required="true"
     [attr.aria-invalid]="itemIdControl.invalid && itemIdControl.touched"
     aria-describedby="item-id-error"
   />
   @if (itemIdControl.invalid && itemIdControl.touched) {
-    <span id="item-id-error" role="alert" class="label-text-alt text-error">
-      Enter a valid item ID (letters, numbers, hyphens only)
-    </span>
+    <p id="item-id-error" class="text-sm"><strong>Error:</strong> Enter a valid item ID (letters, numbers, hyphens only)</p>
   }
-</div>
+</fieldset>
 
-<!-- Live region for async status updates -->
-<div aria-live="polite" aria-atomic="true" class="sr-only">
-  {{ statusMessage() }}
-</div>
+<!-- Persistent live region: present in the DOM before any message is written -->
+<div aria-live="polite" aria-atomic="true" class="sr-only">{{ statusMessage() }}</div>
 
-<!-- Icon-only button -->
-<button type="button" class="btn btn-circle btn-ghost" aria-label="Remove item from cart">
-  <svg aria-hidden="true" focusable="false">...</svg>
+<!-- Icon-only button: name on the button, icon hidden, at least 24×24 px (btn-sm is 32 px) -->
+<button type="button" class="btn btn-circle btn-ghost btn-sm" aria-label="Remove item from cart">
+  <svg aria-hidden="true" focusable="false">…</svg>
 </button>
 ```
 
-## pa11y Integration
+- **Do not put error text in `text-error` on the default light theme**: daisyUI 5.5.5 light `--color-error` on `base-100` measures 2.87:1 (axe, Chromium), an AA failure (1.4.3). Use body text colour with an "Error:" prefix (colour is then decorative, 1.4.1), or define a darker `--color-error` in a custom theme and re-measure. The dark theme passes.
+- daisyUI 4 names (`form-control`, `label-text`, `label-text-alt`, `input-bordered`) generate no CSS in daisyUI 5.
+- State "required" in visible text plus the native `required` attribute. `aria-label` on a `<span>` is ignored (generic role), and axe does not flag it, so automated scans will not catch that mistake.
+- On submit, move focus to an error summary or the first invalid field.
+
+## 7. pa11y (optional second engine)
+
+pa11y's default runner is HTML_CodeSniffer, whose `WCAG2AA` standard predates 2.2. Run it with the axe runner, or rely on §1 as the gate. Coverage of the 2.2 criteria by pa11y runners is UNVERIFIED; check before relying on it.
 
 ```bash
 # Run pa11y against built Angular app (port 4200)
-npx pa11y http://localhost:4200 --standard WCAG2AA --threshold 0 --reporter json > a11y-report.json
+npx pa11y http://localhost:4200 --runner axe --standard WCAG2AA --threshold 0 --reporter json > a11y-report.json
 
 # Run against multiple routes
 npx pa11y-ci --config .pa11yci.json
@@ -260,6 +184,7 @@ npx pa11y-ci --config .pa11yci.json
 {
   "defaults": {
     "standard": "WCAG2AA",
+    "runners": ["axe"],
     "threshold": 0,
     "timeout": 30000
   },

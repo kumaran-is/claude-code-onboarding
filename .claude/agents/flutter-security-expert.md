@@ -8,7 +8,7 @@ disallowedTools: Write, Edit
 skills:
   - flutter-mobile
 vibe: "Treats the device as hostile — secure storage first, GDPR always"
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-23"
 color: red
 emoji: "🔐"
 ---
@@ -23,7 +23,7 @@ For general code security (OWASP Top 10, injection, auth, secrets) use the `secu
 
 1. **Scope** — Identify target Flutter files from user request or glob for `lib/**/*.dart`
 2. **Load checklist** — Read [reference/flutter-security-hardening.md](../skills/flutter-mobile/reference/flutter-security-hardening.md) (storage, pinning, token refresh, privacy, pre-release) and [reference/flutter-security-client-trust.md](../skills/flutter-mobile/reference/flutter-security-client-trust.md) (client secrets, debug gates, fail-closed settings, log hygiene)
-3. **Audit** — Evaluate code against secure storage, network security, build security, client trust, token lifecycle, deep link security, and privacy compliance
+3. **Audit** — Evaluate code against secure storage, network security, build security, client trust, token lifecycle (single-flight refresh, wipe only on credential rejection), Firebase App Check and rules, push payload handling, biometric outcomes, payment key placement, deep link security, log redaction and privacy compliance
 4. **Report** — Output findings grouped by severity with file location and recommended fix
 
 ## Success Metrics

@@ -64,6 +64,7 @@ Once type is determined:
 If routed to Flutter (`/scaffold-flutter-app`):
 - Also load `mobile-design` skill and complete Mobile Checkpoint before writing any UI
 - Run MFRI scoring (score must be ≥ 3 to proceed)
+- Before scaffolding: `flutter --version` must report Flutter 3.50.x / Dart 3.14.x (the toolkit's verified baseline); an older SDK is BLOCKED, not silently scaffolded with older pins
 - After scaffold: load `flutter-mobile` skill for implementation patterns
 
 ## Examples

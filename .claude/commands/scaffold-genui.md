@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # Scaffold Flutter A2UI Feature (v0.9)
 
-Creates an agent-driven UI feature module in an existing Flutter project, on A2UI protocol v0.9 with `a2ui_flutter` 0.4.0 and `a2ui_core` 0.8.0. The discontinued `genui` package is not used.
+Creates an agent-driven UI feature module in an existing Flutter project, on A2UI 1.0 (v0.9.x compatibility path) with `a2ui_flutter` 0.5.0 and `a2ui_core` 0.9.0. The catalog and processor templates below are the v0.9.x path (compiled on 0.5.0 / 0.9.0 with Flutter 3.50.1 and a `material_ui` host). For a 1.0 feature, use the versioned adapter boundary in `flutter-genui` `SKILL.md` (compiled and tested on 0.5.0 / 0.9.0). The discontinued `genui` package is not used.
 
 **Feature name:** $ARGUMENTS (default to "agent-ui" if not provided)
 
@@ -16,7 +16,7 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
 
 1. Read the `flutter-genui` skill (`SKILL.md` and the `reference/*.md` files). Every code template below comes from those references, where it compiles and is tested.
 2. Read the `flutter-mobile` skill's `reference/flutter-architecture-patterns.md` (structure) and `reference/flutter-testing-traps.md` (tests).
-3. Confirm the project's Flutter is ≥ 3.38 and Dart ≥ 3.10 (`flutter --version`); `a2ui_flutter` 0.4.0 requires them.
+3. Check `flutter --version`. On Flutter ≥ 3.47.0 / Dart ≥ 3.13.0 use `a2ui_flutter` 0.5.0 + `a2ui_core` 0.9.0. On an app still on Flutter 3.38–3.46 / Dart 3.10–3.12 use `a2ui_flutter` 0.4.0 + `a2ui_core` 0.8.0 (+ `a2ui_agent` 0.4.0). Both render A2UI 1.0 and v0.9.x (tested); 0.5.0's `pub get` fails on the older SDKs.
 4. Ask which topology applies if the request does not say: an agent server streams A2UI (default; `shared-backend` or `standalone-backend`), or the app calls a model itself (adds `a2ui_agent`).
 5. Ask whether the feature renders the cross-platform canonical catalog (`genui-contract` skill). If yes, follow `reference/genui-canonical-catalog-adapter.md` for steps 2–9: one `genui/` adapter folder (contract guard, catalog built from the contract JSON, theme tokens, session, transport), the conventional fallback, and the fixture, golden and live tests listed there.
 
@@ -26,10 +26,11 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
 
    ```yaml
    dependencies:
-     a2ui_core: 0.8.0
-     a2ui_flutter: 0.4.0
+     a2ui_core: 0.9.0
+     a2ui_flutter: 0.5.0
+     material_ui: 1.11.1          # the app's Material library (Flutter >= 3.47)
      json_schema_builder: 0.1.7   # only if a custom component schema is created
-     # a2ui_agent: 0.4.0          # only for the in-app model topology
+     # a2ui_agent: 0.5.0          # only for the in-app model topology
    ```
 
    Add `url_launcher` only if links are required and the agent is trusted (see step 4); pin its current stable version.
@@ -40,6 +41,7 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
    lib/features/<name>/
    ├── a2ui/
    │   ├── app_catalog.dart          # CatalogImplementation (basic subset + custom), catalog id
+   │   ├── a2ui_material_bridge.dart # only flutter/material.dart import (SKILL.md "Material host")
    │   └── custom_components.dart    # ComponentImplementation definitions (only if needed)
    ├── data/
    │   └── agent_client.dart         # request body, SSE/JSONL decode with size limit, processMessages
@@ -68,7 +70,7 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
    - In-app model topology instead: `InAppModelTurns` from `genui-conversation-orchestration.md`.
 
 6. **Surface host** (`agent_surfaces.dart`) — from `genui-state-binding.md`:
-   - `A2uiSurface(surface:)` per surface, keyed `ObjectKey(surface)`, inside `Semantics(container: true, explicitChildNodes: true)`.
+   - `A2uiSurface(surface:)` per surface, keyed `ObjectKey(surface)`, wrapped in `A2uiMaterialBridge` and `Semantics(container: true, explicitChildNodes: true)`. Everything else imports `package:material_ui/material_ui.dart`; `flutter analyze` must report 0 issues outside the bridge file.
    - `processMessages` in `try` / `on A2uiError`: log `code` + `message`, show an error state; never swallow.
    - Use the app's theme and spacing tokens, not raw values.
 
@@ -87,7 +89,7 @@ Creates an agent-driven UI feature module in an existing Flutter project, on A2U
     └── agent_client_test.dart     # SSE/JSONL decode; action body carries v0.9 capabilities
     ```
 
-    Add semantics assertions (`tester.ensureSemantics()`): each control keeps its own node. Device E2E uses Maestro only (`.maestro/<name>.yaml`); report BLOCKED if no emulator or simulator is available.
+    Add semantics assertions (`tester.ensureSemantics()`): each control keeps its own node. Find basic-catalog text fields with `find.byType(EditableText)` or by label (`find.byType(TextField)` matches only `material_ui`'s class). Device E2E uses Maestro only (`.maestro/<name>.yaml`); report BLOCKED if no emulator or simulator is available.
 
 11. **Verify**
 

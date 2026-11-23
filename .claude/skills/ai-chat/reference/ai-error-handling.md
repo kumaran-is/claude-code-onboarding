@@ -11,6 +11,8 @@ These are NOT generic HTTP errors — each needs distinct UX treatment.
 
 ### Angular
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // features/chat/models/ai-error.model.ts
 export type AiErrorType =
@@ -45,8 +47,9 @@ enum AiErrorType {
   streamFailed,
 }
 
+// freezed 3+: a class with factory constructors is declared `abstract` (or `sealed` for unions).
 @freezed
-class AiError with _$AiError {
+abstract class AiError with _$AiError {
   const factory AiError({
     required AiErrorType type,
     int? retryAfterSeconds,
@@ -57,18 +60,18 @@ class AiError with _$AiError {
 
 ---
 
-## Angular 21.x — AiErrorComponent
+## Angular 22.x — AiErrorComponent
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // features/chat/components/ai-error.component.ts
-import { Component, ChangeDetectionStrategy, input, output, signal, computed, inject } from '@angular/core';
+import { Component, input, output, signal, computed, inject } from '@angular/core';
 import { AiError, AiErrorType } from '../models/ai-error.model';
 import { AppLogger } from '../../../core/logging/app-logger.service';
 
 @Component({
   selector: 'app-ai-error',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="alert"
          [class.alert-info]="errorConfig().alertClass === 'alert-info'"
@@ -229,12 +232,14 @@ export class AiErrorComponent {
 
 ---
 
-## Flutter 3.41.x — AiErrorWidget
+## Flutter 3.50.x — AiErrorWidget
 
 ```dart
 // features/chat/presentation/widgets/ai_error_widget.dart
 import 'dart:async';
-import 'package:flutter/material.dart';
+
+import 'package:material_ui/material_ui.dart';
+
 import '../../models/ai_error.dart';
 import '../../../../core/tokens/app_spacing.dart';
 
@@ -297,8 +302,8 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
           color: colorScheme.tertiary,
           message: 'Too many requests.',
           suggestion: _countdown > 0
-            ? 'Retry in ${_countdown}s'
-            : 'You can try again now.',
+              ? 'Retry in ${_countdown}s'
+              : 'You can try again now.',
         );
       case AiErrorType.contextExceeded:
         return _ErrorConfig(
@@ -313,17 +318,18 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
           color: colorScheme.tertiary,
           message: 'Response interrupted.',
           suggestion: widget.error.partialContent != null
-            ? 'Partial response received. You can resume or retry.'
-            : 'Connection timed out. Please try again.',
+              ? 'Partial response received. You can resume or retry.'
+              : 'Connection timed out. Please try again.',
         );
       case AiErrorType.contentPolicy:
         return _ErrorConfig(
           icon: Icons.block_outlined,
           color: colorScheme.secondary,
           message: 'This response was not completed.',
-          suggestion: 'The content could not be generated. Try a different approach.',
+          suggestion:
+              'The content could not be generated. Try a different approach.',
         );
-      default:
+      case AiErrorType.streamFailed:
         return _ErrorConfig(
           icon: Icons.error_outline,
           color: colorScheme.error,
@@ -354,53 +360,70 @@ class _AiErrorWidgetState extends State<AiErrorWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Icon(config.icon, color: config.color, size: AppSpacing.iconSm),
-              SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(config.message,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: config.color,
-                    fontWeight: FontWeight.w600,
-                  )),
-              ),
-            ]),
-            if (config.suggestion != null) ...[
-              SizedBox(height: AppSpacing.xs),
-              Text(config.suggestion!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.7),
-                )),
-            ],
-            SizedBox(height: AppSpacing.sm),
-            Wrap(spacing: AppSpacing.sm, children: [
-              if (widget.onRetry != null &&
-                  [AiErrorType.rateLimit, AiErrorType.streamTimeout, AiErrorType.streamFailed]
-                    .contains(widget.error.type))
-                TextButton(
-                  onPressed: _countdown > 0 ? null : widget.onRetry,
-                  child: const Text('Try again'),
-                ),
-              if (widget.error.partialContent != null && widget.onResume != null)
-                TextButton(
-                  onPressed: () => widget.onResume!(widget.error.partialContent!),
-                  child: const Text('Resume from partial'),
-                ),
-              if (widget.error.type == AiErrorType.contextExceeded && widget.onSummarize != null)
-                TextButton(
-                  onPressed: widget.onSummarize,
-                  child: const Text('Summarize & continue'),
-                ),
-              if (widget.onFlagInaccurate != null)
-                TextButton.icon(
-                  onPressed: widget.onFlagInaccurate,
-                  icon: const Icon(Icons.flag_outlined, size: 16),
-                  label: const Text('Flag as inaccurate'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colorScheme.onSurface.withValues(alpha: 0.6),
+            Row(
+              children: [
+                Icon(config.icon, color: config.color, size: AppSpacing.iconSm),
+                SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    config.message,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: config.color,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-            ]),
+              ],
+            ),
+            if (config.suggestion != null) ...[
+              SizedBox(height: AppSpacing.xs),
+              Text(
+                config.suggestion!,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+            SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              children: [
+                if (widget.onRetry != null &&
+                    [
+                      AiErrorType.rateLimit,
+                      AiErrorType.streamTimeout,
+                      AiErrorType.streamFailed,
+                    ].contains(widget.error.type))
+                  TextButton(
+                    onPressed: _countdown > 0 ? null : widget.onRetry,
+                    child: const Text('Try again'),
+                  ),
+                if (widget.error.partialContent != null &&
+                    widget.onResume != null)
+                  TextButton(
+                    onPressed: () =>
+                        widget.onResume!(widget.error.partialContent!),
+                    child: const Text('Resume from partial'),
+                  ),
+                if (widget.error.type == AiErrorType.contextExceeded &&
+                    widget.onSummarize != null)
+                  TextButton(
+                    onPressed: widget.onSummarize,
+                    child: const Text('Summarize & continue'),
+                  ),
+                if (widget.onFlagInaccurate != null)
+                  TextButton.icon(
+                    onPressed: widget.onFlagInaccurate,
+                    icon: const Icon(Icons.flag_outlined, size: 16),
+                    label: const Text('Flag as inaccurate'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: colorScheme.onSurface.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

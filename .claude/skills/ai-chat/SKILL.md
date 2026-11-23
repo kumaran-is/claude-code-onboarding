@@ -1,6 +1,6 @@
 ---
 name: ai-chat
-description: AI chat interface patterns for Angular 21.x and Flutter 3.41.x. Use when building streaming chat UI, conversational AI assistants, copilots, token context indicators, feedback loops, multi-modal inputs, tool visualization, or AI-specific error handling. Covers streaming markdown, auto-scroll heuristics, memoized rendering, token limit UI, regeneration controls, thumbs up/down feedback, and AI error states.
+description: AI chat interface patterns for Angular 22.x and Flutter 3.50.x. Use when building streaming chat UI, conversational AI assistants, copilots, token context indicators, feedback loops, multi-modal inputs, tool visualization, or AI-specific error handling. Covers streaming markdown, auto-scroll heuristics, memoized rendering, token limit UI, regeneration controls, thumbs up/down feedback, and AI error states.
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs
 metadata:
   triggers: AI chat, streaming chat, conversational UI, chat interface, streaming response, token limit, AI assistant, copilot, chatbot, LLM UI, streaming markdown
@@ -20,7 +20,7 @@ last-reviewed: "2026-11-22"
 
 > Server side of the stream (disconnect cancels the model call, exactly one terminal `done`/`error` frame, heartbeats, reconnect rules): `streaming-protocols` §6a. Multimodal and voice input are OPTIONAL extensions (`reference/multimodal-input.md`, `voice-ai-development`).
 
-> **Tech Stack**: Angular 21.x (signals, daisyUI, TailwindCSS) | Flutter 3.41.x (Riverpod, Dart 3.10.9)
+> **Tech Stack**: Angular 22.x (zoneless, OnPush default, signals, daisyUI 5.8.2, Tailwind 4.3.5; snippets below were compiled on 21.2.26 unless marked) | Flutter 3.50.x (Dart 3.14.0, Riverpod 3, `material_ui` 1.11.1; Flutter snippets compiled and widget-tested on 3.50.1)
 
 ## When to Activate
 
@@ -40,7 +40,7 @@ Before writing any component:
 
 1. **Angular**: Read `angular-spa` skill — verify signal/OnPush/daisyUI baseline
 2. **Flutter**: Read `flutter-mobile` skill — verify Riverpod/AppSpacing/colorScheme baseline
-3. **Docs**: Verify any library not confirmed in this session (e.g., `marked`, `dompurify`, `flutter_markdown`) with `npm view <pkg> version` and the package's own README/types, or `Context7` MCP when it has quota
+3. **Docs**: Verify any library not confirmed in this session (e.g., `marked`, `dompurify`, `flutter_markdown_plus` — `flutter_markdown` is discontinued) with `npm view <pkg> version` and the package's own README/types, or `Context7` MCP when it has quota
 
 ## Core Component Overview
 

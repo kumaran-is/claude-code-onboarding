@@ -4,12 +4,14 @@ Covers: thumbs up/down, copy to clipboard, share, regenerate, hallucination flag
 
 ---
 
-## Angular 21.x — FeedbackComponent
+## Angular 22.x — FeedbackComponent
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // features/chat/components/feedback.component.ts
 import {
-  Component, ChangeDetectionStrategy, input, output, signal, computed, inject
+  Component, input, output, signal, computed, inject
 } from '@angular/core';
 import { Clipboard } from '@angular/cdk/clipboard';
 import { AppLogger } from '../../../core/logging/app-logger.service';
@@ -19,8 +21,6 @@ type ThumbState = 'up' | 'down' | null;
 
 @Component({
   selector: 'app-feedback',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [],   // Clipboard is a service, no module import needed
   template: `
     <div class="flex items-center gap-1 mt-1" role="group"
@@ -125,6 +125,8 @@ export class FeedbackComponent {
 
 ### Regenerate wiring in ChatComponent
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // In ChatComponent — onRegenerate finds the preceding user message and re-streams
 onRegenerate(assistantMessageId: string): void {
@@ -145,12 +147,13 @@ onRegenerate(assistantMessageId: string): void {
 
 ---
 
-## Flutter 3.41.x — FeedbackBar Widget
+## Flutter 3.50.x — FeedbackBar Widget
 
 ```dart
 // features/chat/presentation/widgets/feedback_bar.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+
 import '../../models/chat_message.dart';
 import '../../../../core/tokens/app_spacing.dart';
 
@@ -234,35 +237,31 @@ class _FeedbackBarState extends State<FeedbackBar> {
           SizedBox(width: AppSpacing.xs),
 
           // Copy
-          Tooltip(
-            message: _copied ? 'Copied!' : 'Copy to clipboard',
-            child: IconButton(
-              icon: Icon(
-                _copied ? Icons.check : Icons.copy_outlined,
-                color: _copied
+          IconButton(
+            tooltip: _copied ? 'Copied!' : 'Copy to clipboard',
+            icon: Icon(
+              _copied ? Icons.check : Icons.copy_outlined,
+              color: _copied
                   ? colorScheme.primary
                   : colorScheme.onSurface.withValues(alpha: 0.6),
-                size: AppSpacing.iconSm,
-              ),
-              onPressed: _onCopy,
+              size: AppSpacing.iconSm,
             ),
+            onPressed: _onCopy,
           ),
 
           // Regenerate
           if (widget.showRegenerate) ...[
             SizedBox(width: AppSpacing.xs),
-            Tooltip(
-              message: 'Regenerate response',
-              child: IconButton(
-                icon: Icon(
-                  Icons.refresh,
-                  color: widget.isStreaming
+            IconButton(
+              tooltip: 'Regenerate response',
+              icon: Icon(
+                Icons.refresh,
+                color: widget.isStreaming
                     ? colorScheme.onSurface.withValues(alpha: 0.3)
                     : colorScheme.onSurface.withValues(alpha: 0.6),
-                  size: AppSpacing.iconSm,
-                ),
-                onPressed: widget.isStreaming ? null : _onRegenerate,
+                size: AppSpacing.iconSm,
               ),
+              onPressed: widget.isStreaming ? null : _onRegenerate,
             ),
           ],
         ],
@@ -291,18 +290,21 @@ class _FeedbackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        icon: Icon(
-          isActive ? activeIcon : icon,
-          color: isActive
-            ? activeColor
-            : colorScheme.onSurface.withValues(alpha: 0.6),
-          size: AppSpacing.iconSm,
-        ),
-        onPressed: onTap,
+    // IconButton.tooltip becomes the semantics tooltip; isSelected announces the toggle state.
+    return IconButton(
+      tooltip: tooltip,
+      isSelected: isActive,
+      icon: Icon(
+        icon,
+        color: colorScheme.onSurface.withValues(alpha: 0.6),
+        size: AppSpacing.iconSm,
       ),
+      selectedIcon: Icon(
+        activeIcon,
+        color: activeColor,
+        size: AppSpacing.iconSm,
+      ),
+      onPressed: onTap,
     );
   }
 }
@@ -318,8 +320,13 @@ Future<void> regenerate(String assistantMessageId) async {
   if (assistantIdx < 1) return;
 
   // Find nearest preceding user message
-  final userMsg = msgs.sublist(0, assistantIdx).reversed
-      .firstWhere((m) => m.role == ChatRole.user, orElse: () => throw StateError('No user message found'));
+  final userMsg = msgs
+      .sublist(0, assistantIdx)
+      .reversed
+      .firstWhere(
+        (m) => m.role == ChatRole.user,
+        orElse: () => throw StateError('No user message found'),
+      );
 
   // Remove old assistant message and re-stream
   state = state.copyWith(

@@ -4,12 +4,14 @@ Covers: file/image attachments, preview chips, auto-expanding textarea/field, ke
 
 ---
 
-## Angular 21.x — ChatInputComponent
+## Angular 22.x — ChatInputComponent
+
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
 
 ```typescript
 // features/chat/components/chat-input.component.ts
 import {
-  Component, ChangeDetectionStrategy, input, output, signal, computed,
+  Component, input, output, signal, computed,
   viewChild, ElementRef, inject, effect
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -27,8 +29,6 @@ const MAX_FILE_SIZE_MB = 20;
 
 @Component({
   selector: 'app-chat-input',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   template: `
     <div class="border-t border-base-300 bg-base-100 p-3 flex flex-col gap-2">
@@ -235,14 +235,16 @@ export class ChatInputComponent {
 
 ---
 
-## Flutter 3.41.x — ChatInputWidget
+## Flutter 3.50.x — ChatInputWidget
 
 ```dart
 // features/chat/presentation/widgets/chat_input_widget.dart
-import 'package:flutter/material.dart';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'package:material_ui/material_ui.dart';
+
 import '../../models/chat_attachment.dart';
 import '../../../../core/tokens/app_spacing.dart';
 
@@ -269,8 +271,8 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
   List<ChatAttachment> _attachments = [];
 
   bool get _canSend =>
-    (_controller.text.trim().isNotEmpty || _attachments.isNotEmpty)
-    && !widget.isStreaming;
+      (_controller.text.trim().isNotEmpty || _attachments.isNotEmpty) &&
+      !widget.isStreaming;
 
   @override
   void dispose() {
@@ -297,26 +299,34 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
       setState(() {
         _attachments = [
           ..._attachments,
-          ...result.map((x) => ChatAttachment.image(
-            id: UniqueKey().toString(),
-            path: x.path,
-            name: x.name,
-          )),
+          ...result.map(
+            (x) => ChatAttachment.image(
+              id: UniqueKey().toString(),
+              path: x.path,
+              name: x.name,
+            ),
+          ),
         ];
       });
     } catch (err) {
       // Log and surface — never swallow
-      debugPrint('[ChatInputWidget] image pick failed: ${err.runtimeType}'); // no paths/names in logs
+      debugPrint(
+        '[ChatInputWidget] image pick failed: ${err.runtimeType}',
+      ); // no paths/names in logs
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not attach image. Please try again.')),
+          const SnackBar(
+            content: Text('Could not attach image. Please try again.'),
+          ),
         );
       }
     }
   }
 
   void _removeAttachment(String id) {
-    setState(() => _attachments = _attachments.where((a) => a.id != id).toList());
+    setState(
+      () => _attachments = _attachments.where((a) => a.id != id).toList(),
+    );
   }
 
   @override
@@ -325,9 +335,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
 
     return Container(
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
         color: colorScheme.surface,
       ),
       padding: EdgeInsets.all(AppSpacing.md),
@@ -341,7 +349,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _attachments.length,
-                separatorBuilder: (_, __) => SizedBox(width: AppSpacing.sm),
+                separatorBuilder: (_, _) => SizedBox(width: AppSpacing.sm),
                 itemBuilder: (context, i) => _AttachmentChip(
                   attachment: _attachments[i],
                   onRemove: () => _removeAttachment(_attachments[i].id),
@@ -349,8 +357,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
               ),
             ),
 
-          if (_attachments.isNotEmpty)
-            SizedBox(height: AppSpacing.sm),
+          if (_attachments.isNotEmpty) SizedBox(height: AppSpacing.sm),
 
           // Input row
           Row(
@@ -361,8 +368,8 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
                 icon: Icon(
                   Icons.attach_file,
                   color: widget.isStreaming
-                    ? colorScheme.onSurface.withValues(alpha: 0.3)
-                    : colorScheme.onSurface.withValues(alpha: 0.6),
+                      ? colorScheme.onSurface.withValues(alpha: 0.3)
+                      : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 tooltip: 'Attach image',
                 onPressed: widget.isStreaming ? null : _pickImage,
@@ -373,7 +380,7 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
                 child: TextField(
                   controller: _controller,
                   focusNode: _focusNode,
-                  maxLines: null,        // auto-expanding
+                  maxLines: null, // auto-expanding
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                   enabled: !widget.isStreaming,
@@ -395,29 +402,29 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
 
               // Send / Stop
               widget.isStreaming
-                ? IconButton.filled(
-                    style: IconButton.styleFrom(
-                      backgroundColor: colorScheme.error,
+                  ? IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: colorScheme.error,
+                      ),
+                      icon: Icon(Icons.stop, color: colorScheme.onError),
+                      tooltip: 'Stop generation',
+                      onPressed: widget.onStop,
+                    )
+                  : IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: _canSend
+                            ? colorScheme.primary
+                            : colorScheme.onSurface.withValues(alpha: 0.12),
+                      ),
+                      icon: Icon(
+                        Icons.send,
+                        color: _canSend
+                            ? colorScheme.onPrimary
+                            : colorScheme.onSurface.withValues(alpha: 0.38),
+                      ),
+                      tooltip: 'Send message',
+                      onPressed: _canSend ? _send : null,
                     ),
-                    icon: Icon(Icons.stop, color: colorScheme.onError),
-                    tooltip: 'Stop generation',
-                    onPressed: widget.onStop,
-                  )
-                : IconButton.filled(
-                    style: IconButton.styleFrom(
-                      backgroundColor: _canSend
-                        ? colorScheme.primary
-                        : colorScheme.onSurface.withValues(alpha: 0.12),
-                    ),
-                    icon: Icon(
-                      Icons.send,
-                      color: _canSend
-                        ? colorScheme.onPrimary
-                        : colorScheme.onSurface.withValues(alpha: 0.38),
-                    ),
-                    tooltip: 'Send message',
-                    onPressed: _canSend ? _send : null,
-                  ),
             ],
           ),
         ],
@@ -445,32 +452,34 @@ class _AttachmentChip extends StatelessWidget {
             color: colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
             image: attachment.isImage
-              ? DecorationImage(
-                  image: FileImage(File(attachment.path)),
-                  fit: BoxFit.cover,
-                )
-              : null,
+                ? DecorationImage(
+                    image: FileImage(File(attachment.path)),
+                    fit: BoxFit.cover,
+                  )
+                : null,
           ),
           child: !attachment.isImage
-            ? Icon(Icons.insert_drive_file_outlined,
-                color: colorScheme.onSurface.withValues(alpha: 0.6))
-            : null,
+              ? Icon(
+                  Icons.insert_drive_file_outlined,
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                )
+              : null,
         ),
+        // 24x24 is the WCAG 2.2 AA minimum target; IconButton gives it a
+        // button role and a tooltip label (a bare GestureDetector has neither).
         Positioned(
-          top: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: colorScheme.outline),
-              ),
-              child: Icon(Icons.close, size: 12, color: colorScheme.onSurface),
+          top: 0,
+          right: 0,
+          child: IconButton(
+            tooltip: 'Remove ${attachment.name}',
+            onPressed: onRemove,
+            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+            padding: EdgeInsets.zero,
+            style: IconButton.styleFrom(
+              backgroundColor: colorScheme.surface,
+              side: BorderSide(color: colorScheme.outline),
             ),
+            icon: Icon(Icons.close, size: 14, color: colorScheme.onSurface),
           ),
         ),
       ],
@@ -487,23 +496,24 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'chat_attachment.freezed.dart';
 
+// freezed 3+: unions are `sealed`, so `switch` over the cases is exhaustive.
 @freezed
-class ChatAttachment with _$ChatAttachment {
+sealed class ChatAttachment with _$ChatAttachment {
   const factory ChatAttachment.image({
     required String id,
     required String path,
     required String name,
-  }) = _ImageAttachment;
+  }) = ImageAttachment;
 
   const factory ChatAttachment.document({
     required String id,
     required String path,
     required String name,
-  }) = _DocumentAttachment;
+  }) = DocumentAttachment;
 }
 
 extension ChatAttachmentX on ChatAttachment {
-  bool get isImage => this is _ImageAttachment;
+  bool get isImage => this is ImageAttachment;
 }
 ```
 

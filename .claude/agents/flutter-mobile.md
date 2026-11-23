@@ -8,7 +8,7 @@ tools: Bash, Read, Write, Edit, Glob, Grep, mcp__dart-mcp-server__analyze_files,
 skills:
   - flutter-mobile
 vibe: "Builds adaptive Flutter screens that feel native on both platforms"
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-23"
 color: green
 emoji: "📱"
 ---
@@ -31,7 +31,7 @@ You are a senior Flutter/Dart engineer building **cross-platform mobile applicat
 
 ## How to Work
 
-1. Read the `flutter-mobile` skill for project structure, conventions, and code templates
+1. Read the `flutter-mobile` skill for project structure, conventions, and code templates. Baseline: Flutter 3.50.x / Dart 3.14.0; import widgets from `package:material_ui/material_ui.dart` (and `cupertino_ui`), never the deprecated `package:flutter/material.dart` / `cupertino.dart`, and pin every package exactly
 2. Follow clean architecture: `data/ → domain/ → presentation/` per feature
 3. Use `@riverpod` annotations with code generation
 4. Use `freezed` for immutable models
@@ -42,6 +42,6 @@ You are a senior Flutter/Dart engineer building **cross-platform mobile applicat
 9. For E2E tests (tool rule: `.claude/rules/testing-tool-selection.md`; never a browser tool): use `maestro` MCP — inspect the screen, write the flow YAML, run it, save it to `<app>/.maestro/`
 
 ## Done When
-- `flutter analyze` exits 0, `dart format --output=none --set-exit-if-changed .` exits 0, and `flutter test` passes; report each command with its exit code.
+- `flutter analyze` exits 0 with zero issues (a legacy Material import is an info and counts), `dart format --output=none --set-exit-if-changed .` exits 0, and `flutter test` passes; report each command with its exit code.
 - Device flows were run with Maestro, or are reported BLOCKED / NOT RUN with the reason. A browser or Flutter-web screenshot is never evidence for the mobile app.
 - Only files the task needs were changed.

@@ -4,13 +4,15 @@ Covers: token usage indicator, threshold logic, user-friendly messaging, summari
 
 ---
 
-## Angular 21.x
+## Angular 22.x
 
 ### TokenIndicatorComponent
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // features/chat/components/token-indicator.component.ts
-import { Component, ChangeDetectionStrategy, input, computed } from '@angular/core';
+import { Component, input, computed } from '@angular/core';
 import { TokenUsage } from '../models/token-usage.model';
 
 // Thresholds
@@ -23,8 +25,6 @@ const AVG_WORDS_PER_MESSAGE = 40;
 
 @Component({
   selector: 'app-token-indicator',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (isVisible()) {
       <div class="px-4 py-1 flex items-center gap-2"
@@ -89,6 +89,8 @@ export class TokenIndicatorComponent {
 
 ### TokenUsage model
 
+*Not recompiled on Angular 22.3 (pre-22 snippet).*
+
 ```typescript
 // features/chat/models/token-usage.model.ts
 export interface TokenUsage {
@@ -99,14 +101,16 @@ export interface TokenUsage {
 
 ### Summarization trigger in ChatService
 
+*Not recompiled on Angular 22.3 (pre-22 snippet; `@Service()` conversions are mechanical).*
+
 ```typescript
 // features/chat/services/chat.service.ts (excerpt)
-import { Injectable, inject, signal } from '@angular/core';
+import { Service, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { AppLogger } from '../../../core/logging/app-logger.service';
 import { TokenUsage } from '../models/token-usage.model';
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ChatService {
   private readonly http = inject(HttpClient);
   private readonly logger = inject(AppLogger);
@@ -140,13 +144,14 @@ export class ChatService {
 
 ---
 
-## Flutter 3.41.x (Riverpod)
+## Flutter 3.50.x (Riverpod)
 
 ### TokenIndicatorWidget
 
 ```dart
 // features/chat/presentation/widgets/token_indicator_widget.dart
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../../models/token_usage.dart';
 import '../../../../core/tokens/app_spacing.dart';
 
@@ -165,9 +170,8 @@ class TokenIndicatorWidget extends StatelessWidget {
   final TokenUsage usage;
   final VoidCallback? onSummarize;
 
-  double get _ratio => usage.used / usage.limit;
+  double get _ratio => usage.limit <= 0 ? 1.0 : usage.used / usage.limit;
   bool get _isVisible => _ratio >= _warnThreshold;
-  bool get _isWarning => _ratio >= _warnThreshold && _ratio < _fullThreshold;
   bool get _isFull => _ratio >= _fullThreshold;
 
   int get _messagesRemaining {
@@ -205,7 +209,7 @@ class TokenIndicatorWidget extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: _ratio.clamp(0.0, 1.0),
                   color: indicatorColor,
-                  backgroundColor: colorScheme.surfaceVariant,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
                   minHeight: AppSpacing.xs,
                 ),
               ),
@@ -213,9 +217,8 @@ class TokenIndicatorWidget extends StatelessWidget {
             SizedBox(width: AppSpacing.sm),
             Text(
               _statusLabel,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: indicatorColor,
-              ),
+              style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: indicatorColor),
             ),
             if (_isFull && onSummarize != null) ...[
               SizedBox(width: AppSpacing.sm),
@@ -223,10 +226,8 @@ class TokenIndicatorWidget extends StatelessWidget {
                 onPressed: onSummarize,
                 child: Text(
                   'Summarize & continue',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: colorScheme.error,
-                  ),
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: colorScheme.error),
                 ),
               ),
             ],
@@ -247,13 +248,17 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'token_usage.freezed.dart';
 
 @freezed
-class TokenUsage with _$TokenUsage {
+abstract class TokenUsage with _$TokenUsage {
   const factory TokenUsage({
     required int used,
-    required int limit,
+    required int
+    limit, // the model's context window, from config — never hardcoded
   }) = _TokenUsage;
+  const TokenUsage._();
 
-  const factory TokenUsage.initial() = _TokenUsageInitial;
+  // A union case without `used`/`limit` would make `usage.used` a compile error.
+  factory TokenUsage.initial({required int limit}) =>
+      TokenUsage(used: 0, limit: limit);
 }
 ```
 
@@ -275,7 +280,9 @@ Future<void> summarize() async {
       ),
     );
   } catch (err, stack) {
-    ref.read(appLoggerProvider).error('ChatNotifier.summarize failed', err, stack);
+    ref
+        .read(appLoggerProvider)
+        .error('ChatNotifier.summarize failed', err, stack);
     // Show error state — user must see this failed
     state = state.copyWith(summarizeError: true);
     rethrow;

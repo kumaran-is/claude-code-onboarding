@@ -11,7 +11,7 @@ Path-scoped: loads only when Dart, pubspec or analysis-options files are in play
 
 - **Status words per check:** PASS | FAIL | BLOCKED | NOT RUN | NOT APPLICABLE. Only PASS is a pass. Never write "tests pass" for a command you did not run in this session.
 - **Order:** narrow check after each fix → one review of the complete change → fix findings in one batch → run heavy gates (device/E2E, release build) once, last. An edit after a heavy gate voids that gate.
-- **Exit codes:** use the command's own exit code, never a pipe's. For `flutter analyze` count errors, warnings and infos.
+- **Exit codes:** use the command's own exit code, never a pipe's. For `flutter analyze` count errors, warnings and infos (one info, e.g. the deprecated `flutter/material.dart` import, exits 1 on 3.50).
 - **Attribute before re-running:** is the failing file in my diff against the merge base? For a suspected flake, capture the artifact, re-run that one test once, and record it. Never re-run until green.
 - **Per package root:** run tests from each package's own root; mixing roots in one invocation fabricates failures.
 - **Generated code:** codegen output (`*.g.dart`, `*.freezed.dart`) is often gitignored. CI must run codegen before analyze/test, and a check that reads generated output is vacuous when it is absent. After changing a generator annotation, regenerate before judging.

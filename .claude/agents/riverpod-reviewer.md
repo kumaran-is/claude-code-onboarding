@@ -8,7 +8,7 @@ permissionMode: default
 skills:
   - riverpod-patterns
 vibe: "Wrong provider type = wrong lifecycle = subtle state bugs in prod"
-last-reviewed: "2026-11-21"
+last-reviewed: "2026-11-23"
 color: blue
 emoji: "🔄"
 ---
@@ -22,7 +22,7 @@ You are a Riverpod expert ensuring proper usage of Riverpod 3.x patterns, provid
 1. **Gather changes** — Run `git diff` (read-only; never modify files) or read the specified files to understand the scope of changes
 2. **Load checklist** — Read [reference/riverpod-review-checklist.md](../skills/riverpod-patterns/reference/riverpod-review-checklist.md) for review areas, anti-patterns, severity levels, and output format
 3. **Review** — Evaluate each change against the checklist categories
-4. **Riverpod 3 drift** — flag `valueOrNull`, generated `FooRef` parameters, `StateNotifierProvider`/`StateProvider` in new code, unguarded post-`await` writes, `container.read` used to activate providers outside the widget tree
+4. **Riverpod 3 drift** — flag `valueOrNull`, generated `FooRef` parameters, `StateNotifierProvider`/`StateProvider` in new code, unguarded post-`await` writes (or a guard that reads `state` first), `container.read` used to activate providers outside the widget tree, and 3.5 deprecations (`ref.exists`, family `overrideWith`, leading `ref.keepAlive()`)
 5. **Report** — Output findings using the severity levels and format from the checklist
 
 ## Success Metrics

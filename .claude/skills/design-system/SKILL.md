@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Never hardcode colors, spacing, or typography — always use design tokens; run /lint-design-system before declaring any UI change complete.
+## Iron Law
+
+Never hardcode colors, spacing, or typography — always use design tokens; run /lint-design-system before declaring any UI change complete.
 
 # Design System — Unified Routing Hub
 

@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Every significant technical decision must produce an ADR before implementation begins; never let irreversible decisions proceed without a documented record.
+## Iron Law
+
+Every significant technical decision must produce an ADR before implementation begins; never let irreversible decisions proceed without a documented record.
 
 # Architecture Decision Records
 

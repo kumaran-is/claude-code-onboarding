@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Never approve code without reading the actual implementation; always provide severity-bucketed findings with file:line evidence.
+## Iron Law
+
+Never approve code without reading the actual implementation; always provide severity-bucketed findings with file:line evidence.
 
 # Code Reviewer
 

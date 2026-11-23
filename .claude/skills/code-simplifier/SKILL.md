@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** Never claim code is too complex without showing a concrete simpler alternative at the same file:line.
+## Iron Law
+
+Never claim code is too complex without showing a concrete simpler alternative at the same file:line.
 
 # Code Simplifier
 

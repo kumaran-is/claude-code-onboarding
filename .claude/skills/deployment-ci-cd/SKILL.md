@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Never design a deployment pipeline without knowing the rollback strategy — every deploy step must be reversible or have an explicit break-glass procedure.
+## Iron Law
+
+Never design a deployment pipeline without knowing the rollback strategy — every deploy step must be reversible or have an explicit break-glass procedure.
 
 # Deployment CI/CD
 

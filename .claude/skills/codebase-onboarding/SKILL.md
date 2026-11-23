@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-03-29"
 ---
 
-**Iron Law:** Read actual files before making any claims about the codebase. Never infer stack from directory names alone — read the config files. A wrong CLAUDE.md is worse than no CLAUDE.md.
+## Iron Law
+
+Read actual files before making any claims about the codebase. Never infer stack from directory names alone — read the config files. A wrong CLAUDE.md is worse than no CLAUDE.md.
 
 # Codebase Onboarding Skill
 

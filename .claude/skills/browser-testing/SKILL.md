@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-11-22"
 ---
 
-**Iron Law:** Never claim a web UI flow works without running it in a real browser and showing the command, its exit code and the evidence path. Not executed in this session → NOT RUN.
+## Iron Law
+
+Never claim a web UI flow works without running it in a real browser and showing the command, its exit code and the evidence path. Not executed in this session → NOT RUN.
 
 # Browser Testing (web targets)
 

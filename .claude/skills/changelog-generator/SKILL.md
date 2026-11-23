@@ -12,7 +12,9 @@ metadata:
 last-reviewed: "2026-03-15"
 ---
 
-**Iron Law:** Never generate a changelog without reading actual git history or diff; always base entries on verified commits, not assumptions.
+## Iron Law
+
+Never generate a changelog without reading actual git history or diff; always base entries on verified commits, not assumptions.
 
 # Changelog Generator Skill
 

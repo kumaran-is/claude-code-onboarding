@@ -14,7 +14,9 @@ metadata:
 last-reviewed: "2026-03-16"
 ---
 
-**Iron Law:** If the comment contradicts the code, the comment is wrong — never accept a comment at face value without reading the implementation it describes.
+## Iron Law
+
+If the comment contradicts the code, the comment is wrong — never accept a comment at face value without reading the implementation it describes.
 
 # Comment Analyzer
 

@@ -17,7 +17,9 @@ last-reviewed: "2026-11-22"
 
 # Accessibility Audit
 
-> **Iron Law:** Before auditing any component, READ the actual file first.
+## Iron Law
+
+Before auditing any component, READ the actual file first.
 > Do not flag violations from memory. Verify at file:line and show evidence.
 
 The bar is WCAG 2.2 Level AA for web (Angular, React) and Flutter (Android, iOS). The canonical checklist is [reference/wcag22-checklist.md](reference/wcag22-checklist.md). Every other skill, agent and workflow links to it.

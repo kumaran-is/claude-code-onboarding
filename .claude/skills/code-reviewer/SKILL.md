@@ -67,7 +67,7 @@ git diff --name-only HEAD~1
 npm run lint 2>&1 | grep -E "error|warning" | head -20
 
 # Confirm tests still pass after changes
-npm test -- --passWithNoTests 2>&1 | tail -5
+npm test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -5 /tmp/test.log   # no --passWithNoTests: zero tests must fail
 ```
 
 Report format after verification:

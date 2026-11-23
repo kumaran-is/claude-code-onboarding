@@ -14,7 +14,7 @@ Check which stacks are present in the repo root (web apps are also found in nest
 
 ```bash
 [ -f "pom.xml" ]        && echo "STACK:java"
-[ -f "package.json" ]   && grep -q '"@nestjs/core"' package.json && echo "STACK:nestjs"
+find . -maxdepth 4 \( -name node_modules -o -name dist \) -prune -o -name package.json -print | xargs grep -lE '"@nestjs/core"|"@modelcontextprotocol/(sdk|server)"' 2>/dev/null | sed 's/^/STACK:node /'
 find . -maxdepth 4 -name node_modules -prune -o \( -name angular.json -o -name 'vite.config.*' -o -name 'next.config.*' \) -print | sed 's/^/STACK:web /'
 [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] && echo "STACK:python"
 [ -f "pubspec.yaml" ]   && echo "STACK:flutter"
@@ -58,14 +58,8 @@ Every command below records its OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`,
 ./mvnw dependency-check:check -q > /tmp/mvn-dc.log 2>&1; echo "DEPCHECK EXIT:$?"; grep -E "CRITICAL|HIGH|CVE" /tmp/mvn-dc.log | head -20   # plugin not configured → BLOCKED
 ```
 
-### NestJS
-```bash
-npm test > /tmp/nest-test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/nest-test.log   # no --passWithNoTests: zero tests is not a pass
-npx tsc --noEmit > /tmp/nest-tsc.log 2>&1; echo "TSC EXIT:$?"; head -20 /tmp/nest-tsc.log
-if node -e 'process.exit(require("./package.json").scripts?.lint?0:1)'; then npm run lint > /tmp/nest-lint.log 2>&1; echo "LINT EXIT:$?"; tail -10 /tmp/nest-lint.log; else echo "LINT: NOT RUN (no lint script)"; fi
-npm run build > /tmp/nest-build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/nest-build.log
-npm audit --audit-level=high > /tmp/nest-audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -20 /tmp/nest-audit.log
-```
+### Node.js — NestJS, TypeScript Node services and MCP servers
+Run the Node block from [`/verify`](verify.md) ("Node.js" section) from the repo root with `MODE=pre-pr`: per package root it runs `tsc -p tsconfig.json --noEmit` (covers specs, which the Nest build config excludes), lint, `vitest run` / `jest --ci` with executed tests > 0, `npm run build`, the MCP server gate for MCP packages (real SDK client: negotiated spec revision, `tools/list`, tool-schema checks) and `npm audit --audit-level=high`, each with its own exit code. Copy its `NODE ...` and `MCP ...` lines into the Tests / Type check / Lint / Build / CVE audit rows. No `--passWithNoTests`: zero executed tests is a FAIL, and `npm test` without a countable runner is BLOCKED. Any `FAIL` or `BLOCKED` makes the verdict **NOT READY**; `NOT RUN` (no linter, no build script) is listed with its reason and never counted as passed. Before a release of an MCP server, also review `.mcp.json` hygiene from `session-mcp-governance.sh` (unpinned packages, secrets in args).
 
 ### Web apps — Angular and React
 Run the web block from [`/verify`](verify.md) ("Web apps" section) from the repo root with `MODE=pre-pr`: per app root it runs type-check, lint, unit tests (`ng test --watch=false` on Angular 21's Vitest builder, `vitest run` for React), production build, Playwright E2E when configured, and `npm audit --audit-level=high`, each with its own exit code. Copy its `WEB ... : PASS|FAIL|BLOCKED|NOT RUN` lines into the report. A detected app that the block did not run is a blocker, not a pass; `NOT RUN` (no linter, no E2E config) is listed with its reason and never counted as passed. Any web check reported `FAIL` or `BLOCKED` makes the verdict **NOT READY**.

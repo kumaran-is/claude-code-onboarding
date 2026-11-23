@@ -60,17 +60,246 @@ uv run pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 
 
 `pip-audit` has no severity column: gate on its exit code (0 = PASS, 1 = findings = FAIL unless every ID is listed with `--ignore-vuln <ID>` and a reason, 2 = tool/usage error = BLOCKED). `pip audit` is not a command. If `scripts/check_executed.py` does not exist, count executed tests from the junit file yourself (tests minus skipped). Details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
-### NestJS (`package.json` with @nestjs/core)
+### Node.js — NestJS, TypeScript Node services and MCP servers (`package.json` with `@nestjs/core`, `@modelcontextprotocol/*`, or a `tsconfig.json`)
+
+Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=pre-pr` (it runs under `bash`, also from zsh). It finds every package root up to 4 levels deep and skips Angular, React, Vite, Next and React Native packages (the web block owns those). Tools are looked up in the package and its parents, so npm-workspaces hoisting is handled. One `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` line per check, from the command's own exit code.
+
+| Check | Command | Why not the obvious one |
+|---|---|---|
+| Type-check (quick+) | `tsc -p tsconfig.json --noEmit`; `tsc -b` for a solution config (`"files": []`) | The Nest CLI build config (`tsconfig.build.json`) excludes `**/*spec.ts` and `test/`: `npm run build` passes a type error in a spec |
+| Lint (quick+) | `npm run lint`, else `eslint .` with an `eslint.config.*`; none → **NOT RUN** | |
+| Unit (full+) | `vitest run` / `jest --ci` with a JSON report; PASS needs executed (passed + failed) > 0 | Vitest exits 0 when every test is skipped; `npm test` alone gives no count → **BLOCKED** |
+| Build (full+) | `npm run build`; none → **NOT RUN** | |
+| MCP server (full+, MCP packages) | real SDK client (the package's own `@modelcontextprotocol/client` v2 or `@modelcontextprotocol/sdk` v1): connect (an `initialize` handshake only on revisions ≤ 2025-11-25; 2026-07-28 removed it), negotiated spec revision, `tools/list` (all pages), per tool: name `[A-Za-z0-9_.-]{1,128}`, unique, description, `inputSchema`/`outputSchema` of `"type": "object"` that compile. Never calls a tool | Server from `bin`/`main` over stdio, or `MCP_SERVER_CMD="node dist/index.js"`, or `MCP_SERVER_URL=http://127.0.0.1:3000/mcp` (Streamable HTTP; nothing listening → **BLOCKED**). `MCP_MIN_PROTOCOL=2025-11-25` fails an older revision; `MCP_GATE_TIMEOUT_MS` (default 20000) |
+| Audit (pre-pr) | `npm audit --audit-level=high`; no lockfile or registry unreachable → **BLOCKED** | |
+
 ```bash
-# quick
-npm run build > /tmp/nest-build.log 2>&1; echo "BUILD EXIT:$?"; tail -5 /tmp/nest-build.log
+MODE="${MODE:-quick}" bash <<'NODE_GATE'
+# Node gate: NestJS, plain TypeScript Node services and MCP servers; nested roots included. MODE=quick|full|pre-pr.
+set -u
+MODE="${MODE:-quick}"; NF=0; NB=0; NN=0; NRAN=0; ROOTS=""; GATE_DIR=$(mktemp -d) # left for the OS temp cleaner
+cat > "$GATE_DIR/mcp-gate.mjs" <<'MCP_GATE'
+// MCP server gate: node mcp-gate.mjs <server-root>. Real SDK client, read-only (never calls tools).
+// Server: MCP_SERVER_URL (Streamable HTTP) | MCP_SERVER_CMD (stdio, whitespace-split) | package.json bin/main via node.
+// Prints "MCP <root> | <check>: PASS|FAIL|BLOCKED|NOT RUN (...)"; exit 1 on FAIL, 3 on BLOCKED only, 0 otherwise.
+import { createRequire } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-# full
-npm test > /tmp/nest-test.log 2>&1; echo "TEST EXIT:$?"; tail -10 /tmp/nest-test.log
+const root = resolve(process.argv[2] ?? '.');
+const results = [];
+const report = (check, status, detail) => {
+  results.push(status);
+  process.stdout.write(`MCP ${root} | ${check}: ${status} (${detail})\n`);
+};
+const req = createRequire(join(root, 'package.json'));
+const load = async (spec) => {
+  try { return await import(pathToFileURL(req.resolve(spec)).href); } catch { return null; }
+};
+const finish = () => {
+  process.exitCode = results.includes('FAIL') ? 1 : results.includes('BLOCKED') ? 3 : 0;
+};
 
-# pre-pr additions
-npm audit --audit-level=high > /tmp/nest-audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -15 /tmp/nest-audit.log
+// The project's own client: SDK v2 split package first, then SDK v1.
+let sdk = null;
+const v2 = await load('@modelcontextprotocol/client');
+if (v2?.Client) {
+  const stdio = await load('@modelcontextprotocol/client/stdio');
+  const ajv = await load('@modelcontextprotocol/client/validators/ajv');
+  sdk = { line: 'v2', ...v2, StdioClientTransport: stdio?.StdioClientTransport, Validator: ajv?.AjvJsonSchemaValidator };
+} else {
+  const v1 = await load('@modelcontextprotocol/sdk/client/index.js');
+  if (v1?.Client) {
+    const types = await load('@modelcontextprotocol/sdk/types.js');
+    const stdio = await load('@modelcontextprotocol/sdk/client/stdio.js');
+    const http = await load('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const ajv = await load('@modelcontextprotocol/sdk/validation/ajv');
+    sdk = {
+      line: 'v1', Client: v1.Client, LATEST_PROTOCOL_VERSION: types?.LATEST_PROTOCOL_VERSION,
+      SUPPORTED_PROTOCOL_VERSIONS: types?.SUPPORTED_PROTOCOL_VERSIONS, StdioClientTransport: stdio?.StdioClientTransport,
+      StreamableHTTPClientTransport: http?.StreamableHTTPClientTransport, Validator: ajv?.AjvJsonSchemaValidator,
+    };
+  }
+}
+if (!sdk?.StdioClientTransport || !sdk.Validator || !sdk.SUPPORTED_PROTOCOL_VERSIONS) {
+  report('client', 'BLOCKED', 'no MCP client SDK resolvable from this root: npm i -D -E @modelcontextprotocol/client (or @modelcontextprotocol/sdk)');
+  finish();
+} else {
+  await runGate(sdk);
+  finish();
+}
+
+async function runGate(sdk) {
+  let transport;
+  let target;
+  if (process.env.MCP_SERVER_URL) {
+    transport = new sdk.StreamableHTTPClientTransport(new URL(process.env.MCP_SERVER_URL));
+    target = 'Streamable HTTP';
+  } else {
+    let argv = process.env.MCP_SERVER_CMD ? process.env.MCP_SERVER_CMD.trim().split(/\s+/) : null;
+    if (!argv) {
+      const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+      const entry = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin ? Object.values(pkg.bin)[0] : pkg.main;
+      if (!entry) {
+        report('connect', 'BLOCKED', 'no bin/main in package.json: set MCP_SERVER_CMD (stdio) or MCP_SERVER_URL (HTTP)');
+        return;
+      }
+      if (!existsSync(join(root, entry))) {
+        report('connect', 'BLOCKED', `entry ${entry} does not exist: build first`);
+        return;
+      }
+      argv = [process.execPath, entry];
+    }
+    const env = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined));
+    transport = new sdk.StdioClientTransport({ command: argv[0], args: argv.slice(1), cwd: root, env, stderr: 'pipe' });
+    target = 'stdio';
+  }
+  const stderrTail = [];
+  transport.stderr?.on('data', (chunk) => stderrTail.push(...String(chunk).split('\n').filter(Boolean)));
+  const client = new sdk.Client({ name: 'verify-mcp-gate', version: '1.0.0' });
+  const timeoutMs = Number(process.env.MCP_GATE_TIMEOUT_MS ?? 20000);
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs} ms`)), timeoutMs);
+  });
+  deadline.catch(() => undefined); // handled by the Promise.race calls; avoids an unhandled rejection between them
+  try {
+    await Promise.race([client.connect(transport), deadline]);
+    const negotiated = client.getNegotiatedProtocolVersion?.() ?? transport.protocolVersion ?? sdk.LATEST_PROTOCOL_VERSION;
+    const info = client.getServerVersion();
+    report('connect', 'PASS', `${target}, server ${info?.name ?? '?'}@${info?.version ?? '?'}, client SDK ${sdk.line}`);
+    const min = process.env.MCP_MIN_PROTOCOL;
+    if (!sdk.SUPPORTED_PROTOCOL_VERSIONS.includes(negotiated)) {
+      report('spec version', 'FAIL', `negotiated ${negotiated} is not a revision this client supports`);
+    } else if (min && negotiated < min) {
+      report('spec version', 'FAIL', `negotiated ${negotiated} < MCP_MIN_PROTOCOL ${min}`);
+    } else {
+      report('spec version', 'PASS', `negotiated ${negotiated}; newest known to the client ${sdk.LATEST_PROTOCOL_VERSION}`);
+    }
+    if (!client.getServerCapabilities()?.tools) {
+      report('tools/list', 'NOT RUN', 'server does not declare the tools capability');
+      return;
+    }
+    const tools = [];
+    let cursor;
+    do {
+      const page = await Promise.race([client.listTools(cursor ? { cursor } : {}), deadline]);
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+    } while (cursor);
+    report('tools/list', tools.length > 0 ? 'PASS' : 'FAIL', `${tools.length} tool(s)`);
+    const validator = new sdk.Validator();
+    const problems = [];
+    const seen = new Set();
+    for (const tool of tools) {
+      if (!/^[A-Za-z0-9_.-]{1,128}$/.test(tool.name)) problems.push(`${tool.name}: name outside [A-Za-z0-9_.-]{1,128}`);
+      if (seen.has(tool.name)) problems.push(`${tool.name}: duplicate name`);
+      seen.add(tool.name);
+      if (!tool.description?.trim()) problems.push(`${tool.name}: empty description`);
+      for (const key of ['inputSchema', 'outputSchema']) {
+        const schema = tool[key];
+        if (schema === undefined && key === 'outputSchema') continue;
+        if (schema?.type !== 'object') { problems.push(`${tool.name}: ${key}.type is not "object"`); continue; }
+        try { validator.getValidator(schema); } catch (err) { problems.push(`${tool.name}: ${key} does not compile: ${err.message}`); }
+      }
+    }
+    report('tool schemas', problems.length ? 'FAIL' : 'PASS', problems.length ? problems.join('; ') : `${tools.length} schema set(s) compile, names valid`);
+  } catch (err) {
+    if (process.env.MCP_SERVER_URL && ['ECONNREFUSED', 'ENOTFOUND'].includes(err.cause?.code)) {
+      report('connect', 'BLOCKED', `nothing listening at MCP_SERVER_URL (${err.cause.code}): start the server first`);
+      return;
+    }
+    report('session', 'FAIL', `${err.message}${stderrTail.length ? ` | server stderr: ${(stderrTail.find((l) => /error/i.test(l)) ?? stderrTail.at(-1)).trim()}` : ''}`);
+  } finally {
+    clearTimeout(timer);
+    await client.close().catch((err) => process.stderr.write(`close failed: ${err.message}\n`));
+  }
+}
+MCP_GATE
+pkg_has() { node -e 'const p=require(process.argv[1]);const s={...p.dependencies,...p.devDependencies};process.exit(process.argv.slice(2).some(n=>n in s)?0:1)' "$1/package.json" "${@:2}" 2>/dev/null; }
+has_script() { node -e 'const p=require(process.argv[1]);process.exit(p.scripts&&p.scripts[process.argv[2]]?0:1)' "$1/package.json" "$2" 2>/dev/null; }
+bin_up() { # $1 root, $2 bin -> path of node_modules/.bin/<bin> in root or a parent (npm workspaces hoist)
+  local d; d=$(cd "$1" && pwd)
+  while [ "$d" != "/" ]; do [ -x "$d/node_modules/.bin/$2" ] && { echo "$d/node_modules/.bin/$2"; return 0; }; d=$(dirname "$d"); done; return 1; }
+say() { echo "NODE $1 | $2: $3"; }
+check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code; log tail only on failure
+  local root="$1" label="$2" log="$GATE_DIR/log" rc; shift 2
+  (cd "$root" && CI=true NO_COLOR=1 FORCE_COLOR=0 "$@") > "$log" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ]; then say "$root" "$label" "PASS (exit 0)"; NRAN=$((NRAN + 1))
+  elif [ "$label" = "npm audit (high)" ] && grep -qE 'ENOLOCK|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|audit endpoint returned an error' "$log"; then
+    say "$root" "$label" "BLOCKED (exit $rc: no lockfile or registry unreachable)"; tail -5 "$log"; NB=1
+  else say "$root" "$label" "FAIL (exit $rc)"; tail -15 "$log"; NF=1; NRAN=$((NRAN + 1)); fi
+  return "$rc"
+}
+not_run() { say "$1" "$2" "NOT RUN ($3)"; NN=$((NN + 1)); }
+tests() { # root -> vitest/jest with a JSON report: PASS only when executed (passed + failed) > 0
+  local root="$1" json="$GATE_DIR/tests.json" bin rc ran label
+  : > "$json"
+  if bin=$(bin_up "$root" vitest); then label="unit (vitest)"
+    (cd "$root" && CI=true "$bin" run --reporter=default --reporter=json --outputFile="$json") > "$GATE_DIR/log" 2>&1; rc=$?
+  elif bin=$(bin_up "$root" jest); then label="unit (jest)"
+    (cd "$root" && CI=true "$bin" --ci --json --outputFile="$json") > "$GATE_DIR/log" 2>&1; rc=$?
+  elif has_script "$root" test; then
+    (cd "$root" && CI=true npm test) > "$GATE_DIR/log" 2>&1; rc=$?
+    if [ "$rc" -ne 0 ]; then say "$root" "unit (npm test)" "FAIL (exit $rc)"; tail -15 "$GATE_DIR/log"; NF=1; NRAN=$((NRAN + 1))
+    else say "$root" "unit (npm test)" "BLOCKED (exit 0 but the executed count is not measurable: use vitest/jest, or count by hand)"; NB=1; fi
+    return
+  else not_run "$root" unit "no vitest, jest or test script"; return; fi
+  ran=$(node -e 'const r=require(process.argv[1]);console.log((r.numPassedTests||0)+(r.numFailedTests||0), r.numTotalTests||0, r.numPendingTests||0)' "$json" 2>/dev/null)
+  set -- $ran
+  if [ "$rc" -eq 0 ] && [ "${1:-0}" -gt 0 ]; then say "$root" "$label" "PASS (exit 0, executed $1 of $2, skipped ${3:-0})"; NRAN=$((NRAN + 1))
+  elif [ "$rc" -eq 0 ]; then say "$root" "$label" "FAIL (exit 0 but executed ${1:-0} of ${2:-0}: all skipped or no report)"; NF=1; NRAN=$((NRAN + 1))
+  else say "$root" "$label" "FAIL (exit $rc, executed ${1:-?} of ${2:-?})"; tail -15 "$GATE_DIR/log"; NF=1; NRAN=$((NRAN + 1)); fi
+}
+FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git \) -prune -o -name package.json -print)
+while IFS= read -r f; do
+  [ -n "$f" ] || continue; d=$(dirname "$f")
+  [ -f "$d/angular.json" ] && continue
+  pkg_has "$d" react @angular/core react-native vite next && continue          # web and mobile apps: other blocks
+  if pkg_has "$d" @nestjs/core; then kind=nest
+  elif pkg_has "$d" @modelcontextprotocol/sdk @modelcontextprotocol/server; then kind=mcp
+  elif [ -f "$d/tsconfig.json" ]; then kind=node
+  else continue; fi
+  pkg_has "$d" @modelcontextprotocol/sdk @modelcontextprotocol/server && [ "$kind" = nest ] && kind=nest+mcp
+  ROOTS="${ROOTS}${kind}:$d
+"
+done <<EOF_FOUND
+$FOUND
+EOF_FOUND
+[ -n "$ROOTS" ] || echo "NODE: NOT APPLICABLE (no NestJS / TypeScript Node / MCP server package within 4 levels of $(pwd))"
+while IFS= read -r entry <&3; do
+  [ -n "$entry" ] || continue
+  kind="${entry%%:*}"; root="${entry#*:}"; echo "NODE $root: $kind"
+  if ! bin_up "$root" tsc >/dev/null && [ ! -d "$root/node_modules" ]; then say "$root" "all checks" "BLOCKED (no node_modules here or in a parent: npm ci)"; NB=1; continue; fi
+  # 1. type-check: tsconfig.json covers specs and test/ (the Nest build config excludes them)
+  if [ ! -f "$root/tsconfig.json" ]; then not_run "$root" typecheck "no tsconfig.json (JavaScript package)"
+  elif ! tsc=$(bin_up "$root" tsc); then say "$root" typecheck "BLOCKED (no typescript in node_modules: npm ci)"; NB=1
+  elif grep -qE '"files"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' "$root/tsconfig.json"; then check "$root" "typecheck (tsc -b, solution config)" "$tsc" -b
+  else check "$root" "typecheck (tsc -p tsconfig.json --noEmit)" "$tsc" -p tsconfig.json --noEmit; fi
+  # 2. lint: only a configured linter; absence is NOT RUN, never PASS
+  if has_script "$root" lint; then check "$root" lint npm run lint
+  elif ls "$root"/eslint.config.* >/dev/null 2>&1 && eslint=$(bin_up "$root" eslint); then check "$root" lint "$eslint" .
+  else not_run "$root" lint "no lint script or eslint.config.*"; fi
+  [ "$MODE" = quick ] && continue
+  tests "$root"
+  if has_script "$root" build; then check "$root" build npm run build; else not_run "$root" build "no build script"; fi
+  # MCP server: real SDK client over stdio (bin/main) or MCP_SERVER_URL / MCP_SERVER_CMD; never calls a tool
+  case "$kind" in *mcp)
+    node "$GATE_DIR/mcp-gate.mjs" "$root"; rc=$?
+    case "$rc" in 0) NRAN=$((NRAN + 1)) ;; 3) NB=1 ;; *) NF=1; NRAN=$((NRAN + 1)) ;; esac ;;
+  esac
+  [ "$MODE" = pre-pr ] && check "$root" "npm audit (high)" npm audit --audit-level=high
+done 3<<EOF_ROOTS
+$ROOTS
+EOF_ROOTS
+if [ "$NF" -ne 0 ]; then v=FAIL; elif [ "$NB" -ne 0 ]; then v=BLOCKED; elif [ -z "$ROOTS" ]; then v="NOT APPLICABLE"; elif [ "$NRAN" -eq 0 ]; then v="NOT RUN"; else v=PASS; fi
+echo "NODE VERDICT: $v; $NN check(s) NOT RUN (not passes: report each with its reason)"
+[ "$v" = PASS ] || [ "$v" = "NOT APPLICABLE" ]
+NODE_GATE
 ```
+
+Proven on 2026-11-23 fixtures (TypeScript 5.9.3, NestJS 11.2.11, Vitest 5.1.1, Jest 30.5.2, ESLint 10.15.0, `@modelcontextprotocol/sdk` 1.32.2 and `@modelcontextprotocol/client` 2.4.0, Node 24.13.1): clean NestJS + MCP packages → PASS in `pre-pr`; a type error planted in a spec → typecheck FAIL while `npm run build` stays green; all tests `it.skip` → unit FAIL (Vitest exit 0, executed 0 of 2); `console.log` with `no-console` → lint FAIL; a tool named `get order!` with an empty description → tool schemas FAIL; a server that throws at boot, or hangs → FAIL with its stderr line / timeout; no `node_modules` or no TypeScript → BLOCKED; nothing listening at `MCP_SERVER_URL` → BLOCKED; the gate over Streamable HTTP → PASS. A Python (FastMCP) server is not detected by this block: `npx -y @modelcontextprotocol/inspector@2.16.0 --cli <server command> --method tools/list` exits 1 on a server that fails to start (verified against a Node stdio server only).
 
 ### Web apps — Angular (`angular.json`) and React (`package.json` with `react` + `vite` / `react-scripts` / `next`)
 

@@ -163,6 +163,9 @@ python3 .claude/skills/ui-ux-pro-max/scripts/search.py "fintech" --design-system
 python3 .claude/skills/ui-ux-pro-max/scripts/search.py "fintech" --design-system -f markdown
 ```
 
+Domain and stack searches exit like `grep`: `0` results found, `1` no results (widen the query or try
+another domain; an empty search is not evidence the guideline does not exist), `2` error.
+
 ---
 
 ## Pre-Delivery Visual Checklist

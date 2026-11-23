@@ -3,6 +3,7 @@
 """
 UI/UX Pro Max Search - BM25 search engine for UI/UX style guides
 Usage: python search.py "<query>" [--domain <domain>] [--stack <stack>] [--max-results 3]
+Exit: 0 = results found, 1 = no results, 2 = error (unknown stack/domain, missing data file)
        python search.py "<query>" --design-system [-p "Project Name"]
 
 Domains: style, prompt, color, chart, landing, product, ux, typography
@@ -10,6 +11,7 @@ Stacks: html-tailwind, react, swiftui, flutter
 """
 
 import argparse
+import sys
 from core import CSV_CONFIG, AVAILABLE_STACKS, MAX_RESULTS, search, search_stack
 from design_system import generate_design_system
 
@@ -74,3 +76,6 @@ if __name__ == "__main__":
             print(json.dumps(result, indent=2, ensure_ascii=False))
         else:
             print(format_output(result))
+    # Searches report like grep: an empty result is not a success (callers gate on the exit code).
+    if not args.design_system:
+        sys.exit(2 if "error" in result else (0 if result.get("count", 0) > 0 else 1))

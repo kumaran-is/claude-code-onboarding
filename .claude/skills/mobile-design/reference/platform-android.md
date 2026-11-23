@@ -99,8 +99,9 @@ automatically — never hardcode fontSize values.
 Android 12+ can extract a color palette from the user's wallpaper and apply it to your app theme. In Flutter, use the `dynamic_color` package:
 
 ```dart
-// pubspec.yaml: dynamic_color: ^1.7.0
+// pubspec.yaml: dynamic_color: 2.1.0  (already built on material_ui; verified on Flutter 3.50.1)
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:material_ui/material_ui.dart';
 
 DynamicColorBuilder(
   builder: (lightDynamic, darkDynamic) {
@@ -122,7 +123,7 @@ In Flutter, all Material 3 color roles are available through `Theme.of(context).
 
 ```dart
 colorScheme.surface          // Main background
-colorScheme.surfaceVariant   // Cards, containers
+colorScheme.surfaceContainerHighest // Cards, containers (surfaceVariant is deprecated)
 colorScheme.onSurface        // Primary text
 colorScheme.onSurfaceVariant // Secondary text
 colorScheme.outline          // Borders, dividers
@@ -256,7 +257,7 @@ GoRouter handles back navigation automatically. For custom back behavior, use `P
 ```dart
 PopScope(
   canPop: !_hasUnsavedChanges,
-  onPopInvoked: (didPop) {
+  onPopInvokedWithResult: (didPop, result) { // onPopInvoked is deprecated
     if (!didPop) {
       _showUnsavedChangesDialog();
     }
@@ -402,7 +403,7 @@ InkWell(
 
 ```dart
 // Add to pubspec.yaml:
-// material_symbols_icons: ^4.2782.2
+// material_symbols_icons: 4.2960.0
 
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -444,13 +445,13 @@ Spacing between targets: 8dp minimum
 
 ### Font Scaling
 
-Android supports font scaling up to 200%. In Flutter, `Theme.of(context).textTheme.*` scales automatically. Never use `textScaleFactor` to lock scaling — that breaks accessibility.
+Android supports font scaling up to 200%. In Flutter, `Theme.of(context).textTheme.*` scales automatically. Never lock scaling (`TextScaler.noScaling`, or the deprecated `textScaleFactor`): that breaks accessibility. Android 14+ scales non-linearly, so read sizes through `MediaQuery.textScalerOf(context)`.
 
 ### Reduce Motion
 
 ```dart
 // Check preference in Flutter
-final reduceMotion = MediaQuery.of(context).disableAnimations;
+final reduceMotion = MediaQuery.disableAnimationsOf(context); // rebuilds only on this field
 
 if (reduceMotion) {
   // Use instant transitions (duration: Duration.zero)

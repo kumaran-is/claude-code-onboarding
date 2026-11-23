@@ -1,6 +1,6 @@
 ---
 name: mobile-developer
-description: Expert mobile developer for React Native, native Swift/SwiftUI, Kotlin/Compose, and mobile CI/CD (Fastlane, Codemagic, Bitrise, EAS). Use for everything mobile that flutter-mobile does NOT cover. For Flutter 3.41.x work, use flutter-mobile skill instead.
+description: Expert mobile developer for React Native, native Swift/SwiftUI, Kotlin/Compose, and mobile CI/CD (Fastlane, Codemagic, Bitrise, EAS). Use for everything mobile that flutter-mobile does NOT cover. For Flutter 3.50.x work, use flutter-mobile skill instead.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 metadata:
   triggers: React Native, React Native New Architecture, Hermes, TurboModules, SwiftUI, Kotlin Compose, Fastlane, Codemagic, Bitrise, EAS Update, CodePush, Detox, native module, brownfield, Expo, MAUI

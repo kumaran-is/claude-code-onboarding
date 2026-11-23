@@ -27,7 +27,7 @@ Mobile testing differs from web:
 |------------|----------------|-----------------|
 | Web-based testing patterns | Misses native layer | flutter_test + E2E on device |
 | Mock everything in widget tests | Misses integration bugs | Test with ProviderScope overrides |
-| Browser-based E2E | Cannot test native features | Maestro MCP or Detox |
+| Browser-based E2E | Cannot test native features | Maestro CLI/MCP (the only Flutter device UI/E2E tool here) |
 | Skip platform-specific tests | iOS/Android behavior differs | Test both platforms |
 | Skip performance tests | Mobile perf is critical | Profile on low-end device |
 | Test only happy path | Mobile has more edge cases | Offline, permissions, interrupts |
@@ -128,11 +128,10 @@ DO NOT TEST:
 ```
 
 ```dart
-// Example: unit test for a notifier
+// Example: unit test for a notifier (Riverpod 3; ProviderContainer.test() disposes itself)
 void main() {
-  test('counter increments', () async {
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
+  test('counter increments', () {
+    final container = ProviderContainer.test();
 
     expect(container.read(counterProvider), 0);
     container.read(counterProvider.notifier).increment();
@@ -159,14 +158,12 @@ DO NOT TEST:
 ```
 
 ```dart
-// Example: widget test with Riverpod
+// Example: widget test with Riverpod (myProvider is a FutureProvider; MaterialApp from material_ui)
 void main() {
   testWidgets('shows loading indicator', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          myProvider.overrideWith((ref) => const AsyncLoading()),
-        ],
+        overrides: [myProvider.overrideWithValue(const AsyncLoading())],
         child: const MaterialApp(home: MyScreen()),
       ),
     );
@@ -344,14 +341,16 @@ flutter run --profile
 ### How to Test
 
 ```
-AUTOMATED (in widget tests):
+AUTOMATED (in widget tests), with tester.ensureSemantics() and handle.dispose() at the end:
 await tester.pumpWidget(myWidget);
-// getSemantics(finder) returns the nearest ANCESTOR semantics node, which can be a merged node.
-// Locate by label (also detects duplicate nodes) and read flags via flagsCollection:
-final node = find.bySemanticsLabel('Save button');
+// Locate by label (also detects duplicate nodes), then match the MERGED node data.
+// getSemantics(f).flagsCollection holds the node's OWN flags: false on a merge boundary
+// such as a FAB, even though the merged data says isButton (tested on 3.50.1).
+final node = find.bySemanticsLabel('Save');
 expect(node, findsOneWidget);
-expect(tester.getSemantics(node).flagsCollection.isButton, isTrue);
-// hasFlag is deprecated (after Flutter 3.32). Details: flutter-mobile/reference/flutter-testing-traps.md §4
+expect(tester.getSemantics(node), isSemantics(label: 'Save', isButton: true, isEnabled: true));
+// containsSemantics is deprecated after 3.40 (use isSemantics); hasFlag after 3.32.
+// Details: flutter-mobile/reference/flutter-testing-traps.md §4
 
 MANUAL:
 +-- Enable VoiceOver (iOS): Settings -> Accessibility -> VoiceOver
@@ -376,24 +375,11 @@ This workspace uses GitHub Actions exclusively.
 | **Pre-release** | + E2E | Real devices or Firebase Test Lab |
 | **Nightly** | Full suite | Device farm |
 
-### GitHub Actions Example
+### GitHub Actions
 
-```yaml
-# .github/workflows/flutter-test.yml
-name: Flutter Tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.41.0'
-      - run: flutter pub get
-      - run: flutter test
-      - run: flutter analyze
-```
+The PR gate (exact SDK pin, `--enforce-lockfile`, advisory check, codegen, format, analyze, tests, Android/iOS builds,
+SHA-pinned actions) and the advisory Maestro device job are in
+`deployment-ci-cd/reference/flutter-ci.md`; copy from there instead of keeping a second, drifting workflow here.
 
 ---
 

@@ -10,14 +10,18 @@ class TodoList extends _$TodoList {
   }
 
   Future<void> addTodo(String title) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
+    state = const AsyncLoading();
+    final next = await AsyncValue.guard(() async {
       await ref.read(todoRepositoryProvider).add(title);
       return _fetchTodos();
     });
+    if (!ref.mounted) return; // the notifier may be disposed while awaiting
+    state = next;
   }
 }
 ```
+
+`class TodoList` generates `todoListProvider`; a class named `TodoListNotifier` would generate the same name (`Notifier` suffix is stripped).
 
 ## Proper AsyncValue.when
 ```dart
@@ -31,7 +35,7 @@ Widget build(BuildContext context, WidgetRef ref) {
       itemBuilder: (_, i) => TodoTile(todos[i]),
     ),
     loading: () => const Center(child: CircularProgressIndicator()),
-    error: (error, stack) => ErrorWidget(error.toString()),
+    error: (error, stack) => ErrorView(error: error), // app widget, not Flutter's ErrorWidget
   );
 }
 ```
@@ -73,12 +77,31 @@ Future<User> user(Ref ref, String userId) async {
 final user = ref.watch(userProvider(userId));
 ```
 
+Family arguments are cache keys: use values with `==`/`hashCode` (primitives, records, Freezed classes). A Freezed filter passed twice with equal fields reuses one provider instance.
+
+## Testing providers
+```dart
+final container = ProviderContainer.test( // disposed at test end
+  retry: (_, _) => null,                  // no auto-retry in error-path tests
+  overrides: [
+    userRepositoryProvider.overrideWithValue(FakeUserRepository()),
+    userProvider('a').overrideWith((ref) async => alice),       // one family member
+    userDetailProvider.overrideWith2((userId) => StubUserDetail()), // whole notifier family
+  ],
+);
+final sub = container.listen(userDetailProvider('a'), (_, _) {}); // listen, don't just read
+await container.read(userDetailProvider('a').future);
+expect(sub.read().value?.id, 'a');
+```
+
 ## Provider Lifecycle
 
 - **autoDispose** (default in codegen): Provider disposed when no longer listened to
-- **keepAlive**: Use `ref.keepAlive()` inside provider to prevent disposal
+- **keepAlive**: `@Riverpod(keepAlive: true)` for app-lifetime state. Use `ref.keepAlive()` only for conditional caching (e.g. after a successful fetch); calling it first thing in the body is flagged by `riverpod_lint` (`prefer_keep_alive_annotation`)
 - **invalidate**: Use `ref.invalidate(provider)` to force refresh
 - **onDispose**: Use `ref.onDispose(() => ...)` for cleanup (cancel timers, close streams)
+- **mounted**: after every `await`, check `ref.mounted` before touching `state` (reads included)
+- **exists**: `ref.read(p.exists)` checks whether `p` is mounted without creating it (`ref.exists(p)` is deprecated since 3.5)
 
 ## Common Anti-Patterns
 

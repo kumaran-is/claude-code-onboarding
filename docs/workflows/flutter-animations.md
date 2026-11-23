@@ -30,8 +30,8 @@ Resolve before writing any code. From `flutter-animations` SKILL.md decision tab
 ```yaml
 # pubspec.yaml
 dependencies:
-  rive: ^0.14.4
-  lottie: ^3.3.2
+  rive: 0.14.11    # exact pins; lottie 3.8.2 needs Flutter >= 3.47 (see the flutter-animations skill)
+  lottie: 3.8.2
 
 flutter:
   assets:
@@ -54,7 +54,7 @@ Create `lib/core/animations/animation_assets.dart` — see `references/architect
 ```dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RiveNative.init();                        // Required for rive ^0.14.x
+  await RiveNative.init();                        // Required for rive 0.14.x
   await AnimationService.instance.preloadAll();   // Preload all assets
   runApp(const MyApp());
 }

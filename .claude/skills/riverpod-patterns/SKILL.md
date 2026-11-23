@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-21"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -20,13 +20,14 @@ Always use the correct Riverpod provider type for the use case; never use StateP
 
 Correct Riverpod patterns for Flutter state management with code_generation style.
 
-**Version:** Riverpod 3.x (`flutter_riverpod`, `riverpod_annotation`, `riverpod_generator`; pin exact versions from pub.dev). Riverpod 3 changes that affect code in this skill:
+**Version:** verified together on Flutter 3.50.1 / Dart 3.14.0: `flutter_riverpod: 3.5.0`, `riverpod_annotation: 4.0.8`, dev `riverpod_generator: 4.0.10`, `riverpod_lint: 3.2.0` (needs Dart >= 3.13), `build_runner: 2.17.1`. Pin exact versions; the full pubspec is in [flutter-templates.md](../flutter-mobile/reference/flutter-templates.md). Riverpod 3 changes that affect code in this skill:
 
 - Generated providers take a plain `Ref` (`Future<X> foo(Ref ref)`); the generated `FooRef` types are gone.
 - `AsyncValue.valueOrNull` was renamed to `value`; the old `value` getter was removed. Use `.value` (nullable).
 - `StateProvider`, `StateNotifierProvider`, `ChangeNotifierProvider` moved to `package:flutter_riverpod/legacy.dart`. They still exist but are discouraged — use `Notifier` / `AsyncNotifier` (`@riverpod class`) in new code.
 - Using a `Ref` after its provider was disposed throws; guard post-`await` work with `ref.mounted` (see Provider lifecycle).
 - Failing providers are retried automatically (default: up to 10 attempts, 200 ms → 6.4 s backoff; `Error`s and `ProviderException`s are not retried). Opt out per provider with `retry`.
+- Generated names drop a trailing `Notifier`: `class UserDetail` → `userDetailProvider`, `class FilterNotifier` → `filterProvider`. A `class UserNotifier` and a functional `user(Ref, ...)` in one library both generate `userProvider` and fail to compile (`duplicate_definition`).
 
 **When to use:** Writing or reviewing Riverpod providers, AsyncNotifier, AsyncValue.when, ref.watch vs ref.read, family providers, or provider lifecycle.
 
@@ -50,16 +51,19 @@ Future<List<User>> userList(Ref ref) async {
 
 // ✅ Mutable state with async operations
 @riverpod
-class UserNotifier extends _$UserNotifier {
+class UserDetail extends _$UserDetail { // generates userDetailProvider(userId)
   @override
   Future<User> build(String userId) async {
     return ref.watch(userRepositoryProvider).getById(userId);
   }
 
-  Future<void> update(UserUpdateDto dto) async {
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() =>
-      ref.read(userRepositoryProvider).update(dto));
+  Future<void> rename(String displayName) async {
+    state = const AsyncLoading();
+    final next = await AsyncValue.guard(
+      () => ref.read(userRepositoryProvider).rename(userId, displayName),
+    );
+    if (!ref.mounted) return; // disposed while awaiting
+    state = next; // on failure AsyncError keeps the previous value
   }
 }
 
@@ -75,7 +79,7 @@ final userProvider = StateProvider<User?>((ref) => null); // no loading/error st
 ref.watch(userListProvider).when(
   data: (users) => UserListWidget(users: users),
   loading: () => const CircularProgressIndicator(),
-  error: (err, stack) => ErrorWidget(message: err.toString()), // never swallow
+  error: (err, stack) => ErrorView(error: err), // app widget; never swallow
 );
 
 // ❌ WRONG — skipLoadingOnReload hides loading state from user
@@ -99,11 +103,11 @@ Widget build(BuildContext context, WidgetRef ref) {
 
 // ✅ ref.read — only inside callbacks/event handlers
 void onButtonPressed(WidgetRef ref) {
-  ref.read(userNotifierProvider.notifier).refresh(); // one-time action
+  ref.read(userDetailProvider(userId).notifier).rename(name); // one-time action
 }
 
 // ❌ WRONG — ref.watch in a callback (causes infinite rebuild)
-onPressed: () => ref.watch(userNotifierProvider.notifier).refresh(),
+onPressed: () => ref.watch(userDetailProvider(userId).notifier).rename(name),
 ```
 
 ### Reading AsyncValue without losing data
@@ -124,22 +128,27 @@ Future<Profile> profile(Ref ref) => ref.watch(profileRepositoryProvider).load();
 A screen-scoped (autoDispose) notifier is disposed when its last listener goes away (route popped, tab replaced, conditional UI). Treat "disposed while awaiting" as expected:
 
 ```dart
-// ✅ Every post-await write — including catch/finally — is guarded
-void _set(UploadState next) {
+// ✅ Every post-await write — including catch/finally — is guarded. Take an
+// updater, not a value: even *reading* `state` on a disposed notifier throws.
+void _update(UploadState Function(UploadState current) change) {
   if (!ref.mounted) return;
-  state = next;
+  state = change(state);
 }
 
-Future<void> upload(File file) async {
+Future<void> upload(String path) async {
+  state = state.copyWith(busy: true, error: null);
   try {
-    _set(UploadState.done(await ref.read(uploadRepositoryProvider).send(file)));
+    final id = await ref.read(uploadRepositoryProvider).send(path);
+    _update((s) => s.copyWith(remoteId: id));
   } on Object catch (e, st) {
     ref.read(appLoggerProvider).error('upload failed', error: e, stackTrace: st);
-    _set(UploadState.failed(e));
+    _update((s) => s.copyWith(error: e));
   } finally {
-    _set(state.copyWith(busy: false));
+    _update((s) => s.copyWith(busy: false));
   }
 }
+// ❌ `finally { _set(state.copyWith(busy: false)); }` still throws: `state` is
+//    read before the mounted check runs
 // ❌ unguarded `finally { state = ...; }` throws on a disposed notifier
 ```
 
@@ -151,6 +160,17 @@ Future<void> upload(File file) async {
 ### Activating providers outside the widget tree
 
 In `main()`/bootstrap before `runApp`, or in a test with a bare `ProviderContainer`, activate with `container.listen(provider, (_, _) {})`, not `container.read(provider)`. A one-off read builds the provider once and nothing listens to it, so listeners inside it (auth change → refetch, connectivity → drain) may never fire while every test still passes. In tests drive the real stream (a `StreamController`), not a pinned value. Comment each pre-`runApp` activation with why running it before auth settles is safe (see [flutter-navigation-and-auth-boot.md](../flutter-mobile/reference/flutter-navigation-and-auth-boot.md)).
+
+### Riverpod 3.1–3.5 additions (adopt in new code)
+
+| API | Use it for |
+|---|---|
+| `ProviderContainer.test(overrides: [...], retry: (_, _) => null)` | Unit tests: disposed automatically at test end; `retry` disables auto-retry for the whole container |
+| `a.requireValue + b.requireValue` inside a non-`async` `FutureProvider` / `AsyncNotifier.build` | Combining async providers synchronously (3.1); the provider stays loading until both have data |
+| `family.overrideWith2((arg) => FakeNotifier())` | Overriding every member of a notifier family (3.1; `family.overrideWith` is deprecated) |
+| `container.read(p.exists)` / `ref.listen(p.exists, ...)` | Checking whether a provider is mounted without creating it (3.5; `ref.exists(p)` / `container.exists(p)` are deprecated) |
+| `on ProviderDisposedException` (`package:flutter_riverpod/misc.dart`) | 3.5: `p.future` completes with it when a loading provider is disposed before its first value, instead of a `StateError`. Observers no longer report it as a failure. Catch it where a dependent provider awaits an upstream `.future` that can be disposed |
+| `@Riverpod(keepAlive: true)` | Preferred over calling `ref.keepAlive()` at the top of the body: `riverpod_lint` 3.2 flags that pattern (`prefer_keep_alive_annotation`) |
 
 For `ref.invalidate` on a provider backed by a local database: it re-subscribes and re-emits cached rows, it does not hit the network. A pull-to-refresh callback must `await` the repository's refresh, not just invalidate.
 

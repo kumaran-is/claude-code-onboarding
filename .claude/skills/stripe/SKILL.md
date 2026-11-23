@@ -114,18 +114,59 @@ tools = toolkit.get_tools()
 
 ### Flutter (client-side)
 
-```dart
-// Flutter NEVER calls Stripe API directly
-// Instead: Flutter → your backend API → Stripe API
-// Use flutter_stripe for Payment Sheet UI only
+Flutter never calls the Stripe API directly: Flutter → your backend (creates the PaymentIntent/SetupIntent, returns `client_secret`) → Payment Sheet → webhook confirms on the backend. `flutter_stripe` 15.0.0 needs Flutter >= 3.47; Android `minSdk 21`/`compileSdk 36`, iOS 15.0 (plugin sources). Compiled with `flutter analyze` at zero issues on Flutter 3.50.1 / Dart 3.14.0, and `flutter build apk --debug` plus an iOS simulator build passed with it in the dependency set; presenting a real sheet is NOT RUN (needs a test-mode backend).
 
-// Payment flow:
-// 1. Flutter calls our backend to create PaymentIntent/SetupIntent
-// 2. Backend returns client_secret
-// 3. Flutter presents Stripe Payment Sheet with client_secret
-// 4. Stripe handles PCI-compliant card collection
-// 5. Webhook confirms payment on backend
+```dart
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:logging/logging.dart';
+
+final _log = Logger('StripeCheckout');
+
+/// Publishable key only (pk_...). Secret/restricted keys never ship in the app.
+Future<void> initStripe() async {
+  Stripe.publishableKey = const String.fromEnvironment('STRIPE_PUBLISHABLE_KEY');
+  Stripe.merchantIdentifier = 'merchant.com.example.app'; // Apple Pay only
+  await Stripe.instance.applySettings();
+}
+
+sealed class CheckoutResult {
+  const CheckoutResult();
+}
+
+final class CheckoutCompleted extends CheckoutResult {
+  const CheckoutCompleted();
+}
+
+final class CheckoutCancelled extends CheckoutResult {
+  const CheckoutCancelled();
+}
+
+final class CheckoutFailed extends CheckoutResult {
+  const CheckoutFailed(this.code);
+  final FailureCode code;
+}
+
+/// [clientSecret] comes from YOUR backend, which created the PaymentIntent.
+/// "Completed" here is UX only: fulfil the order from the webhook.
+Future<CheckoutResult> presentCheckout(String clientSecret) async {
+  try {
+    await Stripe.instance.initPaymentSheet(
+      paymentSheetParameters: SetupPaymentSheetParameters(
+        paymentIntentClientSecret: clientSecret,
+        merchantDisplayName: 'Example',
+      ),
+    );
+    await Stripe.instance.presentPaymentSheet();
+    return const CheckoutCompleted();
+  } on StripeException catch (e) {
+    if (e.error.code == FailureCode.Canceled) return const CheckoutCancelled();
+    _log.warning('payment sheet failed (${e.error.code.name})');
+    return CheckoutFailed(e.error.code);
+  }
+}
 ```
+
+Android setup (flutter_stripe README): `MainActivity` extends `FlutterFragmentActivity`, and the launch/normal themes descend from `Theme.AppCompat` (the Payment Sheet uses AppCompat and the support fragment manager). Never put a `sk_`/`rk_` key behind `String.fromEnvironment`: defines are compiled into the binary.
 
 ## Webhook Events to Handle
 
@@ -197,7 +238,7 @@ def mock_stripe(monkeypatch):
 - [ ] Test mode keys (`sk_test_` / `rk_test_`) in dev/staging, live keys in production only
 - [ ] Connect onboarding uses Express (not Custom) accounts
 - [ ] All amounts in cents (integer), never floating point dollars
-- [ ] MCP `--tools` flag restricts to only the tools each service needs
+- [ ] MCP server scoped by its Restricted API Key (resources each service needs), key passed via `STRIPE_SECRET_KEY`, not `--api-key`; `--tools` no longer restricts anything
 
 ## Reference Files
 

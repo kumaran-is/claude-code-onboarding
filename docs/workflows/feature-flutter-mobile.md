@@ -75,9 +75,9 @@ Does docs/plans/YYYY-MM-DD-<feature-name>.md exist?
 **Trigger**: No existing Flutter project
 **Command**: `/scaffold-flutter-app [app-name]`
 **Source**: `commands/scaffold-flutter-app.md`
-**11-step process**:
-1. `flutter create` with org and platforms
-2. Update `pubspec.yaml` with dependencies: Riverpod, Freezed, GoRouter, Firebase
+**Process** (Flutter 3.50.x / Dart 3.14.0):
+1. `flutter create` with org and platforms (run by the scaffold command; the template already uses `material_ui`)
+2. Update `pubspec.yaml` with exact pins: `material_ui`, Riverpod, Freezed, GoRouter, Firebase
 3. Create clean architecture folder structure
 4. Create Freezed model with Firestore factory
 5. Create Riverpod provider (annotated)
@@ -86,10 +86,11 @@ Does docs/plans/YYYY-MM-DD-<feature-name>.md exist?
 8. Set up `main.dart` with `ProviderScope` and Firebase
 9. Add widget test
 10. Run `build_runner`
-11. Print summary
+11. Verify: format, analyze (zero issues), test, debug APK and iOS simulator build, each with its own exit code
+12. Print summary
 
 **Produces**: Production-ready Flutter app scaffold
-**Gate**: `flutter test` passes, `flutter analyze` clean
+**Gate**: `flutter test` passes, `flutter analyze` reports zero issues, `flutter build apk --debug` exits 0
 
 ---
 
@@ -156,7 +157,7 @@ Does docs/plans/YYYY-MM-DD-<feature-name>.md exist?
 | Computed/derived data | `Provider` |
 | One-shot async load | `FutureProvider` |
 | Firestore stream | `StreamProvider` |
-| Mutable state (simple) | `StateNotifierProvider` (legacy) / `NotifierProvider` |
+| Mutable state (simple) | `NotifierProvider` (`StateNotifierProvider` is legacy in Riverpod 3; do not use it in new code) |
 | Mutable state (async) | `AsyncNotifierProvider` |
 
 **AsyncValue.when() pattern** — always handle all 3 states:
@@ -168,7 +169,7 @@ ref.watch(myProvider).when(
 )
 ```
 
-**Run after model changes**: `flutter pub run build_runner build --delete-conflicting-outputs`
+**Run after model changes**: `dart run build_runner build`
 
 **Gate**: `flutter test` passes, `flutter analyze` clean
 

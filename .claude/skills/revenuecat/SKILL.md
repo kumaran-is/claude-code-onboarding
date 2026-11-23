@@ -143,86 +143,83 @@ default_offering/
 
 ### Flutter (Client-Side)
 
-```dart
-// pubspec.yaml — pin exact version
-// purchases_flutter: 8.x.x
+`purchases_flutter` 11.0.4 (pub floor Flutter >= 3.22; Android `minSdk 24`, iOS 13.0 from the plugin sources). Compiled with `flutter analyze` at zero issues on Flutter 3.50.1 / Dart 3.14.0 together with the FlutterFire family and `flutter_stripe` 15.0.0; store purchases themselves are NOT RUN (they need store sandbox accounts). `purchasePackage`, `purchaseProduct` and `purchaseStoreProduct` are deprecated in favour of `purchase(PurchaseParams)`.
 
+```dart
+import 'dart:io' show Platform;
+
+import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
-// Initialize in app startup (main.dart or app initialization)
-Future<void> initRevenueCat() async {
-  final configuration = PurchasesConfiguration(
+final _log = Logger('RevenueCat');
+
+/// Public SDK keys (appl_/goog_) are client keys; the v2 secret key stays on the server.
+Future<void> initRevenueCat() => Purchases.configure(
+  PurchasesConfiguration(
     Platform.isIOS
         ? const String.fromEnvironment('REVENUECAT_API_KEY_IOS')
         : const String.fromEnvironment('REVENUECAT_API_KEY_ANDROID'),
-  );
-  await Purchases.configure(configuration);
+  ),
+);
+
+/// Call after sign-in with the same stable id the backend uses.
+Future<void> identifyUser(String userId) => Purchases.logIn(userId);
+
+/// Call from the sign-out coordinator so entitlements do not leak to the next user.
+Future<void> resetUser() => Purchases.logOut();
+
+sealed class PurchaseOutcome {
+  const PurchaseOutcome();
 }
 
-// Identify user after authentication
-Future<void> identifyUser(String userId) async {
-  await Purchases.logIn(userId);
+final class Purchased extends PurchaseOutcome {
+  const Purchased({required this.hasPro});
+  final bool hasPro;
 }
 
-// Check entitlement
-Future<bool> hasProAccess() async {
-  final customerInfo = await Purchases.getCustomerInfo();
-  return customerInfo.entitlements.all['pro']?.isActive ?? false;
+final class PurchaseCancelled extends PurchaseOutcome {
+  const PurchaseCancelled();
 }
 
-// Present paywall
-Future<void> showPaywall(BuildContext context) async {
-  final offerings = await Purchases.getOfferings();
-  final current = offerings.current;
-  if (current == null) {
-    logger.error('No current offering available');
-    // Fallback: direct user to web subscription page
-    return;
-  }
-  // Navigate to paywall screen with offering data
-  context.push('/paywall', extra: current);
+final class PurchaseFailed extends PurchaseOutcome {
+  const PurchaseFailed(this.code);
+  final PurchasesErrorCode code;
 }
 
-// Purchase a package
-Future<bool> purchasePackage(Package package) async {
+Future<PurchaseOutcome> buy(Package package) async {
   try {
-    final customerInfo = await Purchases.purchasePackage(package);
-    return customerInfo.entitlements.all['pro']?.isActive ?? false;
-  } on PurchasesErrorCode catch (e) {
-    if (e != PurchasesErrorCode.purchaseCancelledError) {
-      logger.error('Purchase failed', error: e);
+    final result = await Purchases.purchase(PurchaseParams.package(package));
+    return Purchased(
+      hasPro: result.customerInfo.entitlements.active.containsKey('pro'),
+    );
+  } on PlatformException catch (e) {
+    // The SDK throws PlatformException; map it to a PurchasesErrorCode.
+    final code = PurchasesErrorHelper.getErrorCode(e);
+    if (code == PurchasesErrorCode.purchaseCancelledError) {
+      return const PurchaseCancelled();
     }
-    return false;
+    _log.warning('purchase failed (${code.name})');
+    return PurchaseFailed(code);
   }
 }
 ```
+
+The paywall reads `Purchases.getOfferings()`; a `null` `offerings.current` is a visible "plans unavailable" state with a retry, never an empty screen.
 
 ### Riverpod Provider Pattern
 
 ```dart
-// Subscription state provider
+/// Entitlement for UX gating only; the backend re-checks before granting access.
+/// Errors stay AsyncError: the paywall shows "could not verify", never "free".
 @riverpod
-class SubscriptionState extends _$SubscriptionState {
-  @override
-  Future<CustomerInfo> build() async {
-    return Purchases.getCustomerInfo();
-  }
-
-  Future<void> refresh() async {
-    state = const AsyncLoading();
-    state = AsyncData(await Purchases.getCustomerInfo());
-  }
-}
-
-// Entitlement check provider
-@riverpod
-bool hasProEntitlement(HasProEntitlementRef ref) {
-  final customerInfo = ref.watch(subscriptionStateProvider);
-  return customerInfo.whenOrNull(
-    data: (info) => info.entitlements.all['pro']?.isActive ?? false,
-  ) ?? false;
+Future<bool> hasPro(Ref ref) async {
+  final info = await Purchases.getCustomerInfo();
+  return info.entitlements.active.containsKey('pro');
 }
 ```
+
+After a purchase, `ref.invalidate(hasProProvider)`. Riverpod 3 passes a plain `Ref` (no generated `HasProEntitlementRef`), and a `whenOrNull(...) ?? false` that turns an error into "not entitled" is a silent failure.
 
 ### Python (Server-Side Verification)
 

@@ -10,6 +10,7 @@ Verify correct provider types:
 - [ ] `StreamNotifier` for real-time data
 - [ ] No `StateProvider` / `StateNotifierProvider` / `ChangeNotifierProvider` in new code (Riverpod 3 moved them to `legacy.dart`)
 - [ ] Generated providers take `Ref` (not `FooRef`); no `valueOrNull` (renamed `value` in Riverpod 3)
+- [ ] Generated names account for the stripped `Notifier` suffix (`class FooNotifier` → `fooProvider`); no class/function pair that collides on one name
 
 ## 2. Ref Usage Patterns
 
@@ -30,7 +31,7 @@ Verify:
 - [ ] Consider `AsyncValue.guard()` for error handling
 - [ ] Payload read with `.value`/`.hasValue`, not `asData?.value` (null for loading/error states that still carry a value)
 - [ ] A hand-written "pending" flag includes `&& !hasError` (auto-retry yields `AsyncLoading` + error) — HIGH if it hides content or keeps a spinner on a failed read
-- [ ] A provider whose UI degrades to a fallback or offers "Try again" disables auto-retry (`retry: (_, _) => null`)
+- [ ] A provider whose UI degrades to a fallback or offers "Try again" disables auto-retry (`@Riverpod(retry: noRetry)` with a top-level `Duration? noRetry(int, Object) => null`; annotation arguments cannot be closures)
 - [ ] Empty and error states are distinct; an empty branch never shows error copy
 
 ## 4. Provider Lifecycle
@@ -41,12 +42,14 @@ Check:
 - [ ] Proper family parameters for parameterized providers
 - [ ] No providers created inside widgets
 - [ ] Dispose of resources in `ref.onDispose()`
-- [ ] Every post-`await` state write (including `catch`/`finally`) is `ref.mounted`-guarded — HIGH when missing in an autoDispose notifier
+- [ ] Every post-`await` state write (including `catch`/`finally`) is `ref.mounted`-guarded, and the guard runs before `state` is read (`_set(state.copyWith(...))` reads first and throws) — HIGH when missing in an autoDispose notifier
 - [ ] A provider whose closure re-enters its own `Ref` after an `await` is `keepAlive`
 - [ ] Mutations are keepAlive notifier methods or awaited with a `mounted` check — not a bare autoDispose `Future<void>` provider read fire-and-forget
 - [ ] A "never throws / falls back" contract catches `Object`, not one app error type
 - [ ] Activation outside the widget tree (bootstrap, tests) uses `container.listen`, not `container.read`
 - [ ] No `ref.watch` inside a router `redirect` (use `ref.read` + `refreshListenable`)
+- [ ] No deprecated 3.x APIs: `ref.exists(p)`/`container.exists(p)` (use `p.exists`), `family.overrideWith` for notifier families (use `overrideWith2`), `ref.keepAlive()` as the first body statement (use `@Riverpod(keepAlive: true)`)
+- [ ] Code awaiting another provider's `.future` that can be disposed handles `ProviderDisposedException` (3.5) instead of matching `StateError`
 
 ## 5. State Mutations
 
@@ -63,6 +66,8 @@ Verify:
 - [ ] Build runner generates `.g.dart` files
 - [ ] Part directives present for generated code
 - [ ] Notifier classes extend generated base classes
+- [ ] Tests use `ProviderContainer.test(...)`, not a bare `ProviderContainer()` without `addTearDown(container.dispose)`
+- [ ] `riverpod_lint` enabled through `analysis_options.yaml` `plugins:` (not the removed `custom_lint` setup)
 
 ## Common Anti-Patterns
 

@@ -246,7 +246,7 @@ Full workflow for debugging an iOS issue:
 print('User data: $user'); // Never do this
 
 // CORRECT: Use a structured logger
-// Add to pubspec.yaml: logger: ^2.4.0
+// Add to pubspec.yaml: logger: 2.8.0
 import 'package:logger/logger.dart';
 
 final _log = Logger();

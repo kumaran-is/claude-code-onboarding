@@ -40,10 +40,10 @@ Extract these properties visually from the screenshot. Document them before codi
 
 ### Color Extraction (map to tokens — do NOT use raw hex)
 ```
-□ Background color   → map to: surface / background / surfaceVariant
+□ Background color   → map to: surface / surfaceContainerLowest…Highest (background, surfaceVariant are deprecated)
 □ Primary accent     → map to: primary / secondary / tertiary
 □ Card background    → map to: surfaceContainer / surfaceContainerHigh
-□ Text (heading)     → map to: onSurface / onBackground
+□ Text (heading)     → map to: onSurface (onBackground is deprecated)
 □ Text (body)        → map to: onSurface / onSurfaceVariant
 □ Icon color         → map to: onSurfaceVariant / primary
 □ Divider color      → map to: outlineVariant
@@ -92,6 +92,8 @@ Extract these properties visually from the screenshot. Document them before codi
 - Extract repeated sub-components (e.g. a repeated card) into separate widget files
 
 ### Flutter-Specific Replication Rules
+
+Flutter 3.50.x: import Material widgets from `package:material_ui/material_ui.dart` (pin `material_ui: 1.11.1`); `package:flutter/material.dart` is deprecated since 3.47 and fails a zero-issue `flutter analyze`.
 
 | Screenshot Element | Flutter Implementation |
 |---|---|

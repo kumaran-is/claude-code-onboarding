@@ -1,17 +1,17 @@
-# Flutter A2UI — Agent-Driven Native UI (v0.9)
+# Flutter A2UI — Agent-Driven Native UI (A2UI 1.0, v0.9.x compatibility)
 
 > **When to use**: Building Flutter UIs where an AI agent's replies render as native widgets through the A2UI protocol
 > **Time estimate**: 4–8 hours for the first integration; 1–2 hours per additional custom component
-> **Prerequisites**: Flutter app scaffolded (Flutter ≥ 3.38, Dart ≥ 3.10); an agent that writes A2UI v0.9 (or a model the app calls); `flutter-genui` skill loaded
+> **Prerequisites**: Flutter app scaffolded (Flutter 3.50.1 / Dart 3.14.0 with `material_ui`; the 0.5.0/0.9.0 pins need Flutter ≥ 3.47 / Dart ≥ 3.13, and an app still on Flutter 3.38–3.46 uses the older-SDK pins); an agent that writes A2UI 1.0 or v0.9 (or a model the app calls); `flutter-genui` skill loaded
 > **Related**: [`feature-a2ui-renderer.md`](feature-a2ui-renderer.md) (Angular equivalent), [`feature-flutter-mobile.md`](feature-flutter-mobile.md), [`feature-google-adk.md`](feature-google-adk.md)
 
 ## Overview
 
-The agent describes UI as A2UI v0.9 JSON messages; the app validates them against catalogs it registered and renders native Flutter widgets (not webviews, not Markdown). The packages are `a2ui_core` 0.8.0 (processing and state), `a2ui_flutter` 0.4.0 (rendering) and, only when the app prompts a model itself, `a2ui_agent` 0.4.0. They replace the discontinued `genui` package; the skill's `SKILL.md` has the migration table.
+The agent describes UI as A2UI JSON messages (1.0 or v0.9); the app validates them against catalogs it registered and renders native Flutter widgets (not webviews, not Markdown). The packages are `a2ui_core` (processing and state), `a2ui_flutter` (rendering) and, only when the app prompts a model itself, `a2ui_agent`; pins per Flutter SDK are in Phase 1. They replace the discontinued `genui` package; the skill's `SKILL.md` has the migration table.
 
-The core loop: **user input → request with renderer capabilities → agent streams v0.9 messages → `MessageProcessor.processMessages` → `A2uiSurface` renders catalog components → input updates the data model → action → next request**.
+The core loop: **user input → request with renderer capabilities → agent streams messages in the negotiated version → `MessageProcessor.processMessages` → `A2uiSurface` renders catalog components → input updates the data model → action → next request**.
 
-New work targets v0.9, matching the Angular A2UI skill. `a2ui_flutter` also ships a v1.0 catalog; do not mix versions.
+The wire version is chosen per stream: 1.0 is the target, v0.9.x the compatibility path, never mixed in one stream. The backend negotiates it from the capabilities the app declares ([backend-topologies.md](../../.claude/skills/genui-contract/reference/backend-topologies.md)): `a2uiRendererCapabilities` `{"1.0": …}` gets 1.0; only `a2uiClientCapabilities` `{"v0.9": …}` gets v0.9. The message table and examples below show the v0.9 shapes; the 1.0 differences are in the `flutter-genui` skill.
 
 ---
 
@@ -40,12 +40,21 @@ Every message carries `"version": "v0.9"`. Shapes and examples: `reference/genui
 ### Phase 1 — Load Skill, Pin Packages, Choose Topology
 
 ```yaml
+# A2UI 1.0 path (target) — needs Flutter >= 3.47.0 / Dart >= 3.13.0
 dependencies:
-  a2ui_core: 0.8.0
-  a2ui_flutter: 0.4.0
+  a2ui_core: 0.9.0
+  a2ui_flutter: 0.5.0
+  material_ui: 1.11.1          # the app's Material library
   json_schema_builder: 0.1.7   # only for custom component schemas
-  # a2ui_agent: 0.4.0          # only if the app prompts the model itself
+  # a2ui_agent: 0.5.0          # only if the app prompts the model itself
+
+# Older-SDK path (apps still on Flutter 3.38–3.46, Dart 3.10–3.12)
+#   a2ui_core: 0.8.0
+#   a2ui_flutter: 0.4.0
+#   # a2ui_agent: 0.4.0
 ```
+
+Both pairs render A2UI 1.0 and v0.9.x (tested). Pick one wire version per stream through the versioned adapter boundary in `flutter-genui` SKILL.md, and keep the app-side contract gate: the SDK alone accepts `javascript:` strings and extra action-payload fields.
 
 Topology (`reference/genui-conversation-orchestration.md`): an **agent server** streams A2UI (default; keys and tools stay server-side), or the **app calls a model** and parses A2UI from its reply with `a2ui_agent`.
 
@@ -55,7 +64,7 @@ Topology (`reference/genui-conversation-orchestration.md`): an **agent server** 
 
 ### Phase 2 — Catalog
 
-Start from `basicCatalog()` (`package:a2ui_flutter/v0_9/basic_catalog.dart`). For custom components, build one `CatalogImplementation` with the `BasicComponents` members you need, your components and `BasicCatalog.v0_9().functions` — a v0.9 surface uses one catalog. For agents you do not control, start from the locked-down catalog (no Image, Video, AudioPlayer, Modal or `openUrl`).
+Start from the basic catalog for the wire version you serve: `package:a2ui_flutter/basic_catalog.dart` is the 1.0 catalog; `package:a2ui_flutter/v0_9/basic_catalog.dart` + `BasicCatalog.v0_9()` is the v0.9 path. The v0.9 example below uses `basicCatalog()` from the v0_9 library. For custom components, build one `CatalogImplementation` with the `BasicComponents` members you need, your components and `BasicCatalog.v0_9().functions` — a v0.9 surface uses one catalog. For agents you do not control, start from the locked-down catalog (no Image, Video, AudioPlayer, Modal or `openUrl`).
 
 References: `genui-catalog-design.md`, `genui-security.md`.
 
@@ -65,7 +74,7 @@ References: `genui-catalog-design.md`, `genui-security.md`.
 
 ### Phase 3 — Processor, Surfaces and Data Model
 
-One `MessageProcessor<ComponentImplementation>` per conversation with `defaultVersion: A2uiProtocolVersion.v0_9` and a `validationConfig`, disposed with the conversation. Subscribe to `onSurfaceCreated` / `onSurfaceDeleted` / `onAction`. Render each surface with `A2uiSurface`, keyed `ObjectKey(surface)`, inside `Semantics(container: true, explicitChildNodes: true)`.
+One `MessageProcessor<ComponentImplementation>` per conversation with `defaultVersion: A2uiProtocolVersion.v0_9` and a `validationConfig`, disposed with the conversation. Subscribe to `onSurfaceCreated` / `onSurfaceDeleted` / `onAction`. Render each surface with `A2uiSurface`, keyed `ObjectKey(surface)`, inside `A2uiMaterialBridge` (SKILL.md "Material host": `a2ui_flutter` 0.5.0 still builds on `flutter/material.dart`, so a `material_ui` app needs the bridge for theme, localizations and a legacy `Material`) and `Semantics(container: true, explicitChildNodes: true)`.
 
 Input components write their bound `{"path"}`; a Button action's `context` reads the data model at tap time.
 
@@ -140,7 +149,7 @@ When web and mobile render the same agent output, use the framework-neutral cata
 - One adapter folder owns every `a2ui_core` / `a2ui_flutter` import; the contract guard and graph checks run before `processMessages`.
 - Component schemas are built from the contract JSON; each canonical id maps to a themed Flutter widget.
 - Actions leave as the canonical `{"version":"v0.9","action":{…}}` payload; side-effecting ones carry an `Idempotency-Key` header.
-- `shared-backend` and `standalone-backend` differ only in the transport's base URL. Flutter consumes AG-UI only through an adapter you build and test.
+- `shared-backend` and `standalone-backend` differ only in the transport's base URL. No official doc says Flutter consumes AG-UI or CopilotKit streams: read A2UI from the plain SSE endpoint, or build and test an app-owned AG-UI adapter (read `ACTIVITY_SNAPSHOT` with `activityType == "a2ui-surface"`, replay `content.a2ui_operations`) behind one transport interface.
 
 **Gate:** every contract fixture (valid, invalid, streams) and action golden passes in `flutter test`; the emitted payloads are written for `/audit-a2ui-parity`; live tests pass against both topologies; each check has a negative control.
 
@@ -174,10 +183,11 @@ When web and mobile render the same agent output, use the framework-neutral cata
 ## Common Pitfalls
 
 - **Adding `genui` or its A2A connector** — discontinued; use `a2ui_flutter` + `a2ui_core`
-- **Unpinned A2UI packages** — pin `0.4.0` / `0.8.0`; the API changes between minors
+- **Unpinned A2UI packages** — pin exactly (`0.5.0` / `0.9.0`, or `0.4.0` / `0.8.0` on older SDKs); the API changes between minors
 - **No `validationConfig`** — unknown component types are then accepted and render nothing instead of being rejected
 - **`ValidationConfig.relaxed` for an untrusted agent** — it allows unknown elements
 - **`openUrl` callback for an untrusted agent** — on v0.9 a bound call opens URLs without a tap
+- **`A2uiSurface` without `A2uiMaterialBridge` in a `material_ui` app** — "No Material widget found" on text fields and the default light theme; keep `flutter/material.dart` in the bridge file only
 - **Surfaces straight in a `ListView`** — semantics merge; wrap each in `Semantics(container: true, explicitChildNodes: true)`
 - **Custom component without `Semantics(container: true)`** — its label and value merge into the parent node
 - **Swallowing `A2uiError`** — log `code` + `message` and show an error state

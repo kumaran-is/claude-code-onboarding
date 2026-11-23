@@ -126,7 +126,8 @@ ListView.builder(
   itemBuilder: (context, index) => ItemWidget(items[index]),
   // Additional optimizations:
   itemExtent: 56,       // Fixed height = faster layout calculation
-  cacheExtent: 100,     // Pre-render distance in pixels
+  // Pre-render distance. cacheExtent is deprecated since 3.41: use scrollCacheExtent.
+  scrollCacheExtent: const ScrollCacheExtent.pixels(100),
 )
 
 // For dividers:
@@ -174,7 +175,7 @@ CustomScrollView(
 Image.network(url)
 
 // CORRECT: Cached with proper sizing
-// Add to pubspec.yaml: cached_network_image: ^3.4.1
+// Add to pubspec.yaml: cached_network_image: 4.0.7  (needs Flutter >= 3.44)
 CachedNetworkImage(
   imageUrl: url,
   width: 100,
@@ -252,7 +253,7 @@ Before Every List:
 - [ ] Image caching with size limits (CachedNetworkImage)
 
 Before Any Animation:
-- [ ] Using Impeller (Flutter 3.16+, enabled by default)
+- [ ] Impeller is the renderer (the default on iOS and Android; the device log names the backend). Profile in `--profile` mode on a real device, never in debug
 - [ ] Avoiding Opacity widget — use FadeTransition instead
 - [ ] TickerProviderStateMixin or SingleTickerProviderStateMixin for AnimationController
 - [ ] RepaintBoundary wrapping isolated animated subtrees

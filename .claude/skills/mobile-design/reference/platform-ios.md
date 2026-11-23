@@ -98,7 +98,7 @@ Use semantic colors so your app adapts to dark mode automatically. In Flutter, u
 // Maps to iOS semantic color roles
 colorScheme.surface          // systemBackground
 colorScheme.onSurface        // label (primary text)
-colorScheme.surfaceVariant   // secondarySystemBackground
+colorScheme.surfaceContainerHighest // secondarySystemBackground (surfaceVariant is deprecated)
 colorScheme.primary          // tintColor / accent
 colorScheme.error            // systemRed
 ```
@@ -147,10 +147,10 @@ RULE: Always use Theme.of(context).colorScheme — never hardcode colors.
 +-------------------------------------+
 
 RULE: Never place interactive content in unsafe areas.
-Flutter handles this via SafeArea widget and MediaQuery.of(context).padding
+Flutter handles this via SafeArea widget and MediaQuery.paddingOf(context)
 ```
 
-In Flutter, wrap content in `SafeArea` or use `MediaQuery.of(context).viewPadding` to respect the Dynamic Island, notch, and home indicator.
+In Flutter, wrap content in `SafeArea` or use `MediaQuery.viewPaddingOf(context)` to respect the Dynamic Island, notch, and home indicator.
 
 ### Standard Margins and Padding
 
@@ -238,7 +238,10 @@ RefreshIndicator(
   onRefresh: () async {
     await ref.read(myProvider.notifier).refresh();
   },
-  child: ListView.builder(...),
+  child: ListView.builder(
+    itemCount: items.length,
+    itemBuilder: (context, index) => ItemTile(items[index]),
+  ),
 )
 ```
 
@@ -322,13 +325,13 @@ Semantics(
 
 ### Dynamic Type Scaling
 
-Support all Dynamic Type sizes. In Flutter, using `Theme.of(context).textTheme.*` handles this automatically. Never use `textScaleFactor: 1.0` to lock font scaling — that breaks accessibility.
+Support all Dynamic Type sizes. In Flutter, using `Theme.of(context).textTheme.*` handles this automatically. Never lock font scaling (`TextScaler.noScaling`, or the deprecated `textScaleFactor: 1.0`): that breaks accessibility.
 
 ### Reduce Motion
 
 ```dart
 // Respect reduce motion preference
-final reduceMotion = MediaQuery.of(context).disableAnimations;
+final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
 if (reduceMotion) {
   // Use instant transitions

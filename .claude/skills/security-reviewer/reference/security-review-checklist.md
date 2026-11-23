@@ -111,6 +111,15 @@ updates:
 - Alerts configured for anomalous patterns
 - **Mandatory audit triggers:** Audit log required for: record deletions, role/permission changes, payment events, data exports, account modifications, admin actions. If a critical action has no audit trail, flag it as HIGH severity.
 
+### 10. MCP Servers and Agent Tools (CRITICAL/HIGH, when applicable)
+Requirement levels (spec MUST vs practice) and severities S1–S13 / T1–T8: `mcp-security.md`. Minimum checks:
+- Remote (HTTP) server: Protected Resource Metadata served, 401 carries `resource_metadata`, tokens validated for `alg`, `iss`, `aud` = this server and `exp`; no token passthrough to upstream APIs
+- `Origin` validated (403); local servers bind 127.0.0.1; remote binds list allowed hosts and origins
+- Per-tool scopes; tenant and user only from the verified token, never tool arguments or client headers
+- Every URL-fetching tool goes through an SSRF guard that classifies resolved addresses with a library, pins them, and re-validates each redirect
+- Destructive tools require a server-verified approval; annotations (`destructiveHint`, `readOnlyHint`) are hints, not controls
+- MCP client config: no secrets in `args`, no deprecated/archived server packages, versions pinned
+
 ## Anti-Patterns to Always Flag
 
 - Hardcoded secrets or credentials
@@ -118,7 +127,8 @@ updates:
 - `innerHTML` with unsanitized user input
 - Plaintext password storage or comparison
 - Missing authorization checks on endpoints
-- `fetch(userProvidedUrl)` without URL validation
+- `fetch(userProvidedUrl)` without URL validation, or validation by hostname string prefix (misses `localhost`, `[::1]`, IPv4-mapped IPv6, DNS names that resolve to private addresses, redirects)
+- An MCP server forwarding the client's access token upstream, or reading the tenant from tool arguments
 - `GRANT ALL` or overly permissive database roles
 - Race conditions in financial operations (check-then-act without locks)
 - Disabled security features in production (debug mode, permissive CORS)

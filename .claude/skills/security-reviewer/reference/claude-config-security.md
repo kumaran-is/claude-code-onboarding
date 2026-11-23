@@ -150,6 +150,8 @@ Adapted from AgentShield scan categories (github.com/affaan-m/agentshield), tail
 ### Hardcoded Secrets in MCP Config
 - [ ] No API keys hardcoded in MCP server `env:` blocks in settings
 - [ ] Secrets passed via environment variable references, not literal values
+- [ ] No secret in `args`, not even as a `${VAR}` reference: it is expanded into argv, which `ps` shows to any local user. Pass it in `env` (most servers read a named env var; check the server's source)
+- [ ] No deprecated or archived server package (`npm view <pkg> deprecated` prints nothing). Detail: [mcp-security.md §4](mcp-security.md#4-mcp-client-configuration-mcpjson-settings)
 
 ### Unnecessary Access
 - [ ] Each MCP server has the minimum required permissions

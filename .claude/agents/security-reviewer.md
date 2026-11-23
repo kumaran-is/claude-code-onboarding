@@ -8,7 +8,7 @@ permissionMode: default
 skills:
   - security-reviewer
 vibe: "Assumes every input is hostile until the code proves otherwise"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 color: red
 emoji: "🔒"
 ---
@@ -99,3 +99,18 @@ Rules and evidence: `web-frontend-security.md`. A clean grep is not proof; a hit
 
 Live headers are evidence only from a command run this session (for example the post-deploy header check in `deployment-ci-cd/reference/web-frontend-delivery.md`); otherwise mark header findings "config reviewed, live response NOT RUN".
 
+## MCP Server Review (TypeScript / Python MCP servers, `.mcp.json`)
+
+Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/mcp` routes, `.well-known/oauth-protected-resource`, `.mcp.json`. Read [reference/mcp-security.md](../skills/security-reviewer/reference/mcp-security.md) first; it separates protocol MUSTs (revision 2026-07-28) from practice and owns the severities. Tool-execution and autonomy findings (T1–T8: approvals, tool output as authority, generic tools) belong to `ai-security-reviewer`; report S1–S13 here.
+
+| Check | Fail = |
+|-------|--------|
+| HTTP server with tools on user/tenant data and no auth, or an auth-disable flag that does not refuse to start in production | CRITICAL |
+| Token verifier without an audience check (`aud` = this server's canonical URI) or the inbound token forwarded to an upstream API | CRITICAL |
+| Tenant/user id read from tool arguments, client headers or model text instead of the verified token | CRITICAL |
+| URL-fetching tool without an SSRF guard, a hostname-prefix guard, or redirects followed without re-validation | HIGH |
+| No `Origin` validation; local bind 0.0.0.0; remote bind without allowed hosts/origins | HIGH |
+| No Protected Resource Metadata / no `resource_metadata` in the 401 challenge | HIGH |
+| Secret in `.mcp.json` `args`, a deprecated/archived server package, or `@latest`/unpinned server versions | HIGH / HIGH / MEDIUM |
+
+For each guard you mark PASS, cite the guard's `file:line` and every call path that must pass through it, and the test that fails when the guard is removed; without that test, say "guard present, negative control NOT FOUND".

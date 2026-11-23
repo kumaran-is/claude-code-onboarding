@@ -122,7 +122,7 @@ Use uv for dependency management. Follow async patterns from the skill.
 
 ### Build Angular Feature
 ```
-Load the angular-spa skill. Build a [feature name] feature for the Angular 21.x SPA.
+Load the angular-spa skill. Build a [feature name] feature for the Angular 22.3.x SPA.
 
 Requirements:
 - Route: [path]
@@ -279,7 +279,7 @@ You are the riverpod-reviewer agent. Review the Flutter/Riverpod changes in:
 Changes summary: [describe what was implemented]
 
 Check for:
-- Correct provider type (Provider, StateNotifier, AsyncNotifier, etc.)
+- Correct provider type (Provider, Notifier, AsyncNotifier, StreamNotifier; no legacy StateNotifier/StateProvider in new code)
 - ref.watch only in build methods, ref.read in callbacks
 - AsyncValue handling — all 3 states covered (data/loading/error)
 - No provider leaks or circular dependencies

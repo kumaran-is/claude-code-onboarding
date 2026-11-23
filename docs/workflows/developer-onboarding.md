@@ -109,7 +109,7 @@ java --version  # Should be 21.x
 
 **NestJS / Node.js**:
 ```bash
-# Verify Node.js 24.x
+# Verify Node.js 24.x (NestJS stack; Angular 22 and React use Node 26 LTS)
 node --version  # Should be 24.x
 
 # Install dependencies and test
@@ -130,7 +130,7 @@ uv run pytest
 
 **Flutter / Dart**:
 ```bash
-# Verify Flutter 3.38
+# Verify Flutter 3.50
 flutter --version
 
 # Get dependencies and test
@@ -138,11 +138,11 @@ flutter pub get
 flutter test
 ```
 
-**Angular**:
+**Angular** (Node 26 LTS; Angular 22 engines `^22.22.3 || ^24.15.0 || ^26.0.0`):
 ```bash
-# Install and serve
+# Install and serve with the workspace's local CLI
 npm ci
-ng serve
+npm exec --no -- ng serve
 ```
 
 **Database**:
@@ -256,7 +256,7 @@ Accounts and Access:
 Local Setup:
 [ ] Claude Code installed (claude --version)
 [ ] MCP servers configured (context7, angular-cli, etc.)
-[ ] All stack runtimes installed (Java 21, Node 24, Python 3.14, Flutter 3.38)
+[ ] All stack runtimes installed (Java 21, Node 24 for NestJS / Node 26 for Angular and React, Python 3.14, Flutter 3.50)
 [ ] Docker running (docker-compose up -d succeeds)
 [ ] All tests passing (run test suite for your stack)
 

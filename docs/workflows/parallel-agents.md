@@ -82,7 +82,7 @@ Use this dispatch template for every agent:
 Agent: [agent-name from .claude/agents/]
 Task: [specific task — not "review this code"]
 Files: [explicit file paths]
-Tech stack: [Java 21 / NestJS 11 / Python 3.14 / Flutter 3.38 / Angular 21]
+Tech stack: [Java 21 / NestJS 11 / Python 3.14 / Flutter 3.50 / Angular 22.3 / React 19.3]
 Focus: [specific area of concern — e.g., "Riverpod provider lifecycle"]
 Output format: severity-bucketed findings with file:line evidence
 

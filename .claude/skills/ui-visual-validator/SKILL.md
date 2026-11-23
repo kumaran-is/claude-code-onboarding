@@ -231,32 +231,41 @@ test('dashboard', async ({ page }) => {
 ## Flutter Visual Testing
 
 ```dart
-// widget_test.dart — golden file testing
+// test/golden/dashboard_golden_test.dart — golden file testing with flutter_test only
 import 'package:flutter_test/flutter_test.dart';
-import 'package:golden_toolkit/golden_toolkit.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:your_app/features/dashboard/dashboard_screen.dart';
 
-testGoldens('DashboardScreen renders correctly', (tester) async {
-  await loadAppFonts();
+void main() {
+  const devices = {'phone': Size(390, 844), 'tablet': Size(820, 1180)};
+  const states = {
+    'default': DashboardScreen(),
+    'loading': DashboardScreen(isLoading: true),
+  };
 
-  final builder = DeviceBuilder()
-    ..overrideDevicesForAllScenarios(devices: [
-      Device.phone,
-      Device.iphone11,
-      Device.tabletPortrait,
-    ])
-    ..addScenario(
-      widget: const DashboardScreen(),
-      name: 'default state',
-    )
-    ..addScenario(
-      widget: const DashboardScreen(isLoading: true),
-      name: 'loading state',
-    );
+  for (final MapEntry(key: device, value: size) in devices.entries) {
+    for (final MapEntry(key: state, value: screen) in states.entries) {
+      testWidgets('DashboardScreen $state on $device', (tester) async {
+        // Fixed surface: the render must not depend on the machine.
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-  await tester.pumpDeviceBuilder(builder);
-  await screenMatchesGolden(tester, 'dashboard');
-});
+        await tester.pumpWidget(MaterialApp(home: screen));
+        // Not pumpAndSettle: a progress indicator never settles.
+        await tester.pump();
+
+        await expectLater(
+          find.byType(DashboardScreen),
+          matchesGoldenFile('goldens/dashboard_${state}_$device.png'),
+        );
+      });
+    }
+  }
+}
 ```
+
+`matchesGoldenFile` ships with `flutter_test`, so no extra dependency is needed. `golden_toolkit` is discontinued on pub.dev (last release 0.15.0, 2023-02): it still resolves but gets no fixes, so do not add it. For multi-scenario grids or cross-platform tolerance use `alchemist`; the canonical guidance is `flutter-mobile/reference/flutter-testing-patterns.md` §5.
 
 ```bash
 # Generate golden files (baseline)
@@ -308,5 +317,5 @@ When performing visual analysis:
 - [Playwright Visual Comparisons](https://playwright.dev/docs/test-screenshots)
 - [Chromatic Docs](https://www.chromatic.com/docs/)
 - [BackstopJS GitHub](https://github.com/garris/BackstopJS)
-- [Flutter Golden Toolkit](https://pub.dev/packages/golden_toolkit)
+- [Flutter golden tests (`matchesGoldenFile`)](https://api.flutter.dev/flutter/flutter_test/matchesGoldenFile.html)
 - [Percy Docs](https://docs.percy.io/)

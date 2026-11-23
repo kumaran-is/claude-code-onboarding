@@ -102,13 +102,16 @@ async def test_create_order_returns_201(client: AsyncClient):
 
 #### Flutter / Dart
 ```dart
-// Skill: flutter-mobile — flutter_test + Riverpod ProviderContainer
+// Skill: flutter-mobile — flutter_test + Riverpod 3 ProviderContainer.test (auto-disposed after the test)
+// @riverpod class OrderNotifier generates `orderProvider` (the Notifier suffix is dropped)
 test('OrderNotifier creates order successfully', () async {
-  final container = ProviderContainer(overrides: [
-    orderRepositoryProvider.overrideWithValue(FakeOrderRepository()),
-  ]);
-  await container.read(orderNotifierProvider.notifier).createOrder('item-1', 2);
-  expect(container.read(orderNotifierProvider).value?.id, isNotNull);
+  final container = ProviderContainer.test(
+    overrides: [
+      orderRepositoryProvider.overrideWithValue(FakeOrderRepository()),
+    ],
+  );
+  await container.read(orderProvider.notifier).createOrder('item-1', 2);
+  expect(container.read(orderProvider).value?.id, isNotNull);
 });
 ```
 **Agent**: `riverpod-reviewer` after implementation

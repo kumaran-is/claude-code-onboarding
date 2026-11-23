@@ -434,10 +434,11 @@ this.http.post<PresignedUrlResponse>('/api/upload/presigned-url', {
 
 // Step 2: PUT directly to GCS (no backend)
 const req = new HttpRequest('PUT', uploadUrl, file, {
-  headers: { 'Content-Type': file.type },  // MUST match what backend used when signing
-  reportProgress: true
+  headers: new HttpHeaders({ 'Content-Type': file.type }),  // MUST match what backend used when signing
+  reportUploadProgress: true  // Angular 22: reportProgress is deprecated
 });
 this.http.request(req)  // listen for HttpEventType.UploadProgress
+// The default FetchBackend throws on reportUploadProgress: register provideHttpClient(withXhr()) (browser only)
 
 // Step 3: confirm with backend
 this.http.post('/api/upload/confirm', { objectKey })

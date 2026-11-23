@@ -96,7 +96,7 @@ Refactoring Priorities:
 | Stack | Coverage |
 |-------|----------|
 | NestJS / TypeScript | ✅ Detects hallucinated NestJS decorators, missing Prisma imports, wrong decorator targets |
-| Angular / TypeScript | ✅ Detects ghost Angular imports, signal API misuse, missing standalone: true |
+| Angular / TypeScript | ✅ Detects ghost Angular imports, signal API misuse, redundant `standalone: true` or explicit OnPush (both Angular 22 defaults) |
 | Flutter / Dart | ✅ Detects Riverpod provider hallucinations, wrong ref.watch vs ref.read usage |
 | Python / FastAPI | ✅ Detects non-existent FastAPI imports, sync handlers in async context, missing `async def` |
 | Java / Spring Boot | ✅ Detects @Autowired on non-beans, missing @Repository, wrong WebFlux types |

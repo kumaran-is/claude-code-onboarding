@@ -7,7 +7,7 @@
 
 ## Overview
 
-5-phase audit pipeline: automated scan → agent review → manual checks → remediation → CI/CD gate. The bar is WCAG 2.2 AA; the canonical checklist is `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`. The read-only `accessibility-auditor` agent reviews web (Angular, React) and Flutter; `ui-standards-expert` covers tokens and interaction contracts (no accessibility verdicts). Works for Angular 21.x, React and Flutter 3.41.x. Tool choice per target: `.claude/rules/testing-tool-selection.md` (Flutter Android/iOS device flows use Maestro only).
+5-phase audit pipeline: automated scan → agent review → manual checks → remediation → CI/CD gate. The bar is WCAG 2.2 AA; the canonical checklist is `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`. The read-only `accessibility-auditor` agent reviews web (Angular, React) and Flutter; `ui-standards-expert` covers tokens and interaction contracts (no accessibility verdicts). Works for Angular 22.x, React and Flutter 3.50.x. Tool choice per target: `.claude/rules/testing-tool-selection.md` (Flutter Android/iOS device flows use Maestro only).
 
 **Evidence rule:** automated results never prove conformance. Report a clean run as "no automated violations; manual checks required", and record each manual check as PASS / FAIL / NOT RUN.
 
@@ -117,11 +117,11 @@ It reports severity + file:line + remediation, lists the manual checks still ope
 // ❌ CRITICAL — icon without semantic label
 IconButton(icon: Icon(Icons.delete), onPressed: _deleteOrder)
 
-// ✅ FIX — Semantics widget
-Semantics(
-  label: 'Delete order ORD-001',
-  button: true,
-  child: IconButton(icon: Icon(Icons.delete), onPressed: _deleteOrder),
+// ✅ FIX — tooltip becomes the button's semantics tooltip (read by screen readers) and shows on long press
+IconButton(
+  icon: const Icon(Icons.delete),
+  tooltip: 'Delete order',
+  onPressed: _deleteOrder,
 )
 
 // ❌ IMPORTANT — fixed height clips at 200% text scale
@@ -129,7 +129,7 @@ SizedBox(height: 40, child: Text(title))
 
 // ✅ FIX — flexible height
 ConstrainedBox(
-  constraints: BoxConstraints(minHeight: 40),
+  constraints: const BoxConstraints(minHeight: 40),
   child: Text(title),
 )
 ```
@@ -219,12 +219,16 @@ it('delete button has an accessible name', async () => {
 
 **Regression test pattern (Flutter)**:
 ```dart
-testWidgets('delete button has semantic label', (tester) async {
+// import 'package:material_ui/material_ui.dart';  (material.dart is deprecated since Flutter 3.47)
+testWidgets('delete button is an announced, tappable button', (tester) async {
   final handle = tester.ensureSemantics();
-  await tester.pumpWidget(MaterialApp(home: OrderListScreen()));
+  await tester.pumpWidget(const MaterialApp(home: OrderListScreen()));
+  // isSemantics checks only the properties given; containsSemantics is deprecated (3.40)
+  // and matchesSemantics fails on every flag you leave out. IconButton.tooltip lands in
+  // the node's tooltip, not its label.
   expect(
-    tester.getSemantics(find.byTooltip('Delete')),
-    matchesSemantics(label: 'Delete order', isButton: true),
+    tester.getSemantics(find.byTooltip('Delete order')),
+    isSemantics(tooltip: 'Delete order', isButton: true, hasTapAction: true),
   );
   handle.dispose();
 });

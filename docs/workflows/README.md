@@ -30,14 +30,14 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [voice-ai-engine-development.md](voice-ai-engine-development.md) | (skill: `voice-ai-development`, optional) Full voice engine — async worker pipeline, Gemini Live STT, Gemini TTS, interrupt handling, LangGraph or ADK agent |
 | [prompt-engineering-patterns.md](prompt-engineering-patterns.md) | Designing agent system prompts, CoT/ToT reasoning, few-shot learning, prompt optimization — LangGraph + ADK |
 | [workflow-orchestration-patterns.md](workflow-orchestration-patterns.md) | Temporal durable workflow orchestration — Java 21, Python 3.14, NestJS 11.x |
-| [feature-angular-spa.md](feature-angular-spa.md) | Angular 21.x / TailwindCSS / daisyUI; auth plumbing in `angular-spa/reference/web-security.md`, unit tests (Vitest) in `angular-spa/reference/testing-vitest.md` |
-| [web-performance-optimization.md](web-performance-optimization.md) | Angular 21.x Core Web Vitals, bundle size, lazy loading, runtime perf |
-| [fixing-motion-performance.md](fixing-motion-performance.md) | Angular 21.x CSS animation performance — compositor vs paint, layout thrashing, FLIP, scroll-linked motion |
+| [feature-angular-spa.md](feature-angular-spa.md) | Angular 22.3.x (CLI-first: `ng new` via `/scaffold-angular-app`, then `ng generate`) / Tailwind CSS 4.3.5 / daisyUI 5.8.2; auth plumbing in `angular-spa/reference/web-security.md`, unit tests (Vitest) in `angular-spa/reference/testing-vitest.md` |
+| [web-performance-optimization.md](web-performance-optimization.md) | Angular 22.x Core Web Vitals, bundle size, lazy loading, runtime perf |
+| [fixing-motion-performance.md](fixing-motion-performance.md) | Angular 22.x CSS animation performance — compositor vs paint, layout thrashing, FLIP, scroll-linked motion |
 | [tailwind-v4-patterns.md](tailwind-v4-patterns.md) | Configure Tailwind v4 in Angular — `@theme`, container queries, OKLCH daisyUI themes, Bento layouts, v3→v4 migration |
 | [ui-ux-design.md](ui-ux-design.md) | Design system selection — style, palette, typography via ui-ux-pro-max database before writing Angular/Flutter UI |
-| [feature-a2ui-renderer.md](feature-a2ui-renderer.md) | Agent-to-UI renderer for Angular |
+| [feature-a2ui-renderer.md](feature-a2ui-renderer.md) | Agent-to-UI renderer for Angular (`@a2ui/angular` 0.16.0; pins and proven wire versions in `genui-contract/reference/compatibility-matrix.md`) |
 | [feature-flutter-genui.md](feature-flutter-genui.md) | Flutter GenUI — conversational AI widget rendering via A2UI protocol |
-| [feature-flutter-mobile.md](feature-flutter-mobile.md) | Flutter 3.41.x / Riverpod / iOS + Android |
+| [feature-flutter-mobile.md](feature-flutter-mobile.md) | Flutter 3.50.x / Riverpod / iOS + Android |
 | [flutter-animations.md](flutter-animations.md) | Flutter animations — Rive (interactive state machines) + Lottie (illustrations, loaders) |
 | [mobile-developer.md](mobile-developer.md) | React Native / Native Swift-Kotlin / Mobile CI-CD (Fastlane, Codemagic, EAS) |
 
@@ -74,7 +74,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [test-coverage-audit.md](test-coverage-audit.md) | Multi-stack coverage report, 80% gate, `/tdd` and `/test-coverage` commands |
 | [api-testing.md](api-testing.md) | Integration and contract testing for REST APIs |
 | [browser-e2e-testing.md](browser-e2e-testing.md) | E2E testing with Chrome DevTools + Browser-Use MCPs |
-| [visual-regression-testing.md](visual-regression-testing.md) | Automated visual regression CI/CD for Angular (Playwright/Chromatic/BackstopJS) and Flutter (golden_toolkit) |
+| [visual-regression-testing.md](visual-regression-testing.md) | Automated visual regression CI/CD for Angular (Playwright/Chromatic/BackstopJS) and Flutter (`matchesGoldenFile`, optional `alchemist`) |
 | [code-review.md](code-review.md) | Giving code review — `/review-code`, `/review-pr` |
 | [receiving-code-review.md](receiving-code-review.md) | Processing and responding to review feedback |
 | [pre-commit-validation.md](pre-commit-validation.md) | `/pr-risk`, `/validate-changes` before committing |

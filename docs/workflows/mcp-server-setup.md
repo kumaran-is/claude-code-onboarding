@@ -17,7 +17,7 @@ From `.claude/settings.json`:
 | MCP Server | Purpose | When Used |
 |-----------|---------|----------|
 | `context7` | Library documentation lookup | Before writing any code — resolve library ID + query docs |
-| `angular-cli` | Angular 21.x patterns, best practices, project discovery | Before writing Angular code |
+| `angular-cli` | Angular 22.x patterns, best practices (`get_best_practices` with `workspacePath`), docs (`search_documentation` version 22), project discovery | Before writing Angular code |
 | `dart-mcp-server` | Flutter/Dart tooling, device lists, test runner | Before writing Flutter code |
 | `firebase` | Firebase project, rules, SDK config | Firebase integration |
 | `chrome-devtools` | Browser inspection, performance, network | Browser E2E testing |

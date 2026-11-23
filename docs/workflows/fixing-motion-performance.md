@@ -1,8 +1,8 @@
-# Fixing Motion Performance — Angular 21.x
+# Fixing Motion Performance — Angular 22.x
 
 > **When to use**: Angular animations stutter, transitions drop below 60fps, scroll-linked motion is slow, or auditing CSS animation code for performance regressions
 > **Skill**: `.claude/skills/fixing-motion-performance/`
-> **Stack**: Angular 21.x + TailwindCSS v4 + daisyUI 5.5.5
+> **Stack**: Angular 22.x + TailwindCSS v4 + daisyUI 5.8.2
 
 > **Iron Law**: Default to `transform` and `opacity` only. Resolve compositor vs paint vs layout tier BEFORE writing animation CSS.
 

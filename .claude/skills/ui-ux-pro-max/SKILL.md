@@ -45,9 +45,9 @@ Searchable design knowledge database with BM25 search engine. Contains 50+ style
 
 | Workspace Stack | Script Stack Flag | Notes |
 |---|---|---|
-| **Angular 21.x + Tailwind v4** | `--stack html-tailwind` | No dedicated Angular CSV — html-tailwind covers Tailwind utilities, responsive, a11y |
+| **Angular 22.x + Tailwind v4** | `--stack html-tailwind` | No dedicated Angular CSV — html-tailwind covers Tailwind utilities, responsive, a11y |
 | **React 19 (web)** | `--stack react` | Dedicated `stacks/react.csv` (React web patterns; load `react-spa` for implementation) |
-| **Flutter 3.41.x** | `--stack flutter` | Dedicated `flutter.csv` with Riverpod, GoRouter, PopScope, ThemeData patterns |
+| **Flutter 3.50.x** | `--stack flutter` | Dedicated `flutter.csv` with Riverpod, GoRouter, PopScope, ThemeData patterns |
 | **iOS/SwiftUI** | `--stack swiftui` | SwiftUI-specific guidelines |
 
 > **Angular gap documented:** `data/stacks/html-tailwind.csv` covers Tailwind patterns and responsive design but does not include Angular-specific patterns (Signals, daisyUI, `@defer`). For Angular-specific patterns, load `angular-spa` alongside this skill.
@@ -215,8 +215,8 @@ Before delivering UI code, verify:
 ## Related Skills
 
 - `frontend-design` — design direction methodology (DFII scoring, Design Thinking Phase). **Load after this skill** to apply DFII scoring to the recommended style.
-- `angular-spa` — Angular 21.x implementation with daisyUI v5.5.5 tokens
-- `flutter-mobile` — Flutter 3.41.x implementation with ThemeData tokens
+- `angular-spa` — Angular 22.x implementation with daisyUI 5.8.2 tokens
+- `flutter-mobile` — Flutter 3.50.x implementation with ThemeData tokens
 - `tailwind-patterns` — Tailwind v4 CSS-first config patterns
 - `design-system` — token enforcement for Angular + Flutter
 - `accessibility-audit` — canonical WCAG 2.2 AA checklist and audit (deeper than this skill's checklist)

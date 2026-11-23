@@ -63,7 +63,7 @@ Read `reference/frontend-design-principles.md` for:
 
 ### Phase 4 — Implement
 
-**For Angular (daisyUI + TailwindCSS 4.x):**
+**For Angular (daisyUI + Tailwind CSS 4.3.5):**
 ```typescript
 // Use daisyUI semantic tokens — never hardcoded hex
 // bg-primary, text-base-content, border-base-300

@@ -129,7 +129,8 @@ uv run pip-audit
 ./mvnw dependency-check:check
 
 # Flutter / Dart
-flutter pub deps --no-dev | # Review for known vulnerabilities
+flutter pub get > /tmp/pub-get.log 2>&1; echo "PUB GET EXIT:$?"; grep -i 'advisor' /tmp/pub-get.log
+# No `pub audit` subcommand exists: pub prints security advisories during `pub get` (full gate: /security-dependencies)
 ```
 
 **Triage process**:

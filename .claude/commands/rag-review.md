@@ -93,3 +93,5 @@ After delivering the report, offer:
 - Severity matters: a missing audit log is 🟠 High; a post-filter on security is 🔴 Critical
 - If a stage is clean, say so in one line — don't pad the report
 - Mark ❓ Unknown and ask ONE clarifying question rather than guessing
+
+Use instead when: `/rag-debug` — one failing query; `/rag-design` — no pipeline yet, choose the architecture (ADR); `/rag-eval-init` — the eval gate is missing.

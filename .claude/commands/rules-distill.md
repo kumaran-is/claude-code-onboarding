@@ -93,6 +93,7 @@ For each candidate, show:
 
 ## Related
 
+- Use instead when: `/promote-lessons` — the source is `lessons.md` corrections (x3 promotion), not skills
 - Agent: `.claude/agents/rules-distill.md`
 - Rules: `.claude/rules/`
 - Skills: `.claude/skills/`

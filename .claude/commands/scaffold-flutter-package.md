@@ -87,10 +87,11 @@ If the new package is a new workspace member, add its path to the root `pubspec.
 
 ```bash
 # Regenerate all codegen (Freezed, Riverpod, json_serializable)
-melos run build_runner
+melos run build_runner > /tmp/melos-build.log 2>&1; echo "BUILD_RUNNER EXIT:$?"
 
-# Verify the new export resolves without errors
-melos run analyze
+# Verify the new export resolves without errors (scripts must exist in the root pubspec; missing → BLOCKED)
+melos run analyze > /tmp/melos-analyze.log 2>&1; echo "ANALYZE EXIT:$?"
+melos run test > /tmp/melos-test.log 2>&1; echo "TEST EXIT:$?"   # widget/unit tests for the new component or model
 ```
 
 $ARGUMENTS

@@ -20,6 +20,6 @@ Output: research/[topic]/pain-points.md
 
 The report can be fed into /backlog to generate a validated feature backlog.
 
-Use the reddit-research agent (`.claude/agents/reddit-research-agent.md`) to execute this task. Pass the topic from the user's input. If no topic was provided, ask for one.
+Use the reddit-research agent (`.claude/agents/reddit-research.md`) to execute this task. Pass the topic from the user's input. If no topic was provided, ask for one.
 
 $ARGUMENTS

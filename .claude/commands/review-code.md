@@ -21,6 +21,10 @@ Scan the file list for tech signals and build a dispatch list:
 | `*.java` or `pom.xml` | `spring-reactive-reviewer` |
 | `*.ts` + NestJS decorators (`@Controller`, `@Injectable`, `@Module`) | `nestjs-reviewer` |
 | `*.ts`/`*.html` under Angular project (`angular.json` present) | `code-reviewer` (Angular) |
+| `*.tsx`/`*.jsx` (React) | `code-reviewer` (React) |
+| UI templates/widgets changed (Angular, React, Flutter) | + `accessibility-auditor` |
+| GenUI catalog, renderer or action (`**/a2ui/**`, `**/genui/**`, `*catalog*.json`) | `genui-contract-reviewer` |
+| MCP server code (`**/mcp/**`, `@modelcontextprotocol/*`) | `code-reviewer` + `security-reviewer` (tool contracts, authz) |
 | `*.dart` or `pubspec.yaml` | `riverpod-reviewer` |
 | `*.py` + LangChain/LangGraph imports | `agentic-ai-reviewer` |
 | `*.py` (other) | `python-reviewer` (+ `python-worker-reviewer` when a worker/Pub/Sub/scheduler entrypoint changed) |
@@ -32,7 +36,7 @@ Scan the file list for tech signals and build a dispatch list:
 > **Dependency manifest changed** (`pyproject.toml`, `uv.lock`, `package.json`/lockfile, `pom.xml`): also run the stack's dependency audit and report PASS | FAIL | BLOCKED | NOT RUN from the tool's OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`). Python: `pip-audit --strict` (no severity column, so never grep it for CRITICAL/HIGH; `pip audit` is not a command) — see `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`. A missing tool or failed scan is BLOCKED, never a green.
 
 ### Step 3 — Dispatch in parallel
-Launch all identified agents simultaneously using the Task tool with `run_in_background: true`.
+Launch all identified agents simultaneously with the Agent tool (`run_in_background: true`).
 Do **not** wait for one to finish before starting the next.
 
 Example for a NestJS + database change:
@@ -64,15 +68,25 @@ agents flagged independently (keep the most specific description).
 - Agents dispatched: [list]
 - Total issues: N  (critical: X, high: Y, medium: Z, low: W)
 - Duplicate findings collapsed: N
-- Verdict: ✅ APPROVE / ⚠️ NEEDS_REVIEW / ❌ REJECT
+- Verdict: ✅ APPROVE / ⚠️ NEEDS_REVIEW / ❌ BLOCK
 
 Dependency audit: [PASS | FAIL | BLOCKED | NOT RUN | NOT APPLICABLE — command and exit code]
+Docs conformance: [PASS | FAIL — deprecated API / stale pin at file:line | UNVERIFIED]
 
 Verdict rules:
   ✅ APPROVE     — 0 critical, 0 high unresolved
   ⚠️ NEEDS_REVIEW — 0 critical, ≥1 high (must justify in PR)
-  ❌ REJECT       — ≥1 critical unresolved
+  ❌ BLOCK        — ≥1 critical unresolved
+  MEDIUM / LOW only → ✅ APPROVE with advisories listed (track MEDIUMs as follow-up tasks)
+  Policy: .claude/rules/verification-and-reporting.md → Review Severity Policy
   Any dispatched agent or audit that is BLOCKED/NOT RUN caps the verdict at ⚠️ NEEDS_REVIEW (never ✅ APPROVE)
+  Docs conformance FAIL is at least a HIGH finding; UNVERIFIED caps the verdict at ⚠️ NEEDS_REVIEW
 ```
+
+### Step 5 — Documentation conformance (`code-standards.md` "Documentation Before Code")
+
+For each library or framework API the diff introduces or changes, confirm from the source, with `file:line`: the pinned version is current stable and matches the `CLAUDE.md` stack pins; no deprecated API or outdated pattern is used (check the current docs via the skill's MCP server or Context7, falling back to official docs); the API signature matches those docs. A deprecated call or a stale or unpinned version is a HIGH finding. If you could not check the docs this run, report Docs conformance as UNVERIFIED — never PASS.
+
+Use instead when: `/review-pr` — concern-based review (comments, tests, errors, types, simplicity) of a PR diff; built-in `/code-review` — Claude Code's own correctness review of the diff; `/pr-risk` — a risk score without review; `pr-review` skill — post an approved review to GitHub. Reviews are read-only: findings, not fixes, and never a substitute for `/verify`.
 
 $ARGUMENTS

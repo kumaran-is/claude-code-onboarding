@@ -159,3 +159,5 @@ Don't suggest these as fixes:
 - "Add more chunks to the context" → if retrieval is wrong, more wrong chunks won't help
 - "Try a bigger model" → bigger model with broken retrieval is still broken
 - "Tune the reranker" before checking that the right chunk is in the candidate pool
+
+Use instead when: `/rag-failure-trace` — you only need the audit trace for one query (to inspect or seed a regression case); `/rag-review` — audit the whole pipeline, not one failure; `/debug` — the failure is not in the retrieval/generation chain (crash, build, test failure).

@@ -44,7 +44,7 @@ Check for security-sensitive patterns:
 git diff --name-only HEAD~1 | grep -iE "auth|login|token|jwt|crypto|secret|password|permission|role|guard"
 ```
 
-If security-sensitive files changed: always include `security-reviewer` via `code-reviewer` agent (flag it explicitly).
+If security-sensitive files changed: also dispatch the `security-reviewer` agent (flag it explicitly).
 
 Print the risk tier before dispatching agents so the user sees it.
 
@@ -101,5 +101,7 @@ Status: READY FOR PR / NEEDS FIXES (N critical issues)
 
 > For quantitative risk scoring (size, complexity, test coverage, dependencies, security) before this review: run `/pr-risk`.
 > For two-stage PR review (internal analysis -> human approval -> posting to GitHub): load the `pr-review` skill.
+
+Use instead when: `/review-code` — stack-specific reviewers (Spring, NestJS, Riverpod, Python, DB) plus security; `/pr-risk` — the full five-factor risk score; `pr-review` skill — post the review to GitHub after approval.
 
 $ARGUMENTS

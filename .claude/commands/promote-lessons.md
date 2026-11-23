@@ -69,4 +69,6 @@ If `lessons.md` has more than 15 entries after consolidation:
 - agent-memory/: [exists/cleaned up]
 ```
 
+Use instead when: `/rules-distill` — the source is repeated patterns across skills, not corrections logged in `lessons.md`. Rule-file edits that change shared rules are proposals for human approval, not silent writes.
+
 $ARGUMENTS

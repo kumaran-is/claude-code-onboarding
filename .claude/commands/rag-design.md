@@ -119,7 +119,7 @@ Save to `docs/adr/NNN-rag-architecture.md` using this template:
 
 ## References
 
-- Production RAG Playbook: `docs/production-rag-playbook.md`
+- `rag-architect` skill (`.claude/skills/rag-architect/SKILL.md` and `references/`) — the external production RAG playbook that the § numbers cite is not shipped in this repository; mark a § citation UNVERIFIED unless you can open the source
 - §1.5 Default Stack
 - §19.5 RAG vs Tools vs SQL
 - {{other relevant sections}}

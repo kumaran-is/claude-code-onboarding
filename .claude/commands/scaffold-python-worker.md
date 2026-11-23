@@ -50,6 +50,6 @@ Use for services triggered by Pub/Sub, Cloud Scheduler, or GCS events — not fo
 
 ## Post-Scaffold
 - Add the new service to `pyproject.toml` workspace members at repo root
-- Verify `uv sync` at repo root resolves without error
+- Verify with each command's OWN exit code: `uv sync` at repo root, then in the service `uv run ruff check .`, `uv run mypy .` and `uv run pytest -q` (zero executed tests is FAIL) — report PASS / FAIL / BLOCKED per check
 - Add deployment configuration for Cloud Run or equivalent compute target
 - Dispatch `python-worker-reviewer` after implementation is complete

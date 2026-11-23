@@ -21,7 +21,8 @@ Create an A2UI renderer feature module in an existing Angular 21.x project.
 > (allowlist, `Idempotency-Key` header, server-held approval) and `/genui-config.json` for `shared-backend` /
 > `standalone-backend`; optional AG-UI or CopilotKit (`reference/copilotkit-angular.md`: 0.3.1 is the last Angular 21 line).
 > Then gate it with `/validate-genui-feature` and `/audit-a2ui-parity`. The steps below scaffold the hand-built LEGACY v0.8 renderer — use them only when the agent
-> still emits v0.8 or a custom design system rules out the SDK. Never mix protocol versions.
+> still emits v0.8. A custom design system does not rule out the SDK: register your own components in a v0.9 custom
+> catalog with `AngularCatalog` from `@a2ui/angular@0.14.0` (`.claude/skills/a2ui-angular/reference/canonical-catalog-angular.md`). Never mix protocol versions.
 
 1. Read the `a2ui-angular` skill (`SKILL.md` and all `reference/*.md` files) for protocol spec, security rules, component catalog, and renderer patterns.
 2. Read the `angular-spa` skill's `reference/angular-conventions.md` for Angular coding standards.

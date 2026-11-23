@@ -186,3 +186,5 @@ After the trace is captured:
 - The trace is the truth. Don't speculate about what happened without it.
 - If audit logs already exist in the user's system, use them. Only add temporary tracing if there's no existing log.
 - Remove the temporary tracing wrapper after capture — it shouldn't ship to production.
+
+Use instead when: `/rag-debug` — diagnose why the answer is wrong (it starts from this trace); `/rag-eval-init` — turn captured traces into a golden set and CI gate.

@@ -55,6 +55,13 @@ Create a new Flutter mobile application with the following:
 10. Add a sample widget test using `ProviderScope` overrides
 11. Run `dart run build_runner build --delete-conflicting-outputs`
 12. Workspace wiring — only if the app is created inside an existing pub/Melos workspace (root `pubspec.yaml` with a `workspace:` list): add the app path to that list, add `resolution: workspace` to the app `pubspec.yaml`, reference shared packages by name, then run `melos bootstrap` from the workspace root. Never run `flutter pub get` inside the member. Melos 7+ has no `melos.yaml`; check the workspace's Melos version first. Outside a workspace, skip this step.
-13. Print summary of created files, next steps, and how to run
+13. Verify — each with its OWN exit code (PASS / FAIL / BLOCKED):
+    ```bash
+    dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"
+    flutter analyze > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"
+    flutter test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"
+    ```
+    Device UI/E2E is Maestro only (`.claude/rules/testing-tool-selection.md`); without a booted emulator/simulator it is BLOCKED, never a browser substitute.
+14. Print summary of created files, the verification results, next steps, and how to run
 
 Use the flutter-mobile skill for patterns and templates.

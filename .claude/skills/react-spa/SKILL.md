@@ -66,7 +66,7 @@ signatures below were found that way.
 ```text
 src/
   main.tsx                     createRoot + StrictMode + QueryClientProvider + RouterProvider
-  app/                         routes.tsx, AppLayout.tsx, RouteErrorPage.tsx, query-client.ts, session.ts
+  app/                         routes.tsx, lazy-route.ts, AppLayout.tsx, RouteErrorPage.tsx, query-client.ts, session.ts
   features/<feature>/
     routes/                    route components (lazy-loaded)
     components/                feature components (may use queries, router hooks)

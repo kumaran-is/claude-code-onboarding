@@ -48,6 +48,7 @@ createRoot(rootElement).render(
 ```tsx
 import { redirect, type RouteObject } from 'react-router'
 import { AppLayout } from './AppLayout'
+import { lazyRoute } from './lazy-route'
 import { FeatureErrorPage, RouteErrorPage } from './RouteErrorPage'
 import { requireSession } from './session'
 
@@ -62,7 +63,7 @@ export const routes: RouteObject[] = [
       { index: true, loader: () => redirect('/app/projects') },
       {
         path: 'login',
-        lazy: async () => ({ Component: (await import('@/features/auth/routes/LoginPage')).LoginPage }),
+        lazy: () => lazyRoute(async () => (await import('@/features/auth/routes/LoginPage')).LoginPage),
       },
       {
         path: 'app',
@@ -71,7 +72,7 @@ export const routes: RouteObject[] = [
         children: [
           {
             path: 'projects',
-            lazy: async () => ({ Component: (await import('@/features/projects/routes/ProjectsPage')).ProjectsPage }),
+            lazy: () => lazyRoute(async () => (await import('@/features/projects/routes/ProjectsPage')).ProjectsPage),
             ErrorBoundary: FeatureErrorPage, // renders inside AppLayout's <main>: no second main landmark
           },
         ],
@@ -89,6 +90,39 @@ route and returns 404. Either use the function form (above) or build routes with
 function per router.
 
 `vite build` emits a separate chunk per lazy route (`LoginPage-*.js`, `ProjectsPage-*.js`).
+
+### A chunk that fails to load must not blank the page
+
+After a deploy replaces the hashed files, an open tab can request a chunk that no longer exists. With a
+plain `lazy: async () => ({ Component: (await import(...)).X })`, react-router 8.5.2 keeps `lazy` on the
+route whose import rejected and renders only the root match: the page goes blank and no ErrorBoundary
+runs (reproduced in Chromium by answering the chunk request with 404). `lazyRoute` resolves with a
+component that throws instead, so the route's own boundary shows the error inside the layout.
+
+`src/app/lazy-route.ts`
+
+```ts
+import type { ComponentType } from 'react'
+import { logger } from '@/shared/lib/logger'
+
+export async function lazyRoute(load: () => Promise<ComponentType>): Promise<{ Component: ComponentType }> {
+  try {
+    return { Component: await load() }
+  } catch (error) {
+    logger.error('route chunk failed to load', { error: String(error) })
+    return {
+      Component: function ChunkLoadFailed(): never {
+        throw new Error('This page failed to load. Reload the app to get the latest version.')
+      },
+    }
+  }
+}
+```
+
+Tested in Chromium at 375 and 1280 px: chunk answered with 404 → error heading and alert inside the
+layout, one `<main>` (exit 0); the plain `lazy` form → blank page (exit 1). Keep the previous release's
+hashed files on the host for a while after a deploy (`deployment-ci-cd/reference/web-frontend-delivery.md`)
+so most open tabs never hit this path.
 
 ## Session and auth middleware (UX only)
 

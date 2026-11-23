@@ -64,7 +64,7 @@ sample feature.
    Replace `src/index.css` with the base stylesheet in `reference/tooling.md` (44 px controls; the
    template CSS fails the axe `target-size` check at 375 px).
 6. **App shell** (`reference/routing.md`): `main.tsx` (StrictMode + QueryClientProvider +
-   RouterProvider), `app/query-client.ts` (central logging), `app/routes.tsx` (function-form `lazy`,
+   RouterProvider), `app/query-client.ts` (central logging), `app/routes.tsx` (function-form `lazy` through `app/lazy-route.ts`, so a missing chunk shows the error page,
    authenticated layout with `middleware`, `ErrorBoundary`, 404), `app/AppLayout.tsx` (focus `<main>` on
    navigation), `app/RouteErrorPage.tsx` (`RouteErrorPage` at the root, `FeatureErrorPage` inside the layout), `app/session.ts`. Comment that middleware is UX and the API
    authorizes. Replace the demo sign-in with the real auth endpoint before shipping (HttpOnly cookie or

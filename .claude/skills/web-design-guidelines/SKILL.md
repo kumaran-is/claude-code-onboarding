@@ -1,6 +1,6 @@
 ---
 name: web-design-guidelines
-description: "Audit UI code against Vercel's Web Interface Guidelines — fetches live rules, reads specified files, outputs findings as file:line violations. Use when asked to review UI, audit design, review UX, or verify a component against web interface standards. Complements /lint-design-system (tokens) and accessibility-auditor (WCAG) with web interaction pattern compliance."
+description: "Audit web UI code against Vercel's Web Interface Guidelines (fetched live) and report file:line violations. Use when asked to review web UI/UX interaction patterns. Tokens → /lint-design-system; WCAG → accessibility-audit."
 allowed-tools: Read, Glob, Grep, WebFetch
 metadata:
   triggers: review UI, audit design, review UX, web interface guidelines, Vercel guidelines, UI compliance, design audit, UX review, check my site, check my component

@@ -1,6 +1,6 @@
 ---
 name: the-fool
-description: Use when challenging ideas, plans, decisions, or proposals using structured critical reasoning. Invoke to play devil's advocate, run a pre-mortem, red team, or audit evidence and assumptions.
+description: "Challenge a plan, decision or proposal with structured critical reasoning: devil's advocate, pre-mortem, red team, Socratic questioning, evidence audit. Use when asked to poke holes, stress-test or argue against an idea. Not for code or implementation-plan review (plan-challenger agent, plan-mode-review)."
 allowed-tools: Read
 metadata:
   triggers: play the fool, devil's advocate, challenge this, stress test, poke holes, what could go wrong, red team, pre-mortem, test my assumptions

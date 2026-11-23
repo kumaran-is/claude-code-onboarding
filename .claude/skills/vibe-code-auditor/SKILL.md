@@ -1,6 +1,6 @@
 ---
 name: vibe-code-auditor
-description: Audit AI-generated or rapidly-prototyped code for structural flaws, hallucinated imports, fragility, and production risks before committing or handing off. Use when code was generated with AI assistance, evolved without deliberate architecture, or a prototype needs productionizing.
+description: "Audit AI-generated or prototype code for hallucinated imports, structural flaws, fragility and production risks. Use before committing or productionising AI-assisted or prototype code."
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   triggers: vibe code, AI-generated code, prototype review, production ready, hallucinated imports, code audit, rapid iteration, is this production ready, audit this code

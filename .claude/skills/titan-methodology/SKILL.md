@@ -1,6 +1,6 @@
 ---
 name: titan-methodology
-description: "Dual-lens product evaluation framework. Use when deciding whether to build something, evaluating feature ideas, or brainstorming product direction."
+description: "Dual-lens product evaluation and scoring for build/no-build decisions and feature ideas. Use when evaluating product ideas or prioritising an MVP."
 metadata:
   triggers: should we build this, evaluate feature idea, product direction, prioritize ideas, Titan scoring, build or not
 allowed-tools: Read

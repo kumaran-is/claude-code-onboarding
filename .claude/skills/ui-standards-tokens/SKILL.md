@@ -1,6 +1,6 @@
 ---
 name: ui-standards-tokens
-description: "This skill provides design token definitions, theming patterns, and UI standards for Flutter applications. Use when auditing UI compliance, implementing design systems, or ensuring consistent token usage."
+description: "Flutter design-token source of truth (AppSpacing, AppRadius, AppSize, AppOpacity, AppShadows, colorScheme, text styles) and token audits. Use when adding or auditing tokens in Flutter UI. Not for Angular/React (design-system, tailwind-patterns)."
 allowed-tools: Read
 metadata:
   triggers: UI standards, design tokens, Flutter UI, Material 3, theming, accessibility, color contrast, token compliance

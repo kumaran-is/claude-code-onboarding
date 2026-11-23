@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max
-description: "Design intelligence database for UI/UX work — 50+ styles, 97 color palettes, 57 font pairings, 99 UX guidelines. Flutter has a dedicated stack file. Angular uses html-tailwind stack. BM25 search engine via Python scripts. Use when selecting design direction, palettes, typography, chart types, or getting stack-specific UX guidelines before writing UI code."
+description: "Searchable design database (styles, colour palettes, font pairings, chart types, UX guidelines) with per-stack guidance via local Python BM25 scripts. Use when choosing a visual direction, palette or typography before writing UI. Not for token enforcement (design-system)."
 risk: low
 source: community (adapted for workspace)
 date_added: "2026-02-27"

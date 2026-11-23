@@ -1,6 +1,6 @@
 ---
 name: ui-visual-validator
-description: "CI/CD visual regression setup and pre-commit visual verification checklist. Scoped complement to reality-checker agent — adds: visual regression tool ecosystem (Chromatic, Percy, Applitools, BackstopJS, Playwright Visual), 13-item mandatory verification checklist, and GitHub Actions screenshot diff pipelines. Use when setting up automated visual regression tests in CI/CD or running systematic pre-PR visual verification beyond what reality-checker provides."
+description: "Visual regression in CI (Playwright visual, Chromatic, Percy, Applitools, BackstopJS) and a pre-PR visual verification checklist for web targets. Use when setting up screenshot-diff pipelines. Final evidence gate → reality-checker agent; Flutter mobile → Maestro."
 risk: low
 source: community (adapted for workspace)
 date_added: "2026-02-27"

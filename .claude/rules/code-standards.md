@@ -180,11 +180,11 @@ These rules apply to ALL code changes — not just when a reviewer agent is disp
 
 ### Accessibility
 
-- All UI changes must follow WCAG 2.1 AA baseline
+- All UI changes must follow WCAG 2.2 AA (canonical checklist: `.claude/skills/accessibility-audit/reference/wcag22-checklist.md`); automated tools never prove conformance
 - Semantic HTML (Angular) / proper widget semantics (Flutter)
 - Interactive elements must be keyboard-navigable and screen-reader accessible
 - Color contrast ratio >= 4.5:1 for normal text, >= 3:1 for large text
-- Touch targets >= 48dp (Flutter) / 44px (Angular)
+- Target size: >= 24×24 CSS px is the WCAG 2.2 AA minimum; house standard 44px (web) / 48dp (Flutter)
 
 ## Pre-Submit Checklist
 

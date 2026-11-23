@@ -23,6 +23,7 @@ Tech requested          → Skill tool call (in main session only)
 ─────────────────────── ─────────────────────────────────────────
 Flutter / Dart          → skill: "scaffold-flutter-app",  args: "<name>"
 Angular                 → skill: "scaffold-angular-app",  args: "<name>"
+React (Vite SPA)        → skill: "scaffold-react-app",    args: "<name>"
 NestJS                  → skill: "scaffold-nestjs-api",   args: "<name>"
 Python / FastAPI        → skill: "scaffold-python-api",   args: "<name>"
 Java / Spring Boot      → skill: "scaffold-spring-api",   args: "<name>"
@@ -33,6 +34,7 @@ STEP 2 — Verify scaffold output before writing agent task files
 Check that tech-specific key directories exist, e.g.:
   Flutter  → lib/design_system/, lib/core/di/, lib/features/
   Angular  → src/app/core/, src/app/features/, src/app/design-system/
+  React    → src/app/, src/features/, src/shared/
   NestJS   → src/common/, src/config/, src/modules/
 If missing → scaffold did not complete — do NOT spawn agents yet.
 
@@ -172,6 +174,7 @@ About to write or modify code?
     |   Python/FastAPI  -> python-dev
     |   Agentic AI     -> agentic-ai-dev
     |   Angular        -> angular-spa
+    |   React (web)    -> react-spa
     |   Flutter        -> flutter-mobile
     |   Database schema -> database-schema-designer
     |   Architecture   -> architecture-design
@@ -214,7 +217,7 @@ Reviewer agents are dispatched AFTER code is written, not before. Match by domai
 | LangChain/LangGraph imports, agent graphs | `agentic-ai-reviewer` |
 | SQL migrations, schema changes | `postgresql-database-reviewer` |
 | Any security-sensitive change (auth, crypto, input handling) | `security-reviewer` |
-| UI components, accessibility | `ui-standards-expert` or `accessibility-auditor` |
+| UI components (tokens/theming), shared component library, accessibility (web + Flutter, WCAG 2.2 AA) | `ui-standards-expert`, `design-system-reviewer`, `accessibility-auditor` |
 | None of the above / mixed | `code-reviewer` (general) |
 
 **Rule:** When in doubt, dispatch `code-reviewer`. It covers all languages. Stack-specific reviewers add deeper checks but are not a replacement — use both for critical changes.

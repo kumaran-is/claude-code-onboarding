@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Comprehensive pre-deployment readiness check across all stacks (Java/Spring, NestJS, Python/FastAPI, Angular, Flutter). Runs tests, linting, build, security audit, secrets scan, and migration checks. Outputs a Ship Readiness Report with READY TO SHIP / NOT READY verdict.
+description: Comprehensive pre-deployment readiness check across all stacks (Java/Spring, NestJS, Python/FastAPI, Angular, React, Flutter). Runs tests, linting, build, security audit, secrets scan, and migration checks. Outputs a Ship Readiness Report with READY TO SHIP / NOT READY verdict.
 allowed-tools: Bash, Read, Glob, Grep
 ---
 
@@ -10,12 +10,12 @@ Run before every production or staging deployment to verify the branch is safe t
 
 ## Step 1 — Detect Stack
 
-Check which stacks are present in the repo root:
+Check which stacks are present in the repo root (web apps are also found in nested folders by the web block in Step 2):
 
 ```bash
 [ -f "pom.xml" ]        && echo "STACK:java"
 [ -f "package.json" ]   && grep -q '"@nestjs/core"' package.json && echo "STACK:nestjs"
-[ -f "package.json" ]   && grep -q '"@angular/core"' package.json && echo "STACK:angular"
+find . -maxdepth 4 -name node_modules -prune -o \( -name angular.json -o -name 'vite.config.*' -o -name 'next.config.*' \) -print | sed 's/^/STACK:web /'
 [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] && echo "STACK:python"
 [ -f "pubspec.yaml" ]   && echo "STACK:flutter"
 git log --oneline -3
@@ -49,29 +49,26 @@ pass --skip-security-lock with explicit justification.
 
 ## Step 2 — Blockers (must all pass)
 
+Every command below records its OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`, then `tail` the log); `cmd | tail; echo $?` reports `tail`'s status and turns a failure into a pass.
+
 ### Java / Spring Boot
 ```bash
-./mvnw test -q 2>&1 | tail -20
-./mvnw package -DskipTests -q 2>&1 | tail -10
-./mvnw dependency:check -q 2>&1 | grep -E "WARN|ERROR|CVE" | head -20
+./mvnw test -q > /tmp/mvn-test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/mvn-test.log
+./mvnw package -DskipTests -q > /tmp/mvn-pkg.log 2>&1; echo "PACKAGE EXIT:$?"; tail -10 /tmp/mvn-pkg.log
+./mvnw dependency-check:check -q > /tmp/mvn-dc.log 2>&1; echo "DEPCHECK EXIT:$?"; grep -E "CRITICAL|HIGH|CVE" /tmp/mvn-dc.log | head -20   # plugin not configured → BLOCKED
 ```
 
 ### NestJS
 ```bash
-npm test -- --passWithNoTests 2>&1 | tail -20
-npx tsc --noEmit 2>&1 | head -20
-npm run lint 2>&1 | tail -10
-npm run build 2>&1 | tail -10
-npm audit --audit-level=high 2>&1 | tail -20
+npm test > /tmp/nest-test.log 2>&1; echo "TEST EXIT:$?"; tail -20 /tmp/nest-test.log   # no --passWithNoTests: zero tests is not a pass
+npx tsc --noEmit > /tmp/nest-tsc.log 2>&1; echo "TSC EXIT:$?"; head -20 /tmp/nest-tsc.log
+if node -e 'process.exit(require("./package.json").scripts?.lint?0:1)'; then npm run lint > /tmp/nest-lint.log 2>&1; echo "LINT EXIT:$?"; tail -10 /tmp/nest-lint.log; else echo "LINT: NOT RUN (no lint script)"; fi
+npm run build > /tmp/nest-build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/nest-build.log
+npm audit --audit-level=high > /tmp/nest-audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -20 /tmp/nest-audit.log
 ```
 
-### Angular
-```bash
-npm test -- --watch=false --browsers=ChromeHeadless 2>&1 | tail -20
-npx tsc --noEmit 2>&1 | head -20
-npm run lint 2>&1 | tail -10
-npm run build -- --configuration=production 2>&1 | tail -10
-```
+### Web apps — Angular and React
+Run the web block from [`/verify`](verify.md) ("Web apps" section) from the repo root with `MODE=pre-pr`: per app root it runs type-check, lint, unit tests (`ng test --watch=false` on Angular 21's Vitest builder, `vitest run` for React), production build, Playwright E2E when configured, and `npm audit --audit-level=high`, each with its own exit code. Copy its `WEB ... : PASS|FAIL|BLOCKED|NOT RUN` lines into the report. A detected app that the block did not run is a blocker, not a pass; `NOT RUN` (no linter, no E2E config) is listed with its reason and never counted as passed. Any web check reported `FAIL` or `BLOCKED` makes the verdict **NOT READY**.
 
 ### Python / FastAPI
 Capture each tool's own exit code (a pipe into `tail` reports `tail`'s status). Report `PASS` / `FAIL` / `BLOCKED` / `NOT RUN` / `NOT APPLICABLE` per check.
@@ -178,9 +175,10 @@ BLOCKERS (must fix before deploying)
 ─────────────────────────────────────────────────
 Tests          ✅ N passed  |  ❌ N failed — [detail]
 Type check     ✅ clean     |  ❌ N errors
-Lint           ✅ clean     |  ❌ N issues
+Lint           ✅ clean     |  ❌ N issues  |  ⏸ NOT RUN — [reason; not a pass]
 Build          ✅ success   |  ❌ failed — [detail]
 CVE audit      ✅ none      |  ❌ N high/critical — [list]
+Web apps       ✅ all PASS  |  ❌ FAIL/BLOCKED — [root | check]  |  ⏸ NOT RUN — [check: reason]
 
 HIGH PRIORITY
 ─────────────────────────────────────────────────
@@ -197,7 +195,7 @@ Localhost refs ✅ clean     |  ⚠️  N in prod config
 Debug flags    ✅ off       |  ⚠️  found
 
 ─────────────────────────────────────────────────
-Blockers:      X/5 passed
+Blockers:      X/6 passed
 High priority: X/4 passed
 Recommended:   X/4 passed
 

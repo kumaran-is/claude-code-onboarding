@@ -199,7 +199,7 @@ Before declaring any workflow type complete, the following gates must pass. Thes
 - [ ] No hardcoded colors — all colors use theme tokens (Flutter: `colorScheme`, Angular: daisyUI semantic)
 - [ ] No raw spacing values — all spacing uses semantic tokens (Flutter: `AppSpacing`, Angular: Tailwind scale)
 - [ ] No inline TextStyles — all typography uses theme text styles
-- [ ] Touch targets >= 48dp (Flutter) / 44px (Angular) for interactive elements
+- [ ] Target size >= 24×24 CSS px (WCAG 2.2 AA); house standard 48dp (Flutter) / 44px (web)
 - [ ] `/lint-design-system` run with zero violations
 - [ ] Exception markers (`// ignore-design: [reason]`) reviewed and justified
 - [ ] Angular: `shared/components/` components have zero `inject()` calls (dumb rule enforced)

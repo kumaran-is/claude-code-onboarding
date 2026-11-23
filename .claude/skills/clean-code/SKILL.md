@@ -8,6 +8,7 @@ allowed-tools:
   - Edit
   - Write
 metadata:
+  triggers: clean code, readability, naming, refactor for readability, code smells, function size, comments, maintainability review
   risk: safe
   source: "ClawForge (https://github.com/jackjin1997/ClawForge)"
   date_added: "2026-02-27"
@@ -19,7 +20,9 @@ last-reviewed: "2026-03-14"
 
 # Clean Code Skill
 
-> **Iron Law:** Before applying any principle, READ the relevant source file first.
+## Iron Law
+
+Before applying any principle, READ the relevant source file first.
 > Do not refactor or flag issues based on memory — verify the actual code (file:line) before making any claim.
 
 This skill embodies the principles of "Clean Code" by Robert C. Martin (Uncle Bob). Use it to transform "code that works" into "code that is clean."

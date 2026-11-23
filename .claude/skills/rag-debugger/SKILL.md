@@ -1,6 +1,9 @@
 ---
 name: rag-debugger
 description: Use when a RAG system is returning bad answers — hallucinations, wrong content, missing exact terms, low recall, slow responses, stale data, citation errors, tenant data leakage, or any production retrieval failure. Walks the 9-layer diagnostic chain backward from output to root cause. Triggers on phrases like "RAG returning wrong answers", "hallucinating", "can't find document", "wrong tenant data", "low recall", "RAG is slow", "missing citations".
+metadata:
+  triggers: RAG returning wrong answers, hallucinating, can't find document, wrong tenant data, low recall, RAG is slow, missing citations
+allowed-tools: Read, Glob, Grep, Bash
 ---
 
 # RAG Failure Diagnosis
@@ -8,6 +11,10 @@ description: Use when a RAG system is returning bad answers — hallucinations, 
 When a RAG answer is wrong, **walk the layers backward** from output to root cause. Most "the LLM hallucinated" reports are actually upstream failures that surface at generation.
 
 **Critical principle:** don't fix downstream when upstream is broken. Tuning the reranker won't help if the parser dropped the table.
+
+## Iron Law
+
+Walk the layers backward from the output and stop at the first broken layer. Never tune a downstream stage (reranker, prompt) while an upstream one (parsing, chunking, filters) is broken.
 
 ## The diagnostic chain
 

@@ -1,11 +1,18 @@
 ---
 name: rag-security-reviewer
 description: Use when reviewing or designing RAG security — multi-tenant isolation, access control, prompt injection defenses, PII redaction, audit logs, data lineage, deletion / right-to-be-forgotten, adversarial testing. Triggers on phrases like "RAG security review", "prompt injection", "multi-tenant RAG", "tenant isolation", "PII in RAG", "audit log", "ACL", "data leak", "GDPR delete".
+metadata:
+  triggers: RAG security review, prompt injection, multi-tenant RAG, tenant isolation, PII in RAG, audit log, ACL, data leak, GDPR delete
+allowed-tools: Read, Glob, Grep
 ---
 
 # RAG Security Reviewer
 
 RAG security is non-negotiable. Most production breaches in RAG systems trace to **filtering applied after retrieval** or **trusting retrieved content as if it were system input**. Both are preventable.
+
+## Iron Law
+
+Enforce access control inside the retrieval call. The LLM is never a security boundary: unauthorized content that reaches it has already leaked.
 
 ## The first principle
 

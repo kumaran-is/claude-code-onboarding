@@ -1,11 +1,18 @@
 ---
 name: rag-architect
 description: Use when designing or modifying a RAG (Retrieval-Augmented Generation) pipeline — picking chunking strategy, embedding models, retrieval methods, reranking, fusion (RRF), abstention, multi-tenancy patterns, or evaluating whether RAG is the right tool at all. Triggers on phrases like "design a RAG system", "build retrieval", "RAG architecture", "should I use RAG", "chunking strategy", "hybrid retrieval", "reranker choice", "vector database", "embedding model selection".
+metadata:
+  triggers: design a RAG system, build retrieval, RAG architecture, should I use RAG, chunking strategy, hybrid retrieval, reranker choice, vector database, embedding model selection
+allowed-tools: Read, Glob, Grep
 ---
 
 # RAG Architect
 
 You are helping design a production RAG system. Apply these decision frameworks. Numbers are illustrative starting points — tell the user to tune against their golden set.
+
+## Iron Law
+
+Confirm RAG is the right mechanism (Step 0) before designing retrieval. Every chunking, embedding, top-k and reranking number here is a starting point to tune against a golden set, never a final value.
 
 ## Step 0: Is RAG even the right tool?
 

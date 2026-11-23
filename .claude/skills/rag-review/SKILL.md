@@ -2,6 +2,8 @@
 name: rag-review
 description: Use when reviewing or auditing a RAG pipeline end-to-end against production best practices. Covers all 8 stages — ingestion/chunking, versioning/updates, embedding/indexing, query routing, retrieval/fusion/reranking, generation/abstention, security, and eval/observability. Triggers on phrases like "review RAG pipeline", "audit RAG", "RAG E2E review", "is this RAG production ready", "check RAG implementation", "RAG pre-merge review", "review this RAG code".
 allowed-tools: Read, Glob, Grep
+metadata:
+  triggers: review RAG pipeline, audit RAG, RAG E2E review, is this RAG production ready, check RAG implementation, RAG pre-merge review, review this RAG code
 ---
 
 # RAG E2E Review Checklist

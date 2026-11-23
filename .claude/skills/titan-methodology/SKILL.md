@@ -1,6 +1,18 @@
+---
+name: titan-methodology
+description: "Dual-lens product evaluation framework. Use when deciding whether to build something, evaluating feature ideas, or brainstorming product direction."
+metadata:
+  triggers: should we build this, evaluate feature idea, product direction, prioritize ideas, Titan scoring, build or not
+allowed-tools: Read
+---
+
 # Titan Methodology
 
 Dual-lens product evaluation framework. Use when deciding whether to build something, evaluating feature ideas, or brainstorming product direction.
+
+## Iron Law
+
+Score every idea through both lenses with the written criteria before recommending build, refine or kill. Never decide from one lens or from enthusiasm alone.
 
 ## When to Use
 

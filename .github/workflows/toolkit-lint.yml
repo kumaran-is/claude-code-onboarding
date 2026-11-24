@@ -9,6 +9,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'CLAUDE.md'
+      - 'README.md'
       - '.claude/**'
       - 'docs/**'
       - '.github/workflows/toolkit-lint.yml'
@@ -45,10 +46,10 @@ jobs:
       - name: Testing-tool routing
         run: bash .claude/scripts/lint-testing-tools.sh
 
-      - name: Standards coverage register (IDs, statuses, refs exist, line ranges in file)
+      - name: Documentation references (links, anchors and toolkit paths resolve; line suffixes in range)
         run: |
-          bash .claude/scripts/check-coverage-register.sh --selftest
-          bash .claude/scripts/check-coverage-register.sh docs/audits/ai-engineering-standards-coverage.tsv
+          bash .claude/scripts/check-doc-refs.sh --selftest
+          bash .claude/scripts/check-doc-refs.sh
 
   ai-asset-gates:
     name: AI asset validators (golden data, eval gate, prompts, governance, model registry, memory, attack classes)

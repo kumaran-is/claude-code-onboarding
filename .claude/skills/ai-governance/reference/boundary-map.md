@@ -1,6 +1,6 @@
 # Governance Boundary Map (GOV sections → toolkit)
 
-Where each governance section (§n, requirement ids GOV-<section>-<nn>, one id per table row, bullet, checklist item or normative paragraph, in section order) lives in this toolkit. The Primary toolkit file column is the canonical skill-local home of that section's requirements; the per-requirement register is `docs/audits/ai-engineering-standards-coverage.tsv`. Status counts are a snapshot taken 2026-11-23; rerun the checks before relying on them.
+Where each governance section (§n, requirement ids GOV-<section>-<nn>, one id per table row, bullet, checklist item or normative paragraph, in section order) lives in this toolkit. The Primary toolkit file column is the canonical skill-local home of that section's requirements. Status counts are a snapshot taken 2026-11-23; rerun the checks before relying on them.
 
 **Boundary:** A toolkit implements and tests it · B toolkit provides a template/checklist · C needs enterprise infrastructure or a named organisational owner · D needs legal, regulatory or executive approval.
 

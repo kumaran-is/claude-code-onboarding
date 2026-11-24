@@ -1,6 +1,6 @@
 # AI Data Governance and Privacy (DGP)
 
-Engineering controls for data that an AI capability reads, sends, generates or stores: prompts, retrieved context, tool inputs and outputs, completions, traces, caches, embeddings, agent memory, user feedback, fine-tuning sets and eval datasets, in every environment including developer machines and notebooks. Expands guardrails G9, G15 and G20. Requirement IDs `DGP-<section>-<n>` in the coverage register map onto the numbered sections below.
+Engineering controls for data that an AI capability reads, sends, generates or stores: prompts, retrieved context, tool inputs and outputs, completions, traces, caches, embeddings, agent memory, user feedback, fine-tuning sets and eval datasets, in every environment including developer machines and notebooks. Expands guardrails G9, G15 and G20. Citations of the form `DGP §n` elsewhere in the toolkit refer to the numbered sections below.
 
 **Not legal advice.** Lawfulness (GDPR, CCPA/CPRA, HIPAA, sector rules, the EU AI Act) is confirmed by Legal and the privacy officer per jurisdiction and use case. Precedence: law and contract > enterprise privacy / classification policy > this reference > team conventions. **must / must not** = mandatory; **should** = default, deviation needs a recorded reason; **may** = optional. `ADAPT` values are defaults the organisation ratifies (§20).
 

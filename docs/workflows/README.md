@@ -96,7 +96,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 
 ## AI Engineering Standards → Existing Commands
 
-The AI engineering domains (map: [domain map](../audits/ai-engineering-standards-coverage.md#domain-map)) propose commands that map onto existing commands, skills and agents; no separate command files exist. Coverage of every requirement: [`docs/audits/ai-engineering-standards-coverage.md`](../audits/ai-engineering-standards-coverage.md). Deterministic gate for all of them: `python3 .claude/scripts/check-ai-assets.py --root .`
+The AI engineering domains (canonical homes: the `ai-playbook` skill's lifecycle router and the AI engineering row of `CLAUDE.md`) propose commands that map onto existing commands, skills and agents; no separate command files exist. Deterministic gate for all of them: `python3 .claude/scripts/check-ai-assets.py --root .`
 
 | Proposed | Use | What runs |
 |----------|-----|-----------|
@@ -117,7 +117,7 @@ The AI engineering domains (map: [domain map](../audits/ai-engineering-standards
 | `/audit-rag` | `/rag-review` + `rag-implementation-reviewer` + `rag-security-reviewer` | full RAG audit |
 | `/scaffold-rag` | `/rag-design` then `/scaffold-rag-pipeline` | pipeline scaffold + eval init |
 | `/audit-agent-memory` | `agent-memory-lifecycle.md` + `agentic-memory-systems.md` + `ai-security-reviewer` | memory-record validator via the gate |
-| `/validate-ai-standards` | `/verify` AI block + `/ai-audit` + `check-coverage-register.sh` | deterministic gate; register references resolve |
+| `/validate-ai-standards` | `/verify` AI block + `/ai-audit` + `check-doc-refs.sh` | deterministic gate; toolkit references resolve |
 
 ---
 

@@ -80,7 +80,7 @@ from google.adk.agents import LlmAgent
 
 agent = LlmAgent(
     name="agent_name",
-    model="gemini-3.1-flash",
+    model=settings.agent_model,  # model id from config, never a literal
     instruction="""You are a [ROLE] specializing in [DOMAIN].
 
 When [TASK DESCRIPTION]:
@@ -112,20 +112,32 @@ Add to any system prompt when the task requires multi-step reasoning:
 
 ### Tree-of-Thought (ToT) — for complex planning
 
-Use `ParallelAgent` (ADK) or parallel LangGraph nodes when you need to explore multiple approaches:
+Use a `Workflow` fan-out (ADK 2.x) or parallel LangGraph nodes when you need to explore multiple approaches:
 
 ```python
-# Google ADK
-from google.adk.agents import ParallelAgent, SequentialAgent, LlmAgent
+# Google ADK 2.x (executed on google-adk 2.15.0 with a fixture model, not live)
+import asyncio
+from typing import Any
 
-branch_1 = LlmAgent(name="approach_1", model="gemini-3.1-flash", instruction="Explore approach A...")
-branch_2 = LlmAgent(name="approach_2", model="gemini-3.1-flash", instruction="Explore approach B...")
-synthesizer = LlmAgent(name="synthesizer", model="gemini-3.1-pro", instruction="Evaluate both approaches and select the best...")
+from google.adk import Context, Event, Workflow
+from google.adk.agents import Agent
+from google.adk.workflow import node
 
-tot_pipeline = SequentialAgent(
-    name="tot",
-    sub_agents=[ParallelAgent(name="branches", sub_agents=[branch_1, branch_2]), synthesizer]
-)
+branches = [
+    Agent(name="approach_1", model=settings.agent_model, instruction="Explore approach A..."),
+    Agent(name="approach_2", model=settings.agent_model, instruction="Explore approach B..."),
+]
+synthesizer = Agent(name="synthesizer", model=settings.synth_model,
+                    instruction="Evaluate both approaches and select the best...")
+
+
+@node(rerun_on_resume=True)
+async def explore(ctx: Context, node_input: Any) -> Any:
+    drafts = await asyncio.gather(*(ctx.run_node(b, node_input, use_sub_branch=True) for b in branches))
+    yield Event(output="\n\n".join(str(d) for d in drafts))
+
+
+tot_pipeline = Workflow(name="tot", edges=[("START", explore, synthesizer)])  # Runner(node=tot_pipeline, ...)
 ```
 
 ### Self-Consistency — for high-accuracy single answers

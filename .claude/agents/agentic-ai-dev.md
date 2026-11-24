@@ -1,6 +1,6 @@
 ---
 name: agentic-ai-dev
-description: Expert Agentic AI developer with Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, and FastAPI 0.135.2. Use for building AI agents, RAG systems, graph workflows, tools, memory, guardrails, and tests. Examples:\n\n<example>\nContext: User wants to build a RAG agent that searches and answers questions from internal documentation.\nUser: "Build a LangGraph agent that can query our docs and answer questions."\nAssistant: "I'll use the agentic-ai-dev agent to implement the LangGraph StateGraph with RAG nodes, tool definitions, and a FastAPI streaming endpoint."\n</example>
+description: Expert Agentic AI developer with Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, and FastAPI 0.165.0. Use for building AI agents, RAG systems, graph workflows, tools, memory, guardrails, and tests. Examples:\n\n<example>\nContext: User wants to build a RAG agent that searches and answers questions from internal documentation.\nUser: "Build a LangGraph agent that can query our docs and answer questions."\nAssistant: "I'll use the agentic-ai-dev agent to implement the LangGraph StateGraph with RAG nodes, tool definitions, and a FastAPI streaming endpoint."\n</example>
 model: sonnet
 permissionMode: acceptEdits
 memory: project

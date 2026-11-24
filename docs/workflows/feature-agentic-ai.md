@@ -1,6 +1,6 @@
 # Feature Development — Agentic AI (LangChain / LangGraph)
 
-> **When to use**: Building an AI agent, RAG system, or graph workflow with Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.128.x
+> **When to use**: Building an AI agent, RAG system, or graph workflow with Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0
 > **Time estimate**: 2–6 hours per agent depending on graph complexity
 > **Prerequisites**: Approved spec in `docs/specs/`, approved plan in `docs/plans/`
 
@@ -36,7 +36,7 @@ Full agentic AI feature lifecycle from scaffold through LangGraph StateGraph des
 **Trigger**: About to design or implement any agent
 **Action 1**: Load `agentic-ai-dev` skill (`skills/agentic-ai-dev/SKILL.md`)
 **Action 2**: Load `agentic-ai-coding-standard` skill (`skills/agentic-ai-coding-standard/SKILL.md`)
-**MCP**: Context7 for LangChain v1.2.8 and LangGraph v1.0.7 current APIs (not from memory — always query)
+**MCP**: Context7 (or the `langchain-docs` MCP) for LangChain v1.5.2 and LangGraph v1.2.24 current APIs (not from memory — always query)
 
 **17 mandatory coding rules** (from `skills/agentic-ai-coding-standard/SKILL.md:20-36`):
 1. State typed with `TypedDict` — no untyped dicts in StateGraph

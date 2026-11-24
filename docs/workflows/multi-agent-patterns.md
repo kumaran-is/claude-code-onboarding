@@ -10,7 +10,7 @@ Architectural reference from the `multi-agent-patterns` skill. Covers when multi
 
 Primary use cases in this workspace:
 - Building LangGraph/LangChain agents in the Agentic AI (Python) tier
-- Designing Google ADK agents with SequentialAgent/ParallelAgent composition
+- Designing Google ADK agents with `Workflow` graphs (ADK 2.x; SequentialAgent/ParallelAgent are deprecated)
 - Designing Claude Code sub-agent dispatch strategies using `parallel-agents` skill
 
 ---
@@ -147,7 +147,7 @@ Load `references/failure-modes.md` and review these 6 failure modes before final
 | Use Case | Pattern | Agents / Components |
 |----------|---------|---------------------|
 | LangGraph research agent | Swarm | Independent source agents → synthesis |
-| Google ADK workflow | Hierarchical | SequentialAgent (strategy) → LLM agents (execution) |
+| Google ADK workflow | Hierarchical | `Workflow` graph (strategy) → LLM agents (execution) |
 | Claude Code feature review | Supervisor | `parallel-agents` skill orchestrates reviewers |
 | ADK with tool specialization | Supervisor | Tool-specialized sub-agents, ADK supervisor node |
 | Autonomous PR iteration | Swarm | Retry loop until convergence (ralph-loop pattern) |

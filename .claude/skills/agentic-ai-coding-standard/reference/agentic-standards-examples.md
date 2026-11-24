@@ -57,7 +57,7 @@ def should_continue(state: AgentState) -> Literal["tools", "limit_reached", "__e
     return END
 
 # and at the call site: config["recursion_limit"] = settings.max_graph_steps; catch GraphRecursionError
-# (LangGraph 1.0.x default is 10000, not 25)
+# (LangGraph 1.2.x default is 10007, 1.0.x 10000, not 25)
 ```
 
 ## Rule 4: Tool Functions

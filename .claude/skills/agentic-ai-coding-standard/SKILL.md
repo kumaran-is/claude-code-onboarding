@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Agentic AI Coding Standards

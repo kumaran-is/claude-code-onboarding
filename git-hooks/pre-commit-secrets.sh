@@ -14,43 +14,39 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 
 # ── Patterns: parallel arrays (bash 3.2 compatible) ──────────────────────────
-PATTERN_NAMES=(
-    "OpenAI API Key"
-    "Anthropic API Key"
-    "GitHub Token ghp"
-    "GitHub Token gho"
-    "GitHub Token ghu"
-    "GitHub Token ghs"
-    "AWS Access Key ID"
-    "Firebase API Key"
-    "GCP Service Account"
-    "Private Key Block"
-    "Database URL with password"
-    "JWT Token"
-    "Generic api_key assignment"
-    "Generic secret assignment"
-    "Generic token assignment"
-)
-PATTERN_REGEXES=(
-    "sk-[A-Za-z0-9]{48}"
-    "sk-ant-[A-Za-z0-9-]{95,}"
-    "ghp_[A-Za-z0-9]{36}"
-    "gho_[A-Za-z0-9]{36}"
-    "ghu_[A-Za-z0-9]{36}"
-    "ghs_[A-Za-z0-9]{36}"
-    "AKIA[A-Z0-9]{16}"
-    "AIza[A-Za-z0-9_-]{35}"
-    "\"type\":[[:space:]]*\"service_account\""
-    "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
-    "(postgres|mysql|mongodb)://[^:]+:[^@]+@"
-    "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
-    "api[_-]?key[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
-    "secret[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
-    "token[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
-)
-# 1 = high-confidence (provider token shape or key block): also scanned in docs.
-# 0 = noisy in prose (generic assignments, example JSON/URLs/JWTs): code files only.
-PATTERN_HIGH_CONFIDENCE=(1 1 1 1 1 1 1 1 0 1 0 0 0 0 0)
+# Provider token shapes come from the shared table every scanner uses
+# (`.claude/hooks/post-edit-secrets-scan.sh --patterns`): they are high-confidence, scanned in docs too.
+# Only the commit-time extras below live here; they are noisy in prose, so code files only.
+PATTERN_NAMES=(); PATTERN_REGEXES=(); PATTERN_HIGH_CONFIDENCE=()
+load_patterns() {
+    # Always this repo's own table: no env override, so nothing can point the scan at an empty table.
+    local scanner table label re rows
+    scanner="$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/post-edit-secrets-scan.sh"
+    if ! table=$(bash "$scanner" --patterns 2>/dev/null) || [[ -z "$table" ]]; then
+        echo "pre-commit: BLOCKED: shared secret pattern table not found ($scanner). Restore .claude/hooks/ or reinstall the hook; refusing to commit unscanned." >&2
+        exit 1
+    fi
+    rows=$(printf '%s\n' "$table" | grep -c $'\t' || true)
+    if [[ "${rows:-0}" -lt 15 ]] || ! printf '%s\n' "$table" | grep -q '^AWS Access Key'; then
+        echo "pre-commit: BLOCKED: shared secret pattern table is malformed (${rows:-0} label<TAB>regex rows, need >= 15 incl. AWS Access Key). Refusing to commit unscanned." >&2
+        exit 1
+    fi
+    while IFS=$'\t' read -r label re; do
+        [[ -n "$re" ]] || continue
+        PATTERN_NAMES+=("$label"); PATTERN_REGEXES+=("$re")
+        # noisy in prose (example URLs, assignments, bearer samples): code files only
+        case "$label" in Hardcoded*|Literal*|Database*) PATTERN_HIGH_CONFIDENCE+=(0) ;; *) PATTERN_HIGH_CONFIDENCE+=(1) ;; esac
+    done <<< "$table"
+    PATTERN_NAMES+=("GCP Service Account" "JWT Token" "Generic api_key assignment" "Generic secret assignment" "Generic token assignment")
+    PATTERN_REGEXES+=(
+        "\"type\":[[:space:]]*\"service_account\""
+        "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+        "api[_-]?key[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
+        "secret[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
+        "token[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[A-Za-z0-9]{20,}"
+    )
+    PATTERN_HIGH_CONFIDENCE+=(1 0 0 0 0)
+}
 
 # ── Whitelisted values (safe false-positives) ────────────────────────────────
 WHITELIST=(
@@ -94,10 +90,11 @@ is_whitelisted() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 detect_secrets() {
+    load_patterns
     local files
     files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null) || true
 
-    [[ -z "$files" ]] && exit 0
+    [[ -z "$files" ]] && return 0   # return, not exit: the opt-in evaluator below must still run
 
     local found=0
     local report=""
@@ -118,7 +115,8 @@ detect_secrets() {
             local regex="${PATTERN_REGEXES[$i]}"
             local matches
             # -e: the private-key pattern starts with '-' and would otherwise be parsed as an option
-            matches=$(echo "$content" | grep -noE -e "$regex" 2>/dev/null) || true
+            local flags=-noE; [[ "$name" == Hardcoded* ]] && flags=-noiE   # same case rule as the shared table
+            matches=$(echo "$content" | grep "$flags" -e "$regex" 2>/dev/null) || true
             [[ -z "$matches" ]] && continue
 
             while IFS= read -r match; do
@@ -126,8 +124,7 @@ detect_secrets() {
                 local text="${match#*:}"
                 is_whitelisted "$text" && continue
                 found=1
-                report+="  ${file}:${line}  [${name}]\n"
-                report+="  $(echo "$text" | cut -c1-60)\n\n"
+                report+="  ${file}:${line}  [${name}]\n"   # never the value: this output lands in transcripts and CI logs"
             done <<< "$matches"
         done
     done <<< "$files"
@@ -151,7 +148,7 @@ detect_secrets() {
     fi
 
     echo -e "${GREEN}  pre-commit: no secrets detected${NC}"
-    exit 0
+    return 0
 }
 
 # ── Self-test: bash git-hooks/pre-commit-secrets.sh --selftest ────────────────
@@ -163,16 +160,20 @@ selftest() {
     tmp=$(mktemp -d)
     # shellcheck disable=SC2064  # expand $tmp now
     trap "rm -rf '$tmp'" EXIT INT TERM
-    local gh aws pk kv
+    local gh aws pk kv ghpat
+    local scanner_src; scanner_src="$(cd "$(dirname "$self")/.." && pwd)/.claude/hooks/post-edit-secrets-scan.sh"
     gh="gh""p_$(printf 'a%.0s' $(seq 1 36))"
+    ghpat="github""_pat_$(printf 'A1_%.0s' $(seq 1 28))"
     aws="AK""IAQWERTYUIOPASDFGH"
     pk="-----BEGIN ""PRIVATE KEY-----"
     kv="api""_key = abcdefghijklmnopqrstuvwxyz"
+    local dburl; dburl="post""gresql://app:$(printf 'p%.0s' $(seq 1 12))@db.internal:5432/app"
 
     # case <expect-rc> <expected-text-or-empty> <file> <content>
     run_case() {
         local want="$1" text="$2" file="$3" body="$4" out rc
         rm -rf "$tmp/r" && mkdir -p "$tmp/r/$(dirname "$file")"
+        mkdir -p "$tmp/r/.claude/hooks" && cp "$scanner_src" "$tmp/r/.claude/hooks/"   # the hook reads the repo's own table
         (cd "$tmp/r" && git init -q . && printf '%s\n' "$body" > "$file" && git add -- "$file")
         out=$(cd "$tmp/r" && bash "$self" 2>&1) && rc=0 || rc=$?   # set -e safe
         if [[ $rc -ne $want ]] || { [[ -n "$text" ]] && [[ "$out" != *"$text"* ]]; }; then
@@ -181,13 +182,14 @@ selftest() {
             echo "ok   $file rc=$rc"
         fi
     }
-    run_case 1 "GitHub Token ghp"   "docs/notes.md"                "token: $gh"
-    run_case 1 "Private Key Block"  "README.txt"                   "$pk"
-    run_case 1 "AWS Access Key ID"  ".env.example"                 "KEY=$aws"
-    run_case 1 "AWS Access Key ID"  "config/app.template.yaml"     "key: $aws"
-    run_case 1 "GitHub Token ghp"   "src/client.ts"                "const t = '$gh'"
+    run_case 1 "GitHub token"       "docs/notes.md"                "token: $gh"
+    run_case 1 "GitHub token"       "docs/fine.md"                 "token: $ghpat"   # fine-grained PAT: was missed before the shared table
+    run_case 1 "Private key"        "README.txt"                   "$pk"
+    run_case 1 "AWS Access Key"     ".env.example"                 "KEY=$aws"
+    run_case 1 "AWS Access Key"     "config/app.template.yaml"     "key: $aws"
+    run_case 1 "GitHub token"       "src/client.ts"                "const t = '$gh'"
     run_case 1 "Generic api_key"    "src/app.py"                   "$kv"
-    run_case 1 "Private Key Block"  "deploy/key.py"                "K='''$pk'''"   # code file too (option-parsing bug)
+    run_case 1 "Private key"        "deploy/key.py"                "K='''$pk'''"   # code file too (option-parsing bug)
     # Basename globs are anchored: a code file whose name merely contains 'md' or 'spec'
     # keeps the full pattern set (generic assignments are code-only, so they prove the class).
     run_case 1 "Generic api_key"    "hooks/session-claudemd-scan.sh" "$kv"
@@ -196,6 +198,28 @@ selftest() {
     run_case 0 ""                   "docs/aws.md"                  "id: AK""IAIOSFODNN7EXAMPLE"
     run_case 0 ""                   "src/user_spec.ts"             "t='$gh'"     # test fixture: skipped
     run_case 0 ""                   "src/clean.py"                 "print('ok')"
+    run_case 0 ""                   "docs/setup.md"                "url: ${dburl}"   # example DB URL in prose: code files only
+    run_case 1 "Database connection" "src/db.ts"                   "const u = '${dburl}'"
+    local out rc
+    run_case 1 "AWS Access Key"     "src/leak.py"                  "k = '$aws'"
+    if [[ "$out" != *"$aws"* ]] && out=$(cd "$tmp/r" && bash "$self" 2>&1); [[ "$out" != *"$aws"* ]]; then echo "ok   the matched value is never printed"
+    else echo "FAIL: secret value echoed in hook output"; fail=1; fi
+    printf '#!/usr/bin/env bash\nfor i in $(seq 1 16); do printf "AWS Access Key\\tZZZ_NEVER_MATCHES\\n"; done\n' > "$tmp/fake.sh"
+    out=$(cd "$tmp/r" && SECRET_PATTERN_SCANNER="$tmp/fake.sh" bash "$self" 2>&1) && rc=0 || rc=$?
+    if [[ $rc -eq 1 ]]; then echo "ok   SECRET_PATTERN_SCANNER is ignored (no env bypass of the scan)"; else echo "FAIL: env override bypassed the scan (rc=$rc)"; fail=1; fi
+    rm -f "$tmp/r/.claude/hooks/post-edit-secrets-scan.sh"
+    out=$(cd "$tmp/r" && bash "$self" 2>&1) && rc=0 || rc=$?
+    if [[ $rc -eq 1 && "$out" == *"shared secret pattern table not found"* ]]; then echo "ok   missing shared table -> commit refused (fail closed)"
+    else echo "FAIL: missing table expected rc=1, got rc=$rc"; fail=1; fi
+    printf '#!/usr/bin/env bash\necho "no tabs here"\n' > "$tmp/r/.claude/hooks/post-edit-secrets-scan.sh"
+    out=$(cd "$tmp/r" && bash "$self" 2>&1) && rc=0 || rc=$?
+    if [[ $rc -eq 1 && "$out" == *"malformed"* ]]; then echo "ok   a non-empty table with no usable rows -> commit refused"
+    else echo "FAIL: malformed table expected rc=1, got rc=$rc ($out)"; fail=1; fi
+    mkdir -p "$tmp/r/git-hooks"; printf '#!/usr/bin/env bash\necho EVALUATOR-RAN\n' > "$tmp/r/git-hooks/pre-commit-evaluator.sh"
+    cp "$scanner_src" "$tmp/r/.claude/hooks/"; (cd "$tmp/r" && git rm -q --cached src/leak.py && printf 'x = 1\n' > src/ok.py && git add src/ok.py)
+    out=$(cd "$tmp/r" && bash "$self" 2>&1) && rc=0 || rc=$?
+    if [[ $rc -eq 0 && "$out" == *"EVALUATOR-RAN"* ]]; then echo "ok   a clean commit still reaches the opt-in evaluator"
+    else echo "FAIL: evaluator not reached on a clean commit (rc=$rc)"; fail=1; fi
     [[ $fail -eq 0 ]] && echo "selftest PASS" || echo "selftest FAIL"
     return $fail
 }

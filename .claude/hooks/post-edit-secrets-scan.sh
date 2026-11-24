@@ -5,7 +5,8 @@
 # Matching reads the content from a here-string, never `echo "$content" | grep -q`: under `set -o pipefail`,
 # grep -q exits at the first match, echo dies of SIGPIPE on large files (status 141) and the pipeline reports
 # "no match" -- a 1.2 MB file with a key on line 1 passed the old hook.
-# This PATTERNS table is the single token table: stop-secret-scan.sh and output-secrets-scanner.sh call
+# This PATTERNS table is the single token table for every scanner. prompt-secret-scan.sh and
+# git-hooks/pre-commit-secrets.sh read it with `--patterns` (label<TAB>ERE per line); stop-secret-scan.sh and output-secrets-scanner.sh call
 # `post-edit-secrets-scan.sh --scan-file <path>` (prints the label, exit 0 = hit, 1 = clean) or
 # `--scan-files` (paths on stdin, prints "path<TAB>label" per hit) instead of keeping their own copies.
 # Test: bash .claude/hooks/post-edit-secrets-scan.sh --selftest
@@ -23,13 +24,15 @@ GitLab personal access token (glpat-)	glpat-[A-Za-z0-9_-]{20,}
 npm access token (npm_...)	npm_[A-Za-z0-9]{36}
 npm registry auth token in .npmrc (_authToken=literal)	_authToken=[A-Za-z0-9._-]{20,}
 Stripe live secret/restricted key	[sr]k_""live_[A-Za-z0-9]{20,}
-Slack token (xox.-/xapp-)	xox[pboa]-[0-9]{10,}-[a-zA-Z0-9-]+|xapp-[0-9]+-[A-Za-z0-9-]{20,}
+Slack token (xox.-/xapp-)	xox[abeoprs]-[0-9]+-[0-9A-Za-z-]{8,}|xapp-[0-9]+-[A-Za-z0-9-]{20,}
+Langfuse secret key (sk-lf-...)	sk-lf-[0-9a-zA-Z-]{20,}
 Hugging Face token (hf_...)	hf_[A-Za-z0-9]{34,}
 HashiCorp Vault token (hvs./hvb.)	hv[sb]\.[A-Za-z0-9_-]{20,}
-Private key (-----BEGIN ... PRIVATE KEY-----)	-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----
-Database connection string with embedded credentials	(postgres|mongodb(\+srv)?)""://[^:/@[:space:]]+:[^@[:space:]\$]{6,}@[^[:space:]]+
+Private key (-----BEGIN ... PRIVATE KEY-----)	-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----|-----BEGIN PGP PRIVATE KEY BLOCK-----
+Database connection string with embedded credentials	(postgres(ql)?|mysql|mariadb|mongodb(\+srv)?)""://[^:/@[:space:]]+:[^@[:space:]\$]{6,}@[^[:space:]]+
 Literal bearer token	[Bb]earer [A-Za-z0-9._~+/-]{40,}
-Hardcoded secret assignment (key = \"...\")	(api_key|apikey|secret_key|access_token|auth_token|private_key|client_secret)[\"']?[[:space:]]*[=:][[:space:]]*[\"'][a-zA-Z0-9+/_-]{32,}[\"']"
+Hardcoded secret assignment (key = \"...\")	(api_key|apikey|secret_key|access_token|auth_token|private_key|client_secret)[\"']?[[:space:]]*[=:][[:space:]]*[\"'][a-zA-Z0-9+/_-]{32,}[\"']
+Hardcoded secret assignment, unquoted (KEY=value, .env paste)	(api_key|apikey|secret_key|access_token|auth_token|private_key|client_secret)[[:space:]]*[=:][[:space:]]*[a-zA-Z0-9+/]{32,}"
 
 scan() { # $1 file -> prints the matched label, returns 0 on a hit
   local file="$1" content label re flags
@@ -107,7 +110,7 @@ selftest() {
   tmp=$(mktemp -d) || return 1
   probe() { printf '{"tool_input":{"file_path":"%s"}}' "$1" | "$BASH" "$self" 2>&1; }
   r() { printf "%0${1}d" 0 | tr 0 "$2"; } # $1 copies of char $2: probe values are built at runtime
-  local p_aws="AK""IA" p_gho="gh""o_" p_glpat="gl""pat-" p_npm="np""m_" p_auth="_auth""Token=" p_stripe="sk""_live_" p_xapp="xa""pp-1-" p_hf="h""f_" p_oai="sk-pr""oj-" p_bearer="Bear""er " p_pg="postgres""://"
+  local p_aws="AK""IA" p_gho="gh""o_" p_glpat="gl""pat-" p_npm="np""m_" p_auth="_auth""Token=" p_stripe="sk""_live_" p_xapp="xa""pp-1-" p_hf="h""f_" p_oai="sk-pr""oj-" p_bearer="Bear""er " p_my="my""sql:/""/" p_enc="-----BEGIN ENCRY""PTED PRIVATE KEY-----" p_pg="postgres""://" p_lf="sk-l""f-"
   # label substring | value (prefix pieces concatenated so this file holds no literal token)
   while IFS='|' read -r label value; do
     f="$tmp/pos.ts"; printf 'export const cfg = { k: "%s" };\n' "$value" > "$f"
@@ -127,7 +130,14 @@ Hugging Face token|${p_hf}$(r 34 g)
 OpenAI project/service key|${p_oai}$(r 20 h)_$(r 30 i)
 Literal bearer token|Authorization: ${p_bearer}$(r 48 j)
 Database connection string|${p_pg}orders:$(r 12 k)@db.internal:5432/orders
+Langfuse secret key|${p_lf}$(r 24 m)
+Hardcoded secret assignment, unquoted|API_KEY=$(r 40 n)
+Database connection string|${p_my}app:$(r 12 o)@db:3306/app
+Private key|${p_enc}
 EOF_POS
+  out=$("$BASH" "$self" --patterns); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '	')" -ge 15 ] && printf '%s' "$out" | grep -qF 'github_pat_'; then
+    echo "  ok   --patterns prints the shared label<TAB>ERE table"; else echo "  FAIL --patterns output (rc=$rc)"; fail=1; fi
   # SIGPIPE regression: a key on line 1 of a >1 MB file (the old `echo | grep -q` pipeline passed this).
   f="$tmp/big.ts"; { printf 'const k = "%s%s";\n' "$p_aws" "$(r 16 Z)"; i=0; while [ $i -lt 20000 ]; do printf 'export const f%s = "%s";\n' "$i" "$(r 32 x)"; i=$((i + 1)); done; } > "$f"
   out=$(probe "$f"); rc=$?
@@ -165,6 +175,7 @@ EOF_POS
 
 if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 if [ "${1:-}" = "--scan-file" ]; then scan "${2:-}"; exit $?; fi
+if [ "${1:-}" = "--patterns" ]; then printf '%s\n' "$PATTERNS"; exit 0; fi
 if [ "${1:-}" = "--scan-files" ]; then scan_files; exit $?; fi
 run_hook
 exit $?

@@ -4,12 +4,59 @@
 #
 # Opt-in:    export CLAUDE_PRECOMMIT_EVAL=1
 # Threshold: export CLAUDE_PRECOMMIT_THRESHOLD=7  (default: 7, range: 1-10)
+# Model:     export CLAUDE_PRECOMMIT_MODEL=haiku   (a CLI alias, so it follows the current Haiku model)
+# Timeout:   export CLAUDE_PRECOMMIT_TIMEOUT=30    (seconds; portable, no GNU `timeout` needed)
 # Bypass:    git commit --no-verify
 #
 # Install: this script is called from .git/hooks/pre-commit
 #          See git-hooks/pre-commit-secrets.sh for the combined hook.
+# Test:    bash git-hooks/pre-commit-evaluator.sh --selftest   (fake CLI; never calls a model)
 
 set -uo pipefail
+
+# run_with_timeout SECONDS CMD... -> CMD's output and exit code; 124 when it was killed.
+# Bash 3.2 / BSD safe: GNU `timeout` is absent on macOS, where `timeout 30s claude` failed instantly and
+# every commit was waved through as "evaluation timed out or failed".
+run_with_timeout() {
+  local secs="$1" pid watcher rc; shift
+  "$@" & pid=$!
+  # kill the children first: a surviving child keeps the $(...) pipe open and the caller keeps waiting
+  ( sleep "$secs"; pkill -TERM -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 & watcher=$!
+  wait "$pid"; rc=$?
+  kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null
+  [ "$rc" -eq 143 ] && rc=124
+  return "$rc"
+}
+
+selftest() {
+  local self tmp fail=0 out rc
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  bash -n "$self" || { echo "FAIL control 0: bash -n"; return 1; }
+  tmp=$(mktemp -d) || return 1
+  (cd "$tmp" && git init -q . && printf 'x = 1\n' > a.py && git add a.py)
+  fake() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$tmp/claude"; chmod +x "$tmp/claude"; }
+  case_() { # want-rc needle label
+    if [ "$rc" -eq "$1" ] && printf '%s' "$out" | grep -qF "$2"; then echo "ok   $3"; else echo "FAIL $3 (rc=$rc: $(printf '%s' "$out" | tail -3))"; fail=1; fi
+  }
+  out=$(cd "$tmp" && env -u CLAUDE_PRECOMMIT_EVAL bash "$self" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then echo "ok   negative: not opted in -> silent exit 0"; else echo "FAIL opt-out (rc=$rc)"; fail=1; fi
+  fake 'printf "CORRECTNESS: 9\nCOMPLETENESS: 9\nSAFETY: 9\nSCOPE: 9\nOVERALL: 9\nVERDICT: APPROVED\nISSUES: none\n"'
+  out=$(cd "$tmp" && CLAUDE_PRECOMMIT_EVAL=1 CLAUDE_BIN="$tmp/claude" bash "$self" 2>&1); rc=$?; case_ 0 "APPROVED" "negative: an APPROVED verdict lets the commit through"
+  fake 'printf "CORRECTNESS: 3\nCOMPLETENESS: 3\nSAFETY: 3\nSCOPE: 3\nOVERALL: 3\nVERDICT: BLOCKED\nISSUES:\n- no tests\n"'
+  out=$(cd "$tmp" && CLAUDE_PRECOMMIT_EVAL=1 CLAUDE_BIN="$tmp/claude" bash "$self" 2>&1); rc=$?; case_ 1 "BLOCKED" "positive: a BLOCKED verdict rejects the commit"
+  fake 'printf "%s\n" "$@" > "'"$tmp"'/args"; printf "VERDICT: APPROVED\nOVERALL: 9\n"'
+  out=$(cd "$tmp" && CLAUDE_PRECOMMIT_EVAL=1 CLAUDE_BIN="$tmp/claude" bash "$self" 2>&1); rc=$?
+  if grep -qx 'haiku' "$tmp/args"; then echo "ok   the model is the 'haiku' alias (no stale dated snapshot)"; else echo "FAIL model arg: $(tr '\n' ' ' < "$tmp/args")"; fail=1; fi
+  fake 'sleep 20'
+  local t0=$SECONDS
+  out=$(cd "$tmp" && CLAUDE_PRECOMMIT_EVAL=1 CLAUDE_PRECOMMIT_TIMEOUT=1 CLAUDE_BIN="$tmp/claude" bash "$self" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && [ $((SECONDS - t0)) -lt 10 ] && printf '%s' "$out" | grep -qF "timed out"; then
+    echo "ok   a hung CLI is cut off by the portable timeout (no GNU timeout needed)"; else echo "FAIL timeout (rc=$rc, $((SECONDS - t0))s)"; fail=1; fi
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  return "$fail"
+}
+if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
 
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
@@ -75,11 +122,14 @@ Where OVERALL = average of all 4 scores rounded to 1 decimal.
 VERDICT = APPROVED if OVERALL >= $THRESHOLD, else BLOCKED.
 If no issues, write ISSUES: none"
 
-# Run evaluation (timeout 30s to avoid hanging commits)
-EVALUATION=$(timeout 30s "$CLAUDE_BIN" -p "$PROMPT" --model claude-haiku-4-5-20251001 2>/dev/null) || {
-  echo -e "${YELLOW}  pre-commit-eval: evaluation timed out or failed — allowing commit${NC}"
+# Run evaluation, bounded so a hung CLI never blocks the commit
+EVALUATION=$(run_with_timeout "${CLAUDE_PRECOMMIT_TIMEOUT:-30}" "$CLAUDE_BIN" -p "$PROMPT" --model "${CLAUDE_PRECOMMIT_MODEL:-haiku}" 2>/dev/null)
+eval_rc=$?
+if [ "$eval_rc" -ne 0 ]; then
+  [ "$eval_rc" -eq 124 ] && why="timed out after ${CLAUDE_PRECOMMIT_TIMEOUT:-30}s" || why="failed (exit $eval_rc)"
+  echo -e "${YELLOW}  pre-commit-eval: evaluation ${why} — allowing commit (the evaluator is advisory)${NC}"
   exit 0
-}
+fi
 
 [ -z "$EVALUATION" ] && { echo -e "${YELLOW}  pre-commit-eval: empty response — allowing commit${NC}"; exit 0; }
 

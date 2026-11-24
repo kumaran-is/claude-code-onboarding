@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # UserPromptSubmit: Scan user prompt for secrets before Claude processes it.
 # Exit 0 = allow, Exit 2 = block (stderr shown to user; Claude never sees the message).
-# Only fixed, provider-issued key shapes block (deterministic). JWT-shaped strings are NOT blocked:
-# sample tokens in docs and test fixtures would make it noisy.
+# Token shapes come from the shared table (`post-edit-secrets-scan.sh --patterns`), so every scanner agrees.
+# Two classes are skipped here because they are common and harmless in chat: connection strings
+# (local dev database URLs with a sample user and password) and bearer examples. JWT-shaped strings are not in the table.
 # Test: bash .claude/hooks/prompt-secret-scan.sh --selftest
 set -uo pipefail
 
@@ -28,67 +29,52 @@ if [ "${1:-}" = "--selftest" ]; then
   check "negative: placeholder names" "set GOOGLE_API_KEY and LANGFUSE_SECRET_KEY in .env" 0 ""
   check "negative: short AIza mention" "keys start with AI""za but this is prose" 0 ""
   check "negative: empty prompt" "" 0 ""
+  check "positive: fine-grained GitHub token (shared table)" "github""_pat_$(printf 'A1_%.0s' $(seq 1 28))" 2 "GitHub token"
+  check "positive: unquoted .env paste (KEY=value)" "API_KEY=$(printf 'Q%.0s' $(seq 1 40))" 2 "unquoted"
+  check "positive: Slack user token xoxp-1-..." "xox""p-1-2345678901-abcdefghijkl" 2 "Slack token"
+  check "negative: Slack placeholder in prose" "set SLACK_BOT_TOKEN to your xox""b-your-bot-token value" 0 ""
+  check "negative: a dev connection string in chat is not blocked" "use postgres""://postgres:postgres@localhost:5432/app" 0 ""
+  tmpd=$(mktemp -d); mkdir -p "$tmpd/h"; cp "$self" "$tmpd/h/"
+  out=$(jq -n --arg p "AK""IA$(printf 'Q%.0s' $(seq 1 16))" '{prompt:$p}' | /bin/bash "$tmpd/h/$(basename "$self")" 2>/dev/null); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "NOT checked"; then echo "  ok   missing shared table -> says NOT checked (never silent)"
+  else echo "  FAIL missing table (rc=$rc out=$out)"; fail=1; fi
+  printf '#!/usr/bin/env bash\necho "no tabs"\n' > "$tmpd/h/post-edit-secrets-scan.sh"
+  out=$(jq -n --arg p "AK""IA$(printf 'Q%.0s' $(seq 1 16))" '{prompt:$p}' | /bin/bash "$tmpd/h/$(basename "$self")" 2>/dev/null); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "NOT checked"; then echo "  ok   malformed table (no usable rows) -> says NOT checked"
+  else echo "  FAIL malformed table (rc=$rc out=$out)"; fail=1; fi
+  rm -rf "$tmpd"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   exit "$fail"
 fi
 
 input=$(cat)
+if ! command -v jq >/dev/null 2>&1; then  # static JSON: never silent when the scan cannot run
+  printf '%s\n' '{"systemMessage": "Prompt secret scan NOT checked: jq not found."}'
+  exit 0
+fi
 prompt=$(echo "$input" | jq -r '.prompt // ""' 2>/dev/null) || prompt=""
 
 [ -z "$prompt" ] && exit 0
 
-# AWS Access Key
-if echo "$prompt" | grep -qE 'AKIA[0-9A-Z]{16}'; then
-  echo "BLOCKED: AWS Access Key detected (AKIA...). Use an environment variable or .env file instead." >&2
-  exit 2
+SCANNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/post-edit-secrets-scan.sh"
+patterns=$("$BASH" "$SCANNER" --patterns 2>/dev/null) || patterns=""
+rows=$(printf '%s\n' "$patterns" | grep -c '	' || true)
+if [ "${rows:-0}" -lt 15 ] || ! printf '%s\n' "$patterns" | grep -q '^AWS Access Key'; then
+  jq -n '{systemMessage: "Prompt secret scan NOT checked: the shared pattern table (.claude/hooks/post-edit-secrets-scan.sh) is missing or broken."}'
+  exit 0
 fi
-
-# Anthropic API key
-if echo "$prompt" | grep -qE 'sk-ant-[a-zA-Z0-9\-]{20,}'; then
-  echo "BLOCKED: Anthropic API key detected (sk-ant-...). Use an environment variable instead." >&2
-  exit 2
-fi
-
-# OpenAI API key
-if echo "$prompt" | grep -qE 'sk-(proj-)?[a-zA-Z0-9]{40,}'; then
-  echo "BLOCKED: OpenAI API key detected (sk-...). Use an environment variable instead." >&2
-  exit 2
-fi
-
-# Google API key (Gemini / Google Cloud API keys)
-if echo "$prompt" | grep -qE 'AIza[0-9A-Za-z_-]{35}'; then
-  echo "BLOCKED: Google API key detected (AIza...). Use an environment variable or secret manager instead." >&2
-  exit 2
-fi
-
-# Langfuse secret key
-if echo "$prompt" | grep -qE 'sk-lf-[0-9a-zA-Z-]{20,}'; then
-  echo "BLOCKED: Langfuse secret key detected (sk-lf-...). Use an environment variable instead." >&2
-  exit 2
-fi
-
-# Slack tokens
-if echo "$prompt" | grep -qE 'xox[baprs]-[0-9A-Za-z-]{10,}'; then
-  echo "BLOCKED: Slack token detected (xox?-...). Use an environment variable instead." >&2
-  exit 2
-fi
-
-# GitHub tokens
-if echo "$prompt" | grep -qE 'gh[ps]_[a-zA-Z0-9]{36,}|github_pat_[a-zA-Z0-9_]{80,}'; then
-  echo "BLOCKED: GitHub token detected (ghp_/ghs_/github_pat_...). Use an environment variable instead." >&2
-  exit 2
-fi
-
-# Private key block
-if echo "$prompt" | grep -qE -e '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'; then
-  echo "BLOCKED: Private key detected. Never paste private keys into chat." >&2
-  exit 2
-fi
-
-# Key/token assignment with long value (high-confidence generic pattern)
-if echo "$prompt" | grep -qiE '(api_key|secret_key|access_token|auth_token|private_key)\s*[=:]\s*[a-zA-Z0-9+/]{32,}'; then
-  echo "BLOCKED: Potential secret detected (key/token with long value). Use an environment variable instead." >&2
-  exit 2
-fi
-
+while IFS="	" read -r label re; do
+  [ -n "$re" ] || continue
+  case "$label" in "Database connection"*|"Literal bearer"*) continue ;; esac
+  flags=-qE; case "$label" in Hardcoded*) flags=-qiE ;; esac
+  if grep "$flags" -e "$re" <<EOF_PROMPT
+$prompt
+EOF_PROMPT
+  then
+    echo "BLOCKED: $label detected in your prompt. Use an environment variable or a secret manager; never paste credentials into chat." >&2
+    exit 2
+  fi
+done <<EOF_PATTERNS
+$patterns
+EOF_PATTERNS
 exit 0

@@ -1,12 +1,12 @@
 ---
 name: scaffold-genui
-description: Scaffold a Flutter A2UI v0.9 agent-driven UI feature module — pinned a2ui_flutter/a2ui_core, catalog, surface host, transport, actions, and tests
+description: Scaffold a Flutter A2UI 1.0 agent-driven UI feature module (v0.9.x compatibility-path templates) — pinned a2ui_flutter/a2ui_core, catalog, surface host, transport, actions, and tests
 argument-hint: "[feature name, default: agent-ui]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__dart-mcp-server__dart, mcp__context7__resolve-library-id, mcp__context7__query-docs
 disable-model-invocation: true
 ---
 
-# Scaffold Flutter A2UI Feature (v0.9)
+# Scaffold Flutter A2UI Feature (A2UI 1.0, v0.9.x compatibility path)
 
 Creates an agent-driven UI feature module in an existing Flutter project, on A2UI 1.0 (v0.9.x compatibility path) with `a2ui_flutter` 0.5.0 and `a2ui_core` 0.9.0. The catalog and processor templates below are the v0.9.x path (compiled on 0.5.0 / 0.9.0 with Flutter 3.50.1 and a `material_ui` host). For a 1.0 feature, use the versioned adapter boundary in `flutter-genui` `SKILL.md` (compiled and tested on 0.5.0 / 0.9.0). The discontinued `genui` package is not used.
 

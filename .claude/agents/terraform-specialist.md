@@ -35,7 +35,7 @@ GCP Project (staging / production)
 ├── Cloud Run Services
 │   ├── nestjs-api       (Node.js 24.14.x, Prisma → Cloud SQL)
 │   ├── python-api       (Python 3.14, FastAPI, Alembic → Cloud SQL)
-│   ├── spring-api       (Java 21, Spring Boot, Flyway → Cloud SQL)
+│   ├── spring-api       (Java 25, Spring Boot 4.2, Flyway → Cloud SQL)
 │   └── ai-agent         (LangChain/LangGraph, 4Gi memory, 300s timeout)
 ├── Cloud SQL
 │   └── PostgreSQL 15 instance (private IP, Cloud Run connector)
@@ -107,15 +107,15 @@ terraform {
 jobs:
   plan:
     steps:
-      - uses: hashicorp/setup-terraform@v3
-      - uses: google-github-actions/auth@v2      # Workload Identity — no JSON key
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0      # Workload Identity — no JSON key
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
       - run: terraform init
       - run: tfsec .                              # security scan before plan
       - run: checkov -d . --framework terraform
       - run: terraform plan -var-file=$ENV.tfvars -out=tfplan
-      - uses: actions/github-script@v7           # post plan as PR comment
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0           # post plan as PR comment
 ```
 
 ### Workload Identity Federation (keyless auth)

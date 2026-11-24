@@ -17,7 +17,7 @@ Expert deployment engineer specializing in CI/CD pipelines, Docker containers, G
 
 ## Stack-Specific Context
 
-- **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux/Reactive) — Maven build, Spring Boot Buildpacks, Cloud Run with `--cpu-boost` for JVM warmup
+- **Backend (Java)**: Java 25, Spring Boot 4.2 (MVC default, WebFlux when justified) — Maven build, Spring Boot Buildpacks, Cloud Run with `--cpu-boost` for JVM warmup
 - **Backend (Node.js)**: Node.js 24.14.x, NestJS 11.2.x (Fastify adapter), Prisma ORM, TypeScript 5.9.x — npm, Cloud Run
 - **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.1), TypeScript 6.0.3, MCP SDK v2 (`@modelcontextprotocol/server` 2.4.0), stdio or Streamable HTTP on Fastify 5 — Docker + Cloud Run; scaffold with `/scaffold-mcp-server`, container rules in `mcp-builder/reference/production-deployment-docker.md`
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async — `uv` for dependency management, Alembic migrations, Cloud Run
@@ -131,7 +131,7 @@ Canonical detail: `.claude/skills/deployment-ci-cd/reference/web-frontend-delive
 
 ### Security & Compliance
 - Container vulnerability scanning: Trivy (`exit-code: 1` on CRITICAL CVEs — blocks deploy)
-- Dependency scanning: `npm audit`, `pip-audit` on the exported `uv.lock` (`pip audit` is not a command), `mvn dependency:check`
+- Dependency scanning: `npm audit`, `pip-audit` on the exported `uv.lock` (`pip audit` is not a command), `./mvnw dependency-check:check` (OWASP)
 - Secret scanning: GitLeaks in pipeline prevents secrets reaching registry
 - Supply chain: image signing with Cosign (Sigstore), SLSA provenance
 - SBOM generation for compliance (CycloneDX format)

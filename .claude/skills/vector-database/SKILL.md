@@ -124,7 +124,7 @@ COMMIT;
 
 **Filtered ANN returns fewer rows than `LIMIT`.** pgvector applies `WHERE` after the index produces its candidates, so a selective filter (small tenant, rare category) can return few rows or none. Reproduced on PostgreSQL 18.7 + pgvector 0.8.7 with a 1%-selective unindexed filter: HNSW default → 0–1 of 10 rows, `SET LOCAL hnsw.iterative_scan = strict_order` or `relaxed_order` → 10 of 10 (overlap with exact top-10 = 1.0). With a selective B-tree-indexed filter the 0.8 planner skipped HNSW and searched exactly. On pgvector < 0.8 (no iterative scans) a partial index returned 10 for the first 5 calls, then 0 after PostgreSQL switched the prepared statement to a generic plan (fix: `SET LOCAL plan_cache_mode = force_custom_plan`). Check `SELECT extversion FROM pg_extension WHERE extname = 'vector'` ≥ 0.8.0 at startup before relying on iterative scans. Fixes, details and the required test: `references/ann-vs-knn.md` §Filtered ANN.
 
-SQLAlchemy + `pgvector-python` 0.5.1 (verified on SQLAlchemy 2.1.9 + asyncpg 0.32.0, PostgreSQL 18.7, pgvector 0.8.7; an earlier cycle also verified SQLAlchemy 2.0.58):
+SQLAlchemy + `pgvector-python` 0.5.1 (verified on SQLAlchemy 2.1.9 + asyncpg 0.32.0, PostgreSQL 18.7, pgvector 0.8.7; an earlier cycle also verified SQLAlchemy 2.0.58). PostgreSQL 19.0 went GA on 2026-11-19; the toolkit stays on 18.x until pgvector and the managed providers (Cloud SQL) support 19 and it is verified here:
 ```python
 from pgvector.sqlalchemy import Vector
 

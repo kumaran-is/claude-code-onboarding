@@ -498,7 +498,7 @@ echo "PARITY VERDICT: $v"
 [ "$v" = PASS ] || [ "$v" = "NOT APPLICABLE" ]
 ```
 
-Proven 2026-11-24 on fixtures: a clean API + Flutter tree → 4 PASS; an `os.environ` key missing from `.env.example`, a missing ARB key, an unmigrated model and an overdue `REMOVE-BY` → 4 FAIL with file:line; a repo with none of the inputs → NOT APPLICABLE (deprecations still scan); python3 3.9 → BLOCKED.
+Proven 2026-11-24 on fixtures: a clean API + Flutter tree → 4 PASS; an `os.environ` key missing from `.env.example`, a missing ARB key, an unmigrated model and an overdue `REMOVE-BY` → 4 FAIL with file:line; a repo with none of the inputs and no `REMOVE-BY` marker → NOT APPLICABLE (the deprecations checker exits 2 when no marker exists, so it never counts as ran); python3 3.9 → BLOCKED.
 
 **Status vocabulary** (per check, never blended): `PASS` ran and succeeded · `FAIL` ran and failed · `BLOCKED` could not run (say why: no device, tool missing, backend down) · `NOT RUN` skipped by choice (say why) · `NOT APPLICABLE` the change cannot affect it. Only `PASS` counts as a pass.
 
@@ -534,9 +534,14 @@ Python — 2 failures:
 ```bash
 # Check staged files for forbidden patterns
 git diff --cached --name-only | xargs grep -n "TODO\|FIXME\|console\.log\|print(" 2>/dev/null
+
+# Staged skill files: the same lint CI runs (frontmatter, triggers, body size, references)
+if git diff --cached --name-only | grep -q '^\.claude/skills/'; then
+  bash .claude/scripts/lint-skills.sh > /tmp/lint-skills.log 2>&1; echo "LINT-SKILLS EXIT:$?"; tail -5 /tmp/lint-skills.log
+fi
 ```
 
-If any matches: list them. These are not blocking (human decides) but must be acknowledged.
+Pattern matches are not blocking (human decides) but must be acknowledged. `LINT-SKILLS EXIT` non-zero is a FAIL: fix it before committing (CI runs the same script).
 
 ## Rules
 

@@ -3,7 +3,7 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kumaran-is/claude-code-onboarding)
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blueviolet?style=flat&logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 ![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat&logo=openjdk&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?style=flat&logo=springboot&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.2-6DB33F?style=flat&logo=springboot&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-24.14-339933?style=flat&logo=nodedotjs&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11.2.x-E0234E?style=flat&logo=nestjs&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat&logo=python&logoColor=white)
@@ -37,7 +37,7 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 
 | Layer | Technologies |
 |---|---|
-| **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.2.x, Python v3.14 |
+| **Backend** | Java 25, Spring Boot v4.2 (MVC default, WebFlux when justified), Node.js v24.14, NestJS v11.2.x, Python v3.14 |
 | **Agentic AI** | Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, Google ADK 2.15, FastAPI 0.165.0 |
 | **Frontend** | Angular 22.3.x, TypeScript 6.0.x, React 19.3 (optional), A2UI 1.0 with a v0.9.x compatibility path (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
 | **Mobile** | Flutter 3.50.x, Dart 3.14.0, three_dart (3D in Flutter) |
@@ -246,7 +246,7 @@ cd your-project
 
 After copying, you'll want to:
 1. Edit `CLAUDE.md` — replace the tech stack and conventions with your project's
-2. Edit `.claude/settings.json` — adjust `permissions.allow` for your build tools (e.g., remove `flutter` if you don't use it)
+2. Review `.claude/settings.json` — it registers the hooks and sets `permissions.defaultMode` to `auto` with no allow/deny lists; put personal allow rules in `.claude/settings.local.json` (gitignored)
 3. Edit `.mcp.json` — remove MCP servers you don't need, add project-specific ones
 4. Remove agents/skills/commands for stacks you don't use
 5. Run `chmod +x .claude/hooks/*.sh` to make hooks executable
@@ -613,13 +613,13 @@ Do you want to proceed?
 ❯ 2. Yes, allow reading from claude-code-onboarding/ from this project
   3. No
 ```
-This can feel repetitive at first. The kit ships with pre-configured `allow` rules in `.claude/settings.json` that auto-approve common operations (build tools, git, Docker) — so most prompts you'll see are for operations that genuinely deserve a second look.
+This can feel repetitive at first. The kit runs in `auto` permission mode with no pre-configured allow or deny lists (a deny list is planned but deferred); the PreToolUse hooks block destructive commands and sensitive-file edits, so most prompts you'll see are for operations that genuinely deserve a second look.
 
 > ⚠️ **For this learning playground only**, you can skip all permission prompts:
 > ```bash
 > claude --dangerously-skip-permissions
 > ```
-> **Do not use this in real projects.** It disables all guardrails including the hooks and deny rules this kit ships with. For real projects, add frequently-used commands to the `allow` list in `settings.json` instead — see the [Settings Configuration](#settingsjson-configuration) section for the full reference.
+> **Do not use this in real projects.** It disables all permission prompts, leaving the hooks as the only local guardrail. For real projects, add frequently-used commands to an `allow` list in `.claude/settings.local.json` instead — see the [Settings Configuration](#settingsjson-configuration) section for the full reference.
 
 ## 9. Understanding Claude Code Components
 
@@ -654,7 +654,7 @@ Knowing *when to use what* is the key to being productive with Claude Code. Here
 | Use | You Need To… | Example |
 |---|---|---|
 | **CLAUDE.md** | Set project conventions and context | Project Overview, Project Context, Tech Stack, Coding Standards, Rules |
-| **settings.json** | Control what Claude can do | Allow `git` commands, deny `sudo` |
+| **settings.json** | Control what Claude can do | Permission mode, hook registration, optional allow/deny rules |
 | **Skill** | Auto-apply patterns for a domain | Always use Riverpod State Management when building Flutter |
 | **Slash Command** | Run a repeatable prompt yourself(manual) | `/scaffold-spring-api weather-service` |
 | **Sub-agent** | Get deep domain expertise in isolation, can be manual or auto | `@database-designer Design schema for…` |
@@ -929,7 +929,7 @@ This repo registers 45 hooks in `.claude/settings.json`. The ones most people in
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
 | **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Scans changed and untracked files with the shared `post-edit-secrets-scan` pattern table (+JWT) |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |
-| **Enforcement Kit** | `enforcement-kit.py` (+ `.claude/scripts/review_state.py`) | `SubagentStart`, `SubagentStop`, `PreToolUse` → Bash/Agent, `Stop` | Always: reminds once per tree state when UI code changed without executed Playwright/Maestro evidence, and notes stale verification on `gh pr create`/`merge`. Opt-in per branch (`review_state.py init`): findings ledger fed by reviewer `FINDING:` lines, evidence-classed closure, escalation after 2 failed fixes, round-3 severity cap, bounded Stop gate, and a `gh pr create`/`merge` deny without a fresh `/verify` stamp. See `verification-before-completion/reference/verification-loop.md` §4. |
+| **Enforcement Kit** | `enforcement-kit.py` (+ `.claude/scripts/review_state.py`) | `SubagentStart`, `SubagentStop`, `PreToolUse` → Bash/Agent, `Stop` | Always: reminds once per tree state when UI code changed without executed Playwright/Maestro evidence, and notes stale verification on `gh pr create`/`merge`. Opt-in per branch (`review_state.py init`): findings ledger fed by reviewer `FINDING:` lines, evidence-classed closure, escalation after 2 failed fixes, round-3 severity cap, bounded Stop gate, and a `gh pr create`/`merge` deny without a fresh `/verify` stamp and current-tree reviewer evidence (recorded by the hook, never hand-written; wrapped forms such as `bash -c`, `eval` and `xargs` are unwrapped). See `verification-before-completion/reference/verification-loop.md` §4. |
 
 > After cloning: `chmod +x .claude/hooks/*.sh`
 
@@ -1192,27 +1192,21 @@ Promoted to matching rules file (core-behaviors.md, code-standards.md, etc.)
 
 ### Model Selection & Cost Awareness
 
-Claude Code supports three Anthropic models, each optimized for different use cases:
+Current Anthropic models (API list prices per million tokens, as of 2026-11-03; check the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing) before budgeting):
 
-| Model | Best For | Cost (1M in/out) | Context | Speed |
-|-------|----------|-------------------|---------|-------|
-| **Claude Sonnet 4.5** | Balanced quality/cost — 80% of your work | $3 / $15 | 200K (1M beta) | Medium |
-| **Claude Haiku 4.5** | Fast, cheap tasks (docs, non-critical work) | $1 / $5 | 200K | Fast |
-| **Claude Opus 4.6** | Complex reasoning (expensive, burns tokens fast) | $5 / $25 | 200K (1M beta) | Slow |
+| Model | Best For | Cost (1M in/out) | Context |
+|-------|----------|-------------------|---------|
+| **Claude Opus 5.5** (`claude-opus-5-5`) | Default: complex reasoning, multi-file changes, reviews | $4 / $20 | 1M |
+| **Claude Sonnet 5.5** (`claude-sonnet-5-5`) | Everyday coding and agent work at lower cost | $2 / $10 | 1M |
+| **Claude Haiku 5.5** (`claude-haiku-5-5`) | Fast, cheap sub-tasks (docs, extraction, simple subagents) | $0.10 / $0.50 (prompts ≤ 100K) | 1M |
+| **Claude Fable 5.2** (`claude-fable-5-2`) | Hardest long-horizon tasks; costs more than Opus | $8 / $40 | 1M |
 
-**Pricing details:**
-- **Opus 4.6**: $5 per million input tokens, $25 per million output tokens. [Source](https://www.anthropic.com/claude/opus)
-- **Sonnet 4.5**: $3 per million input tokens, $15 per million output tokens. [Source](https://www.anthropic.com/claude/sonnet)
-- **Haiku 4.5**: $1 per million input tokens, $5 per million output tokens. [Source](https://caylent.com/blog/claude-haiku-4-5-deep-dive-cost-capabilities-and-the-multi-agent-opportunity)
-- **Long context (>200K tokens)**: Premium rates apply — Opus: $10/$37.50, Sonnet: $6/$22.50 per million tokens. [Source](https://platform.claude.com/docs/en/about-claude/models/overview)
+All four have a 1M context window with no long-context surcharge, except Haiku 5.5 ($0.50 / $2.50 beyond 100K-token prompts). Effort (`/effort` or `output_config.effort`) is the first cost lever: lower effort on a stronger model often beats a weaker model at high effort.
 
-**Recommended default: Sonnet 4.5**
-
-Sonnet balances high performance with efficient response times for coding tasks. Set it as your persistent default in `.claude/settings.json`:
+To pin a default model for this project, add `"model"` to `.claude/settings.json` (aliases: `opus`, `sonnet`, `haiku`):
 
 ```json
 {
-  "permissions": {},
   "model": "sonnet"
 }
 ```
@@ -1894,7 +1888,7 @@ claude-code-onboarding/
     ├── agents/                           # 20 specialist AI personas (invoke with @name)
     │   │
     │   │  # — Development agents (model: sonnet) —
-    │   ├── java-spring-api.md            # Spring Boot WebFlux expert
+    │   ├── java-spring-api.md            # Spring Boot 4.2 expert (MVC default, WebFlux when justified)
     │   ├── nestjs-api.md                 # NestJS / Fastify / Prisma expert
     │   ├── python-dev.md                 # Python / FastAPI expert
     │   ├── agentic-ai-dev.md             # LangChain / LangGraph AI agent builder
@@ -1911,7 +1905,7 @@ claude-code-onboarding/
     │   │  # — Review agents (model: opus) —
     │   ├── code-reviewer.md              # General code quality & review
     │   ├── nestjs-reviewer.md            # NestJS code review specialist
-    │   ├── spring-reactive-reviewer.md   # Spring WebFlux review specialist
+    │   ├── spring-boot-reviewer.md   # Spring Boot (MVC + WebFlux) review specialist
     │   ├── agentic-ai-reviewer.md        # Agentic AI code review specialist
     │   ├── security-reviewer.md          # Security vulnerability reviewer
     │   ├── postgresql-database-reviewer.md # PostgreSQL performance & schema reviewer
@@ -1959,7 +1953,7 @@ claude-code-onboarding/
     └── skills/                            # 20 auto-activated domain knowledge skills
         │
         │  # — Backend skills —
-        ├── java-spring-api/              # Spring Boot 3.5.x: entity patterns, resilience (Resilience4j),
+        ├── java-spring-api/              # Spring Boot 4.2 (MVC + WebFlux): entity patterns, resilience (Resilience4j),
         │                                 # testing (WebTestClient, Testcontainers), security hardening,
         │                                 # reactive debugging, Redis/SSE patterns (9 reference files)
         ├── java-coding-standard/         # Java naming, immutability, records, sealed types (1 reference file)
@@ -2908,7 +2902,7 @@ This is where agents and skills do the heavy lifting.
 
 Slash commands trigger multi-agent reviews; hooks catch what slips through.
 
-`/review-code` auto-detects the stack and delegates to the right reviewer (`spring-reactive-reviewer`, `nestjs-reviewer`, `agentic-ai-reviewer`, `riverpod-reviewer`). `/audit-security` runs `security-reviewer` across the scope. `/status-check` gives you an honest binary works/broken report — no "95% done" hedging. Pass a plan file or issue number to audit every plan item against the source.
+`/review-code` auto-detects the stack and delegates to the right reviewer (`spring-boot-reviewer`, `nestjs-reviewer`, `agentic-ai-reviewer`, `riverpod-reviewer`). `/audit-security` runs `security-reviewer` across the scope. `/status-check` gives you an honest binary works/broken report — no "95% done" hedging. Pass a plan file or issue number to audit every plan item against the source.
 
 **Hooks** run automatically and act as deterministic guardrails you never have to think about:
 - `post-edit-format.sh` — auto-formats after every edit
@@ -3008,7 +3002,7 @@ MCP servers like `postgres` and `github` require connection strings or tokens. H
 "args": ["${POSTGRES_CONNECTION_STRING}"]
 
 # ❌ BAD — credentials hardcoded in .mcp.json
-"args": ["postgresql://admin:password123@localhost:5432/mydb"]
+"args": ["postgresql://<user>:<pw>@localhost:5432/mydb"]   # a literal user:password in the URL
 ```
 
 Always use environment variable references (`${VAR_NAME}`) in `.mcp.json` — never hardcode credentials.
@@ -3500,9 +3494,9 @@ These are the built-in tools Claude Code can use during a session:
 
 ### Permission Model
 
-Claude Code uses an **allow / deny / ask** system. Common safe commands run without asking, sensitive files are blocked entirely, and everything else asks for confirmation.
+Claude Code supports **allow / deny / ask** permission rules. **This kit ships with no rule lists:** `.claude/settings.json` sets only `"permissions": {"defaultMode": "auto"}`. A deny list is planned but deferred. Until it lands, the guardrails are the PreToolUse hooks: `pre-bash-guard.py` (destructive commands, unquoted globs, raw scaffolds), `pre-edit-protect-sensitive.sh` (`.env*`, keys, credentials, `.claude/state/` review evidence), the secret scanners and the opt-in Enforcement Kit's PR/merge gate. Treat hooks as defence in depth; CI and protected branches remain the enforcement of record.
 
-Configure in `.claude/settings.json`:
+The example below shows the rule syntax if you add your own rules in `.claude/settings.json` or `.claude/settings.local.json`:
 
 ```json
 {
@@ -3588,7 +3582,7 @@ Works in both regular prompts and slash command arguments. Reduces token usage c
 
 ### Context Window Management
 
-Sonnet 4.6 and Opus 4.6 have a **1M token context window** with automatic compaction (GA 2026-03-13, no long-context premium). Mismanaging context still degrades performance and output quality — a larger window just moves the problem further out.
+Current Claude models (Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.2) have a **1M token context window** with automatic compaction. Mismanaging context still degrades performance and output quality — a larger window just moves the problem further out.
 
 | Problem | Impact | Fix |
 |---------|--------|-----|

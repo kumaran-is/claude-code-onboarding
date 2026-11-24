@@ -46,6 +46,11 @@ as concise rules to prevent recurrence. It is auto-loaded every session.
 **Rule:** Scaffold slash commands MUST be run by the orchestrator in the main session via Skill tool BEFORE spawning any agents — sub-agents cannot invoke slash commands.
 **Applies:** All multi-agent project creation tasks (Flutter, Angular, NestJS, Python, Spring)
 
+## [2026-11-24] Scope [x1]
+**Mistake:** Turned a "close the 2 blocking gaps" job into a 38-file sweep (P2s, doc pins, versions) without first showing the size or checking in.
+**Rule:** Before work beyond the blocking fixes, state the file count per item and do the blocking fixes first as their own reviewable set.
+**Applies:** All multi-item hardening/audit follow-ups
+
 ## [2026-11-23] Communication [x2]
 **Mistake:** Kept asking or hinting for yes/no approval (RED-tier edits, "nothing is committed") after the user gave blanket approval.
 **Rule:** In this repo, take the recommended option and report it; no approval prompts or approval-fishing lines, commit/push included once the audit passes.

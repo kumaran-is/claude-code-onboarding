@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: '20'
+          node-version: '26'  # Angular 22 / React 19 web stack: Node 26 LTS
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx ng build --configuration=production
@@ -168,7 +168,7 @@ npx chromatic --project-token=<token> --auto-accept-changes main
 ```yaml
 # GitHub Actions
 - name: Publish to Chromatic
-  uses: chromaui/action@latest
+  uses: chromaui/action@25d2d37fcbe164dfbf5479a432fbd73d03bae733 # v18.15.2
   with:
     projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
     onlyChanged: true  # Only test changed components

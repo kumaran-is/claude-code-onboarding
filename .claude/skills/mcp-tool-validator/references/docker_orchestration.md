@@ -28,12 +28,18 @@ services:
       - LOG_LEVEL=debug
       # auth tokens, DB URLs, etc.
     healthcheck:
+      # Python images with curl. Node slim/distroless images have no curl or wget: use
+      # ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 6
       start_period: 10s
 ```
+
+A TypeScript SDK v2 server bound to `0.0.0.0` in the container also needs `MCP_ALLOWED_HOSTS` (hostnames without
+port, e.g. `127.0.0.1,localhost`) and `MCP_ALLOWED_ORIGINS`; a `Host` outside the list gets 403 on every route,
+health included ([production-deployment-docker.md](../../mcp-builder/reference/production-deployment-docker.md) §0).
 
 The `healthcheck` block is what `run_validation.sh` polls indirectly (it
 hits the URL itself, but Docker's healthcheck affects `docker compose ps`

@@ -101,6 +101,23 @@ Use `esbuild` or `@nestjs/cli` bundler to produce a single-file bundle — reduc
 
 ---
 
+## Plain Node.js services and MCP servers (Node 26)
+
+Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3, MCP SDK 2.4.0 and esbuild 0.28.2, locally (not on Cloud Run): a stdio server started by a real `Client`, then 50 tool calls, medians of 3 or more runs.
+
+| Build | Connect (spawn → initialized) | Peak RSS |
+|---|---|---|
+| `tsc` output, unbundled ESM | 163–251 ms | 93–96 MB |
+| esbuild CJS bundle (`.cjs`) | 80–159 ms | 78–80 MB |
+| unbundled ESM + OTel NodeSDK (`--import`; sync hook / `module.register` fallback) | 341 / 434 ms medians (runs ranged to 1030 ms) | 126 / 140 MB |
+| CJS bundle + OTel (`--require`) | 187–333 ms | 102–105 MB |
+
+- Default to unbundled ESM. Bundle to CJS only when cold start is the measured bottleneck; name the output `.cjs` so a `"type": "module"` `package.json` does not make Node load it as ESM. Details and the OTel hook trade-off: `typescript-expert` › `references/node-service-engineering.md` §2.
+- OTel adds about 30–45 MB RSS and 100 ms or more at start: load only the instrumentations you use.
+- Heap: `NODE_OPTIONS=--max-old-space-size=320` for `--memory 512Mi`. V8's real limit is the flag plus about 96 MB, and RSS sits above the heap; with 384 the process reached 520 MiB RSS before V8's own OOM, past a 512 MiB limit.
+
+---
+
 ## Spring Boot WebFlux (Java 21)
 
 ### JVM Startup Flags
@@ -145,6 +162,7 @@ Typical cold start times after applying `--cpu-boost`:
 | Python FastAPI (minimal) | 1.5–2.5s | 0.8–1.2s |
 | NestJS (bundled) | 1.0–1.8s | 0.5–0.9s |
 | TypeScript / Fastify | 0.6–1.2s | 0.3–0.6s |
+| Node 26 MCP server (measured locally, not on Cloud Run) | 0.16–0.25s unbundled ESM | 0.08–0.16s CJS bundle |
 | Spring Boot WebFlux | 3.0–5.0s | 1.5–2.5s (TieredStop=1) |
 
 > These are estimates. Always measure with `gcloud run services describe --format='value(status.latestReadyRevisionName)'` and Cloud Run metrics in GCP Console before and after.

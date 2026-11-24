@@ -289,58 +289,48 @@ CMD ["gunicorn", "my_agent_service.main:create_app()", \
 
 ---
 
-## TypeScript / Fastify / Node 24
+## TypeScript / Fastify / MCP server — Node 26
+
+Verified 2026-11-23 against Node 26.13.1, npm 11.20.0 and Docker Engine 29.8.0: built, run with `--read-only --cap-drop ALL --memory 512m`, healthy, called from the host by an MCP SDK client, `docker stop` in 1 s with exit 0. Uses the image's built-in `node` user (uid 1000) instead of creating one. NestJS stays on the Node 24 pattern above.
 
 ```dockerfile
-# my-service — Multi-Stage Production Dockerfile (TypeScript/Fastify / Node 24)
+# syntax=docker/dockerfile:1
+# my-service — Multi-Stage Production Dockerfile (TypeScript/Fastify or MCP server / Node 26, ESM output from tsc)
+# Base image pinned by multi-arch index digest (resolved 2026-11-23). Renovate/Dependabot bump it.
+ARG NODE_IMAGE=node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc
 
-# ============================================
-# Stage 1: Production dependencies
-# ============================================
-FROM node:24-alpine AS deps
-
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodeapp
-
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
-
-# ============================================
-# Stage 2: Builder — TypeScript compile
-# ============================================
-FROM node:24-alpine AS builder
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
+COPY tsconfig.json tsconfig.build.json ./
+COPY src ./src
 RUN npm run build
 
-# ============================================
-# Stage 3: Production Runner
-# ============================================
-FROM node:24-alpine AS runner
-
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodeapp
-
+FROM ${NODE_IMAGE} AS prod-deps
 WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=3000
-USER nodeapp
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts
 
-COPY --from=deps --chown=nodeapp:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nodeapp:nodejs /app/dist ./dist
-COPY --from=builder --chown=nodeapp:nodejs /app/package.json ./
-
+FROM ${NODE_IMAGE} AS runtime
+# Heap below the container limit: 320 MiB old space for a 512 MiB limit (384 let RSS pass the limit under load).
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 NODE_OPTIONS=--max-old-space-size=320
+WORKDIR /app
+# Root-owned, read-only to the app user. package.json carries "type": "module".
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY package.json ./
+USER node
 EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
-
-CMD ["node", "dist/index.js"]
+# Docker/Compose only (Kubernetes and Cloud Run use their own probes). Slim has no curl/wget: node's fetch on LIVENESS.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# Exec form: node is PID 1 and receives SIGTERM. --import preloads the OpenTelemetry bootstrap; drop it without OTel.
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]
 ```
+
+- `--ignore-scripts` blocks dependency install scripts; drop it only for a package that needs one (native build), and list that package in the PR.
+- An MCP server bound to `0.0.0.0` also needs `MCP_ALLOWED_HOSTS` (hostnames without port, including `127.0.0.1` for the `HEALTHCHECK`) and `MCP_ALLOWED_ORIGINS`: `.claude/skills/mcp-builder/reference/production-deployment-docker.md` §0, which also has the distroless runtime variant.
 
 **.dockerignore (TypeScript/Node):**
 ```

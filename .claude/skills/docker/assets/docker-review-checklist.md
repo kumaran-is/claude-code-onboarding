@@ -1,6 +1,6 @@
 # Docker Review Checklist
 
-Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 24, Spring Boot WebFlux, Python FastAPI, TypeScript/Fastify.
+Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 24, Spring Boot WebFlux, Python FastAPI, TypeScript/Fastify and MCP servers on Node 26.
 
 ---
 
@@ -11,7 +11,8 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Production stage contains ONLY runtime artifacts — no build tools, no dev dependencies
 - [ ] `.dockerignore` present and excludes: `node_modules/`, `dist/`, `target/`, `.git/`, `.env*`, `**/*.test.*`, `docs/`
 - [ ] Base image selection matches stack:
-  - NestJS/Fastify: `node:24-alpine` (not node:18, not node:22)
+  - NestJS: `node:24-alpine` (not node:18, not node:22)
+  - TypeScript/Fastify services and MCP servers: `node:26.13.1-trixie-slim` (or `node:26.13.1-alpine3.23` when every native dependency ships musl builds; runtime may be `gcr.io/distroless/nodejs26-debian13:nonroot`); builder and runtime on the same Node major and libc
   - Spring Boot: `eclipse-temurin:21-jre-alpine` runtime (not JDK, not full Debian)
   - Python: `python:3.14-slim` (not python:3.14 full, not buster/bullseye)
 - [ ] RUN commands that modify the same layer are consolidated (avoids layer bloat)
@@ -25,7 +26,8 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] No secrets, API keys, or passwords in `ENV`, `ARG`, or `RUN` commands
 - [ ] Base images pinned to a minor version AND a multi-arch index digest (`image:tag@sha256:...`); no `:latest`; no `COPY --from=<image-ref>` (use a pinned `FROM ... AS stage`); `# syntax=` pinned
 - [ ] `HEALTHCHECK` configured with appropriate interval, timeout, start-period, and retries
-  - NestJS/Fastify: `wget --spider http://localhost:3000/health/live`
+  - NestJS (alpine has busybox wget): `wget --spider http://localhost:3000/health/live`
+  - Node 26 slim / distroless (no curl or wget): exec-form `node -e "fetch('http://127.0.0.1:3000/health/live')..."` (distroless: `/nodejs/bin/node`)
   - Spring Boot: `wget --spider http://localhost:8080/actuator/health`
   - Python: stdlib only, on the LIVENESS path: `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"` (a slim image has no curl, and httpx may not be a runtime dependency)
 - [ ] Configuration is not baked into the image: no `ENV` for env-varying values, no secrets in `ARG`; required settings have no code default
@@ -87,7 +89,9 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Framework (and any instrumentation library) pinned `==` in `pyproject.toml`; a test asserts spans are emitted
 - [ ] `PYTHONUNBUFFERED=1` and `PYTHONDONTWRITEBYTECODE=1` set
 
-### TypeScript/Fastify / Node 24
-- [ ] Uses `npm ci --only=production` for production deps stage
-- [ ] TypeScript compiled to `dist/` in builder stage
-- [ ] `node dist/index.js` (not `ts-node`) in production CMD
+### TypeScript/Fastify and MCP servers / Node 26
+- [ ] Production deps stage uses `npm ci --omit=dev --ignore-scripts` (`--only=production` is legacy: npm 11 warns `Use --omit=dev`)
+- [ ] TypeScript compiled to `dist/` in builder stage; `package.json` (with `"type": "module"`) copied to the runtime stage
+- [ ] Exec-form `CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]` when OpenTelemetry is used (not `ts-node`, not `npm start`, no shell form)
+- [ ] `NODE_OPTIONS=--max-old-space-size` at ~60–65% of the container memory limit (320 for 512 MiB)
+- [ ] MCP over HTTP bound to `0.0.0.0`: `MCP_ALLOWED_HOSTS` (hostnames, no port; include `127.0.0.1` for the `HEALTHCHECK`) and `MCP_ALLOWED_ORIGINS` set, and orchestrator probes send an allowed `Host`

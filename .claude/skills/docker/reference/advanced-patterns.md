@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 ```dockerfile
 # Cache ~/.npm across builds
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --only=production
+    npm ci --omit=dev
 ```
 
 ### pnpm (NestJS)
@@ -95,21 +95,28 @@ Distroless images contain only the application runtime — no shell, no package 
 
 ### Node.js Distroless
 
-```dockerfile
-FROM node:24-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build && npm prune --production
+Builder and runtime must share the Node major and libc (an alpine/musl builder with a glibc distroless runtime breaks native modules). Verified 2026-11-23: the image below runs healthy as uid 65532 with no shell (296 MB vs 418 MB on slim for the same app).
 
-# Distroless runtime — no shell
-FROM gcr.io/distroless/nodejs22-debian12
+```dockerfile
+ARG NODE_IMAGE=node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc
+FROM ${NODE_IMAGE} AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build && npm prune --omit=dev
+
+# Distroless runtime — no shell; the entrypoint is already node, so CMD lists only node arguments
+FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:ffa8a7545403036c94ec76674b5dbac2d425af2d679147cdf3e30180071487b7
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY package.json ./
 EXPOSE 3000
-CMD ["dist/index.js"]
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+CMD ["dist/main.js"]
 ```
 
 ### Java Distroless

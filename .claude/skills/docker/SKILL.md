@@ -1,6 +1,6 @@
 ---
 name: docker
-description: "Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify/Node 24."
+description: "Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Dockerfile, docker-compose, containerize, docker build, multi-stage build, docker image, container, dockerignore, docker run, docker scout
@@ -18,7 +18,7 @@ last-reviewed: "2026-03-14"
 
 # Docker
 
-Production-ready containerization for NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify/Node 24. All patterns follow: multi-stage build, non-root user, HEALTHCHECK, .dockerignore.
+Production-ready containerization for NestJS/Node 24, Spring Boot WebFlux 3.5.x/Java 21, Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26. All patterns follow: multi-stage build, non-root user, HEALTHCHECK, .dockerignore.
 
 ## When to Use
 
@@ -52,7 +52,7 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 | Spring Boot WebFlux 3.5.x | maven:3.9-eclipse-temurin-21-alpine → eclipse-temurin:21-jre-alpine | Maven | 8080 |
 | Python FastAPI 3.14 | python:3.14-slim | uv | 8000 |
 | Python Agentic AI | python:3.14-slim | uv + gunicorn | 8000 |
-| TypeScript/Fastify / Node 24 | node:24-alpine | npm | 3000 |
+| TypeScript/Fastify, MCP servers / Node 26 | node:26.13.1-trixie-slim@sha256 (distroless `nodejs26-debian13` optional) | npm | 3000 |
 
 ### Step 2: Set Up Docker Compose
 

@@ -2,7 +2,7 @@
 
 Copy the files from `scripts/` into your project's `tests/` (`mcp_test_client.py`, `run_validation.sh`, `test_mcp_test_client_self.py`, `scenarios.yaml`). They are shipped as tested files in [`../scripts/`](../scripts/); this page documents how they work.
 
-> Verified 2026-11-23 with `mcp==2.3.0` and `pyyaml==6.0.4` on CPython 3.14: GREEN (exit 0) against a stdio server; a changed expectation gave RED (exit 1) with `json_path: total_cents expected 1501, got 1500`; a tool with two cases gave COVERAGE_GAP (exit 2); an unreachable URL gave CONNECTION (exit 3); over Streamable HTTP it listed the server's tools and reported each one missing a scenario (exit 2). The orchestrator passed `bash -n` and the stdio and build-failure (exit 10) paths; its Docker path was not run.
+> Verified 2026-11-23 with `mcp==2.3.0` and `pyyaml==6.0.4` on CPython 3.14: GREEN (exit 0) against a stdio server; a changed expectation gave RED (exit 1) with `json_path: total_cents expected 1501, got 1500`; a tool with two cases gave COVERAGE_GAP (exit 2); an unreachable URL gave CONNECTION (exit 3); over Streamable HTTP it listed the server's tools and reported each one missing a scenario (exit 2). The orchestrator passed `bash -n` and the stdio and build-failure (exit 10) paths. Its Docker path ran the same day against a Node 26.13.1 TypeScript SDK v2 server (`@modelcontextprotocol/server` 2.4.0) built by `docker compose`: GREEN (exit 0, `protocol_version` `2026-07-28`, 3 scenarios), a changed expectation RED (exit 1), a wrong `HEALTH_URL` exit 12 after `HEALTH_TIMEOUT_S`.
 
 ## Dependencies
 

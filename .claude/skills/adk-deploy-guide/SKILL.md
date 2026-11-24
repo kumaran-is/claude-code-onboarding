@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: deployment
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # ADK Deployment Guide
@@ -84,7 +84,7 @@ Both support `--with_ui` to deploy the ADK dev UI. Cloud Run accepts extra `gclo
 
 ## Keyless model access and config
 
-- Deployed agents call Gemini through Vertex AI with the runtime service account (ADC): `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`. No developer API key exists in staging or production — not in the image, env vars or Secret Manager — and app settings fail startup if one is present (`google-adk/reference/adk-project-config.md` §3).
+- Deployed agents call Gemini through Vertex AI with the runtime service account (ADC): `GOOGLE_GENAI_USE_ENTERPRISE=true` (google-genai 2.34 deprecates `GOOGLE_GENAI_USE_VERTEXAI`; set the new name), `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`. No developer API key exists in staging or production — not in the image, env vars or Secret Manager — and app settings fail startup if one is present (`google-adk/reference/adk-project-config.md` §3).
 - Grant the runtime service account only the Vertex AI role it needs (e.g. `roles/aiplatform.user`) in Terraform.
 - The model id is configuration (`AGENT_MODEL`), set per environment in Terraform/deploy config. A model id proven on the developer API is not proven on Vertex: probe it on the target endpoint before promoting (`gemini-api-dev` skill, "Models").
 
@@ -111,7 +111,7 @@ Deploy the candidate revision with no traffic, run the agent eval suite against 
     needs: eval-gate          # no promotion without a passing gate
 ```
 
-Do not gate on `adk eval` alone: in google-adk 1.29 the CLI prints "Tests failed: N" but its exit path has no failure exit (source read: `cli/cli_tools_click.py`, `cli_eval`), so CI would stay green. Use `AgentEvaluator.evaluate(agent_module, eval_dataset_file_path_or_dir, num_runs=...)` inside pytest, which raises on failure. The gate fails closed: a missing evalset, zero cases run or an errored judge is a failure, not a pass. Criteria and thresholds: `adk-eval-guide` skill; CI tiers: `eval-guide/reference/ci-tiers.md`.
+Since google-adk 2.13 `adk eval` exits 1 when any case fails or no results were produced (1.29 printed "Tests failed: N" and exited 0, so pin ≥ 2.13 before trusting the exit code). Inside pytest, `AgentEvaluator.evaluate(agent_module, eval_dataset_file_path_or_dir, num_runs=2)` raises on failure; `agent_module` may be a module path, a `Workflow`/agent node or an `App` in 2.x. The gate fails closed: a missing evalset, zero cases run or an errored judge is a failure, not a pass. Criteria and thresholds: `adk-eval-guide` skill; CI tiers: `eval-guide/reference/ci-tiers.md`.
 
 ---
 

@@ -78,7 +78,7 @@ Override default simulator behavior in `eval_config.json`:
 {
   "criteria": { },
   "user_simulator_config": {
-    "model": "gemini-3.1-flash",
+    "model": "<simulator-model-id>",
     "model_configuration": {
       "thinking_config": {
         "include_thoughts": true,
@@ -90,6 +90,8 @@ Override default simulator behavior in `eval_config.json`:
   }
 }
 ```
+
+`<simulator-model-id>` and `<judge-model-id>` are placeholders for ids you checked on the current models page; omitted, `google-adk==2.15.0` falls back to `gemini-2.5-flash` (`criteria-guide.md`).
 
 - `model` — model backing the user simulator
 - `model_configuration` — `GenerateContentConfig` controlling model behavior
@@ -146,7 +148,7 @@ Use `per_turn_user_simulator_quality_v1` to verify the simulator follows the con
     "per_turn_user_simulator_quality_v1": {
       "threshold": 1.0,
       "judge_model_options": {
-        "judge_model": "gemini-3.1-flash",
+        "judge_model": "<judge-model-id>",
         "num_samples": 5
       },
       "stop_signal": "</finished>"

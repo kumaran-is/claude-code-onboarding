@@ -68,13 +68,8 @@ from google.adk.evaluation.eval_metrics import EvalMetric
 from google.adk.evaluation.evaluator import EvaluationResult, PerInvocationResult, EvalStatus
 
 def _get_genai_client() -> genai.Client:
-    # genai.Client() does NOT auto-detect GOOGLE_GENAI_USE_VERTEXAI
-    if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() == "true":
-        return genai.Client(
-            vertexai=True,
-            project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
-        )
+    # genai.Client() reads GOOGLE_GENAI_USE_ENTERPRISE (and the deprecated GOOGLE_GENAI_USE_VERTEXAI),
+    # GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION itself (google-genai 2.34 _api_client.py)
     return genai.Client()
 
 async def multimodal_response_quality(
@@ -101,7 +96,7 @@ async def multimodal_response_quality(
             ),
         ]
         response = await client.aio.models.generate_content(
-            model="gemini-3.1-flash",
+            model=os.environ["JUDGE_MODEL"],  # required; a checked id, recorded with results
             contents=genai.types.Content(role="user", parts=judge_parts),
         )
         try:

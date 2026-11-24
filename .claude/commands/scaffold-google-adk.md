@@ -60,12 +60,13 @@ Before writing any code or running any command, ask ALL of the following. Presen
 
    ### Option B: Manual setup
 
-   Initialize project — `uv init $ARGUMENTS --python <the interpreter you deploy>` (verify `google-adk` installs on it; the skill references were executed on 3.12)
+   Initialize project — `uv init $ARGUMENTS --python <the interpreter you deploy>` (verify `google-adk` installs on it; the skill references were executed on 3.14.10)
 
    Add dependencies:
    ```bash
-   uv add "google-adk==1.29.0" fastapi "uvicorn[standard]" pydantic-settings structlog "sqlalchemy[asyncio]" asyncpg
-   uv add --dev pytest pytest-asyncio httpx aiosqlite ruff mypy
+   uv add "google-adk[db,mcp,otel]==2.15.0" "google-genai==2.34.0" "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "uvicorn[standard]==0.54.0" "pydantic-settings==2.16.3" "structlog==26.1.0" "sqlalchemy[asyncio]==2.1.9" "asyncpg==0.32.0"
+   # google-adk 2.15 requires google-genai>=2.34,<3; McpToolset needs the mcp extra
+   uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "httpx2==2.16.2" "aiosqlite==0.22.1" "ruff==0.17.6" "mypy==2.4.1"
    # pin every dependency exactly (==) to what uv lock resolved; commit uv.lock
    ```
 

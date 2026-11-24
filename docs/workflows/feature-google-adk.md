@@ -1,6 +1,6 @@
 # Feature Development — Google ADK
 
-> **When to use**: Building an AI agent with Google ADK, Gemini models, SequentialAgent, ParallelAgent, LoopAgent, FastAPI integration
+> **When to use**: Building an AI agent with Google ADK, Gemini models, Workflow graphs (google-adk 2.x), FastAPI integration
 > **Time estimate**: 2–5 hours for initial agent; 1–2 hours per additional tool or subagent
 > **Prerequisites**: GCP project configured, ADK credentials set up
 
@@ -18,9 +18,8 @@ Full Google ADK agent development lifecycle from scaffold to deployed. Covers th
 **MCP**: Context7 for current ADK API — ADK changes frequently
 
 **Agent types available** (from `agents/google-adk.md`):
-- `SequentialAgent` — run subagents in order
-- `ParallelAgent` — run subagents concurrently
-- `LoopAgent` — repeat until condition
+- `Workflow` (ADK 2.x) — graph of agents and function nodes: sequence, routing, capped loops, fan-out (`google-adk/reference/adk-agent-types.md` §0)
+- `SequentialAgent` / `ParallelAgent` / `LoopAgent` — deprecated in 2.x (`DeprecationWarning`); keep only where the flow must sit under an `LlmAgent`
 - `FunctionTool` — wrap Python functions as tools
 - `McpToolset` — expose MCP servers as ADK tools
 
@@ -67,24 +66,20 @@ src/<project>/
 **Agent composition patterns**:
 
 ```python
-# Sequential — steps in order
-root_agent = SequentialAgent(
-    name="pipeline",
-    sub_agents=[step1_agent, step2_agent, step3_agent]
-)
+# ADK 2.x: one Workflow graph; run it with Runner(node=root_workflow, ...)
+from google.adk import Workflow
 
-# Parallel — concurrent execution
-root_agent = ParallelAgent(
-    name="parallel_pipeline",
-    sub_agents=[agent_a, agent_b]
-)
+# Sequential — agents and plain functions in order
+root_workflow = Workflow(name="pipeline", edges=[("START", step1_agent, normalize, step2_agent)])
 
-# Loop — repeat until done
-root_agent = LoopAgent(
-    name="iterative",
-    sub_agents=[worker_agent],
-    max_iterations=5
-)
+# Routing — a node returns Event(route=["BUG"]); the dict edge picks the branch
+root_workflow = Workflow(name="triage", edges=[
+    ("START", classifier_agent, router),
+    (router, {"BUG": bug_node, "LOGISTICS": logistics_node}),
+])
+
+# Capped loop and fan-out: a @node function with ctx.run_node(...) and a fixed range / asyncio.gather
+# (google-adk/reference/adk-agent-types.md §0). SequentialAgent/ParallelAgent/LoopAgent are deprecated.
 ```
 
 **Tool wrapping**:
@@ -117,7 +112,7 @@ agent = LlmAgent(tools=[toolset])
 
 **Environment variables** (from skill):
 ```
-GOOGLE_GENAI_USE_VERTEXAI=1
+GOOGLE_GENAI_USE_ENTERPRISE=true   # GOOGLE_GENAI_USE_VERTEXAI is the deprecated name
 GOOGLE_CLOUD_PROJECT=<project>
 GOOGLE_CLOUD_LOCATION=<region>
 ```
@@ -189,7 +184,7 @@ GOOGLE_CLOUD_LOCATION=<region>
 ## Common Pitfalls
 
 - **ADK API from memory** — ADK evolves rapidly; always query Context7 MCP for current syntax
-- **No `max_iterations` on LoopAgent** — can run indefinitely and exhaust quota
+- **Unbounded loops** — a `LoopAgent` without `max_iterations` or a `@node` loop without a fixed range can run indefinitely and exhaust quota; also cap every run with `RunConfig(max_llm_calls=N)`
 - **Tools without docstrings** — Gemini uses the docstring to decide when to call the tool; missing docs = wrong tool selection
 - **Skipping evaluation** — eval score below target in prod means users see wrong/unsafe outputs
 - **Secrets in `.env` file in Docker** — use Secret Manager; never bake secrets into container images

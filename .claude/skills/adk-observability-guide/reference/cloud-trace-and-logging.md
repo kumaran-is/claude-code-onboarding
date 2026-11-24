@@ -18,11 +18,14 @@ View traces: **Cloud Console > Trace > Trace explorer**
 ### Span Hierarchy
 
 ```
-invocation
-  └── agent_run
-        ├── call_llm
-        └── execute_tool
+invoke_workflow <root>
+  └── invoke_agent <agent>
+        ├── generate_content <model>
+        ├── execute_tool <tool>
+        └── generate_content <model>
 ```
+
+Captured on `google-adk==2.15.0` with an in-memory exporter (fixture model, not live). Since 2.13 the default is the OTel GenAI semantic conventions 1.44 schema: the old `call_llm` span is gone, so dashboards and alerts keyed on it go silent after the upgrade. `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores the legacy schema temporarily; migrate queries instead.
 
 No additional configuration required. Works in local dev (`make playground`) and all deployed environments.
 
@@ -64,7 +67,7 @@ export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="NO_CONTENT"
 
 ### Disable in Deployed Environments
 
-Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` in `deployment/terraform/service.tf` and re-apply Terraform.
+Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT` in `deployment/terraform/service.tf` and re-apply Terraform.
 
 ## BigQuery Dataset Naming Convention
 

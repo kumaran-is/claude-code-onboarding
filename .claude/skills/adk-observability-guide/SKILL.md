@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: observability
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 # ADK Observability Guide
@@ -65,7 +65,7 @@ export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT  # GenAI lo
 export ADK_TELEMETRY_IGNORE_RUN_CONFIG=1                           # app code cannot re-enable per request
 ```
 
-All three are needed: the first alone leaves the OpenTelemetry paths at their defaults, and without the third a per-request `capture_message_content` setting overrides the environment (ADK telemetry-config guide, verified on Context7; the admin lock is a recent ADK feature, so confirm it exists in your pinned version before relying on it).
+Verified on `google-adk==2.15.0` (fixture model, in-memory exporter): with none of these set, the default 1.44 schema recorded no prompt text, but `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY` or the legacy opt-in `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` (where `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` defaults to `true`) put it into span attributes. Set all three explicitly anyway: the first alone leaves the OpenTelemetry paths at their defaults, and without the third a per-request `capture_message_content` setting overrides the environment (ADK telemetry-config guide; `ADK_TELEMETRY_IGNORE_RUN_CONFIG` is read in `google/adk/telemetry/context.py` on 2.15.0).
 
 View traces: **Cloud Console > Trace > Trace explorer**
 

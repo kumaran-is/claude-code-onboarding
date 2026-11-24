@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: workflow
   output-format: guide
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # ADK Development Guide
@@ -64,7 +64,7 @@ Every ADK agent feature follows this workflow. Skipping phases increases risk of
 - Refine agent instructions, tool signatures, or tool implementations
 - Re-run until success rate stabilizes
 - Common pitfalls: app name must match directory name, state type mismatches, tool return types
-- `adk eval` prints pass/fail counts but does not fail the process on failed cases in 1.29 (source read) — gate CI through pytest + `AgentEvaluator.evaluate` (`adk-deploy-guide` skill, "Eval gate before traffic")
+- Since 2.13 `adk eval` exits 1 when any case fails or no results were produced (1.29 exited 0); CI can gate on its exit code directly or through pytest + `AgentEvaluator.evaluate` (`adk-deploy-guide` skill, "Eval gate before traffic")
 
 **Stop if:**
 - Success rate plateaus below target threshold (defined in eval_config.json)
@@ -123,19 +123,23 @@ One-sentence mission statement.
 
 ## ADK Import Precision Rules
 
-Use the import paths the **installed** package exports; never guess and never copy paths from older docs. Executed against `google-adk==1.29.0`:
+Use the import paths the **installed** package exports; never guess and never copy paths from older docs. Executed against `google-adk==2.15.0`:
 
 ```python
-# ✅ Works in 1.29
+# ✅ Works in 2.15
 from google.adk.tools import google_search, load_web_page, exit_loop, AgentTool, FunctionTool, ToolContext
 from google.adk.code_executors import BuiltInCodeExecutor      # Agent(code_executor=BuiltInCodeExecutor())
 from google.adk.runners import InMemoryRunner, Runner
-from google.adk.agents import Agent, LlmAgent, SequentialAgent, ParallelAgent, LoopAgent, RunConfig
+from google.adk.agents import Agent, LlmAgent, SequentialAgent, ParallelAgent, LoopAgent, RunConfig  # the three orchestrators warn: deprecated in favor of Workflow
+from google.adk import Agent, Context, Event, Runner, Workflow  # google.adk.__all__ in 2.15
+from google.adk.workflow import FunctionNode, RetryConfig, node
+from google.adk.tools import McpToolset                        # needs the google-adk[mcp] extra
 
-# ❌ Fails in 1.29 (ModuleNotFoundError / ImportError)
+# ❌ Fails in 2.15 (ModuleNotFoundError / ImportError)
 from google.adk.tools.google_search import google_search        # module is google_search_tool
 from google.adk.tools.built_in_code_execution import built_in_code_execution
-from google.adk import InMemoryRunner                            # google.adk exports Agent, Runner only
+from google.adk import InMemoryRunner                            # google.adk exports Agent, Context, Event, Runner, Workflow
+from google.adk import App                                       # App lives in google.adk.apps
 ```
 
 **Rule:** before adding an import, run `uv run python -c "from <module> import <name>"` against the locked version. Pin ADK exactly so the check stays true.
@@ -267,34 +271,34 @@ When you need to validate system behavior, measure performance, or run CI withou
 
 ### Deterministic Shadow Agent
 
-Create a variant of your ADK agent that overrides only the LLM decision callback with deterministic heuristics. Same tool contracts, same output schema, same session state — zero `model` calls.
+Create a variant of your ADK agent whose `before_model_callback` returns a deterministic `LlmResponse`, so the model is never called. Same tools, output schema and session state. Do **not** subclass `BaseAgent` and override `_run_async_impl`: in ADK 2.x `BaseAgent` is a workflow node and that override is bypassed.
 
 ```python
-# Standard LLM-powered agent
-class RunnerAgent(BaseAgent):
-    async def _run_async_impl(self, ctx: InvocationContext):
-        result = await self.llm.generate_content_async(build_prompt(ctx.session.state))
-        # ... handle result
+from google.adk.agents import Agent
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.models import LlmRequest, LlmResponse
+from google.genai import types
 
-# Shadow: same class hierarchy, no LLM
-class AutopilotRunnerAgent(RunnerAgent):
-    async def _run_async_impl(self, ctx: InvocationContext):
-        state = ctx.session.state
-        decision = "slow" if state["energy"] < 0.3 else "steady"
-        ctx.session.state["decision"] = decision
-        yield Event(author=self.name, content=types.Content(parts=[types.Part(text=decision)]))
+
+def autopilot_decision(callback_context: CallbackContext, llm_request: LlmRequest) -> LlmResponse | None:
+    energy = float(callback_context.state.get("energy", 1.0))
+    decision = "slow" if energy < 0.3 else "steady"
+    return LlmResponse(content=types.ModelContent(parts=[types.Part(text=decision)]))  # skips the model
+
+
+def build_runner_agent(settings: Settings) -> Agent:
+    return Agent(
+        name="runner",
+        model=settings.agent_model,
+        instruction="Decide the pace from the energy level.",
+        output_key="decision",
+        before_model_callback=autopilot_decision if settings.runner_mode == "autopilot" else None,
+    )
 ```
 
-Switch via env var — no code-path changes at the call site:
+Executed on `google-adk==2.15.0` with no credentials: `state={"energy": 0.1}` produced `decision == "slow"` and no model call. `runner_mode` comes from settings, not an ad-hoc `os.getenv` at the call site.
 
-```python
-def get_runner_agent() -> BaseAgent:
-    if os.getenv("RUNNER_MODE") == "autopilot":
-        return AutopilotRunnerAgent()
-    return RunnerAgent()
-```
-
-Use the autopilot variant when you need whole-system runs without a model (load tests, demos). For unit tests of a real `LlmAgent`, prefer the scripted fake model (`google-adk/reference/adk-testing.md` §2): it exercises your actual instructions, tools and callbacks, which a replaced `_run_async_impl` skips.
+Use the autopilot variant when you need whole-system runs without a model (load tests, demos). For unit tests of a real `LlmAgent`, prefer the scripted fake model (`google-adk/reference/adk-testing.md` §2): it exercises your actual instructions and the model-facing path, which the callback skips.
 
 ### NDJSON Replay for Integration Tests and Demos
 

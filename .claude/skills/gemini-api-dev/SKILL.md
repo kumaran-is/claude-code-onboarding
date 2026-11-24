@@ -3,13 +3,13 @@ name: gemini-api-dev
 description: "Direct Gemini API development with google-genai (Python) and @google/genai (TypeScript). Use when building multimodal applications, function calling, structured output, context caching, embeddings, or code execution with Gemini models — without the ADK framework overhead."
 allowed-tools: Bash, Read, Write, Edit, WebFetch
 metadata:
-  triggers: Gemini API, google-genai, @google/genai, multimodal, Gemini embeddings, context caching, code execution sandbox, Gemini function calling, Gemini structured output, direct Gemini, HttpRetryOptions, thinking_level
+  triggers: Gemini API, google-genai, google-genai 3, @google/genai, multimodal, Gemini embeddings, context caching, code execution sandbox, Gemini function calling, Gemini structured output, direct Gemini, HttpRetryOptions, thinking_level
   related-skills: google-adk, agentic-ai-dev, python-dev, nestjs-api
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -41,7 +41,9 @@ Do not hardcode model ids in code or in this skill — the lineup changes faster
 
 ## SDKs
 
-- **Python**: `google-genai` — `uv add google-genai`
+- **Python**: `google-genai` — `uv add "google-genai==3.6.1"` for direct Gemini code and LangChain (`langchain-google-genai==4.5.2` requires `google-genai>=3.3`).
+
+> **Two genai lines, never one lock.** Services built on `google-adk==2.15.0` (or `google-cloud-aiplatform==2.10.0`) must stay on `google-genai==2.34.0`: their PyPI metadata (`requires_dist`) declares `google-genai>=2.34,<3` (ADK) and `google-genai>=1.66.0,<3.0.0` (aiplatform), and `uv lock` with genai 3.x next to ADK is unsatisfiable (executed). Do not "upgrade" genai under ADK; move to 3.x only when an ADK release allows it. Everything in this skill was checked on both lines unless marked 3.x-only (fake HTTP server, no live call): on 2.34.0 the developer API default is still `v1beta`.
 - **TypeScript/NestJS**: `@google/genai` — `npm install @google/genai`
 
 > **Legacy SDKs are deprecated:** `google-generativeai` (Python) and `@google/generative-ai` (JS) — do not use.
@@ -53,7 +55,7 @@ Do not hardcode model ids in code or in this skill — the lineup changes faster
 from google import genai
 from google.genai import types
 
-client = genai.Client()  # developer API: GOOGLE_API_KEY; Vertex: GOOGLE_GENAI_USE_VERTEXAI + project/location via ADC
+client = genai.Client()  # developer API: GOOGLE_API_KEY; Vertex: GOOGLE_GENAI_USE_ENTERPRISE=true + project/location via ADC
 response = client.models.generate_content(
     model=settings.gemini_model,
     contents="Explain quantum computing",
@@ -72,7 +74,7 @@ const response = await ai.models.generateContent({
 });
 ```
 
-Create one client per process and reuse it. Framework-neutral inference rules (timeouts per call class, retry ownership, fallbacks, routing): `agentic-ai-dev/reference/llm-inference-and-model-routing.md`.
+Create one client per process and **keep a reference to it**. In google-genai 3.x a `Client` closes its HTTP transport when it is garbage-collected, so `genai.Client(...).models.generate_content(...)` on a temporary object fails with `RuntimeError: Cannot send a request, as the client has been closed.` (executed on 3.6.1). Framework-neutral inference rules (timeouts per call class, retry ownership, fallbacks, routing): `agentic-ai-dev/reference/llm-inference-and-model-routing.md`.
 
 ## Auth per environment
 
@@ -80,13 +82,25 @@ Create one client per process and reuse it. Framework-neutral inference rules (t
 |---|---|---|
 | local | developer API or Vertex | developer key in a git-ignored `.env`, or ADC (`gcloud auth application-default login`) |
 | test / CI | none — fake the client or the model | none |
-| staging / production | Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`, project, location) | service-account ADC / workload identity — no API key; fail startup if one is set |
+| staging / production | Vertex AI (`GOOGLE_GENAI_USE_ENTERPRISE=true`, project, location; the older `GOOGLE_GENAI_USE_VERTEXAI` is deprecated, and `ENTERPRISE` wins when both are set) | service-account ADC / workload identity — no API key; fail startup if one is set |
 
 ## Sampling and thinking (Gemini 3.x)
 
 - Keep `temperature`, `top_p`, `top_k` at their defaults. Google's Gemini 3 guide: the default temperature 1.0 is recommended and lowering it may cause looping or degraded performance on reasoning tasks; newer generations ignore these fields and return deprecation warnings. Get consistency from `response_schema`, validators and evals instead. Older-model advice ("temperature 0.1 for extraction") does not carry over.
-- Control reasoning depth with `types.ThinkingConfig(thinking_level=...)` (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH` in google-genai 1.75) rather than `thinking_budget`; check which levels your model accepts.
+- Control reasoning depth with `types.ThinkingConfig(thinking_level=...)` (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH` on both 2.34.0 and 3.6.1; `XHIGH` is 3.3+ only, so not available under ADK 2.15) rather than `thinking_budget`; check which levels your model accepts.
 - **`max_output_tokens` includes thinking tokens.** If the model thinks up to the cap you get `finish_reason=MAX_TOKENS` with empty or truncated text, and the thinking is still billed. Lower `thinking_level` or raise the cap; never shrink the cap to "save cost" on a reasoning model. Track `usage_metadata.thoughts_token_count`.
+
+## google-genai 3.x changes (from 2.x; not applicable under ADK, which stays on 2.34)
+
+Verified with `google-genai==3.6.1` against a local fake HTTP server (no live call) and the 3.0.0 changelog:
+
+| Change | Effect | What to do |
+|---|---|---|
+| Developer API default version is `v1` (was `v1beta`) | Executed: requests go to `/v1/models/...`. `v1` lacks context caching (`caches`), the Live API, the `gemini-*-latest` aliases and some `-preview` models | Pin a stable model id; for caching/Live set `HttpOptions(api_version="v1beta")` (executed: `/v1beta/...`) or `GOOGLE_GENAI_API_VERSION=beta`. Vertex/Enterprise clients still default to `v1beta1` |
+| Default HTTP client is `httpx2`; `httpx` is no longer a dependency | Code passing `httpx` objects in `HttpOptions(client_args=...)` breaks; `httpx2` uses the OS trust store when `SSL_CERT_FILE`/`SSL_CERT_DIR` are unset | Install `google-genai[httpx]` and set `GOOGLE_GENAI_HTTP_CLIENT=httpx` only if you must keep httpx |
+| Temporary `Client` objects close their transport | `RuntimeError: ... client has been closed` | One long-lived client per process |
+
+Unchanged and executed on 3.6.1: `response_schema=PydanticModel` with `response_mime_type="application/json"` fills `response.parsed` with the model instance; `ThinkingConfig(thinking_level=...)` is sent; `usage_metadata.thoughts_token_count` is populated; `models.count_tokens(...).total_tokens`; `models.embed_content(model=..., contents=..., config=EmbedContentConfig(output_dimensionality=N))` (the SDK docs now use `gemini-embedding-2`; check the embeddings page for the current id and dimensions before indexing); retries as in "Error Handling".
 
 ## Key Capabilities
 
@@ -120,7 +134,7 @@ Create one client per process and reuse it. Framework-neutral inference rules (t
 
 ```bash
 # Python setup
-uv add google-genai
+uv add "google-genai==3.6.1"        # exact pin; ADK services use 2.34.0 (see SDKs)
 
 # TypeScript setup
 npm install @google/genai
@@ -137,7 +151,7 @@ node -e "const {GoogleGenAI}=require('@google/genai'); console.log('ok')"
 
 > Current codes: `https://ai.google.dev/gemini-api/docs/troubleshooting`.
 
-Retries belong to the SDK, configured once (verified with google-genai 1.75 against a local fake HTTP server — no live call): with `retry_options` unset the SDK makes **one** attempt; with `HttpRetryOptions` a 503 was attempted 3 times and a 400 once. Do not wrap the call in another retry library (`google.api_core.retry` is for the older Google Cloud client libraries, not `google-genai`) and do not stack app-level retries on top — attempts multiply.
+Retries belong to the SDK, configured once (verified with google-genai 2.34.0 and 3.6.1 against a local fake HTTP server — no live call): with `retry_options` unset the SDK makes **one** attempt; with `HttpRetryOptions` a 503 was attempted 3 times and a 400 once. Do not wrap the call in another retry library (`google.api_core.retry` is for the older Google Cloud client libraries, not `google-genai`) and do not stack app-level retries on top — attempts multiply.
 
 ```python
 from google import genai

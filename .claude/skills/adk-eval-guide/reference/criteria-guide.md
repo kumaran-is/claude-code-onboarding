@@ -47,11 +47,13 @@ All LLM-as-judge criteria accept `judge_model_options`:
 ```json
 {
   "judge_model_options": {
-    "judge_model": "gemini-3.1-flash",
+    "judge_model": "<judge-model-id>",
     "num_samples": 5
   }
 }
 ```
+
+`<judge-model-id>` is a placeholder: set an id you checked on the current Gemini models page and record it with every result. If `judge_model` (or the user simulator's `model`) is omitted, `google-adk==2.15.0` silently falls back to `gemini-2.5-flash` (`evaluation/eval_metrics.py`, `simulation/llm_backed_user_simulator.py`), an older model than you probably intend.
 
 - `judge_model` — model used to score responses
 - `num_samples` — number of independent scoring samples; final score is majority vote. Default: 5. Higher values reduce LLM variance.
@@ -96,7 +98,7 @@ All LLM-as-judge criteria accept `judge_model_options`:
     "final_response_match_v2": {
       "threshold": 0.8,
       "judge_model_options": {
-        "judge_model": "gemini-3.1-flash",
+        "judge_model": "<judge-model-id>",
         "num_samples": 5
       }
     },

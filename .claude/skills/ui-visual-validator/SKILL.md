@@ -105,7 +105,7 @@ Run through ALL 13 items before declaring a UI change complete:
 
 ```bash
 # Install
-npm install -D @playwright/test
+npm install -D --save-exact @playwright/test@1.65.1
 
 # angular.json — add e2e target
 ```
@@ -143,15 +143,15 @@ jobs:
   visual-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: '20'
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npx ng build --configuration=production
       - run: npx playwright test --reporter=html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: failure()
         with:
           name: playwright-visual-report
@@ -307,7 +307,7 @@ When performing visual analysis:
 ## Related Skills and Agents
 
 - `reality-checker` agent — **run BEFORE this skill** for live browser verdict (Chrome DevTools MCP)
-- `browser-testing` skill — Chrome DevTools MCP for live UI interaction, Playwright for repeatable checks
+- `browser-testing` skill — Playwright CLI for interactive checks, `@playwright/test` for repeatable visual specs, Chrome DevTools MCP for performance
 - `accessibility-audit` skill — canonical WCAG 2.2 AA checklist (beyond visual checks); visual checks never establish conformance
 - `web-design-guidelines` skill — Vercel Web Interface Guidelines audit (loading/error/empty state patterns)
 - `design-system` skill — token compliance enforcement

@@ -42,7 +42,7 @@ An effect exists only to synchronise with something outside React (a browser API
 | `vitest` / `jsdom` | `5.1.1` / `31.0.1` | |
 | `@testing-library/react` / `user-event` / `jest-dom` | `16.3.3` / `14.6.13` / `8.0.0` | |
 | `msw` | `3.0.7` | v3 option is `onUnhandledFrame` (v2's `onUnhandledRequest` no longer type-checks) |
-| `@playwright/test` / `@axe-core/playwright` | `1.65.1` / `4.14.0` | |
+| `@playwright/test` / `@axe-core/playwright` | `1.65.1` / `4.14.1` | |
 | `eslint` / `typescript-eslint` | `10.15.0` / `8.74.0` | `typescript-eslint@8.74.0` still peers `typescript <6.1.0` |
 | `eslint-plugin-react-hooks` / `eslint-plugin-jsx-a11y-x` | `7.1.1` / `0.2.0` | ESLint 10 fork of `eslint-plugin-jsx-a11y`; `minimatch` override (`reference/tooling.md`) |
 

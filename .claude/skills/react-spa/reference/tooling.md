@@ -45,7 +45,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.14.0",
+    "@axe-core/playwright": "4.14.1",
     "@babel/core": "8.1.3",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.65.1",

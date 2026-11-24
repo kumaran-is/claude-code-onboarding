@@ -2005,8 +2005,8 @@ claude-code-onboarding/
         │  # — Tooling skills —
         ├── mcp-builder/                  # MCP server development: Python (FastMCP) and Node.js (MCP SDK),
         │                                 # tool definitions, transport config (18 reference files + scripts)
-        ├── browser-testing/              # Web browser testing: Chrome DevTools MCP (interactive
-        │                                 # debugging, performance) + Playwright (E2E suites, playwright-cli)
+        ├── browser-testing/              # Web browser testing: Playwright CLI (interactive) +
+        │                                 # @playwright/test (E2E) + Chrome DevTools MCP (performance)
         ├── domain-finder/                # Domain name availability checking via WHOIS (1 reference file)
         └── changelog-generator/          # Git history parsing, semantic versioning,
                                           # release notes generation (1 reference file)
@@ -2040,34 +2040,38 @@ Each target gets its own tool (`.claude/rules/testing-tool-selection.md`):
 
 | Tool | Type | Role |
 |------|------|------|
-| **Chrome DevTools MCP** | MCP server | Default interactive debugging for Angular/React: DOM snapshot, console, network, JS evaluation, performance traces, Lighthouse |
-| **@playwright/test** | npm dev dependency | Deterministic Angular/React E2E suites in CI |
-| **playwright-cli** | Bash CLI (stateful) | Scripted interactive QA: route mocking, offline states, saved sessions, screenshots, traces |
+| **Playwright CLI** | Bash CLI (stateful) | Interactive browser automation by Claude: snapshots, forms, route mocking, offline states, sessions, screenshots, traces, attaching to a paused failing test |
+| **@playwright/test** | npm dev dependency (pinned) | Deterministic Angular/React/marketing-site E2E regression in CI |
+| **Chrome DevTools MCP** | MCP server | Performance traces, Core Web Vitals, Lighthouse, deep console/network/JS diagnostics |
 | **Maestro CLI / MCP** | CLI + MCP server | Flutter Android/iOS UI and E2E only: the same YAML flow runs on the iOS simulator and Android emulator |
 
-#### Install playwright-cli
+No Playwright MCP or Browser Use MCP server is used.
+
+#### Install the Playwright CLI
 
 ```bash
-# Package name is @playwright/cli (pinned); binary installed is playwright-cli
-npm install -g @playwright/cli@0.1.25
-playwright-cli install-browser chromium    # download the browser
-playwright-cli --version  # verify
+# In a web app with @playwright/test (>= 1.59) the CLI is already there, at the project's pinned version:
+npm i -D --save-exact @playwright/test@1.65.1 && npx playwright install chromium
+npx --no-install playwright cli --version          # Version 1.65.1
+
+# Anywhere else: the standalone package, pinned (binary: playwright-cli)
+npm i -D --save-exact @playwright/cli@0.1.25 && npx --no-install playwright-cli --version
 ```
 
 #### Quick sanity check
 
 ```bash
-playwright-cli open https://example.com
-playwright-cli snapshot     # accessibility tree — should show page structure
-playwright-cli requests     # network requests since the page loaded (`request <n>` for details)
-playwright-cli close-all
+npx --no-install playwright cli -s=check open https://example.com
+npx --no-install playwright cli -s=check snapshot     # accessibility tree with element refs
+npx --no-install playwright cli -s=check requests     # network requests since the page loaded (`request <n>` for details)
+npx --no-install playwright cli close-all
 ```
 
 #### Web tool decision rule
 
 - **Must be repeatable or gate a PR?** → `@playwright/test`
-- **Debugging live: DOM, console, network, performance?** → Chrome DevTools MCP
-- **Interactive check that needs mocking, offline or a saved session?** → `playwright-cli`
+- **Claude needs to drive the browser (reproduce, explore, fill forms, mock, capture evidence)?** → Playwright CLI
+- **Performance, Lighthouse, deep console/network/JS diagnostics?** → Chrome DevTools MCP
 
 #### Sample Prompts
 
@@ -2082,16 +2086,16 @@ Use playwright-cli to test the login flow at localhost:4200/login — fill the f
 submit, check network for POST /api/auth/login → 200, take a screenshot of the result
 ```
 
-**Interactive debugging:**
+**Debug a failing E2E test:**
 ```
-Use Chrome DevTools MCP to open localhost:4200/signup, submit the form with a test email,
-then list console errors and the failed network requests
+Run e2e/signup.spec.ts with --debug=cli, attach playwright-cli to the paused test,
+step to the failing assertion and tell me why it fails
 ```
 
 **Performance trace:**
 ```
-Run a playwright-cli tracing-start/stop on localhost:4200, then open the trace
-to identify render-blocking resources
+Use Chrome DevTools MCP to record a performance trace of localhost:4200
+and identify render-blocking resources and the LCP element
 ```
 
 Claude automatically picks the right tool based on the task. See `.claude/skills/browser-testing/SKILL.md` and `.claude/agents/browser-testing.md` for the full workflow guide.

@@ -27,7 +27,7 @@ Add these steps to your existing Angular GitHub Actions workflow (after `ng buil
         working-directory: ./frontend
 
       - name: Upload a11y report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: failure()
         with:
           name: a11y-report-${{ github.run_number }}
@@ -87,7 +87,7 @@ Add these steps to your existing Flutter GitHub Actions workflow:
               -d emulator-5554
 
       - name: Upload accessibility test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: failure()
         with:
           name: flutter-a11y-results-${{ github.run_number }}
@@ -114,10 +114,10 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.changed_files, 'frontend/')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -147,7 +147,7 @@ jobs:
         working-directory: ./frontend
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: angular-a11y-report
@@ -159,7 +159,7 @@ jobs:
     # `pull_request.changed_files` is a count, not a list of paths.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

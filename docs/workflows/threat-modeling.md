@@ -57,6 +57,8 @@ Trust boundaries:
 - API Gateway → Services (DMZ to internal network)
 - Services → DB (internal to data store)
 
+**AI features (LLM, RAG, agents, MCP):** add the model gateway, retrieval store, tool/MCP gateway, business APIs behind each tool, operation ledger, memory store, approval service and any other agent to the DFD. Model output, retrieved content, tool results, agent messages and memory reads cross a trust boundary inward: they are untrusted. Run the AI threat table in the `threat-modeling` skill ("AI, RAG and Agent Systems"). For governed systems the finished threat model is referenced by the `ai-governance` risk assessment (`threat_model_ref`).
+
 ---
 
 ### Phase 2 — STRIDE Analysis Per Component

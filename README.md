@@ -2007,8 +2007,8 @@ claude-code-onboarding/
         │  # — Tooling skills —
         ├── mcp-builder/                  # MCP server development: Python (FastMCP) and Node.js (MCP SDK),
         │                                 # tool definitions, transport config (18 reference files + scripts)
-        ├── browser-testing/              # Browser automation & testing: Chrome DevTools MCP (inspection,
-        │                                 # performance, network) + Browser-Use MCP (E2E flows, form filling) (3 reference files)
+        ├── browser-testing/              # Web browser testing: Chrome DevTools MCP (interactive
+        │                                 # debugging, performance) + Playwright (E2E suites, playwright-cli)
         ├── domain-finder/                # Domain name availability checking via WHOIS (1 reference file)
         └── changelog-generator/          # Git history parsing, semantic versioning,
                                           # release notes generation (1 reference file)
@@ -2027,7 +2027,7 @@ claude-code-onboarding/
 | `github` | HTTP | GitHub API — issues, PRs, code search |
 | `langchain-docs` | HTTP | LangChain documentation search |
 | `angular-cli` | stdio | Angular CLI operations |
-| `browser-use` | stdio | Human-like browser interaction & autonomous E2E flows |
+| `chrome-devtools` | stdio | Interactive browser debugging for web targets: DOM, console, network, performance traces, Lighthouse |
 | `context7` | stdio | Live documentation for any library |
 | `dart-mcp-server` | stdio | Dart/Flutter tooling daemon |
 | `firebase` | stdio | Firebase CLI operations |
@@ -2039,13 +2039,14 @@ claude-code-onboarding/
 
 ### Browser Automation
 
-We use a three-tool stack for complete browser testing:
+Each target gets its own tool (`.claude/rules/testing-tool-selection.md`):
 
 | Tool | Type | Role |
 |------|------|------|
-| **playwright-cli** | Bash CLI (stateful) | Scripted tests — navigation, snapshots, screenshots, network/console inspection, performance tracing |
-| **Browser-Use MCP** | MCP server | Autonomous agent flows — describe a goal, Claude figures out the steps |
-| **Maestro MCP** | MCP server | Cross-platform mobile E2E — same YAML flow runs on iOS simulator and Android emulator |
+| **Chrome DevTools MCP** | MCP server | Default interactive debugging for Angular/React: DOM snapshot, console, network, JS evaluation, performance traces, Lighthouse |
+| **@playwright/test** | npm dev dependency | Deterministic Angular/React E2E suites in CI |
+| **playwright-cli** | Bash CLI (stateful) | Scripted interactive QA: route mocking, offline states, saved sessions, screenshots, traces |
+| **Maestro CLI / MCP** | CLI + MCP server | Flutter Android/iOS UI and E2E only: the same YAML flow runs on the iOS simulator and Android emulator |
 
 #### Install playwright-cli
 
@@ -2065,10 +2066,11 @@ playwright-cli requests     # network requests since the page loaded (`request <
 playwright-cli close-all
 ```
 
-#### playwright-cli vs Browser-Use decision rule
+#### Web tool decision rule
 
-- **Know the exact steps?** → `playwright-cli` (scripted, inspectable, network/console visible)
-- **Describe a goal and let Claude figure out the steps?** → Browser-Use MCP
+- **Must be repeatable or gate a PR?** → `@playwright/test`
+- **Debugging live: DOM, console, network, performance?** → Chrome DevTools MCP
+- **Interactive check that needs mocking, offline or a saved session?** → `playwright-cli`
 
 #### Sample Prompts
 
@@ -2083,10 +2085,10 @@ Use playwright-cli to test the login flow at localhost:4200/login — fill the f
 submit, check network for POST /api/auth/login → 200, take a screenshot of the result
 ```
 
-**Autonomous flow:**
+**Interactive debugging:**
 ```
-Use Browser-Use to sign up at localhost:4200/signup with a test email and confirm
-the welcome email screen appears
+Use Chrome DevTools MCP to open localhost:4200/signup, submit the form with a test email,
+then list console errors and the failed network requests
 ```
 
 **Performance trace:**

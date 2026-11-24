@@ -1,9 +1,10 @@
 # Workflow: Prompt Engineering Patterns
 
-**When to use:** Designing or improving system prompts / agent instructions, implementing structured reasoning (CoT, ToT), fixing inconsistent LLM outputs, or building reusable prompt template systems.
+**When to use:** Designing or improving system prompts / agent instructions, implementing structured reasoning (CoT, ToT), fixing inconsistent LLM outputs, building reusable prompt templates, or running PromptOps (prompt cards in Git, review, eval-gated promotion, rollback, drift checks).
 
 **Skill:** `prompt-engineering-patterns`
-**Stacks:** Python 3.14 / LangChain + LangGraph · Python 3.14 / Google ADK
+**Stacks:** Python 3.14 / LangChain + LangGraph · Python 3.14 / Google ADK · any stack for the PromptOps phases (prompt cards and validator are stack-neutral)
+**Requirements:** `.claude/skills/prompt-engineering-patterns/reference/promptops-lifecycle.md` (§13 maps every PRM requirement to its home)
 **Not applicable to:** Angular, Flutter (frontend — prompting happens in backend agents)
 
 ---
@@ -19,7 +20,8 @@ What's the problem?
 ├── System prompt is vague → System Prompt Design
 ├── Prompts are too expensive / slow → Prompt Optimization
 ├── Need reusable prompts across agents → Prompt Templates
-└── Documents queried repeatedly → CAG (Cache Augmented Generation)
+├── Documents queried repeatedly → CAG (Cache Augmented Generation)
+└── Prompt is going to production / changing in production → Phases 7–8 (PromptOps)
 ```
 
 ---
@@ -191,12 +193,7 @@ result_b = evaluate_prompt(prompt_b, test_cases, llm)
 # Accept only if accuracy delta >= +2% OR token delta >= -15%
 ```
 
-**Version your prompts:**
-```python
-pvc = PromptVersionControl()
-pvc.save(name="agent_system", prompt=PROMPT, version="1.1.0",
-         metrics={"accuracy": 0.94, "avg_tokens": 320})
-```
+**Version your prompts:** the prompt lives in a Git prompt card (`prompts/<domain>/<feature>/<task>.<type>.yaml`), and every behaviour change adds a `changelog` entry with its `eval_run`. The registry serves immutable versions by label through one wrapper (`eval-guide/reference/langfuse-prompts.md`). Never use an in-process version store.
 
 ---
 
@@ -219,21 +216,30 @@ See `agentic-ai-dev/reference/agentic-cost-optimization.md#cag` for full impleme
 
 ## Phase 7 — Test Before Shipping
 
-```python
-# Minimum test coverage for any prompt change
-def test_agent_prompt():
-    # 1. Happy path — standard input
-    assert agent.invoke(standard_input) produces expected_format
+Three layers, each with its own evidence:
 
-    # 2. Edge case — empty/ambiguous input
-    assert agent.invoke(ambiguous_input) asks for clarification or handles gracefully
-
-    # 3. Constraint adherence — off-topic input
-    assert agent.invoke(off_topic) does NOT hallucinate outside domain
-
-    # 4. Format compliance — output matches schema
-    assert json.loads(agent.invoke(sample_input)) has all required_keys
+```bash
+S=.claude/skills/prompt-engineering-patterns/scripts
+# 1. Structure (deterministic, every PR touching prompts/**): exit 0 pass, 1 BLOCK, 2 unreadable
+uv run --script $S/validate_prompts.py prompts --golden-root tests/golden --json prompt-report.json
+# 2. Which evals this diff needs (PRM §15, promptops-lifecycle.md §3): typo -> smoke; wording -> full golden; model -> full + red-team ...
+uv run --script $S/validate_prompts.py classify --base-root base/prompts prompts --json changes.json
 ```
+
+3. **Code around the prompt (unit, fake model):** the renderer rejects undeclared, over-length and secret-bearing variables and neutralises delimiter breakout. Untrusted input lands only in the user turn. Schema-invalid output becomes a typed error (`prompt-engineering-patterns/reference/prompt-templates.md` §2, `system-prompts.md` §Testing).
+4. **Behaviour (evals):** run the sets `classify` listed on the held-out golden data, compare with the baseline (no regression on critical, safety or isolation cases), and add the §16 prompt security suite for every T1+ prompt (`eval-guide`, `promptops-lifecycle.md` §3–§4). A single assert against a live model is not evidence.
+
+---
+
+## Phase 8 — Promote, Roll Back, Watch for Drift
+
+1. Sync job pushes the card to the registry only on content change and records `content_hash` → label `development`.
+2. CI evals pass on that exact version → `staging`. `prompt_drift.py --mode prerelease` must exit 0 (staging serves the Git release content).
+3. Staging evals + human approval (independent sign-off for T2/T3) → the release owner moves `production`. New T2/T3 prompts start behind a flag defaulting OFF.
+4. Rollback = move `production` back to the previous version; rehearse it before the first promotion.
+5. Scheduled drift (`prompt_drift.py --mode scheduled --traces spans.jsonl`): registry edits outside Git, production behind Git, traces on unlabelled versions.
+
+Detail and the command map (create / review / regression / promote / drift / rollback): `prompt-engineering-patterns/reference/promptops-lifecycle.md`.
 
 ---
 
@@ -259,3 +265,4 @@ def test_agent_prompt():
 | [feature-agentic-ai.md](feature-agentic-ai.md) | Full LangGraph agent feature development |
 | [feature-google-adk.md](feature-google-adk.md) | Full ADK agent feature development |
 | [pgvector-rag-pipeline.md](pgvector-rag-pipeline.md) | RAG pipeline when documents are too large for CAG |
+| [llm-evaluation.md](llm-evaluation.md) | Running the eval sets a prompt change requires |

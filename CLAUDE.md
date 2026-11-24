@@ -100,6 +100,8 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 | AI Feature Design | `.claude/skills/ai-decision-record/` | — | `/ai-decision-record` |
 | AI Launch Gate | `.claude/skills/ai-launch-check/` | — | `/ai-launch-check` |
 | AI Feature Audit | `.claude/skills/ai-audit/` | — | `/ai-audit` |
+| Enterprise AI governance (risk tier Low–Critical, autonomy A0–A4, approval records, control register/evidence, AI BOM, readiness, regulatory register, incident records; validator) | `.claude/skills/ai-governance/` | — | `/ai-audit` (governance modes) |
+| AI engineering domains (eval, guardrails G1–G24, ten laws L1–L10, governance, incident response, security/red team AC-01–AC-18, data governance/privacy, model routing, PromptOps, RAG, memory) + requirement coverage | Domain → skill map `docs/standards/README.md`; section IDs → homes `docs/audits/standards-section-map.tsv`; coverage `docs/audits/ai-engineering-standards-coverage.md`; proposed AI commands → existing ones: `docs/workflows/README.md` | — | — |
 | AI Incident Response | `.claude/skills/ai-incident-response/` | — | `/ai-incident-response` |
 | AI Design Playbook + lifecycle router (design → inference → memory → agents/tools → RAG → evals → review → guardrails → observability → LLMOps) | `.claude/skills/ai-playbook/` | — | `/ai-playbook` |
 | AI Evaluation process, CI tiers, promotion gates | `.claude/skills/eval-guide/` | `ai-eval-designer` | — |
@@ -149,6 +151,9 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 # Docker (cross-cutting)
 docker-compose up -d                 # Start all services
 docker-compose down                  # Stop all services
+
+# AI asset gate (BLOCK/REVIEW/ADVISORY/NOT_APPLICABLE; used by /verify, /ship, /review-code)
+python3 .claude/scripts/check-ai-assets.py --root .
 ```
 ## Task Management
 

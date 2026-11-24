@@ -8,14 +8,13 @@
 
 ## Overview
 
-The default is **Playwright**: committed `@playwright/test` specs gate PRs, and `playwright-cli` handles interactive QA and debugging. Chrome DevTools MCP adds performance traces and Lighthouse. Browser-Use MCP is optional, for exploratory goal-driven checks. Details: the `browser-testing` skill (`.claude/skills/browser-testing/SKILL.md`) and its `reference/playwright-test-suite.md`.
+The default is **Playwright**: committed `@playwright/test` specs gate PRs. Chrome DevTools MCP is the default for interactive debugging (DOM, console, network, JS evaluation) and adds performance traces and Lighthouse. `playwright-cli` covers interactive checks that need mocking, offline state or a saved session. Details: the `browser-testing` skill (`.claude/skills/browser-testing/SKILL.md`) and its `reference/playwright-test-suite.md`.
 
 | Tool | Role |
 |---|---|
 | `@playwright/test` | Repeatable specs in CI: auth via `storageState`, mocked 500/empty/offline, axe, viewports, visual, sharding |
-| `playwright-cli` | Interactive QA: `requests`, `console`, `route`, `network-state-set`, `screenshot --filename` |
-| Chrome DevTools MCP | Performance traces (LCP, CLS, INP), throttling, Lighthouse |
-| Browser-Use MCP (optional) | Exploratory flows via `browser_exec` + `browser_screenshot` |
+| Chrome DevTools MCP | Interactive debugging (`take_snapshot`, `list_console_messages`, `list_network_requests`, `evaluate_script`); performance traces (LCP, CLS, INP), throttling, Lighthouse |
+| `playwright-cli` | Scripted interactive QA: `requests`, `console`, `route`, `network-state-set`, `screenshot --filename` |
 
 ---
 

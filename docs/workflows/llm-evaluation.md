@@ -48,7 +48,7 @@ Then choose the right reference file based on the task:
 What are you evaluating?
 ├── Retrieval quality (RAG) → MRR + NDCG@K  (evaluation-metrics.md#rag-metrics)
 ├── Text generation (summarization, Q&A) → ROUGE-L + BERTScore  (evaluation-metrics.md#text-generation)
-├── Comparing two prompts or models → ABTest class  (ab-testing.md)
+├── Comparing two prompts or models → paired_compare + mcnemar_exact  (ab-testing.md)
 ├── Detecting regression vs baseline → RegressionDetector  (ab-testing.md#regression)
 ├── Subjective quality (tone, style) → Pairwise judge  (llm-judge-advanced.md)
 └── Objective quality (accuracy, groundedness) → Direct scoring  (llm-judge-advanced.md)
@@ -58,57 +58,44 @@ What are you evaluating?
 
 ## Phase 3 — Implement Metrics
 
-### LangGraph RAG Agent (example)
-```python
-from skills.llm_evaluation.evaluation_metrics import (
-    calculate_bertscore, calculate_mrr, calculate_ndcg
-)
+The metric functions live in the skill reference as copy-in code, not as an importable package: copy `llm-evaluation/reference/evaluation-metrics.md` §2 into your eval module (for example `tests/eval/metrics.py`) with its tests.
 
-# After running your RAG agent on test cases:
-results = {
-    "mrr": calculate_mrr(ranked_results, relevant_docs),
-    "ndcg_10": calculate_ndcg(ranked_results, relevance_scores, k=10),
-    "bertscore_f1": calculate_bertscore(references, hypotheses)["f1"],
-}
+```python
+from tests.eval.metrics import mean_defined, ndcg_at_k, recall_at_k   # your copy of §2
+
+# per query: ranked ids from the run, relevant ids / grades from the golden case
+recall_10, n_defined = mean_defined(recall_at_k(r.ranked_ids, r.relevant_ids, 10) for r in runs)
+ndcg_10, _ = mean_defined(ndcg_at_k(r.ranked_ids, r.grades, 10) for r in runs)
 ```
 
-### Google ADK Agent (example)
-```python
-from google.adk.runners import InMemoryRunner
-
-runner = InMemoryRunner(agent=my_adk_agent)
-# Collect outputs, compute same metrics — metrics are framework-agnostic
-```
+`None` (a query with no relevant ids) is excluded from the mean and counted, never scored 0.0. For a Google ADK agent, collect trajectories and responses with `adk eval` / `AgentEvaluator` (`adk-eval-guide`); the rank metrics are framework-agnostic.
 
 ---
 
 ## Phase 4 — Statistical Validation (A/B Test or Regression)
 
-### A/B Test: Comparing prompt variants
+### Comparing two prompt or model variants on the same golden cases (paired)
+
 ```python
-from skills.llm_evaluation.ab_testing import ABTest
+from tests.eval.stats import mcnemar_exact, paired_compare   # your copy of ab-testing.md Section 1
 
-ab = ABTest(variant_a_name="current_prompt", variant_b_name="new_prompt")
-# ... populate results from eval runs
-report = ab.analyze()
-
-# Decision rule:
-# - p < 0.05 AND Cohen's d > 0.5 (medium effect) → promote new prompt
-# - p < 0.05 AND Cohen's d < 0.2 (negligible) → difference not meaningful
-# - p >= 0.05 → not statistically significant, need more data
+result = paired_compare(baseline_scores, candidate_scores)    # dicts keyed by case id; refuses different case sets
+p_flip = mcnemar_exact(baseline_pass, candidate_pass)         # pass/fail flips
+# Promote only on a non-inferior lower bound: result.ci95[0] >= -margin, deterministic gates green,
+# and no newly broken critical case. Never on a raw-mean win or a tuning-set improvement.
 ```
 
-### Regression Gate: CI/CD integration
+### Regression gate against a versioned baseline (fails closed)
+
 ```python
-from skills.llm_evaluation.ab_testing import RegressionDetector
+from tests.eval.stats import Baseline, RegressionDetector    # ab-testing.md Section 3
 
-detector = RegressionDetector(baseline_results=PRODUCTION_BASELINE, threshold=0.05)
-report = detector.check_for_regression(new_results)
-
-assert not report["has_regression"], (
-    f"Regression detected: {report['regressions']}"
-)
+detector = RegressionDetector(baseline=load_baseline(run_key), max_drop={"faithfulness": 0.02})
+failures = detector.check(run_key, current_metrics)           # missing baseline / key mismatch = failure
+assert not failures, failures
 ```
+
+In CI prefer the shared gate: write the run as `eval_result.schema.json` and run `eval-guide/scripts/eval_gate.py check --thresholds tests/eval/thresholds.yaml --results <run>.json --json <report>.json` (exit 0 pass, 1 gate failed, 2 invalid input; critical classes gate at 100%).
 
 ---
 
@@ -134,17 +121,30 @@ Key decisions:
 # .github/workflows/eval.yml (example)
 - name: Run eval regression gate
   run: |
-    uv run --locked pytest -m r1 tests/eval/test_regression.py -v
-    # test_regression.py uses RegressionDetector with PRODUCTION_BASELINE
+    uv run --locked pytest -m r1 tests/eval -v
+    uv run --script .claude/skills/eval-guide/scripts/eval_gate.py check \
+      --thresholds tests/eval/thresholds.yaml --results results/r1.json --json results/r1-gate.json
   env:
     DEEPEVAL_TELEMETRY_OPT_OUT: "1"
     RAGAS_DO_NOT_TRACK: "true"
     GISKARD_TELEMETRY_DISABLED: "1"
+    PROMPTFOO_DISABLE_TELEMETRY: "1"
 ```
 
 R1 (every PR) runs only deterministic checks and scripted/fake models; live judges run in R2/R3 with an explicit judge model and are reported BLOCKED when credentials are absent, never skipped into a PASS. Library pins and current APIs (DeepEval 4.3.4, Ragas 0.4.4 `ragas.metrics.collections`, `giskard-checks` 1.0.7, Langfuse 5.2.0, Presidio 2.2.366): `eval-guide` "Verified pins".
 
-Rule: Store `PRODUCTION_BASELINE` as a committed JSON file updated only on deliberate promotion.
+Rule: baselines are committed files keyed by dataset version, judge model + rubric version and tier, written only by an explicit reviewed step (current, previous-release and anchor baselines: `eval-guide/reference/golden-dataset.md`).
+
+---
+
+## Phase 7 — Adopting an eval program in a product
+
+The skills hold both the measurement policy and the tooling. Measurement only: runtime guardrails are `ai-playbook` / `ai-launch-check`, organisational controls are `ai-governance`.
+
+1. Fill the inventory (features, corpora with embedding model + dimension, tools with read/write and audit need) and choose one tool per job: `.claude/skills/eval-guide/reference/eval-program-adoption.md` "Inventory" and "Tool selection".
+2. Mark all 13 dimensions and map them to tiers: `.claude/skills/eval-guide/SKILL.md` "The 13 dimensions" and "Five layers vs CI tiers".
+3. Prove each Day-1 gate (observability boots, prompts seeded, framework eval, judge metrics, RAG metrics, red team, tool suite, one trace, one scraped service, one dashboard) with the "Toolkit proof" column of `eval-program-adoption.md` "Day-1 definition of done". A gate you have not run is NOT RUN, never PASS.
+4. Work through the organisation-owned "Adoption checklist" in the same file (rollout order, cost levers, named owners, checklist). Anti-patterns there are review findings for `eval-reviewer`.
 
 ---
 
@@ -158,7 +158,7 @@ Rule: Store `PRODUCTION_BASELINE` as a committed JSON file updated only on delib
 | MRR | Retrieval ranking (first relevant doc) | When rank doesn't matter |
 | NDCG@K | Retrieval with graded relevance | Binary relevant/not-relevant |
 | Groundedness | RAG factual accuracy | Creative generation |
-| Cohen's d | Effect size between variants | Single-run comparisons |
+| Paired delta + bootstrap CI | Effect size between variants on the same cases | Independent-samples comparisons |
 
 ---
 
@@ -166,7 +166,7 @@ Rule: Store `PRODUCTION_BASELINE` as a committed JSON file updated only on delib
 
 - **Evaluating on training data**: Test cases must be held-out; never evaluate on prompts used during development
 - **Ignoring variance**: High std/mean > 0.3 means results are unreliable — increase sample size
-- **p-value without effect size**: p < 0.05 with Cohen's d = 0.1 is statistically significant but practically meaningless
+- **p-value without effect size**: report the paired mean delta with its bootstrap CI; a significant p-value with a negligible delta is not a reason to ship
 - **Single metric obsession**: Always use ≥2 metrics; a model can win on BLEU while losing on BERTScore
 - **Skipping baseline**: "Score improved" is meaningless without a defined starting point
 

@@ -21,6 +21,7 @@ End-to-end security audit using the four-command pipeline: `/audit-security` (co
 | `security-reviewer` agent | Code changes | Targeted review of changed files for OWASP Top 10 |
 | `flutter-security-expert` agent | Flutter code | Mobile-specific: secure storage, cert pinning, GDPR/CCPA |
 | `threat-modeling-expert` agent | Architecture | STRIDE threat model, attack trees |
+| `ai-security-reviewer` agent | AI code (models, RAG, tools, memory, model output) | Attack classes AC-01–AC-18 without a deterministic control, injection, cross-scope retrieval, unsafe tool calls, secrets in prompts |
 
 ---
 
@@ -43,6 +44,7 @@ Before running any scanner, define:
 | UI-only changes | `/xss-scan` + `security-reviewer` |
 | Config / infrastructure | `/security-dependencies` + manual secrets check + `owasp-infrastructure-baseline.md` (SECURITY-01 through SECURITY-15) |
 | Routine feature | `/audit-security` + `/security-dependencies` |
+| Calls a model, retrieves, runs tools or renders model output | Above for its other surfaces + Phase 8 (AI security) |
 
 ---
 
@@ -200,6 +202,23 @@ this.sanitizer.bypassSecurityTrustHtml(userInput);
 
 ---
 
+### Phase 8 — AI Security (models, RAG, agents, tool servers)
+
+**Reference**: `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` (canonical AI threat model, layered defenses, severity, SLAs, case authoring, intake and adoption checklist)
+**Agent**: `ai-security-reviewer`; RAG isolation: `rag-security-reviewer` skill; tool servers: `mcp-security.md`
+**When**: Any scope that sends untrusted content to a model, lets a model call tools, retrieves from a shared corpus or renders model output; before adopting a model, plugin or tool server
+
+1. **Threat model**: fill the worksheet (§2): assets, every trust-boundary arrow with its named control, adversaries. An arrow with no control is a finding.
+2. **Attack classes**: for each applicable AC-01–AC-18, cite the deterministic control on the highest-harm path (file:line). Prompt-only controls count as missing.
+3. **Red-team evidence**: R1–R4 tiers and path routing are owned by `.claude/skills/eval-guide/reference/red-teaming.md`; report the suite and run, or NOT RUN. Code review proves a control exists, not that it holds.
+4. **Severity**: SEV-1–SEV-4 (§6). Cross-scope access at any attack success rate, unauthorized writes, secret disclosure and code execution via output are SEV-1 = CRITICAL. Low ASR never downgrades isolation or secret findings.
+5. **Remediation**: SLAs are ADAPT defaults set by the security owner; mitigation for SEV-1/SEV-2 is never prompt-only; SEV-1/SEV-2 open an incident (`ai-incident-response` skill). A finding closes only when its regression case fails on pre-fix code, passes on post-fix code and is in CI.
+6. **Intake**: new models, embedding models, datasets, plugins and tool servers have an intake record (§9) before touching non-synthetic data.
+
+**Gate**: Zero SEV-1/SEV-2 open; every applicable class has a deterministic control and ≥ 1 mapped case; hard-blocker union (§5) clean; required red-team tier evidence present (else verdict capped at NEEDS_REVIEW).
+
+---
+
 ### Phase 6 — Mobile Security (Flutter)
 
 **Agent**: `flutter-security-expert`
@@ -231,6 +250,7 @@ flutter build ipa --obfuscate --split-debug-info=build/symbols/
 | 5 — XSS | `/xss-scan` | Zero unvalidated user → DOM paths |
 | 6 — Mobile | `flutter-security-expert` agent | Cert pinning, secure storage confirmed |
 | 7 — Agentic CI/CD | `claude-actions-auditor` skill | Zero HIGH findings; no wildcard allowlists or `--dangerously-skip-permissions` |
+| 8 — AI security | `ai-security-reviewer` + `ai-threat-model-attack-classes.md` | Zero SEV-1/SEV-2; deterministic control + mapped case per applicable AC class |
 | — Score | 007 scoring (built into `/audit-security`) | Score ≥ 70 → Approved or Approved with Caveats |
 
 ## 007 Score Verdicts

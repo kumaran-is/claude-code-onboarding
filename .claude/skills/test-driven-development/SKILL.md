@@ -72,6 +72,7 @@ test('createUser throws ConflictException when email is duplicate', ...)
 |-------|---------------|-----------|
 | Java 21 / Spring Boot WebFlux | `references/tdd-patterns-java.md` | Writing tests for Spring Boot, WebFlux, reactive Java |
 | NestJS 11 / TypeScript | `references/tdd-patterns-nestjs.md` | Writing tests for NestJS, TypeScript, Fastify |
+| MCP server / Node 26 TypeScript | `../mcp-builder/reference/node-mcp-advanced.md` (Testing and conformance), `../mcp-builder/reference/evaluation-criteria.md` (deterministic gate) | Writing vitest tests that call tools through a real SDK `Client` (never a mocked transport), plus a negative per tool |
 | Python 3.14 / FastAPI | `references/tdd-patterns-python.md` | Writing tests for FastAPI, Pydantic, async Python |
 | Flutter / Dart | `references/tdd-patterns-flutter.md` | Writing tests for Flutter widgets, Riverpod providers, Dart |
 | Angular 22 | `../angular-spa/reference/testing-vitest.md` | Writing `ng test` (Vitest) component and service tests |

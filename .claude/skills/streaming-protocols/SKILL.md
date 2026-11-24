@@ -160,7 +160,7 @@ CLIENT                                         MCP SERVER
 | Cancellation | close the request's SSE stream (stdio still uses `notifications/cancelled`). Servers must stop work and send nothing more |
 | Broken stream | **no resumption**: `Last-Event-ID` replay was removed; the client re-issues the request with a new id. Make side-effecting tools idempotent |
 | Server → client asks | only as an `input_required` result the client answers by retrying (sampling and roots are Deprecated) |
-| Security | validate `Origin` (`403` if invalid), bind `127.0.0.1` for local servers, authenticate remote ones |
+| Security | validate `Origin` and `Host` against allow-lists (`403`; Host blocks DNS rebinding), cap the body size (`413`), bind `127.0.0.1` for local servers, authenticate remote ones |
 | Proxies | send `X-Accel-Buffering: no` and never compress the SSE response |
 
 **2025-era servers (≤ 2025-11-25)** still use the older shape: `initialize` handshake, optional `Mcp-Session-Id` echoed on every request, a standalone `GET` SSE stream for server-initiated requests, and `Last-Event-ID` resumption. Treat these as backward-compatibility behaviour, not a design to copy. A client that must talk to both probes with `server/discover` and falls back to `initialize` when the reply is not a recognised 2026 error.

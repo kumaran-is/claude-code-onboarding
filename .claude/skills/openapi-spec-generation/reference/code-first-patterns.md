@@ -8,7 +8,8 @@ Generate OpenAPI specs directly from annotated code. Each stack auto-generates t
 |----------|------|------------------|--------|
 | **Python** | FastAPI + Pydantic | Type hints + `Field()` | Auto at `/openapi.json` |
 | **Java/Kotlin** | springdoc-openapi | `@Operation`, `@Schema` | Auto at `/v3/api-docs` |
-| **TypeScript** | tsoa | Decorators (`@Get`, `@Response`) | Generated at build time |
+| **TypeScript (Fastify)** | zod 4 + fastify-type-provider-zod + @fastify/swagger | zod schemas on the route | `app.swagger()` after `app.ready()` |
+| **TypeScript (NestJS)** | `@nestjs/swagger` | Decorators | See the `nestjs-api` skill |
 
 ## Extraction Commands
 
@@ -16,7 +17,7 @@ Generate OpenAPI specs directly from annotated code. Each stack auto-generates t
 |-------|---------|
 | FastAPI | `python -c "import json; from main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json` |
 | Spring Boot | `curl http://localhost:8080/v3/api-docs > openapi.json` |
-| tsoa | `npx tsoa spec` |
+| Fastify + zod | `node dist/emit-openapi.js` (script below; no server or port needed) |
 
 ---
 
@@ -292,72 +293,91 @@ async def delete_user(user_id: UUID = Path(..., description="User ID")):
 
 ---
 
-## TypeScript / tsoa
+## TypeScript / Fastify + zod 4
+
+Verified 2026-11-23 against zod 4.6.7, fastify 5.12.8, fastify-type-provider-zod 7.0.0, @fastify/swagger 9.9.5, openapi-types 12.1.3 on Node 26.13.1 + TypeScript 6.0.3 strict: `tsc` exit 0, 8 Vitest tests (invalid body → 400, a handler that breaks its response schema → 500, the document's `$ref`, `operationId` and `required` list).
+
+```bash
+npm i -E zod@4.6.7 fastify@5.12.8 fastify-type-provider-zod@7.0.0 @fastify/swagger@9.9.5 openapi-types@12.1.3
+```
 
 ```typescript
+// schemas.ts
+import { z } from "zod";
+
+export const CreateOrderInput = z.strictObject({        // additionalProperties: false
+  customerId: z.uuid(),
+  sku: z.string().min(1).max(64),
+  quantity: z.int().min(1).max(100),
+  note: z.string().max(500).optional(),                 // may be absent
+  couponCode: z.string().nullable(),                    // must be present, may be null
+  priority: z.enum(["low", "normal", "high"]).default("normal"), // optional in, always present out
+});
+export const Order = z.object({ id: z.uuid(), status: z.enum(["pending", "confirmed"]), quantity: z.int(), createdAt: z.iso.datetime() });
+z.globalRegistry.add(Order, { id: "Order" });           // becomes components.schemas.Order + $ref
+export const ErrorBody = z.object({ code: z.string(), message: z.string() });
+```
+
+```typescript
+// app.ts
+import fastifySwagger from "@fastify/swagger";
+import Fastify, { type FastifyInstance } from "fastify";
 import {
-  Controller, Get, Post, Patch, Delete, Route, Path, Query, Body,
-  Response, SuccessResponse, Tags, Security, Example,
-} from "tsoa";
+  type ZodTypeProvider, hasZodFastifySchemaValidationErrors, isResponseSerializationError,
+  jsonSchemaTransform, jsonSchemaTransformObject, serializerCompiler, validatorCompiler,
+} from "fastify-type-provider-zod";
+import { CreateOrderInput, ErrorBody, Order } from "./schemas.js";
 
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  status: "active" | "inactive" | "suspended";
-  role: "user" | "moderator" | "admin";
-  createdAt: Date;
-}
-
-interface CreateUserRequest {
-  email: string;
-  name: string;
-  role?: "user" | "moderator" | "admin";
-}
-
-interface ErrorResponse {
-  code: string;
-  message: string;
-}
-
-@Route("users")
-@Tags("Users")
-export class UsersController extends Controller {
-
-  @Get()
-  @Security("bearerAuth")
-  @Response<ErrorResponse>(401, "Unauthorized")
-  public async listUsers(
-    @Query() page: number = 1,
-    @Query() limit: number = 20,
-    @Query() status?: string,
-  ): Promise<{ data: User[]; pagination: object }> {
-    throw new Error("Not implemented");
-  }
-
-  @Post()
-  @Security("bearerAuth")
-  @SuccessResponse(201, "Created")
-  @Response<ErrorResponse>(400, "Invalid request")
-  @Response<ErrorResponse>(409, "Email exists")
-  public async createUser(@Body() body: CreateUserRequest): Promise<User> {
-    this.setStatus(201);
-    throw new Error("Not implemented");
-  }
-
-  @Get("{userId}")
-  @Security("bearerAuth")
-  @Response<ErrorResponse>(404, "Not found")
-  public async getUser(@Path() userId: string): Promise<User> {
-    throw new Error("Not implemented");
-  }
-
-  @Delete("{userId}")
-  @Tags("Users", "Admin")
-  @Security("bearerAuth")
-  @SuccessResponse(204, "Deleted")
-  public async deleteUser(@Path() userId: string): Promise<void> {
-    this.setStatus(204);
-  }
+export async function buildApp(): Promise<FastifyInstance> {
+  const app = Fastify();
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+  app.setErrorHandler((err, req, reply) => {
+    if (hasZodFastifySchemaValidationErrors(err)) return reply.code(400).send({ code: "VALIDATION", message: "Request does not match the schema" });
+    if (isResponseSerializationError(err)) {
+      req.log.error({ err }, "response failed its schema");
+      return reply.code(500).send({ code: "INTERNAL", message: "Internal error" });
+    }
+    return reply.send(err);
+  });
+  await app.register(fastifySwagger, {
+    openapi: { openapi: "3.1.0", info: { title: "Orders API", version: "1.0.0" } },
+    transform: jsonSchemaTransform,
+    transformObject: jsonSchemaTransformObject,
+  });
+  app.withTypeProvider<ZodTypeProvider>().post(
+    "/orders",
+    { schema: { operationId: "createOrder", body: CreateOrderInput, response: { 201: Order, 400: ErrorBody } } },
+    async (req, reply) => {
+      const order = await createOrder(req.body); // req.body is z.output: priority is always set
+      return reply.code(201).send(order);
+    },
+  );
+  await app.ready();
+  return app;
 }
 ```
+
+```typescript
+// emit-openapi.ts: build with tsc, then `node dist/emit-openapi.js`
+import { writeFileSync } from "node:fs";
+import { buildApp } from "./app.js";
+const app = await buildApp();
+writeFileSync("openapi.json", JSON.stringify(app.swagger(), null, 2));
+await app.close();
+```
+
+What the generated document contains (executed):
+
+| zod | OpenAPI 3.1 (`draft-2020-12`) | Notes |
+|---|---|---|
+| `.optional()` | omitted from `required` | |
+| `.nullable()` | `type: ["string", "null"]`, listed in `required` | With `openapi: "3.0.x"` the transform switches to the `openapi-3.0` target: `nullable: true` |
+| `.default("normal")` | `default`, optional in the request body | The request side uses `io: "input"`. `z.toJSONSchema(schema)` alone defaults to `io: "output"`, where the field becomes required |
+| `z.strictObject` | `additionalProperties: false` | `z.object` strips unknown keys silently |
+| `z.int()` | `type: integer` | |
+| registered schema | `components.schemas.Order` and `OrderInput` | Input and output variants are emitted separately |
+
+- Version floor: zod `< 4.6.6` has GHSA-mrhx-c7xc-m3w5 (memory exhaustion validating oversized constrained collections). fastify-type-provider-zod 7.x needs zod `>= 4.2` (it uses `.encode()`/`.decode()`), so the response serializer checks `z.output`.
+- Import from `"zod"` (zod 4 is the package root). `z.uuid()`, `z.iso.datetime()` and `z.int()` are the zod 4 forms; `z.string().uuid()` and `.datetime()` still compile but are marked `@deprecated`.
+- tsoa is not covered: its latest npm dist-tag is the prerelease 7.0.0-rc.0, and the last stable (6.6.0, December 2024) bundles a TypeScript 5.7 compiler. Re-check before adopting it on TypeScript 6.

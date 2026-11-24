@@ -347,7 +347,7 @@ export interface JobMeta {
 
 export abstract class BaseProcessor {
   protected abstract readonly logger: Logger;
-  /** e.g. a prom-client Counter with labels ['queue', 'name']; alert on its rate */
+  /** e.g. an OTel Counter (or @prometheus-io/client, successor of the deprecated prom-client) with labels ['queue', 'name']; alert on its rate */
   protected abstract readonly failedJobs: { inc(labels: { queue: string; name: string }): void };
 
   /**

@@ -1,13 +1,13 @@
-# Node.js 24 service engineering (TypeScript 5.9, no framework required)
+# Node.js 26 service engineering (TypeScript 6.0, no framework required)
 
-Production patterns for plain Node services, CLIs and workers. NestJS services follow `nestjs-api` for framework concerns; everything here still applies underneath it.
+Production patterns for plain Node services, MCP servers, CLIs and workers. NestJS services follow `nestjs-api` for framework concerns and keep that skill's Node and TypeScript pins; everything else here still applies underneath it.
 
-**Evidence.** Every code block below is copied from a disposable app that passed, on Node 24.13.1 + TypeScript 5.9.3: `tsc --noEmit` (the tsconfig below), ESLint 10 + typescript-eslint 8 `strictTypeChecked`, and 28 Vitest 5.1.1 tests, with negative controls (a planted bug each check had to catch). Versions used: zod 4.6.7, pino 10.4.0, @types/node 24.19.2 (2026-11-23). Behaviour marked *reproduced* was run on Node 24.13.1; re-check it when you change major versions.
+**Evidence.** Verified 2026-11-23 against Node 26.13.1 + TypeScript 6.0.3 + @types/node 26.6.6: every code block below, copied into a disposable app, passed `tsc --noEmit` (the tsconfig below), ESLint 10.15.0 + typescript-eslint 8.74.0 `strictTypeChecked`, and 23 Vitest 5.1.1 tests, with negative controls (a planted type error → TS2322 exit 2; a dropped `return await` → `return-await` exit 1; a planted failing test → exit 1). Versions used: zod 4.6.7, pino 10.4.0. The patterns were first verified on Node 24.13.1 + TypeScript 5.9.3. Behaviour marked *reproduced* was re-run on Node 26.13.1; re-check it when you change major versions.
 
 ## Contents
 
 1. [Project setup: ESM, tsconfig, lint](#1-project-setup-esm-tsconfig-lint)
-2. [ESM and CommonJS interop on Node 24](#2-esm-and-commonjs-interop-on-node-24)
+2. [ESM and CommonJS interop on Node 26](#2-esm-and-commonjs-interop-on-node-26)
 3. [Configuration and secrets](#3-configuration-and-secrets)
 4. [Errors: cause chains and typed results](#4-errors-cause-chains-and-typed-results)
 5. [Outbound calls: deadlines and cancellation](#5-outbound-calls-deadlines-and-cancellation)
@@ -24,7 +24,7 @@ Production patterns for plain Node services, CLIs and workers. NestJS services f
 
 ## 1. Project setup: ESM, tsconfig, lint
 
-`package.json`: `"type": "module"`, `"engines": { "node": ">=24.0.0" }`, exact versions. `.npmrc` in the repo:
+`package.json`: `"type": "module"`, `"engines": { "node": ">=26.0.0" }` (Node 26 is the active LTS; 24 still works), exact versions. `.npmrc` in the repo:
 
 ```ini
 save-exact=true
@@ -62,6 +62,8 @@ engine-strict=true
 ```
 
 - `module: nodenext` implies `moduleResolution: nodenext`, `esModuleInterop` and `resolveJsonModule` (confirmed with `tsc --showConfig`). TS 5.9 also accepts `module: node20`, a stable alias for Node 20+ semantics.
+- TypeScript 6.0 changes, each reproduced with `tsc` 6.0.3: `types` now defaults to `[]`, so `"types": ["node"]` is required (without it `process` is TS2591); `strict` defaults to on (an untyped parameter is TS7006 with no tsconfig); `baseUrl`, `outFile` and `downlevelIteration` are TS5101, and `moduleResolution: node10`/`classic`, `module: amd`, `target: es5`, `esModuleInterop: false` are TS5107. `"ignoreDeprecations": "6.0"` silences them for one migration step only; remove the option instead. `tsc file.ts` inside a folder with a `tsconfig.json` is TS5112 (pass `--ignoreConfig` or use `-p`). When emitting from `src/`, set `rootDir` explicitly.
+- TypeScript 7.0.2 (npm `latest`, native compiler) compiled this app with exit 0 in 0.16 s against 1.55 s for 6.0.3, and caught the same planted TS2322. Defer it: typescript-eslint 8.74.0 declares the peer `typescript >=4.8.4 <6.1.0`, so the lint step above is unsupported on 7. Pin `typescript` 6.0.3.
 - Use `moduleResolution: bundler` only when a bundler (Vite, esbuild, Angular CLI) produces what runs. For code that Node loads directly it hides errors Node will hit at runtime, such as missing file extensions. The bundler template is `tsconfig-strict.json`.
 - `paths` aliases are compile-time only. Node does not resolve them. In a Node service, use relative imports or package.json `"imports"` (`#src/*`).
 - Relative imports need the runtime extension: `import { ok } from './errors.js'` for `errors.ts`. Negative control: `from './errors'` fails with TS2835.
@@ -94,15 +96,16 @@ export default defineConfig(
 
 These rules catch async bugs that `tsc` accepts. Negative controls: an un-awaited `.then()` chain, an `async` listener passed to `EventEmitter.on`, and `return promise` inside an `await using` scope were flagged (`no-floating-promises`, `no-misused-promises`, `return-await`). A missing `switch` case was flagged by `switch-exhaustiveness-check`, and `tsc` reported it as TS2345 at `assertNever`. `console.log` was flagged by `no-console`.
 
-## 2. ESM and CommonJS interop on Node 24
+## 2. ESM and CommonJS interop on Node 26
 
-| Situation | Behaviour on Node 24.13.1 (*reproduced*) |
+| Situation | Behaviour on Node 26.13.1 (*reproduced*; identical on 24.13.1) |
 |---|---|
 | CJS `require()` of an ESM file with no top-level `await` | Works without a flag (`process.features.require_module === true`); `require` returns the module namespace |
 | CJS `require()` of ESM that uses top-level `await` | Throws `ERR_REQUIRE_ASYNC_MODULE`; use `await import()` |
 | ESM `import x from './c.cjs'` | Always works; `x` is `module.exports` |
 | ESM `import { named } from './c.cjs'` | Works only when Node's static analysis finds the name (`exports.named = …`). With `module.exports = { named: "ok" }` it failed: `SyntaxError: Named export 'named' not found` |
 | `package.json` `"type"` | Decides how `.js` files load. `.mjs`/`.cjs` (and `.mts`/`.cts`) override it per file |
+| `node file.ts` | Type stripping is on by default (`process.features.typescript === 'strip'`): erasable syntax runs; `enum`, `namespace` with values and parameter properties throw `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. `--experimental-transform-types` is gone (`bad option`, exit 9). Production images still run `tsc` output: stripping does no type checking |
 
 Rules:
 
@@ -114,6 +117,19 @@ Rules:
 
 - If you bundle an ESM-source service to CJS (for example esbuild `--format=cjs` to keep OTel instrumentation patching `require`), the output must not sit next to a `package.json` with `"type": "module"`. Name it `.cjs`, or do not copy that `package.json` into the image. Otherwise Node loads the CJS bundle as ESM and fails at startup.
 - Preload instrumentation with `node --import ./dist/instrumentation.js dist/main.js`, so it runs before any application module is evaluated.
+- **Default: unbundled ESM (`tsc` output) + `npm ci --omit=dev`.** Measured on Node 26.13.1 with a real MCP SDK 2.4.0 stdio `Client`, 50 tool calls, medians of 3+ runs: unbundled ESM connect 163–251 ms, peak RSS 93–96 MB; esbuild 0.28.2 CJS bundle connect 80–159 ms, peak RSS 78–80 MB. A CJS bundle saves roughly 80 ms and 15 MB, so make it opt-in for cold-start-bound deployments; it costs source maps for stack traces and makes ESM-only dependencies harder. Turning on the compile cache (`esm-compile-cache` run) changed nothing measurable.
+- **OpenTelemetry in ESM: use the synchronous hook.** Register `import-in-the-middle/register-hooks.mjs` (built on `module.registerHooks()`, no warning) first in the preload. Reproduced on Node 26.13.1 with a real stdio Client: a tool calling `http.get` through `import http from 'node:http'` produced the outgoing `GET` span under that hook; the same call through `import { get } from 'node:http'` produced none, and with no hook neither did. So make traced outgoing calls with `fetch()` or a default import of `node:http`/`node:https`. `module.register('@opentelemetry/instrumentation/hook.mjs', import.meta.url)` covered every import style but prints `DEP0205`; keep it only as a fallback. A CJS bundle with `--require` recorded the span without a hook. Full matrix and bootstrap: `deployment-ci-cd` › `node-ci-and-observability.md` §1.
+
+Node 26 runtime features worth adopting (each checked on 26.13.1):
+
+| Feature | Use it for | Instead of |
+|---|---|---|
+| `--env-file=.env` | local runs and tests | `dotenv` |
+| Permission model `--permission --allow-fs-read=…` (stable; denied access throws `ERR_ACCESS_DENIED`) | CLIs and tools that run untrusted input | nothing; it is defence in depth, not a sandbox |
+| `AbortSignal.any` / `AbortSignal.timeout` | deadlines (§5) | timer + controller plumbing |
+| `Error.isError(x)` | `catch (e: unknown)` narrowing across realms | `e instanceof Error` |
+| `RegExp.escape`, `Uint8Array.fromBase64` / `toBase64` | user text in regexes; binary encoding | hand-written escapers, `Buffer` round trips |
+| `Temporal` (global object) | new date/time code | moment/date libraries |
 
 ## 3. Configuration and secrets
 
@@ -665,7 +681,7 @@ Tests: redaction and gzip round-trip; an aborted signal rejects with `AbortError
 
 ## 10. Resource lifecycle: `await using`
 
-TypeScript 5.9 compiles `using` / `await using` (lib `esnext.disposable`), and Node 24 runs them natively (V8 13.6, `Symbol.asyncDispose` built in):
+TypeScript 5.9+ compiles `using` / `await using` (lib `esnext.disposable`), and Node 24+ runs them natively (Node 26.13.1: V8 14.6, `Symbol.asyncDispose` built in):
 
 ```ts
 /** A resource that releases itself at scope exit, even when the scope throws (`await using`). */
@@ -783,7 +799,7 @@ Wiring is in `main.ts` (§6): `process.once('SIGTERM' | 'SIGINT')` → mark not 
 
 ## 12. Profiling and memory leaks
 
-All *reproduced* on Node 24.13.1:
+All *reproduced* on Node 26.13.1 (each flag wrote its file, exit 0):
 
 | Need | Command |
 |---|---|
@@ -793,7 +809,7 @@ All *reproduced* on Node 24.13.1:
 | Allocation sampling | `node --heap-prof` |
 | Live debugging | `node --inspect=127.0.0.1:9229`; never bind the inspector to `0.0.0.0` |
 
-Leak workflow: take snapshot A after warm-up, apply load, force steady state, take snapshot B, then compare in DevTools (Comparison view) and follow the retainers of the growing constructor. Snapshots contain heap data (tokens, PII): treat them as secrets. Set `--max-old-space-size` below the container memory limit, so V8 collects garbage before the kernel OOM-kills the process. Profile before optimising (`code-standards.md` › Performance).
+Leak workflow: take snapshot A after warm-up, apply load, force steady state, take snapshot B, then compare in DevTools (Comparison view) and follow the retainers of the growing constructor. Snapshots contain heap data (tokens, PII): treat them as secrets. Set `--max-old-space-size` below the container memory limit, so V8 collects garbage before the kernel OOM-kills the process. The real heap limit is that value plus about 96 MB (`v8.getHeapStatistics().heap_size_limit`: 320 → 416 MB on Node 26.13.1), and RSS adds code, stacks and buffers on top. Filling the heap until V8's own OOM peaked at 433 MiB RSS with 320 and 520 MiB with 384, so for a 512 MiB container use `--max-old-space-size=320` (about 62 % of the limit). A stdio MCP server under 50 calls peaked at 80–143 MB RSS, OTel included. Profile before optimising (`code-standards.md` › Performance).
 
 ## 13. Testing
 

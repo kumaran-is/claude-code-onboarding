@@ -1,6 +1,6 @@
 ---
 name: typescript-expert
-description: "TypeScript project engineering (5.9 for NestJS/Node services, 6.0 for Angular 22 and React) and Node.js 24 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
+description: "TypeScript project engineering (5.9 for NestJS, 6.0 for plain Node services, MCP servers, Angular 22 and React) and Node.js 26 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
 allowed-tools: Read, Bash
 metadata:
   triggers: TypeScript performance, Type diagnostics, ESM CJS interop, require(esm), nodenext, TypeScript migration, Monorepo TypeScript, tsc optimization, .d.ts authoring, declaration files, incremental TypeScript, TypeScript project references, Node.js service, env config validation, graceful shutdown, SIGTERM, AbortSignal timeout, unhandled rejection, event loop blocking, worker_threads, stream pipeline backpressure, await using, memory leak, heap snapshot, cpu profile, pino logging, npm audit, npm ci, lockfile
@@ -37,7 +37,7 @@ Use this skill for project-level TypeScript decisions:
 - `.d.ts` authoring and declaration file management
 - Incremental compilation configuration
 - Migrating from JavaScript to TypeScript
-- Plain Node.js 24 runtime engineering: config, deadlines, logging, workers, streams, shutdown, profiling, npm governance (`references/node-service-engineering.md`)
+- Plain Node.js 26 runtime engineering: ESM vs bundled CJS, config, deadlines, logging, workers, streams, shutdown, heap sizing, profiling, npm governance (`references/node-service-engineering.md`)
 
 ## Do Not Use
 
@@ -47,7 +47,7 @@ Use this skill for project-level TypeScript decisions:
 
 ## Strict baseline (TypeScript 5.9 / 6.0)
 
-New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 5.9.3 (2026-11-22). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). Pin TypeScript per project: Angular 22 requires `>=6.0.0 <6.1.0` (`@angular/compiler-cli` peer; pin 6.0.3); the React toolchain pins 6.0.3 because typescript-eslint 8.74.0 has the peer `typescript <6.1.0`; NestJS and Node services stay on 5.9.3. create-vite 9.3.4 templates install `typescript@~7.0`, which none of these stacks accept, so always pin explicitly. TypeScript 7.0.2 is npm `latest`.
+New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 5.9.3 (2026-11-22). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). TypeScript 6.0 also defaults `types` to `[]` (add `"types": ["node"]` or `process` is TS2591) and `strict` to on. Pin TypeScript per project: Angular 22 requires `>=6.0.0 <6.1.0` (`@angular/compiler-cli` peer; pin 6.0.3); the React toolchain, plain Node services and MCP servers pin 6.0.3 (verified 2026-11-23 on Node 26.13.1) because typescript-eslint 8.74.0 has the peer `typescript <6.1.0`; NestJS stays on the pin in `nestjs-api`. create-vite 9.3.4 templates install `typescript@~7.0`, which none of these stacks accept, so always pin explicitly. TypeScript 7.0.2 is npm `latest` and compiled the Node sample, but stays deferred until typescript-eslint supports it (`node-service-engineering.md` §1).
 
 ## Type-check commands that actually check
 
@@ -156,7 +156,8 @@ npx tsc --extendedDiagnostics --incremental false | grep -E "Check time|Files:|L
 ### ESM/CJS Interop
 - Set `"type": "module"` in package.json for ESM-first; one format per package, with an `"exports"` map (`"types"` first)
 - Code Node loads directly (services, CLIs, libraries): `"module": "nodenext"` (implies `moduleResolution: nodenext`), relative imports with `.js` extensions (omitting them is TS2835). `"moduleResolution": "bundler"` only when a bundler produces what runs (Angular, Vite, esbuild)
-- Node 24: ESM can `import` CJS statically (default import always; named imports only when Node's static analysis detects them); CJS can `require()` ESM without a flag unless the ESM uses top-level `await` (`ERR_REQUIRE_ASYNC_MODULE`). Reproduced on 24.13.1, details in `references/node-service-engineering.md` §2
+- Node 24 and 26: ESM can `import` CJS statically (default import always; named imports only when Node's static analysis detects them); CJS can `require()` ESM without a flag unless the ESM uses top-level `await` (`ERR_REQUIRE_ASYNC_MODULE`). Reproduced on 26.13.1, details in `references/node-service-engineering.md` §2
+- Services ship unbundled ESM by default; an esbuild CJS bundle is an opt-in cold-start optimisation (measured: about 80 ms and 15 MB RSS less), and OTel ESM patching uses the synchronous `import-in-the-middle/register-hooks.mjs` hook: make traced outgoing calls with `fetch()` or a default import of `node:http` (named imports get no client span); `module.register` is only a fallback (DEP0205 on Node 26). Measurements in §2; hook matrix in `deployment-ci-cd` › `node-ci-and-observability.md` §1
 - TypeScript `paths` only work at compile time, not at runtime; for Node use package.json `"imports"` (`#src/*`) or relative imports
 
 ### Migration Strategies
@@ -188,7 +189,7 @@ JavaScript to TypeScript migration — incremental approach:
 ### Shared API contracts (frontend ↔ backend)
 Generate client types from the backend's OpenAPI document instead of hand-copying DTOs, pinned, e.g. `npx openapi-typescript@7.13.0 openapi.json -o src/api/schema.d.ts`, and fail CI when regenerating changes the file (`git diff --exit-code src/api/schema.d.ts`). Generated types are still compile-time only: parse responses at runtime (`typescript-advanced-types`, "Boundaries"). Tool choice is RECOMMENDED practice, not verified in a project here.
 
-### Node.js 24 services (plain Node or under NestJS)
+### Node.js 26 services (plain Node, MCP servers, or under NestJS)
 Verified patterns with tests and negative controls: `references/node-service-engineering.md`. Non-negotiables:
 
 | Area | Rule |
@@ -211,7 +212,7 @@ Verified patterns with tests and negative controls: `references/node-service-eng
 | Angular 22.x | Yes — but load `angular-spa` for framework patterns |
 | NestJS 11.x | Yes — but load `nestjs-api` for framework patterns |
 | MCP Builder TypeScript | Yes — Node service rules apply; MCP specifics in `mcp-builder` |
-| Plain Node.js 24 (services, CLIs, workers) | Yes — `references/node-service-engineering.md` |
+| Plain Node.js 26 (services, CLIs, workers) | Yes — `references/node-service-engineering.md` |
 | Flutter | No |
 | Java | No |
 | Python | No |
@@ -223,7 +224,7 @@ Verified patterns with tests and negative controls: `references/node-service-eng
 | `references/typescript-cheatsheet.md` | Quick reference for type basics, utility types, generics, type guards, and best practices |
 | `references/utility-types.ts` | Production-ready utility type library (branded types, Result/Option types, deep utilities, JSON types) |
 | `references/tsconfig-strict.json` | Strict TypeScript 5.9 tsconfig template for **bundled** apps and libraries (`moduleResolution: bundler`); Node services use the `nodenext` config in `node-service-engineering.md` §1 |
-| `references/node-service-engineering.md` | Node 24 service engineering: ESM/CJS, config and secrets, errors, deadlines, DI, logging, workers, streams, `await using`, graceful shutdown, profiling, testing, dependency governance; every snippet compiled, linted and tested |
+| `references/node-service-engineering.md` | Node 26 + TypeScript 6.0 service engineering: ESM/CJS and bundling measurements, Node 26 features, heap sizing, config and secrets, errors, deadlines, DI, logging, workers, streams, `await using`, graceful shutdown, profiling, testing, dependency governance; every snippet compiled, linted and tested |
 | `scripts/ts_diagnostic.py` | Python diagnostic script — analyzes tsconfig, tooling, monorepo setup, any-type usage, and type check performance |
 
 ## Validation Commands

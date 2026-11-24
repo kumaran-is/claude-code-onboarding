@@ -1,6 +1,6 @@
 ---
 name: typescript-pro
-description: Pointer only — merged into typescript-advanced-types (type design, shared contracts, boundary validation) and typescript-expert (tsconfig strictness, type-check commands, Node.js 24 service engineering). Load those instead; this skill keeps the name so existing links resolve.
+description: Pointer only — merged into typescript-advanced-types (type design, shared contracts, boundary validation) and typescript-expert (tsconfig strictness, type-check commands, Node.js 26 service engineering). Load those instead; this skill keeps the name so existing links resolve.
 allowed-tools: Read
 metadata:
   triggers: TypeScript architecture, Type-safe design, Decorator design, Type safety hardening, Strict TypeScript, Type contract, TypeScript enterprise, Module type contracts, Metadata programming, Shared types
@@ -25,6 +25,6 @@ Do not apply guidance from this file; it is a redirect. Load the canonical skill
 |---|---|
 | Type design: shared contracts, branded types, generics, DTO → domain mapping, runtime validation (Zod), discriminated unions with `assertNever`, typed errors | `typescript-advanced-types` (canonical) |
 | Strict compiler flags, tsconfig layout, project references, type-check commands, performance, `.d.ts` | `typescript-expert` |
-| Plain Node.js 24 runtime: ESM/CJS, env config and secrets, deadlines, logging, workers, streams, graceful shutdown, profiling, npm governance | `typescript-expert` → `references/node-service-engineering.md` |
+| Plain Node.js 26 runtime: ESM/CJS, env config and secrets, deadlines, logging, workers, streams, graceful shutdown, profiling, npm governance | `typescript-expert` → `references/node-service-engineering.md` |
 | NestJS decorators, guards, module type contracts, code-quality rules | `nestjs-coding-standard`, `nestjs-api` |
 | Angular component/form/RxJS typing | `angular-spa` |

@@ -12,16 +12,22 @@
 | Tool | Use Case |
 |------|---------|
 | `cProfile` | CPU profiling — finds slow functions in pure Python code |
-| `py-spy` | Sampling profiler — attaches to running process, zero overhead |
-| `memory_profiler` | Line-by-line memory usage — finds memory leaks |
+| `py-spy` (0.4.4) | Sampling profiler: attaches to a running process, no code change. Executed against a Python 3.14.10 uvicorn container (`py-spy dump --pid 1` from a sidecar with `--pid container:<ctr> --cap-add SYS_PTRACE`) |
+| `python -m asyncio ps/pstree <PID>` | 3.14 stdlib: task call graphs of a running asyncio process (`asyncio-concurrency-and-tasks.md` section 5b) |
+| `memray` (1.20.0) | Allocation profiler with flame graphs (Linux/macOS); `memray run -o out.bin app.py` then `memray stats out.bin` (executed on 3.14.10) |
+| `tracemalloc` (stdlib) | Allocation snapshots without a dependency; fine for tests and quick comparisons |
 | `pytest-benchmark` | Micro-benchmarking — measure and compare function performance |
 
 ### cProfile Usage
 
 ```python
 import cProfile
-import pstats
 import io
+import pstats
+
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 def profile_function():
     pr = cProfile.Profile()
@@ -35,7 +41,7 @@ def profile_function():
     s = io.StringIO()
     ps = pstats.Stats(pr, stream=s).sort_stats("cumulative")
     ps.print_stats(20)  # Top 20 functions
-    print(s.getvalue())
+    logger.info("profile_top20", stats=s.getvalue())
     return result
 ```
 
@@ -52,22 +58,18 @@ py-spy top --pid <PID>
 py-spy record -o profile.svg --pid <PID> --duration 30
 ```
 
-### memory_profiler — Line-by-Line Memory
+### Memory: memray or tracemalloc
 
-```python
-from memory_profiler import profile
-
-@profile
-async def load_large_dataset(path: str) -> list[dict]:
-    with open(path) as f:
-        return json.load(f)
-```
+`memory_profiler` has had no release since 2022 (PyPI 0.61.0): do not add it to new projects.
 
 ```bash
-# Run with memory profiling
-uv add --dev memory-profiler
-python -m memory_profiler my_script.py
+uv add --dev memray==1.20.0
+uv run memray run -o load.bin scripts/load_dataset.py   # records every allocation
+uv run memray flamegraph load.bin                         # HTML flame graph
+uv run memray stats load.bin                              # totals and top allocators
 ```
+
+`tracemalloc.start()` / `tracemalloc.get_traced_memory()` (stdlib) is enough for a test that asserts a memory budget.
 
 ### pytest-benchmark
 
@@ -153,6 +155,14 @@ async def process_large_dataset(items: list[dict]) -> list[dict]:
 ```
 
 Blocking sync SDK calls use `await asyncio.to_thread(fn, ...)` plus the SDK's own timeout and an outer `asyncio.timeout`: a thread cannot be cancelled.
+
+On Linux, 3.14 starts pool workers with `forkserver` (not `fork`): pass everything a worker needs as arguments (`asyncio-concurrency-and-tasks.md` section 5).
+
+| CPU-parallelism option (3.14) | Status | Evidence / constraint |
+|---|---|---|
+| `ProcessPoolExecutor` (long-lived) | Default | Works with every C extension; pickling cost per call |
+| `concurrent.futures.InterpreterPoolExecutor` / `concurrent.interpreters` (PEP 734) | OPTIONAL | Executed on 3.14.10: `interp.call(fn, 7)` and `pool.map` ran a top-level function. Each interpreter imports modules again, and C extensions that do not declare subinterpreter support fail to import there: prove every import inside a worker before adopting |
+| Free-threaded build (`python3.14t`, PEP 703/779, officially supported in 3.14) | DEFER for services; OPTIONAL for an isolated CPU-bound job | Measured on one busy 12-core dev machine (noisy, not a benchmark): 4 threads of pure-Python arithmetic took 2.6–3.7 s on 3.14.10 vs 0.9–1.5 s on 3.14.10+freethreaded. pydantic-core 2.50.5 imported with the GIL still disabled; orjson 3.13.0 has no `cp314t` wheel and failed to build from source. Audit every compiled dependency for a `cp314t` wheel; a module without free-threading support re-enables the GIL (docs: free-threading HOWTO) |
 
 ---
 
@@ -335,38 +345,20 @@ Output shows hits, time per line, and percentage — use it to decide which loop
 
 ### `__slots__` — Memory Optimization for High-Instance-Count Objects
 
-Use when creating thousands of instances of a class (e.g., event objects, data records, value objects in a tight loop). `__slots__` eliminates the per-instance `__dict__`, reducing memory by ~40–60%.
+Use when creating very many instances (event objects, records, value objects in a tight loop). `__slots__` removes the per-instance `__dict__`. Measure before claiming a number: CPython 3.13+ already stores plain-object attributes inline, so the saving is smaller than older guides state.
 
 ```python
-import sys
+from dataclasses import dataclass
 
-class RegularClass:
-    """Regular class with __dict__ — flexible but memory-heavy."""
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
 
-class SlottedClass:
-    """Class with __slots__ — fixed attributes, lower memory."""
-    __slots__ = ['x', 'y', 'z']
-
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
-
-# Memory comparison
-regular = RegularClass(1, 2, 3)
-slotted = SlottedClass(1, 2, 3)
-
-print(f"Regular class size: {sys.getsizeof(regular)} bytes")
-print(f"Slotted class size: {sys.getsizeof(slotted)} bytes")
-
-# Significant savings with many instances
-regular_objects = [RegularClass(i, i+1, i+2) for i in range(10000)]
-slotted_objects = [SlottedClass(i, i+1, i+2) for i in range(10000)]
+@dataclass(slots=True)  # generates __slots__ from the fields
+class Point3:
+    x: int
+    y: int
+    z: int
 ```
+
+Measured on 3.14.10 with `tracemalloc` (100,000 instances of a 3-int-field dataclass, list included): 19.98 MB plain vs 15.97 MB with `slots=True`, a 20% saving. Re-measure with your real field count and types.
 
 **Trade-offs:**
 - Cannot add arbitrary attributes after `__init__`

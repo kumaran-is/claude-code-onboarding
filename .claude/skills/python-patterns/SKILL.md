@@ -1,15 +1,15 @@
 ---
 name: python-patterns
-description: Python architecture decision-making for framework selection (FastAPI/Django/Flask), async vs sync patterns, type hint strategy, project structure, and background task selection. Use BEFORE implementing Python features to choose the right approach for the context.
+description: Python architecture decision-making for framework selection (FastAPI/Django/Flask), async vs sync patterns, type hint strategy, project structure, background task selection, and the runtime decision (Python 3.14 vs 3.15, free-threaded build, subinterpreters, workspace vs standalone project). Use BEFORE implementing Python features to choose the right approach for the context.
 allowed-tools: Read, Write, Edit
 metadata:
-  triggers: Python framework choice, FastAPI vs Django, async vs sync Python, Python project structure, Python background tasks, Python architecture decisions, Celery vs BackgroundTasks, Python async libraries
+  triggers: Python framework choice, FastAPI vs Django, async vs sync Python, Python project structure, Python background tasks, Python architecture decisions, Celery vs BackgroundTasks, Python async libraries, Python 3.15, Python 3.14 upgrade, free-threaded Python, python3.14t, subinterpreters, which Python version
   related-skills: python-dev, agentic-ai-dev, api-design-principles
   domain: backend
   role: advisor
   scope: decision
   output-format: guidance
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -18,7 +18,7 @@ last-reviewed: "2026-03-14"
 
 # Python Patterns
 
-> Python development principles and decision-making for the 2025 ecosystem.
+> Python development principles and decision-making for the Python 3.14 ecosystem (validated 2026-11-23).
 > **Learn to THINK about context, not memorize patterns.**
 
 ## When to Use
@@ -106,9 +106,9 @@ Don't:
 |------|---------------|
 | HTTP client | httpx |
 | PostgreSQL | asyncpg |
-| Redis | aioredis / redis-py async |
-| File I/O | aiofiles |
-| Database ORM | SQLAlchemy 2.0 async |
+| Redis | redis-py `redis.asyncio` (the separate aioredis package is archived) |
+| File I/O | `anyio.Path` / `asyncio.to_thread` for large files; aiofiles is optional |
+| Database ORM | SQLAlchemy 2.1 async: pin `sqlalchemy[asyncio]==2.1.9`. Bare `sqlalchemy` has no greenlet and `create_async_engine` fails at first connect with `ImportError: ... requires that the Python 'greenlet' library is installed` (executed) |
 
 ---
 
@@ -340,11 +340,11 @@ Include:
 ### Async Testing Pattern
 
 ```python
-import pytest
-from httpx import AsyncClient, ASGITransport
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 
-@pytest.mark.asyncio
-async def test_create_user(app):
+# pytest-asyncio 1.x with asyncio_mode = "auto" (pyproject): no per-test marker needed
+async def test_create_user(app: FastAPI) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/users", json={"name": "Alice"})
         assert response.status_code == 201
@@ -381,3 +381,25 @@ Before implementing any Python feature:
 - Use Pydantic v2 for all API boundaries (see `python-dev` Iron Law)
 - Separate concerns: routes → services → repositories
 - Test critical paths with real async test client
+
+---
+
+## 11. Runtime Decision (Python 3.14 vs 3.15, free-threading, subinterpreters)
+
+Validated 2026-11-23 with uv 0.13.9: core FastAPI/SQLAlchemy/asyncpg/OTel set locked and tested on 3.14.10 and 3.15.2; a wider set (google-adk 2.15, google-cloud-pubsub/firestore/storage, langchain 1.5.2, langgraph 1.2.24, weaviate-client 4.24.1, presidio-analyzer 2.2.366, weasyprint 70.0, redis 8.2.0, pgvector 0.5.1) locked on both.
+
+| Option | Decision | Evidence |
+|---|---|---|
+| CPython **3.14.10** | **ADOPT (default)** for services, workers and tools | every dependency above installs from `cp314`/pure wheels; `uv sync --locked --no-build` succeeds |
+| CPython 3.15.2 | **DEFER** as a default; OPTIONAL forward-compat CI job (`uv run --python 3.15 pytest` with `--no-build`) | the core set syncs from `cp315` wheels, but the wider set needs source builds on 3.15: weaviate-client 4.24.1 caps `grpcio<1.80` (1.78.2 has wheels only up to cp314), presidio-analyzer 2.2.366 caps `numpy<2.5` (2.4.6 has none for cp315) and zstandard 0.25.0 has no cp315 wheel; `uv sync --no-build` fails on 3.15 (exit 2). presidio-analyzer also declares `Requires-Python <3.15`, which uv does not enforce (upper bounds are ignored) |
+| CPython 3.13 | Only for a STANDALONE project whose dependency has no cp314 wheel (paddlepaddle 3.3.1: cp39–cp313) | own `uv.lock` and `.python-version`; cannot be a member of a 3.14 workspace (`uv-package-manager` playbook sections 6–7) |
+| Free-threaded build (`3.14t`) | **DEFER** for services; OPTIONAL for an isolated CPU-bound pure-Python job | officially supported but optional (PEP 779). Measured, one noisy dev machine: 4 CPU threads 2.6–3.7 s with the GIL vs 0.9–1.5 s free-threaded. Wheel gaps are real: orjson 3.13.0 and grpcio 1.85.3 publish no `cp314t` wheel (orjson failed to build) |
+| Subinterpreters (`concurrent.interpreters`, `InterpreterPoolExecutor`) | OPTIONAL | stdlib in 3.14 (PEP 734), executed; C extensions must support them: prove each import in a worker interpreter first |
+
+| Separate lock (same interpreter) | REQUIRED for google-adk 2.15 next to google-genai 3.x users | google-adk 2.15.0 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`; langchain-google-genai 4.5.2 requires `google-genai>=3.3.0`: one workspace lock fails (executed, uv 0.13.9); two projects lock fine (`uv-package-manager` playbook section 7) |
+
+Rules:
+- Commit `.python-version` (patch pinned) and match the Docker base tag; `requires-python = ">=3.14"`. uv 0.13 downloads 3.15 when nothing is pinned (executed: a project without `.python-version` or `requires-python` resolved for `>=3.15`).
+- uv ignores dependency `Requires-Python` UPPER bounds when resolving (presidio-analyzer `<3.15` locked on 3.15), so a lock that succeeds on 3.15 proves nothing. Base a version decision on wheel availability (`uv sync --locked --no-build`), imports and the test suite on that interpreter.
+- Re-evaluate 3.15 when the capped dependencies above ship cp315 wheels; the forward-compat job tells you when.
+- 3.14 language/stdlib changes that alter code: `python-dev` `reference/python-idioms.md` section 9 and `reference/asyncio-concurrency-and-tasks.md` sections 5–5b.

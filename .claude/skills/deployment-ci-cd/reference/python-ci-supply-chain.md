@@ -1,6 +1,6 @@
 # Python CI Gates and Supply Chain
 
-Canonical reference for Python CI gate design, build-input pinning, locked installs and dependency auditing. Commands below were executed with uv 0.11.3, pip-audit 2.10.1, actionlint 1.7.12 and gcloud 560 unless marked "verify".
+Canonical reference for Python CI gate design, build-input pinning, locked installs and dependency auditing. Commands below were executed with uv 0.11.3 and re-run on uv 0.13.9 / CPython 3.14.10 (sections 1, 3, 7 and 8, 2026-11-23), pip-audit 2.10.1, actionlint 1.7.12 and gcloud 560 unless marked "verify".
 
 ## 1. Dependency audit: canonical commands
 
@@ -21,6 +21,7 @@ uv run pip-audit -r requirements.audit.txt --no-deps --disable-pip > audit.log 2
 - Gate on the exit code. Accept a known finding explicitly with `--ignore-vuln <ID>` (executed: ignoring all 5 IDs of a package gave exit 0) and record the reason and an expiry next to the ID. Never delete the audit step to get green.
 - `--no-deps --disable-pip` audits exactly the exported lock set instead of re-resolving; pip-audit warns that unhashed `--no-deps` input is less strict (use `uv export` without `--no-hashes` plus `--require-hashes` when you need that).
 - `pip-audit --locked` only works with a project path argument (executed: `--locked` combined with `-r` was rejected with "can only be used with a project path"); prefer the explicit export above unless you verify your lock format is supported.
+- `uv audit` exists in uv 0.13 but is experimental (executed: `uv audit --preview-features audit-command` reported the same findings and printed a preview warning). Keep the pip-audit gate until it is stable.
 - Need severity (CVSS) prioritisation? Use a severity-aware scanner (or read each advisory) and say which one; do not simulate severity by grepping.
 - Also audit the container base image (Trivy/Grype/`docker scout`), because OS packages are not in the Python lock.
 - A zero-finding scan is evidence only after a positive control: a known-vulnerable pin must make the same command exit 1 (keep one in the gate's selftest or a scheduled job).
@@ -129,7 +130,7 @@ Gate idea: grep every `pyproject.toml` and Dockerfile for `fastapi` specs that d
 
 ## 7. Example workflow (actionlint exit 0)
 
-`<sha>` placeholders must be replaced with the 40-hex commit resolved as in section 3 (the all-zero values below only satisfy the syntax check).
+Every pin below was resolved on 2026-11-23: action SHAs with `git ls-remote` (both tags are non-prerelease releases), the Postgres INDEX digest with `docker buildx imagetools inspect postgres:18.7-trixie`. Executed: actionlint 1.7.12 exit 0 (a planted `github.reff` typo exits 1); `check-pins.sh` (section 3) exit 0; every `run:` step replayed locally against a uv 0.13.9 project, each exit 0. `setup-uv` caches keyed on `**/uv.lock` and `**/pyproject.toml` by default; `prune-cache` defaults to `false` in v10.
 
 ```yaml
 name: python-ci
@@ -160,7 +161,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16@sha256:<index-digest>
+        image: postgres:18.7-trixie@sha256:f5cbc081c25690710f3fc6f4c61a7565382bae01ca0d0f2028a53d7926b85a20
         env:
           POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
         ports: ["5432:5432"]
@@ -171,15 +172,21 @@ jobs:
       REQUIRE_DB_TESTS: "1"
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:${{ secrets.TEST_DB_PASSWORD }}@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@<sha> # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@<sha> # vX.Y.Z
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
-          version: "0.11.3"
+          version: "0.13.9"
+          enable-cache: true
       - run: uv python install       # reads .python-version
       - run: uv lock --check
-      - run: uv sync --locked
+      - run: uv sync --locked --no-build
+      - name: Lint and types
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src tests
       - name: Tests (own exit code, then executed-count gate)
         run: |
           set +e
@@ -194,41 +201,56 @@ jobs:
           uv run pip-audit -r requirements.audit.txt --no-deps --disable-pip
 ```
 
-Add `pip-audit` and every plugin/library the gates use (`pytest-timeout`, `asgi-lifespan`, `structlog`, `tenacity` where the references' snippets are adopted) to the project's dependency groups so `uv sync --locked` installs them from the lock. Do not test a matrix of old Pythons for a service pinned to one (`requires-python`); test the interpreter you deploy.
+- `uv sync --locked --no-build`: a dependency without a wheel for the runner fails the job instead of compiling an sdist (the local project is still built).
+- `scripts/check_executed.py` is the executed-count gate (`python-dev/reference/backend-live-e2e-standard.md`): a run that collected zero tests must not pass.
+
+Add `pip-audit` and every plugin/library the gates use (`pytest-timeout`, `httpx2` for app-driving tests (Starlette 1.10 `TestClient` imports it first and warns with `StarletteDeprecationWarning` when only httpx is present; keep `filterwarnings = ["error"]` so that warning fails the suite), `structlog`, `tenacity` where the references' snippets are adopted) to the project's dependency groups so `uv sync --locked` installs them from the lock. Do not test a matrix of old Pythons for a service pinned to one (`requires-python`); test the interpreter you deploy.
 
 ## 8. Dockerfile for a uv project
 
 ```dockerfile
 # syntax=docker/dockerfile:1
-FROM ghcr.io/astral-sh/uv:0.11.3@sha256:90bbb3c16635e9627f49eec6539f956d70746c409209041800a0280b93152823 AS uv
-FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS builder
+FROM ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
+FROM python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS builder
 COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
-# Use the image's Python: a uv-downloaded one would not exist in the runtime stage.
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
-# Dependencies layer: cached until the lock changes.
-RUN --mount=type=bind,source=uv.lock,target=uv.lock \
+# Use the image's Python (a uv-downloaded one would not exist in the runtime stage);
+# compile bytecode at build time because the runtime filesystem is read-only.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_NO_DEV=1 UV_NO_BUILD=1
+# Dependencies layer: cached until the lock changes. UV_NO_BUILD: fail instead of compiling a third-party sdist.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project
-COPY pyproject.toml uv.lock ./
+    --mount=type=bind,source=.python-version,target=.python-version \
+    uv sync --locked --no-install-project --no-editable
+COPY pyproject.toml uv.lock .python-version README.md ./
 COPY src/ src/
-# Project layer: non-editable, so only .venv has to be copied to the runtime stage.
-RUN uv sync --locked --no-dev --no-editable
+# Project layer: non-editable, so only .venv is copied to the runtime stage.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
 
-FROM python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
+FROM python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --no-create-home app
 WORKDIR /app
-COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --from=builder --chown=root:root /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER app
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"]
-# `exec` replaces the shell, so the server is PID 1 and receives SIGTERM; the shell expands $PORT.
-CMD ["sh", "-c", "exec uvicorn my_service.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]
+# Exec form: uvicorn is PID 1 and receives SIGTERM directly (graceful shutdown runs the lifespan exit).
+CMD ["uvicorn", "my_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "8", "--no-access-log"]
 ```
 
-The digests above were resolved with `docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.11.3` and `... python:3.14-slim` (the INDEX digest) on the validation date: re-resolve them when you bump the tag, and let Dependabot/Renovate update them. Comments sit on their own lines: a trailing `# ...` after an `ENV` line is parsed as more key/value words. The app is started with `--factory` (no module-level `app = create_app()`). The `/uv /uvx /bin/` copy, `--no-editable` and `UV_PYTHON_DOWNLOADS=0` follow the uv Docker guide (Context7). `check-pins.sh` (section 3) exits 0 on this Dockerfile and exits 1 on one that has `FROM python:3.14-slim` and `RUN pip install uv`. Executed: both `uv sync --locked ...` steps (deps-only then project, `--no-editable` imports from `site-packages`); a stale lock failed `--locked` (exit 1) while `--frozen` exited 0; `sh -c 'exec ...'` keeps the same PID; the stdlib healthcheck returned 0 against a live server and 1 when it was down. NOT RUN here: `docker build`, `docker build --check` and `docker run` (no running daemon in the validation environment, so Dockerfile parsing is unverified): build it and run `docker build --check .` once before trusting it.
+Executed 2026-11-23 (uv 0.13.9, CPython 3.14.10, Docker Engine 29.8.0): `docker build --check .` 0; build 0 (263 MB); run with `--read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --cap-drop ALL --security-opt no-new-privileges --memory 256m --pids-limit 128`: `/health/live` 200, uid 10001, a write to `/app` refused, `CapEff` 0, `NoNewPrivs` 1, `.cpython-314.pyc` files present, Docker health `healthy`, `docker stop` returned in under 1 s with exit 0 and the lifespan `shutdown_complete` log line. Controls: `sh -c "uvicorn ...; true"` (uvicorn not PID 1) made `docker stop` wait the full timeout and exit 137 with no shutdown log; a `sleep` CMD turned health `unhealthy`; a stale lock failed the `--locked` build step. `check-pins.sh` exits 0 on this file.
 
+- Digests: INDEX digests from `docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.13.9` and `... python:3.14.10-slim-trixie` on that date (`python:3.14-slim` pointed at the same index). Re-resolve when you bump a tag and let Dependabot/Renovate update them. The patch tag matches `.python-version`.
+- `UV_NO_DEV=1` replaces `--no-dev` on each command; `UV_NO_BUILD=1` fails the build when a third-party package has no wheel (the local project is still built); `UV_COMPILE_BYTECODE=1` because the read-only runtime cannot write bytecode later.
+- The venv is copied `root:root`: the app user can run it, not modify it.
+- Exec-form `CMD` makes uvicorn PID 1. When the platform injects `$PORT`, use `CMD ["sh", "-c", "exec uvicorn ... --port ${PORT:-8080}"]`; the `exec` is mandatory. Keep `--timeout-graceful-shutdown` below the platform's SIGKILL window (Cloud Run: 10 s).
+- Exit code after SIGTERM (uvicorn 0.54.0, executed): after its graceful shutdown uvicorn restores the default handler and re-raises the signal (`Server.capture_signals` in `uvicorn/server.py`). As container PID 1 (exec-form `CMD`, `sh -c 'exec ...'`, `python -m uvicorn` or programmatic `uvicorn.run`) the kernel ignores that default-action signal, so the process exits 0 and `atexit` hooks run. On a host, under `docker run --init`/tini, or with a shared PID namespace it dies from the signal: exit 143 (`-15` from `subprocess`), and `atexit` does NOT run. A stop check passes on the lifespan shutdown log line PLUS exit 0 or 143; 137 or a missing log line is a failure. Flush telemetry and close clients in the lifespan `finally`, never in `atexit` or after `uvicorn.run()`.
+- Comments sit on their own lines: a trailing `# ...` after an `ENV` line is parsed as more key/value words. The app is started with `--factory` (no module-level `app = create_app()`). `/uv /uvx /bin/`, `--no-editable` and `UV_PYTHON_DOWNLOADS=0` follow the uv Docker guide.
+- Workspace member images (`--package <member>`): `uv-package-manager` playbook section 6.
 - If the application is not an installable package (no `[build-system]`, or `tool.uv.package = false`), drop the second `uv sync` and `COPY` the source instead.
 - The healthcheck uses the standard library, so it does not depend on `httpx`/`curl` being in the runtime image.
 - Keep the Docker `HEALTHCHECK` on the LIVENESS path (process alive); the orchestrator's readiness/startup probes check dependencies (`health-endpoints.md`).

@@ -1,832 +1,224 @@
-# UV Package Manager Implementation Playbook
+# uv Implementation Playbook
 
-This file contains detailed patterns, checklists, and code samples referenced by the skill.
+Validated 2026-11-23 with uv 0.13.9 (`uvx --from uv==0.13.9 uv`), uv-managed CPython 3.14.10 / 3.13.18 / 3.15.2, Docker Engine 29.8.0. "Executed" means the command ran with its own exit code shown; "docs" means uv's documentation for 0.13.9 (`docs/guides/integration/docker.md`, `docs/concepts/projects/workspaces.md`, `CHANGELOG.md`).
 
-# UV Package Manager
+## 1. What changed since uv 0.11.x
 
-Comprehensive guide to using uv, an extremely fast Python package installer and resolver written in Rust, for modern Python project management and dependency workflows.
+| Version | Change | Action |
+|---|---|---|
+| 0.13.0 | Default stable Python is now **3.15**: with no `.python-version` / `--python`, `uv venv`, `uv python install` and project commands may download 3.15 (changelog). Executed: a project with no `requires-python` locked with "Defaulting to `>=3.15`" | Commit `.python-version` (`uv python pin 3.14.10`) and `requires-python = ">=3.14"` in every project |
+| 0.13.0 | `uv_build` upper bound must allow 0.13 (`uv_build>=0.13.0,<0.14`); `uv init` writes `uv_build>=0.13.9,<0.14.0` (executed) | Bump `[build-system]` when you bump uv |
+| 0.13.0 | `--require-hashes` honoured in included constraints files; editable requirements rejected in constraints; tar archives read by a stricter backend | Fix hashes/constraints files instead of opting out |
+| 0.12.0 | `uv init` defines a build system by default; stable releases preferred before pre-releases; `--require-hashes` in `requirements.txt` honoured; MD5-only hashes rejected | Re-run `uv init` templates; expect stricter installs |
+| 0.12.x | `uv audit` (OSV lookups over the lock) and `uv tool audit` added | Still **experimental** in 0.13.9 (warning printed): CI gate stays pip-audit (section 9) |
+| 0.12+ | `uv format` (runs ruff's formatter) | Experimental in 0.13.9 (warning printed); keep `uv run ruff format` |
 
-## When to Use This Skill
-
-- Setting up new Python projects quickly
-- Managing Python dependencies faster than pip
-- Creating and managing virtual environments
-- Installing Python interpreters
-- Resolving dependency conflicts efficiently
-- Migrating from pip/pip-tools/poetry
-- Speeding up CI/CD pipelines
-- Managing monorepo Python projects
-- Working with lockfiles for reproducible builds
-- Optimizing Docker builds with Python dependencies
-
-## Core Concepts
-
-### 1. What is uv?
-- **Ultra-fast package installer**: 10-100x faster than pip
-- **Written in Rust**: Leverages Rust's performance
-- **Drop-in pip replacement**: Compatible with pip workflows
-- **Virtual environment manager**: Create and manage venvs
-- **Python installer**: Download and manage Python versions
-- **Resolver**: Advanced dependency resolution
-- **Lockfile support**: Reproducible installations
-
-### 2. Key Features
-- Blazing fast installation speeds
-- Disk space efficient with global cache
-- Compatible with pip, pip-tools, poetry
-- Comprehensive dependency resolution
-- Cross-platform support (Linux, macOS, Windows)
-- No Python required for installation
-- Built-in virtual environment support
-
-### 3. UV vs Traditional Tools
-- **vs pip**: 10-100x faster, better resolver
-- **vs pip-tools**: Faster, simpler, better UX
-- **vs poetry**: Faster, less opinionated, lighter
-- **vs conda**: Faster, Python-focused
-
-## Installation
-
-### Quick Install
+## 2. New project
 
 ```bash
-# macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Using pip (if you already have Python)
-pip install uv
-
-# Using Homebrew (macOS)
-brew install uv
-
-# Using cargo (if you have Rust)
-cargo install --git https://github.com/astral-sh/uv uv
-```
-
-### Verify Installation
-
-```bash
-uv --version
-# uv 0.x.x
-```
-
-## Quick Start
-
-### Create a New Project
-
-```bash
-# Create new project with virtual environment
-uv init my-project
-cd my-project
-
-# Or create in current directory
-uv init .
-
-# Initialize creates:
-# - .python-version (Python version)
-# - pyproject.toml (project config)
-# - README.md
-# - .gitignore
-```
-
-### Install Dependencies
-
-```bash
-# Install packages (creates venv if needed)
-uv add requests pandas
-
-# Install dev dependencies
-uv add --dev pytest black ruff
-
-# Install from requirements.txt
-uv pip install -r requirements.txt
-
-# Install from pyproject.toml
-uv sync
-```
-
-## Virtual Environment Management
-
-### Pattern 1: Creating Virtual Environments
-
-```bash
-# Create virtual environment with uv
-uv venv
-
-# Create with specific Python version
-uv venv --python 3.12
-
-# Create with custom name
-uv venv my-env
-
-# Create with system site packages
-uv venv --system-site-packages
-
-# Specify location
-uv venv /path/to/venv
-```
-
-### Pattern 2: Activating Virtual Environments
-
-```bash
-# Linux/macOS
-source .venv/bin/activate
-
-# Windows (Command Prompt)
-.venv\Scripts\activate.bat
-
-# Windows (PowerShell)
-.venv\Scripts\Activate.ps1
-
-# Or use uv run (no activation needed)
-uv run python script.py
+uv init --package --python 3.14 my-service      # src/ layout, uv_build backend, .python-version
+cd my-service
+uv python pin 3.14.10                            # exact patch in .python-version; requires-python stays ">=3.14"
+uv add "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "pydantic-settings==2.16.3"
+uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "ruff==0.17.6" "mypy==2.4.1" "pip-audit==2.10.1"
 uv run pytest
 ```
 
-### Pattern 3: Using uv run
+- `uv init --python 3.14.10` writes `requires-python = ">=3.14.10"` (executed); relax it to `">=3.14"` and keep the patch only in `.python-version` and the Docker base tag.
+- `fastapi[standard]` pulls fastapi-cloud-cli 0.28.0 and through it sentry-sdk 3.0.0 plus four more packages; `standard-no-fastapi-cloud-cli` removes those six (executed lock diff).
+- Pin exact versions (`==`) for services; libraries you publish declare ranges and let the consumer's lock pin.
+
+## 3. Dependencies
+
+| Need | Command (all executed) | Lands in |
+|---|---|---|
+| Runtime dependency | `uv add "httpx==0.28.1"` | `[project] dependencies` |
+| Dev tools | `uv add --dev "pytest==9.2.0"` | `[dependency-groups] dev` (PEP 735) |
+| Another local-only group | `uv add --group lint "ruff==0.17.6"` | `[dependency-groups] lint` |
+| Published optional feature | `uv add --optional pdf "pypdf==7.1.1"` | `[project.optional-dependencies] pdf` |
+| Import a requirements file | `uv add -r requirements.txt` | `[project] dependencies` |
+| Remove | `uv remove httpx` (`--package <member>` in a workspace) | |
+| Install everything | `uv sync --locked --all-extras --all-groups` | |
+| Only one group | `uv sync --locked --no-default-groups --group lint` | |
+
+- `[tool.uv] dev-dependencies` is deprecated (executed: uv 0.13.9 warns "use `dependency-groups.dev` instead"). Move it to `[dependency-groups] dev`.
+- Groups are local (never published); extras are part of the package's public metadata.
+- `uv run --with <pkg> ...` adds a throwaway package for one command without touching the lock.
+
+## 4. Lock and sync semantics
+
+| Command | Behaviour (executed) | Use |
+|---|---|---|
+| `uv lock` | Resolves for every platform and Python in `requires-python`; never installs | After any dependency edit; commit `uv.lock` in the same change |
+| `uv lock --check` | Exit 1 when `pyproject.toml` and `uv.lock` disagree | Pre-commit and the first CI step |
+| `uv sync --locked` | Exit 1 on a stale lock, otherwise installs exactly the lock | CI, Docker (default) |
+| `uv sync --frozen` | Installs the lock without checking it | Only the Docker deps layer when member `pyproject.toml` files are not mounted (workspaces, section 6), followed by a `--locked` sync |
+| `uv sync --no-build` / `UV_NO_BUILD=1` | Refuses to compile any third-party sdist; the local project still builds | CI and Docker: a missing wheel fails fast instead of compiling (executed on 3.15: `grpcio==1.78.2 ... marked as --no-build but has no binary distribution`, exit 2) |
+| `uv lock --upgrade-package httpx` / `uv lock --upgrade` | Moves one / all pins inside the declared ranges | Deliberate upgrades, then run the gates |
+| `uv tree --outdated --depth 1` | Lists direct dependencies with newer releases | Upgrade review |
+| `uv sync --locked --offline` | Installs from the cache only | Air-gapped rebuilds |
+
+Resolver facts worth knowing:
+- uv ignores the **upper** bound of a dependency's `Requires-Python`: presidio-analyzer 2.2.366 declares `<3.15` yet locked on 3.15 (executed). The upper bound will not protect you; your own `requires-python` and CI interpreter must.
+- Conflicting pins surface as a readable derivation (executed: google-adk 2.15.0 requires `google-genai>=2.34,<3`, so pinning google-genai 3.6.1 next to it is unsatisfiable). Do not "fix" with overrides; choose versions that resolve.
+
+## 5. Python versions
 
 ```bash
-# Run Python script (auto-activates venv)
-uv run python app.py
-
-# Run installed CLI tool
-uv run black .
-uv run pytest
-
-# Run with specific Python version
-uv run --python 3.11 python script.py
-
-# Pass arguments
-uv run python script.py --arg value
+uv python list --only-installed
+uv python install            # installs what .python-version names
+uv python pin 3.14.10        # writes .python-version
+uv run --python 3.15 pytest  # one-off run on another interpreter (forward-compat job)
 ```
 
-## Package Management
+- Variants: `3.14.10+freethreaded` (`python3.14t`) is a separate download; test it only in a dedicated job (`python-patterns` skill, runtime decision).
+- `UV_PYTHON_DOWNLOADS=0` in Docker so uv uses the image's interpreter (a downloaded one would not exist in the runtime stage).
 
-### Pattern 4: Adding Dependencies
+## 6. Workspaces (one lock, several packages)
 
-```bash
-# Add package (adds to pyproject.toml)
-uv add requests
+Use a workspace when members share ONE Python and one dependency set: a shared library, a REST service, an AI service and a worker that deploy separately but must agree on contract versions.
 
-# Add with version constraint
-uv add "django>=4.0,<5.0"
-
-# Add multiple packages
-uv add numpy pandas matplotlib
-
-# Add dev dependency
-uv add --dev pytest pytest-cov
-
-# Add optional dependency group
-uv add --optional docs sphinx
-
-# Add from git
-uv add git+https://github.com/user/repo.git
-
-# Add from git with specific ref
-uv add git+https://github.com/user/repo.git@v1.0.0
-
-# Add from local path
-uv add ./local-package
-
-# Add editable local package
-uv add -e ./local-package
 ```
-
-### Pattern 5: Removing Dependencies
-
-```bash
-# Remove package
-uv remove requests
-
-# Remove dev dependency
-uv remove --dev pytest
-
-# Remove multiple packages
-uv remove numpy pandas matplotlib
+platform/
+├── pyproject.toml          # virtual root: [tool.uv.workspace] + [dependency-groups], no [project]
+├── .python-version         # 3.14.10
+├── uv.lock                 # the only lock
+├── packages/shared/        # uv init --lib
+└── services/{api,ai,worker}/   # uv init --package
 ```
-
-### Pattern 6: Upgrading Dependencies
-
-```bash
-# Upgrade specific package
-uv add --upgrade requests
-
-# Upgrade all packages
-uv sync --upgrade
-
-# Upgrade package to latest
-uv add --upgrade requests
-
-# Show what would be upgraded
-uv tree --outdated
-```
-
-### Pattern 7: Locking Dependencies
-
-```bash
-# Generate uv.lock file
-uv lock
-
-# Update lock file
-uv lock --upgrade
-
-# uv lock never installs anything (there is no --no-install flag)
-uv lock --dry-run
-
-# Lock specific package
-uv lock --upgrade-package requests
-```
-
-## Python Version Management
-
-### Pattern 8: Installing Python Versions
-
-```bash
-# Install Python version
-uv python install 3.12
-
-# Install multiple versions
-uv python install 3.11 3.12 3.13
-
-# Install latest version
-uv python install
-
-# List installed versions
-uv python list
-
-# Find available versions
-uv python list --all-versions
-```
-
-### Pattern 9: Setting Python Version
-
-```bash
-# Set Python version for project
-uv python pin 3.12
-
-# This creates/updates .python-version file
-
-# Use specific Python version for command
-uv --python 3.11 run python script.py
-
-# Create venv with specific version
-uv venv --python 3.12
-```
-
-## Project Configuration
-
-### Pattern 10: pyproject.toml with uv
 
 ```toml
-[project]
-name = "my-project"
-version = "0.1.0"
-description = "My awesome project"
-readme = "README.md"
-requires-python = ">=3.8"
-dependencies = [
-    "requests>=2.31.0",
-    "pydantic>=2.0.0",
-    "click>=8.1.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.5.0",
-]
-docs = [
-    "sphinx>=7.0.0",
-    "sphinx-rtd-theme>=1.3.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.uv]
-dev-dependencies = [
-    # Additional dev dependencies managed by uv
-]
-
-[tool.uv.sources]
-# Custom package sources
-my-package = { git = "https://github.com/user/repo.git" }
-```
-
-### Pattern 11: Using uv with Existing Projects
-
-```bash
-# Migrate from requirements.txt
-uv add -r requirements.txt
-
-# Migrate from poetry
-# Already have pyproject.toml, just use:
-uv sync
-
-# Export to requirements.txt
-uv pip freeze > requirements.txt
-
-# Export with hashes
-uv pip freeze --require-hashes > requirements.txt
-```
-
-## Advanced Workflows
-
-### Pattern 12: Monorepo Support
-
-```bash
-# Project structure
-# monorepo/
-#   packages/
-#     package-a/
-#       pyproject.toml
-#     package-b/
-#       pyproject.toml
-#   pyproject.toml (root)
-
-# Root pyproject.toml
+# root pyproject.toml
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "services/*"]
 
-# Install all workspace packages
-uv sync
-
-# Add workspace dependency
-uv add --path ./packages/package-a
+[dependency-groups]
+dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "ruff==0.17.6", "mypy==2.4.1"]
 ```
-
-### Pattern 13: CI/CD Integration
-
-```yaml
-# .github/workflows/test.yml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@<40-hex-sha> # v4.x.y
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@<40-hex-sha> # pin by SHA, see deployment-ci-cd/reference/python-ci-supply-chain.md
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install   # reads .python-version
-
-      - name: Install dependencies
-        run: uv sync --locked --all-extras
-
-      - name: Run tests
-        run: uv run pytest
-
-      - name: Run linting
-        run: |
-          uv run ruff check .
-          uv run ruff format --check .
-```
-
-### Pattern 14: Docker Integration
-
-```dockerfile
-# Dockerfile
-FROM python:3.14-slim
-
-# Install uv
-# pin the uv image by version + digest, never :latest (own line: a trailing comment becomes COPY arguments)
-COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/
-
-# Set working directory
-WORKDIR /app
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --locked --no-dev
-
-# Copy application code
-COPY . .
-
-# Run application
-CMD ["uv", "run", "python", "app.py"]
-```
-
-**Optimized multi-stage build:**
-
-```dockerfile
-# Multi-stage Dockerfile
-FROM python:3.14-slim AS builder
-
-# Install uv
-# pin the uv image by version + digest, never :latest (own line: a trailing comment becomes COPY arguments)
-COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/
-
-WORKDIR /app
-
-# Install dependencies to venv
-COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-editable
-
-# Runtime stage
-FROM python:3.14-slim
-
-WORKDIR /app
-
-# Copy venv from builder
-COPY --from=builder /app/.venv .venv
-COPY . .
-
-# Use venv
-ENV PATH="/app/.venv/bin:$PATH"
-
-CMD ["python", "app.py"]
-```
-
-### Pattern 15: Lockfile Workflows
 
 ```bash
-# Create lockfile (uv.lock)
+uv add --package api shared "fastapi==0.165.0"   # writes shared = { workspace = true } under [tool.uv.sources]
 uv lock
+uv sync --locked --all-packages
+uv run --package api pytest services/api/tests
+uv build --package shared --out-dir dist
+uv export --package api --no-dev --locked --format requirements.txt
+```
 
-# Install from lockfile (exact versions; fails if the lock is stale)
-uv sync --locked
+Executed on this layout (4 members, 41 packages): lock 0, `sync --all-packages` 0, per-member pytest 0, ruff/format/mypy --strict 0, `uv build --package shared` 0 (wheel + sdist), `uv export --package api` listed only api's closure.
 
-# Update lockfile (uv lock never installs; --no-install is not a flag)
-uv lock
+| Fact (executed) | Consequence |
+|---|---|
+| Virtual root (no `[project]`): plain `uv sync` installed every member | Fine locally; CI still uses `--all-packages` to state intent |
+| Root WITH `[project]`: plain `uv sync` did NOT install members (`import api` failed) until `--all-packages` | The usual cause of "works locally, ModuleNotFoundError in CI" |
+| `uv sync --package worker` installs worker + its deps only, and NOT the root `dev` group | Per-member CI jobs add their test tools to the member or sync the group explicitly |
+| A member with `requires-python = ">=3.13,<3.14"` in a 3.14 workspace: `uv lock` exit 2, `Found conflicting Python requirements: - ai: >=3.14 ... - ocr313: >=3.13, <3.14` | A workspace has ONE interpreter (the intersection of all members, docs) |
+| A 3.14 member depending on paddlepaddle 3.3.1: `uv lock` exit 1, "no wheels with a matching Python version tag (e.g., `cp314`)"; wheels exist for cp39–cp313 | Runtime-incompatible dependencies go to a standalone project (below) |
 
-# Upgrade specific package in lock
-uv lock --upgrade-package requests
+Docker image for ONE member (executed: build 0; the image held api + shared, not worker or pytest; a stale lock failed the build with "needs to be updated, but `--locked` was provided"):
 
-# Check if lockfile is up to date
+```dockerfile
+# builder stage (base pins as in deployment-ci-cd/reference/python-ci-supply-chain.md section 8)
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_NO_DEV=1 UV_NO_BUILD=1
+# Only uv.lock is mounted, so --frozen here; the --locked sync below re-checks the lock.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=.python-version,target=.python-version \
+    uv sync --frozen --no-install-workspace --package api --no-editable
+# Every member's pyproject.toml must be present for the lock check (allow-list .dockerignore).
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --package api --no-editable
+```
+
+## 7. Separate projects: incompatible runtime or incompatible dependency (own lock)
+
+When one deployable needs a different Python (OCR engines without cp314 wheels, a vendor SDK capped below 3.14), make it a separate project with its own `uv.lock` and `.python-version`, outside the workspace `members` globs.
+
+```bash
+uv init --package --python 3.13.18 --no-workspace standalone/ocr-worker
+cd standalone/ocr-worker
+# requires-python = ">=3.13,<3.14"
+uv add "paddlepaddle==3.3.1" ../../packages/shared   # path source; shared must declare requires-python ">=3.13"
 uv lock --check
-
-# Export lockfile to requirements.txt
-uv export --format requirements-txt > requirements.txt
-
-# Export with hashes for security
-uv export --format requirements-txt --hash > requirements.txt
 ```
 
-## Performance Optimization
+Executed: own `uv.lock` created next to its `pyproject.toml`, `lock --check` 0, `sync --locked --no-install-package paddlepaddle` 0 (skips the large wheel for a contract test), `import shared` on 3.13.18 0, and the workspace lock was unaffected (`uv lock --check` 0, no paddlepaddle in it).
 
-### Pattern 16: Using Global Cache
+The same split applies on ONE interpreter when two services need incompatible versions of a dependency: a workspace has one lock, so one version of each package. Executed with uv 0.13.9 on 3.14.10, two members of one workspace:
 
-```bash
-# UV automatically uses global cache at:
-# Linux: ~/.cache/uv
-# macOS: ~/Library/Caches/uv
-# Windows: %LOCALAPPDATA%\uv\cache
-
-# Clear cache
-uv cache clean
-
-# Check cache size
-uv cache dir
+```
+adk-svc: google-adk==2.15.0          lc-svc: langchain-google-genai==4.5.2
+uv lock → exit 1: "Because langchain-google-genai>=4.5.2 depends on google-genai>=3.3.0 and
+  google-adk>=2.15.0 depends on google-genai>=2.34,<3, ... adk-svc and lc-svc are incompatible."
 ```
 
-### Pattern 17: Parallel Installation
+google-adk 2.15.0 also requires `websockets>=15.0.1,<16` (executed: a member pinning `websockets==17.4` beside it fails the same way), and google-cloud-aiplatform 2.10.0 requires `google-genai<3`. Moved out of the workspace as two projects, each locked with exit 0: adk-svc resolved google-genai 2.34.0 / websockets 15.0.1, lc-svc google-genai 3.6.1 / websockets 17.4. Do not force one lock with `override-dependencies`: it installs a version the library declared it does not support. A project inside a member glob is still a member (executed: `uv lock` in `services/adk-svc` resolved the whole workspace), so a separate project lives outside the `members` globs.
 
-```bash
-# UV installs packages in parallel by default
+Rules:
+- The contract between runtimes is the shared package (kept compatible with the lowest interpreter) or a versioned schema (JSON Schema / protobuf) both sides test against; never copy model classes.
+- It gets its own CI job (`working-directory`), its own image and its own upgrade cadence. Re-check monthly whether the blocker gained wheels for the main interpreter, then fold it back into the workspace.
 
-# Control parallelism
-uv pip install --jobs 4 package1 package2
+## 8. Build, export, publish
 
-# No parallel (sequential)
-uv pip install --jobs 1 package
-```
+| Command (executed) | Notes |
+|---|---|
+| `uv build` / `uv build --package shared` | `uv_build` backend; wheel + sdist in `dist/` |
+| `uv export --locked --no-dev --no-hashes --no-emit-project -o requirements.audit.txt` | Input for pip-audit |
+| `uv export --format pylock.toml --package worker --no-dev --locked -o pylock.toml` | PEP 751 lock for tools that consume it |
+| `uv publish --dry-run --publish-url https://test.pypi.org/legacy/ dist/*` | Validates files without uploading; publish for real with Trusted Publishing from CI, not a stored token |
+| `uv version --bump minor --dry-run` | Reads/bumps `[project] version` |
 
-### Pattern 18: Offline Mode
+## 9. CI and Docker
 
-```bash
-# Install from cache only (no network)
-uv pip install --offline package
+The canonical workflow, Dockerfile, pin-resolution commands and audit gate live in `../../deployment-ci-cd/reference/python-ci-supply-chain.md` (actionlint-clean workflow, image built and run hardened). uv-specific points:
 
-# Sync from lockfile offline
-uv sync --locked --offline
-```
+- `astral-sh/setup-uv` with `version: "0.13.9"` and `enable-cache: true`; its default `cache-dependency-glob` already includes `**/uv.lock` and `**/pyproject.toml` (action.yml, v10.4.0).
+- Order: `uv python install` → `uv lock --check` → `uv sync --locked --no-build` → ruff → mypy → pytest → `uv export` + `pip-audit`.
+- `uv audit --preview-features audit-command --locked` works (executed: exit 1 with three PYSEC IDs on jinja2 3.1.4, exit 0 on the clean lock) but is experimental: run it as a second opinion, not the gate.
+- `uv cache prune --ci` before saving a self-managed cache keeps it small; with setup-uv set `prune-cache: true` (its default is `false` in v10.4.0 action.yml).
 
-## Comparison with Other Tools
-
-### uv vs pip
-
-```bash
-# pip
-python -m venv .venv
-source .venv/bin/activate
-pip install requests pandas numpy
-# ~30 seconds
-
-# uv
-uv venv
-uv add requests pandas numpy
-# ~2 seconds (10-15x faster)
-```
-
-### uv vs poetry
-
-```bash
-# poetry
-poetry init
-poetry add requests pandas
-poetry install
-# ~20 seconds
-
-# uv
-uv init
-uv add requests pandas
-uv sync
-# ~3 seconds (6-7x faster)
-```
-
-### uv vs pip-tools
-
-```bash
-# pip-tools
-pip-compile requirements.in
-pip-sync requirements.txt
-# ~15 seconds
-
-# uv
-uv lock
-uv sync --locked
-# ~2 seconds (7-8x faster)
-```
-
-## Common Workflows
-
-### Pattern 19: Starting a New Project
-
-```bash
-# Complete workflow
-uv init my-project
-cd my-project
-
-# Set Python version
-uv python pin 3.12
-
-# Add dependencies
-uv add fastapi uvicorn pydantic
-
-# Add dev dependencies
-uv add --dev pytest black ruff mypy
-
-# Create structure
-mkdir -p src/my_project tests
-
-# Run tests
-uv run pytest
-
-# Format code
-uv run black .
-uv run ruff check .
-```
-
-### Pattern 20: Maintaining Existing Project
-
-```bash
-# Clone repository
-git clone https://github.com/user/project.git
-cd project
-
-# Install dependencies (creates venv automatically)
-uv sync
-
-# Install with dev dependencies
-uv sync --all-extras
-
-# Update dependencies
-uv lock --upgrade
-
-# Run application
-uv run python app.py
-
-# Run tests
-uv run pytest
-
-# Add new dependency
-uv add new-package
-
-# Commit updated files
-git add pyproject.toml uv.lock
-git commit -m "Add new-package dependency"
-```
-
-## Tool Integration
-
-### Pattern 21: Pre-commit Hooks
+## 10. Pre-commit
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 00eaed0068329eb6ca6bcb8de7b46c372d8d1c19  # 0.13.9
+    hooks:
+      - id: uv-lock        # keeps uv.lock in step with pyproject.toml
   - repo: local
     hooks:
-      - id: uv-lock
-        name: uv lock
-        entry: uv lock
-        language: system
-        pass_filenames: false
-
       - id: ruff
         name: ruff
         entry: uv run ruff check --fix
         language: system
         types: [python]
-
-      - id: black
-        name: black
-        entry: uv run black
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
         language: system
         types: [python]
 ```
 
-### Pattern 22: VS Code Integration
+Hook ids available at 0.13.9: `pip-compile`, `uv-lock`, `uv-export`, `uv-sync`, `uv-audit` (`.pre-commit-hooks.yaml` at the tag). Black is not used: ruff formats.
 
-```json
-// .vscode/settings.json
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "python.terminal.activateEnvironment": true,
-  "python.testing.pytestEnabled": true,
-  "python.testing.pytestArgs": ["-v"],
-  "python.linting.enabled": true,
-  "python.formatting.provider": "black",
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter",
-    "editor.formatOnSave": true
-  }
-}
-```
+## 11. Migration
 
-## Troubleshooting
+| From | To | Note |
+|---|---|---|
+| `pip install -r requirements.txt` | `uv init --bare` then `uv add -r requirements.txt`, `uv lock` | Delete the requirements file afterwards; export one only for tools that need it |
+| pip-tools (`pip-compile` / `pip-sync`) | `uv lock` / `uv sync --locked` | `uv pip compile` exists for staged migrations |
+| Poetry | Rewrite `[tool.poetry.dependencies]` as PEP 621 `[project] dependencies` and dev groups as `[dependency-groups]`, then `uv lock` | uv does not read `[tool.poetry]`: executed, a Poetry-only `pyproject.toml` "resolved" with zero packages and defaulted to Python `>=3.15` |
+| `pip install uv` in images | `FROM ghcr.io/astral-sh/uv:<version>@sha256:<digest> AS uv` + `COPY --from=uv /uv /uvx /bin/` | Never `:latest` |
 
-### Common Issues
+## 12. Troubleshooting
 
-```bash
-# Issue: uv not found
-# Solution: Add to PATH or reinstall
-echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
-
-# Issue: Wrong Python version
-# Solution: Pin version explicitly
-uv python pin 3.12
-uv venv --python 3.12
-
-# Issue: Dependency conflict
-# Solution: Check resolution
-uv lock --verbose
-
-# Issue: Cache issues
-# Solution: Clear cache
-uv cache clean
-
-# Issue: Lockfile out of sync
-# Solution: Regenerate
-uv lock --upgrade
-```
-
-## Best Practices
-
-### Project Setup
-
-1. **Always use lockfiles** for reproducibility
-2. **Pin Python version** with .python-version
-3. **Separate dev dependencies** from production
-4. **Use uv run** instead of activating venv
-5. **Commit uv.lock** to version control
-6. **Use --locked in CI and Docker** (fails on a stale lock; `--frozen` silently installs it)
-7. **Leverage global cache** for speed
-8. **Use workspace** for monorepos
-9. **Export requirements.txt** for compatibility
-10. **Keep uv updated** for latest features
-
-### Performance Tips
-
-```bash
-# Use locked installs in CI (fails if the lock is stale; --frozen would install it anyway)
-uv sync --locked
-
-# Use offline mode when possible
-uv sync --offline
-
-# Parallel operations (automatic)
-# uv does this by default
-
-# Reuse cache across environments
-# uv shares cache globally
-
-# Use lockfiles to skip resolution
-uv sync --locked  # validates the lock, installs from it
-```
-
-## Migration Guide
-
-### From pip + requirements.txt
-
-```bash
-# Before
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# After
-uv venv
-uv pip install -r requirements.txt
-# Or better:
-uv init
-uv add -r requirements.txt
-```
-
-### From Poetry
-
-```bash
-# Before
-poetry install
-poetry add requests
-
-# After
-uv sync
-uv add requests
-
-# Keep existing pyproject.toml
-# uv reads [project] and [tool.poetry] sections
-```
-
-### From pip-tools
-
-```bash
-# Before
-pip-compile requirements.in
-pip-sync requirements.txt
-
-# After
-uv lock
-uv sync --locked
-```
-
-## Command Reference
-
-### Essential Commands
-
-```bash
-# Project management
-uv init [PATH]              # Initialize project
-uv add PACKAGE              # Add dependency
-uv remove PACKAGE           # Remove dependency
-uv sync                     # Install dependencies
-uv lock                     # Create/update lockfile
-
-# Virtual environments
-uv venv [PATH]              # Create venv
-uv run COMMAND              # Run in venv
-
-# Python management
-uv python install VERSION   # Install Python
-uv python list              # List installed Pythons
-uv python pin VERSION       # Pin Python version
-
-# Package installation (pip-compatible)
-uv pip install PACKAGE      # Install package
-uv pip uninstall PACKAGE    # Uninstall package
-uv pip freeze               # List installed
-uv pip list                 # List packages
-
-# Utility
-uv cache clean              # Clear cache
-uv cache dir                # Show cache location
-uv --version                # Show version
-```
-
-## Resources
-
-- **Official documentation**: https://docs.astral.sh/uv/
-- **GitHub repository**: https://github.com/astral-sh/uv
-- **Astral blog**: https://astral.sh/blog
-- **Migration guides**: https://docs.astral.sh/uv/guides/
-- **Comparison with other tools**: https://docs.astral.sh/uv/pip/compatibility/
-
-## Best Practices Summary
-
-1. **Use uv for all new projects** - Start with `uv init`
-2. **Commit lockfiles** - Ensure reproducible builds
-3. **Pin Python versions** - Use .python-version
-4. **Use uv run** - Avoid manual venv activation
-5. **Leverage caching** - Let uv manage global cache
-6. **Use --locked in CI** - exact reproduction, fails if pyproject and lock disagree
-7. **Keep uv updated** - Fast-moving project
-8. **Use workspaces** - For monorepo projects
-9. **Export for compatibility** - Generate requirements.txt when needed
-10. **Read the docs** - uv is feature-rich and evolving
+| Symptom | Cause | Fix |
+|---|---|---|
+| `The lockfile at uv.lock needs to be updated, but --locked was provided` | pyproject changed without relock | `uv lock`, commit both files |
+| Python 3.15 appears unexpectedly | uv 0.13 default + no `.python-version` | `uv python pin 3.14.10` |
+| `ModuleNotFoundError` for a workspace member in CI | non-virtual root + plain `uv sync` | `uv sync --locked --all-packages` or `--package <member>` |
+| Build step compiles grpcio/numpy from source | no wheel for your interpreter (e.g. 3.15 + a capped dependency) | `--no-build` in CI to fail fast; pick versions with wheels or stay on 3.14 |
+| `Found conflicting Python requirements` | a member needs another interpreter | standalone project (section 7) |
+| `tool.uv.dev-dependencies` warning | deprecated field | `[dependency-groups] dev` |

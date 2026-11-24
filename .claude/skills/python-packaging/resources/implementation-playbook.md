@@ -1,343 +1,190 @@
 # Python Packaging — Implementation Playbook (Workspace-Scoped)
 
-> Scope: project structure, CLI tools, pyproject.toml, versioning, editable installs.
-> Excluded: PyPI publishing, wheels, namespace packages, C extensions (not applicable to this service-focused workspace).
+Validated 2026-11-23: uv 0.13.9, CPython 3.14.10, click 8.5.1, structlog 26.1.0, pytest 9.2.0, mypy 2.4.1 (`--strict`), ruff 0.17.6, hatchling 1.33.0, hatch-vcs 0.5.0. Every snippet below was built, type-checked, linted and tested in a scratch project; exit codes are in the section notes.
 
-## Core Concepts
-
-### 1. Package Structure
-- **Source layout**: `src/package_name/` (recommended)
-- **Flat layout**: `package_name/` (simpler but less flexible)
-- **Package metadata**: pyproject.toml
-
-### 2. Modern Packaging Standards
-- **PEP 517/518**: Build system requirements
-- **PEP 621**: Metadata in pyproject.toml
-- **PEP 660**: Editable installs
-- **pyproject.toml**: Single source of configuration
-
-### 3. Build Backends
-- **setuptools**: Traditional, widely used
-- **hatchling**: Modern, opinionated
-- **flit**: Lightweight, for pure Python
-
-## Package Structure Patterns
-
-### Pattern 1: Source Layout (Recommended)
+## 1. Layout
 
 ```
-my-package/
+ops-tool/                       # uv init --package --python 3.14 ops-tool
+├── .python-version             # 3.14.10 (uv python pin 3.14.10)
 ├── pyproject.toml
+├── uv.lock
 ├── README.md
-├── LICENSE
-├── .gitignore
 ├── src/
-│   └── my_package/
+│   └── ops_tool/
 │       ├── __init__.py
-│       ├── core.py
-│       ├── utils.py
-│       └── py.typed          # For type hints
-├── tests/
-│   ├── __init__.py
-│   ├── test_core.py
-│   └── test_utils.py
-└── docs/
-    └── index.md
-```
-
-**Advantages:**
-- Prevents accidentally importing from source
-- Cleaner test imports
-- Better isolation
-
-**pyproject.toml for source layout:**
-```toml
-[tool.setuptools.packages.find]
-where = ["src"]
-```
-
-### Pattern 2: Flat Layout
-
-```
-my-package/
-├── pyproject.toml
-├── README.md
-├── my_package/
-│   ├── __init__.py
-│   └── module.py
+│       ├── cli.py              # Click entry point
+│       └── argcli.py           # argparse entry point (stdlib only)
 └── tests/
-    └── test_module.py
+    ├── test_cli.py
+    └── test_argcli.py
 ```
 
-**Simpler but:**
-- Can import package without installing
-- Less professional for libraries
+- `src/` layout: tests import the installed package (uv installs the project into `.venv` on `uv sync`), so a module missing from the build fails the tests instead of passing because the working directory happens to be on `sys.path`.
+- Flat layout only for a single-file script; give it inline metadata instead of a project (section 6).
+- Workspace member library: `uv init --lib packages/shared` (no entry point, `py.typed` added by `--lib`); layout and lock rules in `uv-package-manager` playbook section 6.
 
-### Pattern 3: Multi-Package Project
-
-```
-project/
-├── pyproject.toml
-├── packages/
-│   ├── package-a/
-│   │   └── src/
-│   │       └── package_a/
-│   └── package-b/
-│       └── src/
-│           └── package_b/
-└── tests/
-```
-
-## Complete pyproject.toml Examples
-
-### Pattern 4: Full-Featured pyproject.toml
+## 2. Full pyproject.toml (service or tool)
 
 ```toml
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "my-awesome-package"
-version = "1.0.0"
-description = "An awesome Python package"
+name = "ops-tool"
+version = "0.1.0"
+description = "Internal operations CLI"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "MIT"}
-authors = [
-    {name = "Your Name", email = "you@example.com"},
-]
-maintainers = [
-    {name = "Maintainer Name", email = "maintainer@example.com"},
-]
-keywords = ["example", "package", "awesome"]
-
+requires-python = ">=3.14"
 dependencies = [
-    "requests>=2.28.0,<3.0.0",
-    "click>=8.0.0",
-    "pydantic>=2.0.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
+    "click==8.5.1",
+    "structlog==26.1.0",
 ]
 
 [project.scripts]
-my-cli = "my_package.cli:main"
-awesome-tool = "my_package.tools:run"
+ops-tool = "ops_tool.cli:main"
+ops-args = "ops_tool.argcli:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-zip-safe = false
+[dependency-groups]
+dev = ["pytest==9.2.0", "mypy==2.4.1", "ruff==0.17.6"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["my_package*"]
-exclude = ["tests*"]
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
 
-[tool.setuptools.package-data]
-my_package = ["py.typed", "*.pyi", "data/*.json"]
-
-# Ruff configuration
 [tool.ruff]
+target-version = "py314"   # never higher than requires-python: py314 rewrites except (A, B) to the 3.14-only form
 line-length = 100
-target-version = "py38"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "RUF"]
 
-# MyPy configuration
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
 [tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
+python_version = "3.14"
+strict = true
 
-# Pytest configuration
-[tool.pytest.ini_options]
+[tool.pytest]                                 # pytest 9 native TOML table
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --cov=my_package --cov-report=term-missing"
-
-# Coverage configuration
-[tool.coverage.run]
-source = ["src"]
-omit = ["*/tests/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-]
+strict = true                                 # unknown config keys and markers are errors
+filterwarnings = ["error"]                    # a new DeprecationWarning fails the suite
+# Async projects (pytest-asyncio 1.5.0 in the dev group) add:
+# asyncio_mode = "auto"
+# asyncio_default_fixture_loop_scope = "function"
+# asyncio_default_test_loop_scope = "function"
 ```
 
-### Pattern 5: Dynamic Versioning
+Notes:
+- `[dependency-groups]` (PEP 735) replaces `[project.optional-dependencies] dev` and the deprecated `[tool.uv] dev-dependencies`. Extras (`[project.optional-dependencies]`) are for optional FEATURES a consumer installs, not for dev tools.
+- `requires-python` states the floor (`>=3.14`); the patch you test and deploy lives in `.python-version` and the Docker base tag.
+- No `[tool.hatch...]` / `[tool.setuptools...]` tables with `uv_build`: it discovers `src/<normalized_name>/`.
+- Use either `[tool.pytest]` or the legacy `[tool.pytest.ini_options]`, never both (executed: pytest exit 4, "Cannot use both"). With `strict = true`, an `asyncio_*` key without pytest-asyncio installed is an unknown-key error (executed: exit 4), so add those keys together with the plugin. pytest-timeout's `timeout` takes a string (`timeout = "30"`).
 
-```toml
-[build-system]
-requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
-build-backend = "setuptools.build_meta"
+## 3. Entry points
 
-[project]
-name = "my-package"
-dynamic = ["version"]
-description = "Package with dynamic version"
-
-[tool.setuptools.dynamic]
-version = {attr = "my_package.__version__"}
-
-# Or use setuptools-scm for git-based versioning
-[tool.setuptools_scm]
-write_to = "src/my_package/_version.py"
-```
-
-**In __init__.py:**
-```python
-# src/my_package/__init__.py
-__version__ = "1.0.0"
-
-# Or with setuptools-scm
-from importlib.metadata import version
-__version__ = version("my-package")
-```
-
-## Command-Line Interface (CLI) Patterns
-
-### Pattern 6: CLI with Click
+Click (`src/ops_tool/cli.py`) is in `SKILL.md`. The stdlib alternative:
 
 ```python
-# src/my_package/cli.py
-import click
+"""argparse variant (stdlib only): `ops-args deploy staging --dry-run`."""
 
-@click.group()
-@click.version_option()
-def cli():
-    """My awesome CLI tool."""
-    pass
-
-@cli.command()
-@click.argument("name")
-@click.option("--greeting", default="Hello", help="Greeting to use")
-def greet(name: str, greeting: str):
-    """Greet someone."""
-    click.echo(f"{greeting}, {name}!")
-
-@cli.command()
-@click.option("--count", default=1, help="Number of times to repeat")
-def repeat(count: int):
-    """Repeat a message."""
-    for i in range(count):
-        click.echo(f"Message {i + 1}")
-
-def main():
-    """Entry point for CLI."""
-    cli()
-
-if __name__ == "__main__":
-    main()
-```
-
-**Register in pyproject.toml:**
-```toml
-[project.scripts]
-my-tool = "my_package.cli:main"
-```
-
-**Usage:**
-```bash
-pip install -e .
-my-tool greet World
-my-tool greet Alice --greeting="Hi"
-my-tool repeat --count=3
-```
-
-### Pattern 7: CLI with argparse
-
-```python
-# src/my_package/cli.py
 import argparse
 import sys
+from collections.abc import Sequence
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="My awesome tool",
-        prog="my-tool"
-    )
+import structlog
 
-    parser.add_argument(
-        "--version",
-        action="version",
-        version="%(prog)s 1.0.0"
-    )
+logger = structlog.get_logger(__name__)
 
-    subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    # Add subcommand
-    process_parser = subparsers.add_parser("process", help="Process data")
-    process_parser.add_argument("input_file", help="Input file path")
-    process_parser.add_argument(
-        "--output", "-o",
-        default="output.txt",
-        help="Output file path"
-    )
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ops-args", description="Internal deployment tool.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    deploy = sub.add_parser("deploy", help="Deploy to an environment.")
+    deploy.add_argument("environment", choices=["staging", "production"])
+    deploy.add_argument("--dry-run", action="store_true")
+    return parser
 
-    args = parser.parse_args()
 
-    if args.command == "process":
-        process_data(args.input_file, args.output)
-    else:
-        parser.print_help()
-        sys.exit(1)
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    logger.info("deploy_requested", environment=args.environment, dry_run=args.dry_run)
+    sys.stdout.write(f"deploy {args.environment} dry_run={args.dry_run}\n")
+    return 0
 
-def process_data(input_file: str, output_file: str):
-    """Process data from input to output."""
-    print(f"Processing {input_file} -> {output_file}")
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 ```
 
-## Testing Installation
+`main(argv)` taking an optional argument list makes it testable without patching `sys.argv`; the console script calls it with no arguments and uses the return value as the exit code.
 
-### Pattern 16: Editable Install
+## 4. CLI tests
+
+```python
+# tests/test_cli.py
+from click.testing import CliRunner
+
+from ops_tool.cli import main
+
+
+def test_deploy_dry_run() -> None:
+    result = CliRunner().invoke(main, ["deploy", "staging", "--dry-run"])
+    assert result.exit_code == 0
+    assert "deploy staging dry_run=True" in result.output
+
+
+def test_deploy_rejects_unknown_environment() -> None:
+    result = CliRunner().invoke(main, ["deploy", "qa"])
+    assert result.exit_code == 2
+```
+
+```python
+# tests/test_argcli.py
+import pytest
+
+from ops_tool.argcli import main
+
+
+def test_deploy_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["deploy", "staging", "--dry-run"]) == 0
+    assert "deploy staging dry_run=True" in capsys.readouterr().out
+
+
+def test_unknown_environment_exits_2() -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["deploy", "qa"])
+    assert exc.value.code == 2
+```
+
+Executed with the `[tool.pytest]` table above: `uv run pytest -q` 4 passed (exit 0); `uv run mypy --strict src tests` 0; `uv run ruff check .` and `ruff format --check .` 0.
+
+## 5. Versioning
+
+| Need | How | Evidence |
+|---|---|---|
+| Static version, bumped in a release PR | `uv version --bump minor` (or `patch`/`major`; `--dry-run` to preview) | executed: `ops-tool 0.1.0 => 0.2.0`, `pyproject.toml` rewritten, project reinstalled |
+| Read it at runtime | `importlib.metadata.version("ops-tool")` (Click: `@click.version_option(package_name="ops-tool")`) | executed: `ops-tool --version` printed `ops-tool, version 0.1.0` from the installed wheel |
+| Version from git tags | `[build-system] requires = ["hatchling==1.33.0", "hatch-vcs==0.5.0"]`, `build-backend = "hatchling.build"`, `[project] dynamic = ["version"]`, `[tool.hatch.version] source = "vcs"`, `[tool.hatch.build.targets.wheel] packages = ["src/<pkg>"]` | executed: tag `v1.4.0` built `dv-1.4.0` wheel and sdist |
+
+`uv_build` does not support a dynamic version (executed: `dynamic = ["version"]` failed with "missing field `version`", exit 2). Services deployed as images usually need no package version at all: tag the image with the commit SHA.
+
+## 6. Single-file scripts
 
 ```bash
-# Install in development mode
-pip install -e .
-
-# With optional dependencies
-pip install -e ".[dev]"
-pip install -e ".[dev,docs]"
-
-# Now changes to source code are immediately reflected
+uv init --script tool.py --python 3.14         # adds a PEP 723 metadata block
+uv add --script tool.py "httpx==0.28.1"         # records the dependency in the block
+uv lock --script tool.py                        # writes tool.py.lock next to it
+uv run tool.py                                  # isolated environment from the block
 ```
 
-### Pattern 17: Testing in Isolated Environment
+Executed: all four exited 0; the block reads `requires-python = ">=3.14"` and `dependencies = ["httpx==0.28.1"]`.
+
+## 7. Build and smoke-test the artifact
 
 ```bash
-# Create virtual environment
-python -m venv test-env
-source test-env/bin/activate  # Linux/Mac
-# test-env\Scripts\activate  # Windows
-
-# Install package
-pip install dist/my_package-1.0.0-py3-none-any.whl
-
-# Test it works
-python -c "import my_package; print(my_package.__version__)"
-
-# Test CLI
-my-tool --help
-
-# Cleanup
-deactivate
-rm -rf test-env
+uv build                                            # dist/ops_tool-0.1.0-py3-none-any.whl + .tar.gz
+uv venv --python 3.14.10 /tmp/ops-tool-check
+VIRTUAL_ENV=/tmp/ops-tool-check uv pip install dist/ops_tool-0.1.0-py3-none-any.whl
+/tmp/ops-tool-check/bin/ops-tool --version          # entry point works outside the project
 ```
+
+Executed: build 0, install into the clean venv 0, `ops-tool --version` 0. A clean-venv install catches files missing from the wheel that an editable install hides. Do not use `uv tool install` for this check: it installs into the user's tool directory (machine-wide); remove it with `uv tool uninstall <name>` if you did.

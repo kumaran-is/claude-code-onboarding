@@ -1,6 +1,6 @@
 # Python Idioms Reference
 
-Python 3.14 — this workspace's stack version. Union type syntax `X | Y` requires Python 3.10+.
+Python 3.14 (validated on 3.14.10): this workspace's stack version. Section 9 lists the 3.14 language changes that alter everyday code.
 
 ---
 
@@ -49,33 +49,43 @@ introduces TOCTOU race conditions (check-then-act on external state) and redunda
 Use `Protocol` instead of ABC when the interface is structural, not behavioral inheritance.
 
 ```python
-from typing import Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Protocol, Self, runtime_checkable
 
-# Define a structural interface — no inheritance required
+
+# Structural interface: no inheritance required
 @runtime_checkable
 class Serializable(Protocol):
-    def to_dict(self) -> dict: ...
+    def to_dict(self) -> dict[str, object]: ...
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Serializable': ...
+    def from_dict(cls, data: dict[str, object]) -> Self: ...
 
-# Any class with these methods satisfies the Protocol — no import needed
-class UserModel:
-    def to_dict(self) -> dict:
-        return {'id': self.id, 'name': self.name}
+
+# Any class with these methods satisfies the Protocol; it never imports Serializable
+@dataclass(frozen=True, slots=True)
+class UserRecord:
+    id: int
+    name: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"id": self.id, "name": self.name}
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'UserModel':
-        return cls(id=data['id'], name=data['name'])
+    def from_dict(cls, data: dict[str, object]) -> Self:
+        return cls(id=int(str(data["id"])), name=str(data["name"]))
 
-# Type-safe without inheritance:
+
 def save(obj: Serializable) -> None:
-    data = obj.to_dict()  # mypy validates this
+    payload = obj.to_dict()  # mypy checks the structural match
     ...
 
-# runtime_checkable allows isinstance checks:
-assert isinstance(UserModel(), Serializable)  # True
+
+# runtime_checkable allows isinstance (it checks method presence only, not signatures)
+assert isinstance(UserRecord(1, "a"), Serializable)
 ```
+
+Executed on 3.14.10 (`mypy --strict` and ruff clean). `Self` replaces the quoted `'Serializable'` / `'UserModel'` return types.
 
 **Rule:** Use `Protocol` when callers should not be forced to import and subclass your ABC.
 Use ABC when shared implementation (mixin methods) is genuinely needed.
@@ -250,3 +260,20 @@ invariant waiting to be violated.
 For API-layer models, prefer Pydantic v2 (`@field_validator`, `model_validator`) — see
 `fastapi-templates.md`. Use dataclass `__post_init__` for domain/internal value objects
 that must not depend on Pydantic.
+
+---
+
+## Section 9 — Python 3.14 language changes that alter everyday code
+
+Source: "What's New In Python 3.14" (docs.python.org). Every row executed on CPython 3.14.10 (uv-managed) unless marked "docs"; the same files fail on 3.13 where noted.
+
+| Change | Do in new 3.14-only code | Evidence |
+|---|---|---|
+| Deferred evaluation of annotations (PEP 649/749) | Drop `from __future__ import annotations` and quoted forward references; `parent: Category \| None` and a reference to a class defined later in the module just work. The `__future__` import still works but is deprecated (removal not before 3.13 EOL, docs) | Pydantic 2.14.4 model with a self reference and a later-defined class, served by FastAPI 0.165.0: valid body 200, invalid 422, OpenAPI generated. Same file on 3.13: `NameError: name 'Category' is not defined` |
+| `annotationlib` | Read annotations at runtime with `annotationlib.get_annotations(obj, format=Format.FORWARDREF)` (or `Format.STRING`) when names may be undefined; `Format.VALUE` (the default) raises `NameError` for them. Do not read `__annotations__` directly in framework-style code | executed |
+| Template strings, `t"..."` (PEP 750) | A t-string is a `string.templatelib.Template` (static parts plus `Interpolation` objects), not a `str`: use it to build library APIs that escape values (HTML, shell, logging). For SQL keep SQLAlchemy bind parameters; never hand-roll SQL from a t-string in application code | a 10-line renderer turned `t"... WHERE name = {user}"` into `"... = %s"` plus `[user]`; mypy 2.4.1 and ruff 0.17.6 accept the syntax |
+| `except A, B:` without brackets (PEP 758, only without `as`) | Allowed; with `target-version = "py314"` ruff 0.17.6 `format` REWRITES `except (A, B):` to `except A, B:`, which is a `SyntaxError` on 3.13. Set ruff's `target-version` from `requires-python`, never higher | executed: ruff diff shown, 3.13 import fails |
+| `return` / `break` / `continue` in `finally` (PEP 765) | Now a `SyntaxWarning` (an error under `-W error`): it silently swallowed in-flight exceptions; move the statement out of `finally` | executed |
+| Concurrent safe warnings, `-X context_aware_warnings` | `warnings.catch_warnings` is context-local by default only on the free-threaded build (docs); tests that assert warnings from threads should not rely on the GIL build default | docs |
+
+Asyncio changes (loop factory, `get_event_loop()` now raising, call-graph introspection, `forkserver` default): `asyncio-concurrency-and-tasks.md` sections 5–5b. Runtime/packaging choices (3.14 vs 3.15, free-threaded build, subinterpreters): `.claude/skills/python-patterns/SKILL.md`.

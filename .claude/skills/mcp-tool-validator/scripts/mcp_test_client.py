@@ -1,10 +1,13 @@
 """MCP tool validator client (MCP Python SDK v2).
 
-Lists every tool, checks scenario coverage, calls each scenario and evaluates its assertions.
-Exit codes: 0 GREEN, 1 RED (scenario failures), 2 COVERAGE_GAP, 3 CONNECTION (transport/protocol).
+Lists every tool, checks the tool-surface lock and scenario coverage, calls each scenario and
+evaluates its assertions.
+Exit codes: 0 GREEN, 1 RED (scenario failures), 2 COVERAGE_GAP, 3 CONNECTION (transport/protocol),
+4 SURFACE_DRIFT (a tool's name, description or input schema differs from the committed lock).
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -138,6 +141,33 @@ def coverage_gaps(tool_names: list[str], scenarios: dict[str, list[dict[str, Any
     return gaps
 
 
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def surface_hashes(tools: list[Any]) -> dict[str, str]:
+    """sha256 over name + description + input schema per tool (tool-surface lock)."""
+    hashes = {}
+    for tool in tools:
+        surface = {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema}
+        hashes[tool.name] = "sha256:" + hashlib.sha256(_canonical(surface).encode()).hexdigest()
+    return hashes
+
+
+def surface_hash(hashes: dict[str, str]) -> str:
+    """One hash for the whole surface, recorded with every eval result as tool_surface_hash."""
+    return "sha256:" + hashlib.sha256(_canonical(hashes).encode()).hexdigest()
+
+
+def surface_diff(locked: dict[str, str], current: dict[str, str]) -> dict[str, list[str]]:
+    diff = {
+        "added": sorted(current.keys() - locked.keys()),
+        "removed": sorted(locked.keys() - current.keys()),
+        "changed": sorted(name for name in locked.keys() & current.keys() if locked[name] != current[name]),
+    }
+    return {kind: names for kind, names in diff.items() if names}
+
+
 def server_target(url: str) -> StdioServerParameters | str:
     if url.startswith("stdio://"):
         command, *args = shlex.split(url.removeprefix("stdio://"))
@@ -145,7 +175,7 @@ def server_target(url: str) -> StdioServerParameters | str:
     return url
 
 
-async def run(url: str, scenarios_path: Path, report_path: Path) -> int:
+async def run(url: str, scenarios_path: Path, report_path: Path, lock_path: Path | None, update_lock: bool) -> int:
     scenarios = {s["tool"]: s["cases"] for s in yaml.safe_load(scenarios_path.read_text())["scenarios"]}
     engine = AssertionEngine()
     target = server_target(url)
@@ -158,7 +188,19 @@ async def run(url: str, scenarios_path: Path, report_path: Path) -> int:
         ) as http:
             server = target if isinstance(target, StdioServerParameters) else streamable_http_client(target, http_client=http)
             async with Client(server) as client:
-                tools = [tool.name for tool in (await client.list_tools()).tools]
+                listed = (await client.list_tools()).tools
+                tools = [tool.name for tool in listed]
+                hashes = surface_hashes(listed)
+                if lock_path is not None and update_lock:
+                    lock_path.write_text(json.dumps({"tools": hashes}, indent=2, sort_keys=True) + "\n")
+                    logger.info("wrote tool-surface lock %s (%d tools); review the diff and justify it in the PR", lock_path, len(hashes))
+                    return 0
+                if lock_path is not None:
+                    drift = surface_diff(json.loads(lock_path.read_text())["tools"], hashes)
+                    if drift:
+                        report_path.write_text(json.dumps({"verdict": "SURFACE_DRIFT", "drift": drift}, indent=2))
+                        logger.error("tool surface differs from %s: %s", lock_path, drift)
+                        return 4
                 gaps = coverage_gaps(tools, scenarios)
                 if gaps:
                     report_path.write_text(json.dumps({"verdict": "COVERAGE_GAP", "gaps": gaps}, indent=2))
@@ -182,7 +224,8 @@ async def run(url: str, scenarios_path: Path, report_path: Path) -> int:
         return 3
     failed = [r for r in results if not r["passed"]]
     verdict = "RED" if failed else "GREEN"
-    report_path.write_text(json.dumps({"verdict": verdict, "protocol_version": protocol_version, "tools": len(tools),
+    report_path.write_text(json.dumps({"verdict": verdict, "protocol_version": protocol_version,
+                                       "tool_surface_hash": surface_hash(hashes), "tools": len(tools),
                                        "passed": len(results) - len(failed), "failed": len(failed),
                                        "results": results}, indent=2))
     logger.info("%s: %d tools, %d scenarios, %d failed", verdict, len(tools), len(results), len(failed))
@@ -196,8 +239,14 @@ def main() -> None:
                         help="Streamable HTTP URL, or stdio://<command> <args>")
     parser.add_argument("--scenarios", type=Path, default=Path(os.environ.get("SCENARIOS_FILE", "tests/scenarios.yaml")))
     parser.add_argument("--report", type=Path, default=Path("tests/validation_report.json"))
+    parser.add_argument("--surface-lock", type=Path, default=None,
+                        help="committed tool-surface lock (JSON); a difference exits 4 before any tool is called")
+    parser.add_argument("--update-surface-lock", action="store_true",
+                        help="write the current surface to --surface-lock and exit 0 (an intentional, reviewed change)")
     args = parser.parse_args()
-    sys.exit(anyio.run(run, args.server_url, args.scenarios, args.report))
+    if args.update_surface_lock and args.surface_lock is None:
+        parser.error("--update-surface-lock needs --surface-lock")
+    sys.exit(anyio.run(run, args.server_url, args.scenarios, args.report, args.surface_lock, args.update_surface_lock))
 
 
 if __name__ == "__main__":

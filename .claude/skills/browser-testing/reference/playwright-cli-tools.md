@@ -111,14 +111,14 @@ Prove sign-in by what the user and server see (the protected page renders; `requ
 playwright-cli close-all     # kill-all for zombie sessions
 ```
 
-## playwright-cli vs Browser-Use
+## playwright-cli vs Chrome DevTools MCP
 
-| Task | playwright-cli | Browser-Use MCP |
-|------|---------------|-----------------|
-| Scripted, repeatable steps | Preferred | Possible (Python in `browser_exec`) |
-| Network list, mocking, offline | `requests`, `route`, `network-state-set` | Write CDP code yourself |
-| Console messages | `console` | Write CDP code yourself |
-| Traces / video | `tracing-*`, `video-*` | No |
-| Exploratory goal-driven flow, cloud browser | No | Preferred ([browser-use-tools.md](browser-use-tools.md)) |
+| Task | playwright-cli | Chrome DevTools MCP |
+|------|---------------|---------------------|
+| Live debugging: DOM snapshot, console, network, JS in the page | Possible | Preferred ([chrome-devtools-tools.md](chrome-devtools-tools.md)) |
+| Request mocking, offline, saved sessions | `route`, `network-state-set`, `-s=<session>` | No mocking |
+| Performance traces, throttling, Lighthouse | Traces only | Preferred |
+| Traces / video files as evidence | `tracing-*`, `video-*` | Performance trace only |
+| Repeatable, gates a PR | No: write a `@playwright/test` spec ([playwright-test-suite.md](playwright-test-suite.md)) | No |
 
-**Rule:** default to playwright-cli; use Browser-Use only when exploration or a cloud browser is the point.
+**Rule:** Chrome DevTools MCP is the default for interactive debugging; use playwright-cli when the check needs mocking, offline state or a saved session.

@@ -85,6 +85,12 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 - Angular: `signal<'up'|'down'|null>` tracks selected thumb; regenerate re-emits prompt
 - Flutter: `HapticFeedback.lightImpact()` on thumb press; `colorScheme.primary` for active state
 
+### Disclosure, uncertainty and degraded states (guardrails G17, G21, G22, G6)
+- Mark AI-generated content as AI-generated in the bubble (visible label plus accessible name); keep canonical facts (record values from the API), AI explanations, AI recommendations and human decisions visually and semantically distinct
+- Never show "reviewed" / "approved" unless the API returns a review record; never render certainty the response does not carry
+- `NOT_FOUND`, `CONFLICTED`, `STALE` and `HUMAN_REQUIRED` responses render as their own states with an action (search, ask a person), not as an empty answer or a guess; "no data exists", "data unavailable" and "AI assist unavailable — continue with the standard form" are three different messages
+- Degraded, handoff and error states are announced to screen readers (web `aria-live`; Flutter `Semantics(liveRegion: true)`), keyboard reachable and meet the same WCAG 2.2 AA bar (`accessibility-audit`); the non-AI path stays usable when AI is off
+
 ### Multi-Modal Input
 - Angular: Angular CDK drag-drop for file zone; `Enter` sends, `Shift+Enter` newlines
 - Flutter: `image_picker` for attachments; `maxLines: null` for auto-expanding TextField
@@ -107,6 +113,7 @@ See `reference/quick-start.md` for entry-point wiring (Angular `ChatComponent` +
 - **NEVER** auto-scroll unconditionally — it steals user scroll position mid-read
 - **NEVER** display raw token counts to end users — use human-readable approximations
 - **NEVER** silently ignore AI error responses — every error must log + show user feedback
+- **NEVER** present AI output as canonical fact or as human-reviewed when it is not (G21)
 - **NEVER** hardcode colors for error/warning states — use daisyUI tokens or `colorScheme`
 - **NEVER** use constructor DI in Angular — use `inject()`
 - **NEVER** use `@Input()`/`@Output()` decorators — use `input()`, `output()`, `model()` signals

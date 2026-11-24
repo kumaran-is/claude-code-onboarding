@@ -307,7 +307,7 @@ When performing visual analysis:
 ## Related Skills and Agents
 
 - `reality-checker` agent — **run BEFORE this skill** for live browser verdict (Chrome DevTools MCP)
-- `browser-testing` skill — Chrome DevTools MCP + Browser-Use for live UI interaction
+- `browser-testing` skill — Chrome DevTools MCP for live UI interaction, Playwright for repeatable checks
 - `accessibility-audit` skill — canonical WCAG 2.2 AA checklist (beyond visual checks); visual checks never establish conformance
 - `web-design-guidelines` skill — Vercel Web Interface Guidelines audit (loading/error/empty state patterns)
 - `design-system` skill — token compliance enforcement

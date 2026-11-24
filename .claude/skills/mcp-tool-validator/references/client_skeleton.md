@@ -27,7 +27,12 @@ uv add --dev mcp==2.3.0 pyyaml==6.0.4
 | 1 | RED | at least one assertion failed (details in `tests/validation_report.json`) |
 | 2 | COVERAGE_GAP | a listed tool lacks a `happy_path` case, an `invalid_input` case or a third case, or a scenario names a tool the server does not list |
 | 3 | CONNECTION | transport or protocol failure |
+| 4 | SURFACE_DRIFT | with `--surface-lock`: a tool was added, removed, or its name + description + input schema hash differs from the committed lock (checked before any tool is called) |
 | 10 / 11 / 12 | infra (orchestrator) | Docker build / start / health-check timeout |
+
+## Tool-surface lock
+
+`--surface-lock tests/tool-surface.lock.json` hashes each listed tool's name, description and input schema (SHA-256 over sorted-key JSON) and compares the set with the committed file; `--update-surface-lock` rewrites it for an intentional change, which the PR justifies. Every GREEN/RED report carries `tool_surface_hash` (one hash over the per-tool hashes) to record with eval results. Verified 2026-11-23 against a TypeScript SDK v2 2.4.0 server over Streamable HTTP: write exit 0, unchanged exit 0 (GREEN, 4 tools, 12 scenarios, `protocol_version` `2026-07-28`), one silently edited description exit 4 (`{"changed": ["refunds_create"]}`), a forged bearer token exit 3. Self-test: 6 passed; with change detection removed, 2 failed.
 
 ## `tests/mcp_test_client.py`
 

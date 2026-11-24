@@ -33,7 +33,7 @@ Success criteria (user + server, never client storage):
 
 Never treat "a token is in `localStorage`" as success. A token readable by page script is an XSS exfiltration target; tokens belong in HttpOnly cookies (or in memory).
 
-Optional exploratory variant: Browser-Use `browser_exec` + `browser_screenshot` ([browser-use-tools.md](browser-use-tools.md)). It is supporting evidence only.
+Interactive variant: Chrome DevTools MCP `navigate_page` → `fill_form` → `click` → `list_network_requests` + `list_console_messages` ([chrome-devtools-tools.md](chrome-devtools-tools.md)). It is supporting evidence only; a committed `@playwright/test` spec is the gate.
 
 ---
 

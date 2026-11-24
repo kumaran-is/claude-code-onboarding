@@ -1,11 +1,11 @@
 ---
 name: browser-testing
-description: Browser testing for web targets (Angular, React, any served site, Flutter web builds). playwright-cli for interactive QA (network, console, route mocking, offline, screenshots, traces); @playwright/test for committed CI suites (storageState auth, mocked failure states, axe accessibility, viewports, visual regression, sharding, flaky control); Browser-Use MCP for exploratory goal-driven flows. Use when testing web apps, debugging browser issues, running E2E user flows, or writing Playwright specs. Not for Flutter Android/iOS apps (Maestro).
-allowed-tools: Bash, mcp__browser-use__browser_exec, mcp__browser-use__browser_screenshot, mcp__browser-use__browser_login
+description: Browser testing for web targets (Angular, React, any served site, Flutter web builds). Chrome DevTools MCP for interactive debugging (DOM snapshot, console, network, JS evaluation, performance traces, Lighthouse); @playwright/test for deterministic committed E2E suites (storageState auth, mocked failure states, axe accessibility, viewports, visual regression, sharding, flaky control); playwright-cli for scripted interactive QA (route mocking, offline, saved sessions, traces). Use when testing web apps, debugging browser issues, running E2E user flows, or writing Playwright specs. Not for Flutter Android/iOS apps (Maestro).
+allowed-tools: Bash, mcp__chrome-devtools__*
 agent: browser-testing
 context: fork
 metadata:
-  triggers: browser testing, playwright, playwright test, E2E test, browser automation, Browser-Use, UI testing, end-to-end, login flow, axe, visual regression, toHaveScreenshot, flaky test
+  triggers: browser testing, playwright, playwright test, E2E test, browser automation, Chrome DevTools, UI testing, end-to-end, login flow, axe, visual regression, toHaveScreenshot, flaky test
   related-skills: angular-spa, accessibility-audit, ui-visual-validator, systematic-debugging
   domain: quality
   role: specialist
@@ -27,12 +27,12 @@ Never claim a web UI flow works without running it in a real browser and showing
 | Need | Tool | Reference |
 |---|---|---|
 | Committed E2E suite that gates PRs (config, auth, mocked 500/empty/offline, axe, viewports, visual, sharding) | `@playwright/test` (`npx playwright test`) | [playwright-test-suite.md](reference/playwright-test-suite.md) |
-| Interactive QA, reproducing a bug, inspecting network/console, quick evidence | `playwright-cli` (Bash, stateful sessions) | [playwright-cli-tools.md](reference/playwright-cli-tools.md) |
+| Interactive debugging: reproduce a bug, inspect DOM, console, network, run JS in the page | Chrome DevTools MCP (default) | [chrome-devtools-tools.md](reference/chrome-devtools-tools.md) |
 | Core Web Vitals, CPU/network throttling, Lighthouse | Chrome DevTools MCP | [chrome-devtools-tools.md](reference/chrome-devtools-tools.md) |
-| Exploratory goal-driven flow, cloud browser | Browser-Use MCP (`browser_exec`, `browser_screenshot`) | [browser-use-tools.md](reference/browser-use-tools.md) |
+| Scripted interactive QA: route mocking, offline, saved sessions, traces/video, quick evidence files | `playwright-cli` (Bash, stateful sessions) | [playwright-cli-tools.md](reference/playwright-cli-tools.md) |
 | Unit / component tests | Angular: `ng test` (Vitest via `@angular/build:unit-test`); React: Vitest + React Testing Library | `.claude/rules/testing-tool-selection.md` |
 
-Default to `@playwright/test` for anything that must be repeatable and `playwright-cli` for anything interactive. Cypress is not the toolkit's web E2E tool; keep it only where a repo already runs it.
+Default to `@playwright/test` for anything that must be repeatable, Chrome DevTools MCP for interactive debugging, and `playwright-cli` when an interactive check needs mocking, offline state or a saved session. Cypress is not the toolkit's web E2E tool; keep it only where a repo already runs it.
 
 ## Install (pinned)
 
@@ -95,7 +95,6 @@ For a server that is not running yet. Run `python scripts/with_server.py --help`
 | [chrome-devtools-tools.md](reference/chrome-devtools-tools.md) | Core Web Vitals, performance traces, throttling, Lighthouse |
 | [api-performance.md](reference/api-performance.md) | API latency and payload checks during browser flows |
 | [agentic-debug-loop.md](reference/agentic-debug-loop.md) | Observe → diagnose → fix → re-verify on a live app |
-| [browser-use-tools.md](reference/browser-use-tools.md) | The four Browser-Use MCP tools that actually exist |
 | [flutter-web-e2e.md](reference/flutter-web-e2e.md) | Flutter **web** builds only: enabling semantics, CanvasKit locator matrix, merged-`Semantics` stability hangs, hash routing, offline signals |
 
 ## Report

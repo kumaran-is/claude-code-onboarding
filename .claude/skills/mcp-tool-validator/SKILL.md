@@ -53,6 +53,7 @@ Do NOT use this skill for:
 1. **Copy the harness** — copy `scripts/mcp_test_client.py`, `scripts/run_validation.sh`, `scripts/test_mcp_test_client_self.py` and `scripts/scenarios.yaml` into the project's `tests/`; `uv add --dev mcp==2.3.0 pyyaml==6.0.4`.
 2. **Author scenarios** — For each tool, you need: 1 happy path, 1 invalid input, 1 edge case. See `references/scenario_schema.md` to author or extend scenarios.
 3. **Check coverage** — `uv run python tests/mcp_test_client.py --server-url $SERVER_URL` lists every tool first and exits 2 (COVERAGE_GAP) before calling anything if a tool lacks scenarios.
+   Add `--surface-lock tests/tool-surface.lock.json` to fail with exit 4 (SURFACE_DRIFT) when a tool is added, removed or its name, description or input schema changed; write the lock once with `--update-surface-lock` and commit it (an intentional change regenerates it and is justified in the PR).
 4. **Wire the loop** — `bash tests/run_validation.sh` handles build → deploy → wait → validate → report (exit codes in `references/client_skeleton.md`).
 5. **Enforce the contract** — Copy the feedback-loop block from `references/feedback_loop.md` into your project's `CLAUDE.md`.
 
@@ -85,6 +86,7 @@ These guards prevent the most common ways autonomous loops produce false-green r
 3. **Loop cap** — Default 5 fix-redeploy iterations. After cap, STOP and report with file:line evidence. Do NOT raise PR.
 4. **Determinism check** — Each scenario runs twice on first failure. If results differ, the scenario is flaky → fix the scenario or the tool, not the loop.
 5. **Coverage gate** — PR creation is blocked unless the validation run exits 0.
+6. **Surface lock** — never regenerate the lock to make a red run green without reviewing the schema diff; a surprise tool or a silently edited description is the change the lock exists to catch.
 
 ## Output contract
 

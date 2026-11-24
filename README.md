@@ -7,9 +7,9 @@
 ![Node.js](https://img.shields.io/badge/Node.js-24.14-339933?style=flat&logo=nodedotjs&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11.2.x-E0234E?style=flat&logo=nestjs&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.135.2-009688?style=flat&logo=fastapi&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-1.2.8-1C3C3C?style=flat&logo=langchain&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LangGraph-1.0.7-1C3C3C?style=flat)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.165.0-009688?style=flat&logo=fastapi&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-1.5.2-1C3C3C?style=flat&logo=langchain&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.2.24-1C3C3C?style=flat)
 ![Google ADK](https://img.shields.io/badge/Google%20ADK-1.28.0-4285F4?style=flat&logo=google&logoColor=white)
 ![Angular](https://img.shields.io/badge/Angular-22.3.x-DD0031?style=flat&logo=angular&logoColor=white)
 ![A2UI](https://img.shields.io/badge/A2UI-1.0-0F9D58?style=flat&logo=google&logoColor=white)
@@ -38,7 +38,7 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 | Layer | Technologies |
 |---|---|
 | **Backend** | Java 21, Spring Boot WebFlux v3.5.x, Node.js v24.14, NestJS v11.2.x, Python v3.14 |
-| **Agentic AI** | Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, Google ADK, FastAPI 0.135.2 |
+| **Agentic AI** | Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, Google ADK 2.15, FastAPI 0.165.0 |
 | **Frontend** | Angular 22.3.x, TypeScript 6.0.x, React 19.3 (optional), A2UI 1.0 with a v0.9.x compatibility path (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
 | **Mobile** | Flutter 3.50.x, Dart 3.14.0, three_dart (3D in Flutter) |
 | **Data & Infra** | PostgreSQL, pgvector (vector search), Weaviate Serverless, Firebase |

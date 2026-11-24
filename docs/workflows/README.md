@@ -24,7 +24,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [feature-java-spring.md](feature-java-spring.md) | Java 21 / Spring Boot 3.5.x WebFlux |
 | [feature-nestjs.md](feature-nestjs.md) | NestJS 11.x / Fastify / Prisma / TypeScript |
 | [feature-python-fastapi.md](feature-python-fastapi.md) | Python 3.14 / FastAPI / Pydantic v2 |
-| [feature-agentic-ai.md](feature-agentic-ai.md) | LangChain v1.2.8 / LangGraph v1.0.7 |
+| [feature-agentic-ai.md](feature-agentic-ai.md) | LangChain v1.5.2 / LangGraph v1.2.24 |
 | [feature-google-adk.md](feature-google-adk.md) | Google ADK / Gemini agents |
 | [voice-ai-development.md](voice-ai-development.md) | Gemini Live API real-time voice + TTS — LangGraph and ADK voice pipelines |
 | [voice-ai-engine-development.md](voice-ai-engine-development.md) | (skill: `voice-ai-development`, optional) Full voice engine — async worker pipeline, Gemini Live STT, Gemini TTS, interrupt handling, LangGraph or ADK agent |

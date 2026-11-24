@@ -77,7 +77,7 @@ patterns:
       - "**/routers/**/*.py"
       - "**/api/**/*.py"
     reminder: "⚠️ Reminder: Mutating FastAPI endpoints should have rate limiting. Confirm
-      a SlowAPI limiter or Nginx rate-limit is in place before shipping. Missing rate limits
+      a limits-based async rate-limit dependency (python-dev/reference/fastapi-rate-limiting.md) or an edge rate-limit is in place before shipping. Missing rate limits
       on auth or payment endpoints is a brute-force / abuse vector."
 
   - rule_name: python_requests_no_timeout

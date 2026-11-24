@@ -48,8 +48,8 @@ Rule: a renderer row moves to "1.0" only with a passing test in which that rende
 | Reference backend | Python 3.14, FastAPI 0.165.0, sse-starlette 3.7.1 | DOCUMENTED AND TESTED: 62/62 pytest, ruff, mypy --strict; shared (one server) and standalone (one per client) modes |
 | AG-UI Python SDK | `ag-ui-protocol` 1.0.0 | DOCUMENTED AND TESTED (event types and `RunAgentInput` parsed in tests) |
 | AG-UI TS client | `@ag-ui/client` 1.0.5 | DOCUMENTED AND TESTED via Angular. Splits SSE frames on `\n\n` only, so servers must send LF-only frames |
-| Google ADK hand-off | ADK 1.29 (`google-adk` skill) | DOCUMENTED BUT NOT TESTED in this contract |
-| LangGraph hand-off | LangGraph 1.0.7 (`agentic-ai-dev` skill) | DOCUMENTED BUT NOT TESTED in this contract |
+| Google ADK hand-off | ADK 2.15 (`google-adk` skill) | DOCUMENTED BUT NOT TESTED in this contract |
+| LangGraph hand-off | LangGraph 1.2.24 (`agentic-ai-dev` skill) | DOCUMENTED BUT NOT TESTED in this contract |
 | Node emitter | none | UNVERIFIED (not covered) |
 
 ## Cross-client action parity

@@ -42,7 +42,7 @@ agent_registry:
       can_write: true
 
     - name: agentic-ai-dev
-      domain: LangChain v1.2.8, LangGraph v1.0.7, FastAPI AI agents, tool calling
+      domain: LangChain v1.5.2, LangGraph v1.2.24, FastAPI AI agents, tool calling
       model: sonnet
       can_write: true
 
@@ -218,7 +218,7 @@ agent_registry:
       note: "Web UI: Chrome DevTools MCP / playwright-cli. Flutter Android/iOS: Maestro evidence. Only returns APPROVED with visual proof."
 
     - name: adk-reviewer
-      domain: "Read-only reviewer for Google ADK 1.29.0 agent code"
+      domain: "Read-only reviewer for Google ADK 2.15.0 agent code"
       model: opus
       can_write: false
 
@@ -248,7 +248,7 @@ agent_registry:
       can_write: false
 
     - name: python-reviewer
-      domain: "General Python 3.14 / FastAPI 0.135+ code reviewer (read-only)"
+      domain: "General Python 3.14 / FastAPI 0.165+ code reviewer (read-only)"
       model: sonnet
       can_write: false
 

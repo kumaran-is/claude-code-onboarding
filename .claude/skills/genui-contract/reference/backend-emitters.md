@@ -7,7 +7,7 @@ An emitter is the server code between the agent and the transport. It takes cand
 | Part | Evidence |
 |---|---|
 | FastAPI emitter (contract gate, SSE framing, AG-UI framing) | **DOCUMENTED AND TESTED**: reference backend, 60 pytest passing; ruff and mypy --strict clean |
-| Google ADK hand-off | **DOCUMENTED BUT NOT TESTED** here: uses `Runner.run_async` as documented in the [google-adk](../../google-adk/SKILL.md) skill ([adk-core-patterns.md](../../google-adk/reference/adk-core-patterns.md), [adk-fastapi-integration.md](../../google-adk/reference/adk-fastapi-integration.md), ADK 1.29) |
+| Google ADK hand-off | **DOCUMENTED BUT NOT TESTED** here: uses `Runner.run_async` as documented in the [google-adk](../../google-adk/SKILL.md) skill ([adk-core-patterns.md](../../google-adk/reference/adk-core-patterns.md), [adk-fastapi-integration.md](../../google-adk/reference/adk-fastapi-integration.md), ADK 2.15) |
 | LangGraph hand-off | **DOCUMENTED BUT NOT TESTED** here: uses `graph.astream(..., stream_mode="updates")` as documented in [agentic-streaming-hitl.md](../../agentic-ai-dev/reference/agentic-streaming-hitl.md) |
 | Node / TypeScript emitter | **DOCUMENTED AND TESTED** (Node 26 sandbox): `@a2ui/agent` 0.2.1 + `@ag-ui/encoder` 1.0.5, 21 LIVE-PROTOCOL tests. See section 7 |
 

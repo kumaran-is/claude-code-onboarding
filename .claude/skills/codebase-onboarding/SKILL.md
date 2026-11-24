@@ -61,7 +61,7 @@ ls .github/workflows/ Dockerfile docker-compose*.yml .env.example 2>/dev/null
 |----------|-------|-----------|
 | `pom.xml` + `spring-boot` | Java 21 / Spring Boot 3.5.x WebFlux | `java-spring-api` |
 | `package.json` + `@nestjs/core` | NestJS 11.x / Fastify / Prisma | `nestjs-api` |
-| `pyproject.toml` + `fastapi` | Python 3.14 / FastAPI 0.135.2 | `python-dev` |
+| `pyproject.toml` + `fastapi` | Python 3.14 / FastAPI 0.165.0 | `python-dev` |
 | `pyproject.toml` + `langchain`/`langgraph` | Agentic AI / LangGraph | `agentic-ai-dev` |
 | `angular.json` | Angular 22.3.x / daisyUI 5.8.2 | `angular-spa` |
 | `pubspec.yaml` + `flutter:` | Flutter 3.50.x / Dart 3.14.0 | `flutter-mobile` |

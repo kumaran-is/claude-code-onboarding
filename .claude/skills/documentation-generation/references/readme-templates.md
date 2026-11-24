@@ -158,7 +158,7 @@ npm run test:cov             # coverage report
 ```markdown
 # ${SERVICE_NAME} — FastAPI Service
 
-Python 3.14, FastAPI 0.135.2, Pydantic v2, SQLAlchemy async
+Python 3.14, FastAPI 0.165.0, Pydantic v2, SQLAlchemy async
 
 ## Prerequisites
 

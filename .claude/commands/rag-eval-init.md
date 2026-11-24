@@ -317,7 +317,10 @@ Do not start with LLM-as-judge.
 GitHub Actions:
 ```yaml
 - name: RAG eval gate
-  run: python -m evals.run_eval --rag-callable yourapp.rag:answer
+  run: uv run --locked python -m evals.run_eval --rag-callable yourapp.rag:answer
+  env:
+    DEEPEVAL_TELEMETRY_OPT_OUT: "1"     # only if the project also runs DeepEval / Ragas judges
+    RAGAS_DO_NOT_TRACK: "true"
 ```
 The runner exits 1 on regression or a floor breach and 2 when no baseline exists for the golden-set version; never mark the step `continue-on-error`.
 ```

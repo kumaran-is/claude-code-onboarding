@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: evaluation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Eval Guide
@@ -100,7 +100,11 @@ Use the cheapest shape that observes the behaviour: single-turn traces for class
 
 ## Telemetry
 
-Disable eval-tool telemetry in CI and wherever eval data is sensitive: `DEEPEVAL_TELEMETRY_OPT_OUT=1`, `RAGAS_DO_NOT_TRACK=true`.
+Disable eval-tool telemetry in CI and wherever eval data is sensitive: `DEEPEVAL_TELEMETRY_OPT_OUT=1`, `RAGAS_DO_NOT_TRACK=true`, `GISKARD_TELEMETRY_DISABLED=1`.
+
+## Verified pins (Python 3.14.10, 2026-11-23)
+
+`deepeval==4.3.4`, `ragas==0.4.4`, `giskard-checks==1.0.7` (not `giskard-core`), `litellm==1.110.2`, `presidio-analyzer==2.2.366` + `presidio-anonymizer==2.2.366` (Python < 3.15: blocks a 3.15 eval image), `langfuse==5.2.0`, `pytest==9.2.0`, `pytest-asyncio==1.5.0`. All resolved together with uv 0.13.9. Google ADK eval environments are a separate lock: `google-adk` 2.15.0 requires `google-genai>=2.34,<3` and `opentelemetry-api<=1.45.2`, while standalone Gemini/LangChain services use `google-genai` 3.x (`langchain-google-genai` 4.5.2 needs `>=3.3`), so the two never share one lock. Deterministic parts were executed offline; LLM-judge metrics were exercised only against a labelled local stub judge (wiring, never quality).
 
 ## Related Skills
 

@@ -115,7 +115,7 @@ def calculate_bertscore(
 
 ## Section 2: Retrieval Rank Metrics (canonical)
 
-This section is the **single canonical home** for Recall@K, Precision@K, Hit@K, MRR and nDCG in this toolkit. `rag-evaluator`, `/rag-eval-init`, `eval-guide` and `vector-database` link here; copy this module verbatim rather than re-deriving it. Executed: the worked examples below run as pytest (6 tests pass, `mypy --strict` clean); the previous versions of these functions failed 4 of them (shared-pool MRR 1.0 instead of 0.75, nDCG 2.13 on duplicates, P@10 = 1.0 for a single hit, Recall = 1.0 or 0.0 for zero-relevant queries).
+This section is the **single canonical home** for Recall@K, Precision@K, Hit@K, MRR and nDCG in this toolkit. `rag-evaluator`, `/rag-eval-init`, `eval-guide` and `vector-database` link here; copy this module verbatim rather than re-deriving it. Executed: the worked examples below run as pytest (6 tests pass, `mypy --strict` clean; re-run verbatim on Python 3.14.10 with pytest 9.2.0, ruff 0.17.6 and mypy 2.4.1 on 2026-11-23, and two mutations each failed their test: IDCG built from the retrieved list only, and Precision@K divided by results returned); the previous versions of these functions failed 4 of them (shared-pool MRR 1.0 instead of 0.75, nDCG 2.13 on duplicates, P@10 = 1.0 for a single hit, Recall = 1.0 or 0.0 for zero-relevant queries).
 
 ```python
 """Rank metrics for retrieval evaluation (one query at a time).

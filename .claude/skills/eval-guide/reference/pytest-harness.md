@@ -148,9 +148,11 @@ Probabilistic case types (pattern detection, root-cause hypotheses) legitimately
 ## pyproject.toml
 
 ```toml
-[tool.pytest.ini_options]
+[tool.pytest]                       # pytest 9 native table
+strict = true                       # an unregistered tier marker fails collection instead of selecting nothing
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
 markers = [
   "r1: deterministic PR gate, no live model",
   "r2: nightly live golden replay",

@@ -18,7 +18,9 @@ Primary use cases in this workspace:
 
 ## Iron Law (from `skills/llm-evaluation/SKILL.md`)
 
-> **NO EVALUATION CONCLUSION WITHOUT A BASELINE — comparing model A to model B means nothing without a defined baseline and statistical test. Every eval claim requires: metric name, sample size, statistical significance (p < 0.05), and effect size.**
+> **NO EVALUATION CONCLUSION WITHOUT A BASELINE AND THE RIGHT TEST — two variants on the same golden cases are paired data (paired t / Wilcoxon / McNemar, never an independent-samples test). Every eval claim states: metric name and definition, n, test used, effect size with CI, dataset and judge version.**
+>
+> Tooling Iron Law (`eval-guide`): deterministic checks decide; an LLM judge only scores semantic quality and never upgrades a case. Security and privacy gates (forbidden tool calls, cross-tenant ids, PII via Presidio) are deterministic code and never depend on a judge.
 
 ---
 
@@ -132,9 +134,15 @@ Key decisions:
 # .github/workflows/eval.yml (example)
 - name: Run eval regression gate
   run: |
-    uv run pytest tests/eval/test_regression.py -v
+    uv run --locked pytest -m r1 tests/eval/test_regression.py -v
     # test_regression.py uses RegressionDetector with PRODUCTION_BASELINE
+  env:
+    DEEPEVAL_TELEMETRY_OPT_OUT: "1"
+    RAGAS_DO_NOT_TRACK: "true"
+    GISKARD_TELEMETRY_DISABLED: "1"
 ```
+
+R1 (every PR) runs only deterministic checks and scripted/fake models; live judges run in R2/R3 with an explicit judge model and are reported BLOCKED when credentials are absent, never skipped into a PASS. Library pins and current APIs (DeepEval 4.3.4, Ragas 0.4.4 `ragas.metrics.collections`, `giskard-checks` 1.0.7, Langfuse 5.2.0, Presidio 2.2.366): `eval-guide` "Verified pins".
 
 Rule: Store `PRODUCTION_BASELINE` as a committed JSON file updated only on deliberate promotion.
 

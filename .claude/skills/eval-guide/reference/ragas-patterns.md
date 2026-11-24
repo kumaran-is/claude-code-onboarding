@@ -1,6 +1,6 @@
 # Ragas Patterns
 
-> Checked against **ragas 0.4.4** (signatures introspected; metric construction executed offline with a dummy client, no judge calls). Query Context7 (`ragas`) before upgrading: the 0.4 metric API differs from 0.2/0.3 and the old one is scheduled for removal in 1.0.
+> Checked against **ragas 0.4.4** on Python 3.14.10 (signatures introspected; `ToolCallF1` scored offline; LLM metrics constructed with a dummy client, no judge calls). Set `RAGAS_DO_NOT_TRACK=true` in CI. Query Context7 (`ragas`) before upgrading: the 0.4 metric API differs from 0.2/0.3 and the old one is scheduled for removal in 1.0.
 
 ## Install
 
@@ -84,6 +84,7 @@ Use `strict_order=True` only where the domain requires order; assert key argumen
 | `datasets.Dataset` with `question/answer/contexts/ground_truth` | `SingleTurnSample` / `EvaluationDataset` field names |
 | "use ContextUtilization instead of answer_relevancy" | Wrong: `AnswerRelevancy` exists; the two measure different things |
 | `evaluate()` without `llm=` | Falls back to OpenAI; always pass the judge |
+| `IDBasedContextPrecision` / `IDBasedContextRecall` | Deprecated in 0.4.4 with "no direct equivalent in `ragas.metrics.collections`" (warning text): compute id-based precision/recall with `llm-evaluation/reference/evaluation-metrics.md` §2 |
 | Ragas async in pytest | `asyncio_mode = "auto"`; see `pytest-harness.md` |
 
 ## Example gates (adapt; from `per-agent-thresholds.md`)

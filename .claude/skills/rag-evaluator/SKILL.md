@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: evaluation
   output-format: guidance
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # RAG Evaluation
@@ -191,7 +191,7 @@ evals/
   reports/                 # Per-run reports
 ```
 
-Suggested libraries: `ragas` (with calibration), `deepeval`, or custom — depends on stack. The framework matters less than having the golden set and running it on every change.
+Suggested libraries: `ragas==0.4.4` (`ragas.metrics.collections`, with calibration), `deepeval==4.3.4`, or custom; retrieval rank metrics always come from `llm-evaluation/reference/evaluation-metrics.md` §2 (Ragas 0.4.4 deprecates its id-based context precision/recall with no collections equivalent). Pins verified in `eval-guide` "Verified pins". The framework matters less than having the golden set and running it on every change.
 
 ## Diagnostic Matrix
 

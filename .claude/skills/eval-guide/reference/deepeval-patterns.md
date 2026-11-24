@@ -1,6 +1,6 @@
 # DeepEval Patterns
 
-> Checked against **deepeval 4.3.4** (classes and signatures introspected; test-case construction executed offline). **deepeval 2.9.3 is a different API**: no `MCPServer`, `MCPUseMetric`, `ArenaGEval`, `SingleTurnParams`, `ArgumentCorrectnessMetric`, `PIILeakageMetric`. Query Context7 (`deepeval`) for your pinned version before writing code.
+> Checked against **deepeval 4.3.4** on Python 3.14.10 (classes and signatures introspected; test-case construction and `ToolCorrectnessMetric` scoring executed offline with a counting stub judge; LLM-judged metrics were wired against the stub only, never scored by a real model). **deepeval 2.9.3 is a different API**: no `MCPServer`, `MCPUseMetric`, `ArenaGEval`, `SingleTurnParams`, `ArgumentCorrectnessMetric`, `PIILeakageMetric`. Query Context7 (`deepeval`) for your pinned version before writing code.
 
 ## Install
 
@@ -41,11 +41,15 @@ case = LLMTestCase(
 
 `mcp_tools_called=[MCPToolCall(name=..., args=..., result=...)]` additionally requires the `mcp` package and `result` must be an `mcp.types.CallToolResult`; record the real MCP result object, do not fabricate one.
 
+## ToolCorrectness does not catch an extra (forbidden) call
+
+Executed (4.3.4): expected `[search_kb]`, called `[search_kb, delete_account]`, threshold 1.0. Default: score **1.0, success True**; `should_consider_ordering=True`: 1.0; `should_exact_match=True`: 0.0. The judge was called 0 times in all three (name matching is deterministic; the `model` is still required at construction). A forbidden or unauthorized tool call is therefore a deterministic gate in your own code (`[c for c in called if c in case.forbidden_tools]` must be empty, asserted on the recorded tool calls and on persisted side effects), never a ToolCorrectness threshold. Ragas `ToolCallF1` on the same calls scored 0.667 (it penalises extras, but a partial score still is not a block).
+
 ## Metric map (present in 4.3.4)
 
 | Need | Metric | Notes |
 |---|---|---|
-| Tool selection + args | `ToolCorrectnessMetric(should_consider_ordering=..., should_exact_match=..., model=judge)` | Assert key args deterministically first |
+| Tool selection + args | `ToolCorrectnessMetric(should_consider_ordering=..., should_exact_match=..., model=judge)` | Assert key args deterministically first. Default scoring ignores EXTRA calls (below) |
 | Argument quality | `ArgumentCorrectnessMetric` | LLM-judged |
 | Agent outcome / plan | `TaskCompletionMetric`, `GoalAccuracyMetric`, `PlanAdherenceMetric`, `PlanQualityMetric`, `StepEfficiencyMetric`, `ToolUseMetric` | Report path separately from outcome |
 | Loops / permissions | `AgentLoopDetectionMetric`, `ToolPermissionMetric` | Permission is enforced in code; the metric only observes |

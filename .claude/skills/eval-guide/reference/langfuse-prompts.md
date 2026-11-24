@@ -1,13 +1,13 @@
 # Prompt Registry, Lifecycle and Prompt Regression
 
-> Provider-neutral contract first; Langfuse is one optional backend. Langfuse SDK calls (`get_prompt(name, label=, cache_ttl_seconds=, fallback=)`, `is_fallback`, prompt-to-generation linking, `LANGFUSE_BASE_URL`) were checked against the Langfuse docs via Context7 on 2026-11-22, not executed. The registry class below was executed with a fake client (4 tests: TTL rollback, fail-closed raise, degraded tiers, placeholder refusal) and passes `mypy --strict`.
+> Provider-neutral contract first; Langfuse is one optional backend. Langfuse SDK calls were checked against the installed langfuse 5.2.0 (Python 3.14.10) with no Langfuse server: `get_prompt(name, label=, fallback=, max_retries=, fetch_timeout_seconds=, cache_ttl_seconds=)` signature introspected; executed, the fallback path returned a `TextPromptClient` with `is_fallback=True`, `version=0`, `labels=['production']`; without `fallback=` an unreachable server raised `httpx.ConnectError` (the adapter below must let it propagate to the registry). Server-side label moves and prompt linking were not exercised. The registry class below was executed with a fake client (4 tests: TTL rollback, fail-closed raise, degraded tiers, placeholder refusal) and passes `mypy --strict`.
 > Release mechanics (eval-gated promotion, canary, rollback, provider migration): `deployment-ci-cd/reference/llmops-release-and-rollout.md`. Trace attributes: `deployment-ci-cd/reference/ai-observability.md`.
 
 ## Install (Langfuse backend, optional)
 
 ```toml
 # pyproject.toml
-langfuse = "==<pinned v3+ release>"   # verify via Context7; v2 examples (Langfuse(), LANGFUSE_HOST) are outdated
+langfuse = "==5.2.0"   # Python >=3.11; v2-era `langfuse.decorators` / `.trace()` APIs no longer exist (ai-observability.md section 7)
 ```
 
 ## Naming
@@ -114,7 +114,9 @@ class LangfuseRegistryClient:
         self._lf = get_client()                     # reads LANGFUSE_PUBLIC_KEY / _SECRET_KEY / _BASE_URL
 
     def fetch(self, name: str, label: str) -> tuple[str, str]:
-        p = self._lf.get_prompt(name, label=label, cache_ttl_seconds=0)   # registry owns the cache
+        # registry owns the cache (TTL 0 here) and the fallback tier (no SDK fallback=):
+        # an unreachable server raises (httpx.ConnectError, executed) and the registry decides
+        p = self._lf.get_prompt(name, label=label, cache_ttl_seconds=0, fetch_timeout_seconds=5)
         return str(p.version), p.prompt              # template text; render with your own variables
 ```
 
@@ -174,3 +176,4 @@ Local stack: run the self-hosted compose file from the Langfuse docs (web, worke
 | `except Exception: ...` without logging | Every except logs event + `error_type`, then raises or returns an explicit tier |
 | `label="latest"` in production | Fetch by deployment label |
 | Missing `flush()` in short-lived eval scripts | Flush/shutdown the tracing client before exit or events are lost |
+| `fallback=` and a registry bundled tier both active | Pick one; an SDK fallback has `version=0`, so record `is_fallback` as the degraded tier |

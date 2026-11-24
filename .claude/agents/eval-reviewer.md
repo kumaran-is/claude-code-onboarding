@@ -45,11 +45,11 @@ AGENT_SRC=src              # agent code, prompts and corpora roots (space-separa
 | 8 | **Score directions:** ADK `hallucinations_v1` gated as a minimum (≥), never `= 0`/`≤ 0.05`; `response_evaluation_score` threshold on its 1-5 scale; thresholds match the project's threshold file | HIGH |
 | 9 | **Case schema and manifest:** case models are closed (`extra="forbid"`); new assertions have a positive control; one manifest with per-file sha256 and counts, verified in CI; dev vs held-out vs safety splits kept apart | MEDIUM (HIGH for safety set) |
 | 10 | **Security blockers:** each hard CI blocker (`eval-guide/reference/ci-tiers.md`) has ≥ 1 R1 case, asserted on tool-call log / retrieval span / persisted rows, not reply text; indirect injection via retrieved documents/tool output covered | CRITICAL if a blocker has zero cases |
-| 11 | **Library APIs match the pinned versions:** Ragas 0.4 uses `ragas.metrics.collections` and `SingleTurnSample` (not `datasets.Dataset` with `question/ground_truth`); `FactualCorrectness` for coverage uses `mode="recall", atomicity="high"`; DeepEval `mcp_servers`/`tools_called` are objects; Giskard uses `giskard.checks` with `target_key`, no v2 `giskard.scan` / `giskard.rag` | HIGH |
+| 11 | **Library APIs match the pinned versions:** Ragas 0.4 uses `ragas.metrics.collections` and `SingleTurnSample` (not `datasets.Dataset` with `question/ground_truth`); `FactualCorrectness` for coverage uses `mode="recall", atomicity="high"`; DeepEval `mcp_servers`/`tools_called` are objects; a forbidden/extra tool call is NOT gated by `ToolCorrectnessMetric` (default scores 1.0 with an extra call; only `should_exact_match=True` drops it) but by deterministic code; Giskard uses `giskard.checks` (pin `giskard-checks`, not `giskard-core`) with `target_key` and output callables whose parameter is named `inputs`, no v2 `giskard.scan` / `giskard.rag`; Langfuse 5.x has no `langfuse.decorators`, `.trace()`, `.score()` or `update_current_trace` | HIGH |
 | 12 | **Baseline comparator fails closed:** missing/placeholder baseline, metric missing from run, dataset/judge/tier key mismatch all fail; 0.0 baselines compared absolutely; baselines versioned, never overwritten automatically | HIGH |
 | 13 | **Prompt registry (if in diff):** returns name/version/hash (not `str`), cache has a TTL, "fail closed" raises, every `except` logs `error_type` (no `str(exc)`), placeholder emergency prompts refused | HIGH |
 | 14 | **Banned direct imports:** project-defined banned frameworks checked on direct imports in eval code only; transitive dependencies (e.g. Ragas requires LangChain) are not findings | MEDIUM |
-| 15 | **Hygiene:** `asyncio_mode = "auto"` (or explicit markers); offline tests read no real secrets; `DEEPEVAL_TELEMETRY_OPT_OUT` / `RAGAS_DO_NOT_TRACK` set in CI; workflow path filters include shared `conftest.py`, `pyproject.toml`, lockfile | MEDIUM |
+| 15 | **Hygiene:** `asyncio_mode = "auto"` (or explicit markers) with both loop-scope options set; pytest 9 `[tool.pytest]` with `strict = true` (never alongside `[tool.pytest.ini_options]`); no `event_loop` fixture; offline tests read no real secrets; `DEEPEVAL_TELEMETRY_OPT_OUT` / `RAGAS_DO_NOT_TRACK` / `GISKARD_TELEMETRY_DISABLED` set in CI; a privacy gate's Presidio `score_threshold` admits `PHONE_NUMBER` (0.4); workflow path filters include shared `conftest.py`, `pyproject.toml`, lockfile | MEDIUM |
 | 16 | **Judge calibration:** a judge that gates anything has a recorded calibration (chance-corrected agreement, false-PASS rate on known-bad answers) for its model + rubric version | MEDIUM |
 
 ### Helper commands (read-only)
@@ -93,8 +93,10 @@ PY
 grep -rnE 'hallucinations_v1"?[[:space:]]*(:|==?|<=|≤)[[:space:]]*0(\.0[0-9]*)?([^.0-9]|$)' "$EVAL_DIR" "$GOLDEN_DIR" \
   --include='*.json' --include='*.py' --include='*.yaml' || true
 
-# 11. Legacy Ragas imports / schema
+# 11. Legacy Ragas imports / schema, removed Langfuse APIs, giskard-core-only pins
 grep -rnE 'from ragas\.metrics import|ground_truth|from datasets import Dataset' "$EVAL_DIR" --include='*.py' || true
+grep -rnE 'langfuse\.decorators|langfuse_context|update_current_trace|start_as_current_(span|generation)\b' "$EVAL_DIR" "$AGENT_SRC" --include='*.py' || true
+grep -nE '"?giskard-core' pyproject.toml && ! grep -q 'giskard-checks' pyproject.toml && echo 'giskard-core pinned without giskard-checks' || true
 ```
 
 The AST script was validated with a positive control (unmarked test, `@pytest.mark.flaky(reruns=3)`, multi-line `FaithfulnessMetric(threshold=0.9,)` without model: three findings) and a negative control (module `pytestmark`, `model=judge` on a continuation line: no findings).

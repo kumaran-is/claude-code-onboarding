@@ -1,14 +1,16 @@
 # Giskard OSS v3 Patterns (`giskard.checks`)
 
-> API checked against the giskard-oss `giskard-checks` README via Context7 (`/giskard-ai/giskard-oss`) on 2026-11-22; Giskard was **not** installed or executed here. Re-query Context7 before writing code.
+> Checked against the installed **giskard-checks 1.0.7** on Python 3.14.10 (Python >= 3.12 required): signatures introspected; deterministic `Scenario` / `Suite` runs executed offline (compliant answer passed, violating answer failed, one-case suite `pass_rate == 1.0`, empty suite `pass_rate is None`). LLM checks (`Groundedness` and other judge checks) were NOT executed: no judge credentials. Re-check on every bump.
 > **v3 only**: v2 APIs (`giskard.scan`, `giskard.rag` RAGET, `generate_testset`, `KnowledgeBase`) are legacy and not used.
 
 ## Install
 
 ```toml
 # pyproject.toml (eval dependency group)
-giskard-checks = "==<pinned>"   # pin the exact version you verified via Context7
+giskard-checks = "==1.0.7"   # Giskard 3 = giskard-checks (+ giskard-scan for red teaming); requires Python >= 3.12
 ```
+
+`giskard-core` (1.0.4) is NOT the eval library: it holds shared utilities (errors, rate limiter, telemetry) and is pulled in by `giskard-checks`. Pinning `giskard-core` alone gives you no `giskard.checks`. The `giskard` 3.0.1 meta-package depends only on `giskard-checks`. Set `GISKARD_TELEMETRY_DISABLED=1` (and `GISKARD_QUIET=1` to drop the import banner) in CI.
 
 ## Judge configuration
 
@@ -28,7 +30,7 @@ from giskard.checks import Groundedness, Scenario
 
 scenario = (
     Scenario("grounded_answer")
-    .interact(inputs=question, outputs=call_agent)          # outputs: static value or callable(inputs)
+    .interact(inputs=question, outputs=call_agent)          # outputs: static value or callable(inputs=...)
     .check(Groundedness(name="answer is grounded",
                         target_key="trace.last.outputs",     # NOT answer_key
                         context=retrieved_chunks))
@@ -63,6 +65,8 @@ Persist per-scenario results yourself (JSON rows with case id, judge id, check n
 | Gotcha | Fix |
 |--------|-----|
 | `answer_key=` on checks | `target_key="trace.last.outputs"` |
+| `outputs=lambda i: ...` | Callables are injected BY PARAMETER NAME: name it `inputs` (or `trace`). Executed: `TypeError: Parameter 'i' is required but not in the injection requirements` |
+| Pinning `giskard-core` | Pin `giskard-checks`; core is a utility dependency |
 | `suite.add(...)` | `suite.append(...)` |
 | `Generator(model=...)` from `giskard.agents` | `set_default_generator("<provider/model>")` from `giskard.checks` |
 | `pass_rate is None` treated as success | It means nothing ran: NOT RUN |

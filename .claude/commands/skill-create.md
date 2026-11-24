@@ -12,6 +12,7 @@ Analyzes git log to detect patterns, then generates a new skill file that matche
 - You've noticed a repeated workflow not yet captured in a skill
 - A pattern has emerged from 3+ similar commits
 - You want to codify a debugging or implementation technique
+- `/promote-lessons` routed a **procedure** or a **success** to a skill (improve path below)
 
 ## Process
 
@@ -98,6 +99,14 @@ Trigger words: {list}
 Lines: {count}
 Spec compliance: {list of checks — all green}
 ```
+
+## Improve path: change an existing skill from a lesson
+
+When the destination is a skill that already exists, do not create a new one:
+
+1. Write the change as an edit to the skill's `SKILL.md` or the narrowest `reference/` file, in the pairing form "avoid X, do Y, because Z", with the evidence (commit, finding id, incident) in the commit message, not the skill.
+2. Run `bash .claude/scripts/lint-skills.sh` and dispatch `skill-reviewer` on the changed skill; fix every FAIL.
+3. Leave it as a normal diff on the branch. It merges through a reviewed PR; never auto-apply or auto-commit a shared skill change, and never stage proposals in a separate pending folder.
 
 ## Constraints
 

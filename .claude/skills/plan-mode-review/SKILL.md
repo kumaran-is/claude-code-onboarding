@@ -174,6 +174,10 @@ If unresolved → Escalate to human with both positions documented
 
 **Relationship to `plan-challenger` agent:** `plan-challenger` runs one-sided attack (finds holes). Phase 6 debate runs two-sided structured opposition (proponent + opponent + neutral verdict). Use `plan-challenger` first to find weaknesses, then Phase 6 when two competing valid positions remain after the challenge.
 
+## Implementation notes (decisions too small for an ADR)
+
+While implementing an approved plan, append a dated line under `## Implementation notes` at the end of the plan file for every choice a reviewer would otherwise ask about (library option, data shape, a rejected alternative): `- YYYY-MM-DD: chose X over Y because Z (file:line)`. The section is append-only: once the plan file is committed, `git diff --numstat -- docs/plans/<plan>.md` must show `N	0` before each later commit (no deleted lines; an uncommitted new plan has nothing to compare); correct an earlier note with a new line. A choice that changes the architecture still needs an ADR (`architecture-decision-records`).
+
 ## Cross-Skill Delegation
 
 | Need | Delegate to |

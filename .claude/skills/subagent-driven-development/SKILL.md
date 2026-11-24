@@ -306,7 +306,7 @@ Each phase receives exactly what it needs — no more:
 - **Never skip the independence checklist** before parallel dispatch — assumption of independence is not sufficient
 - **Never skip spec review** — quality review does not check spec compliance
 - **Never reverse pipeline order** — spec compliance before quality review, always
-- **Never skip a review loop** — reviewer found issues = implementer fixes = re-review required
+- **Never skip a review loop** — reviewer found issues = implementer fixes = re-review required. Re-dispatch only the reviewers that own open or newly closed findings; from round 3 only CRITICAL/HIGH block, and MEDIUM/LOW go into the PR body (`verification-before-completion/reference/verification-loop.md` §4, bounded re-review)
 - **Never let implementer self-review replace spec/quality review** — both are required
 - **Never tell implementer or reviewer to read the plan file** — provide full task text inline
 - **Never declare a task complete while a reviewer has open issues**

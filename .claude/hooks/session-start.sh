@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SessionStart (startup, resume, /clear, /compact): remind Claude to recover task state before new
 # work (core-behaviors.md §9). Kept short on purpose: CLAUDE.md is loaded at launch and holds the
-# full resume template and skill table, so this only points at them.
+# full resume template and the stack → skill table, so this only points at them.
 #
 # Delivery: hookSpecificOutput.additionalContext (built with jq). The previous version printed a
 # top-level {"additionalContext": ...}, a shape the hooks reference does not define.
 # Test: bash .claude/hooks/session-start.sh --selftest
 set -uo pipefail
 
-CONTENT='SESSION RESUME (injected by hook): context may have been reset. Before any other action, run TaskList; if tasks exist, present the "Session Resumed" summary from CLAUDE.md → Resuming Tasks and ask where to continue. Load the matching skill from CLAUDE.md → Code Conventions before writing code.'
+CONTENT='SESSION RESUME (injected by hook): context may have been reset. Before any other action, run TaskList; if tasks exist, present the "Session Resumed" summary from CLAUDE.md → Resuming Tasks and ask where to continue. Load the matching skill (CLAUDE.md → Skills, Agents and Commands) before writing code.'
 
 if [ "${1:-}" = "--selftest" ]; then
   self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"

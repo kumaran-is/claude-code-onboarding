@@ -100,6 +100,12 @@ Record every change to this plan after it is APPROVED. Do NOT edit tasks silentl
 
 ---
 
+## Implementation notes
+
+[Append-only, one dated line per decision too small for an ADR: `- YYYY-MM-DD: chose X over Y because Z (file:line)`. Once this plan is committed, `git diff --numstat -- <this file>` must show `N	0` before each commit; before its first commit there is nothing to check.]
+
+---
+
 ## PR References
 
 | Task | Branch | PR | Status |

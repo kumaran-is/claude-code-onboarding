@@ -125,10 +125,10 @@ The `description` gets the skill selected; the Iron Law prevents silent skips; t
                      (`reference/` is the common convention here; keep whichever
                      the skill already uses); each file < 300 lines
 [] 6. TEST        -- load the skill, ask it a question, verify it triggers correctly
-[] 7. REGISTER    -- add a row to the CLAUDE.md Code Conventions table (technology
-                     skills) and the Code Review Agents table (if a reviewer agent
-                     applies); add the skill to `.claude/SKILLS_GUIDE.md` under its
-                     domain; run `bash .claude/scripts/lint-skills.sh` and `skill-reviewer`
+[] 7. REGISTER    -- add a row to the `.claude/SKILLS_GUIDE.md` Routing table
+                     (technology skills) and its reviewer table (if a reviewer agent
+                     applies); add the skill under its domain there; touch CLAUDE.md
+                     only for a new stack row (always-loaded budget); run `bash .claude/scripts/lint-skills.sh` and `skill-reviewer`
 ```
 
 ## Verify Command (required in every skill)

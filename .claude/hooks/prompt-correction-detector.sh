@@ -13,6 +13,21 @@
 
 set -uo pipefail
 
+if [ "${1:-}" = "--selftest" ]; then
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"; fail=0
+  check() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2: $3"; fail=1; fi; }
+  bash -n "$self"; check $? "parses (bash -n)" ""
+  out=$(jq -n '{prompt:"No, that'"'"'s wrong - you missed the tests"}' | "$BASH" "$self")
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("CORRECTION SIGNAL DETECTED")' >/dev/null 2>&1
+  check $? "positive: a correction phrase injects the lessons reminder" "$out"
+  out=$(jq -n '{prompt:"Please add a dark mode toggle to settings"}' | "$BASH" "$self")
+  [ "$out" = '{"continue": true}' ]; check $? "negative: an ordinary request only continues" "$out"
+  out=$(printf 'not json' | "$BASH" "$self")
+  [ "$out" = '{"continue": true}' ]; check $? "malformed payload continues (never blocks the prompt)" "$out"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  exit "$fail"
+fi
+
 INPUT=$(cat)
 
 # Extract the user prompt text

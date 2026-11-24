@@ -86,7 +86,7 @@ Today's date: use `currentDate` from context if available, otherwise run `date +
    - destructive classes (`rm`, `git reset/clean/restore`, force-push, `sudo`, `eval`, `ssh`) are still in `ask` or `deny`, none silently promoted to `allow`
    - every allow entry added since the last audit (`git log -p -- .claude/settings.json`) has a stated reason
    - every registered hook file exists and is executable (an orphaned hook entry is a silent enforcement gap)
-   - every `mcp__*` allow entry maps to a server still in `.mcp.json` and still listed as reviewed in `.claude/rules/skill-triggers.md`
+   - every `mcp__*` allow entry maps to a server still in `.mcp.json` and still listed in `.claude/mcp-allowlist.txt` and the risk register (`.claude/skills/security-reviewer/reference/mcp-security.md` §7)
    Report this as its own section: PASS, or each flagged entry with its reason.
 6. Output report in format below
 

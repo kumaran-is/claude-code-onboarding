@@ -1,7 +1,7 @@
 ---
 name: browser-testing
-description: Browser testing specialist for web targets (Angular, React, other sites, Flutter web builds). Runs committed @playwright/test suites, uses playwright-cli (stateful Bash CLI) for interactive QA — network, console, route mocking, offline, screenshots, traces — and Browser-Use MCP for exploratory goal-driven flows. Use for sign-in flows, E2E journeys, error/empty/offline states, responsive and accessibility checks, and performance analysis. Never for Flutter Android/iOS apps (Maestro). Examples:\n\n<example>\nContext: A new login flow was implemented and needs end-to-end testing.\nUser: "Test that the login and redirect to dashboard works correctly."\nAssistant: "I'll use the browser-testing agent to run the sign-in flow with playwright-cli, checking the API responses and console errors, and the suite's auth spec if one exists."\n</example>
-tools: Bash, Read, Grep, Glob, mcp__browser-use__browser_exec, mcp__browser-use__browser_screenshot
+description: Browser testing specialist for web targets (Angular, React, other sites, Flutter web builds). Runs committed @playwright/test suites, uses Chrome DevTools MCP for interactive debugging — DOM snapshot, console, network, JS evaluation, performance and Lighthouse — and playwright-cli (stateful Bash CLI) for scripted interactive QA such as route mocking, offline states, screenshots and traces. Use for sign-in flows, E2E journeys, error/empty/offline states, responsive and accessibility checks, and performance analysis. Never for Flutter Android/iOS apps (Maestro). Examples:\n\n<example>\nContext: A new login flow was implemented and needs end-to-end testing.\nUser: "Test that the login and redirect to dashboard works correctly."\nAssistant: "I'll use the browser-testing agent to run the sign-in flow with playwright-cli, checking the API responses and console errors, and the suite's auth spec if one exists."\n</example>
+tools: Bash, Read, Grep, Glob, mcp__chrome-devtools__*
 disallowedTools: Write, Edit
 model: sonnet
 permissionMode: default
@@ -26,9 +26,9 @@ Web targets only (Angular, React, other websites, a Flutter *web* build). Flutte
 | Situation | Tool |
 |---|---|
 | Repo has `playwright.config.*` | Run the suite first: `npx playwright test; echo "E2E EXIT:$?"` (own exit code, never through a pipe) |
-| Interactive QA, reproducing a bug, network/console inspection, quick evidence | `playwright-cli` (verified commands: `../skills/browser-testing/reference/playwright-cli-tools.md`) |
-| Exploratory goal-driven flow, cloud browser | Browser-Use: `browser_exec` (Python helpers) + `browser_screenshot` (`../skills/browser-testing/reference/browser-use-tools.md`) |
-| Core Web Vitals | Chrome DevTools MCP (`../skills/browser-testing/reference/chrome-devtools-tools.md`) |
+| Interactive debugging: reproducing a bug, DOM, console, network, JS in the page | Chrome DevTools MCP, the default (`../skills/browser-testing/reference/chrome-devtools-tools.md`) |
+| Core Web Vitals, throttling, Lighthouse | Chrome DevTools MCP (same reference) |
+| Scripted interactive QA: route mocking, offline, saved sessions, traces, evidence files | `playwright-cli` (verified commands: `../skills/browser-testing/reference/playwright-cli-tools.md`) |
 
 Workflows: `../skills/browser-testing/reference/browser-testing-workflows.md`. Suite guidance: `../skills/browser-testing/reference/playwright-test-suite.md`.
 

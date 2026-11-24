@@ -113,7 +113,7 @@ Out of scope:
 
 - Strict grounding prompt ("answer only from provided context")?
 - Structured output / answer contract — or free-form text with embedded citations the system can't parse?
-- **Citation-ID validation at runtime:** every cited chunk id is checked against the set retrieved in this request; any id outside it → abstain/fallback response. Missing = HIGH (see `rag-architect/references/rag-response-contract.md` §Runtime citation validation).
+- **Citation-ID validation at runtime:** every cited chunk id is checked against the set retrieved in this request; any id outside it → `NOT_FOUND` / fallback status (closed 10-value enum, `rag-architect/references/rag-response-contract.md` §3). Missing = HIGH (see `rag-architect/references/rag-response-contract.md` §Runtime citation validation).
 - Support check (claim entailed by its cited chunk) when the answer is high-stakes; if the checker is unavailable, is the answer marked `verified=false` rather than silently passed?
 - Retrieved content treated as untrusted? Delimiters are a probabilistic signal, not a control — the control is that retrieved text cannot trigger tools.
 - Tool use allowed based on retrieved content? **Critical security issue.**
@@ -140,6 +140,14 @@ Out of scope:
 
 - Content-hash diffing for updates? Or full re-ingest every time?
 - Erasure path tested? Tenant-scoped hard delete of all versions across vector + sparse + metadata + object store + caches + tombstone? Supersession used as "deletion" is critical.
+
+### Guardrail rows (`.claude/skills/ai-playbook/reference/engineering-guardrails.md`; tag findings with the id)
+
+- **G9** authorization before retrieval: filter in the query, cross-scope negatives cover results, snippets, counts/facets and nearest neighbours (not only top-k results). Secrets screened out before embedding.
+- **G14** similarity never merges or links records, declares duplicates, closes work or approves anything; candidates pass source/version/authorization/freshness checks before reasoning.
+- **G15** each chunk carries source ACL/org/scope, version and timestamp; ACL changes and deletions propagate to the index within a stated SLA with a test; embedding-model or chunking change is a versioned migration with re-index plan and retrieval re-eval; untrusted contributors cannot write to shared corpora without review.
+- **G16/G17** stale or superseded chunks excluded or labelled; outcomes use the closed status enum (ANSWERED / PARTIAL / NOT_FOUND / CONFLICTED / STALE / HUMAN_REVIEW, plus CLARIFICATION_NEEDED / TOOL_ERROR / POLICY_BLOCKED / NO_RETRIEVAL; `rag-response-contract.md` §3); no evidence → `NOT_FOUND`, never an inferred fact. `abstained` is not a status value.
+- Contract tests: `.claude/skills/ai-launch-check/assets/guardrail_contract_tests.py` (`test_cross_scope_*`, `test_secret_bearing_text_*`, `test_deleted_source_*`). Run when the adapter exists; else NOT RUN.
 
 ### Code-level red flags
 

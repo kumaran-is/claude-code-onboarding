@@ -10,21 +10,14 @@ Runs the fastest possible verification for changed stacks. Returns binary PASS/F
 
 ## Modes
 
-### `/verify` (default: quick)
-Compile + lint only. No test execution. Fastest feedback.
+| Mode | Runs |
+|---|---|
+| `/verify` (default: quick) | Compile + lint only. No test execution. Fastest feedback. |
+| `/verify full` | Compile + lint + all tests. Full confidence. |
+| `/verify pre-commit` | Quick verify + check for TODO/FIXME/console.log in staged files. |
+| `/verify pre-pr` | Full verify + security scan + coverage check. |
 
-### `/verify full`
-Compile + lint + all tests. Full confidence.
-
-### `/verify pre-commit`
-Quick verify + check for TODO/FIXME/console.log in staged files.
-
-### `/verify pre-pr`
-Full verify + security scan + coverage check.
-
-## Stack Detection + Commands
-
-Detected by file presence in current directory tree:
+## Stack Detection + Commands (detected by file presence in the current directory tree)
 
 ### Spring Boot (`pom.xml` with spring-boot)
 ```bash
@@ -444,9 +437,17 @@ Proven 2026-11-23 on Flutter 3.50.1: a clean sample app → format, analyze, cod
 
 **UI/E2E on a Flutter Android/iOS target** uses Maestro only (`.claude/rules/testing-tool-selection.md`); if Maestro or a device is missing the check is `BLOCKED`, never a browser substitute.
 
-**Status vocabulary** (per check, never blended): `PASS` ran and succeeded · `FAIL` ran and failed · `BLOCKED` could not
-run (say why: no device, tool missing, backend down) · `NOT RUN` skipped by choice (say why) · `NOT APPLICABLE` the change
-cannot affect it. Only `PASS` counts as a pass.
+### AI assets and evals (golden data, `prompts/`, governance records or AI code present; otherwise NOT APPLICABLE)
+
+```bash
+python3 .claude/scripts/check-ai-assets.py --root . --json ai-assets.json > ai-assets.log 2>&1; echo "AI ASSETS EXIT:$?"; tail -20 ai-assets.log
+# full+ (Python AI services): the deterministic R1 tier only, scripted fake model, never a live provider
+uv run --no-sync pytest -m r1 -q --junit-xml=reports/pytest-r1.xml > r1.log 2>&1; echo "R1 EXIT:$?"; tail -5 r1.log
+```
+
+`check-ai-assets.py`: exit 0 = PASS, REVIEW (list each item for the human) or NOT_APPLICABLE · 1 = a BLOCK finding (missing dataset manifest, invalid manifest, prompt card or governance record, secret in a prompt, golden, notebook or eval-report file, prompt label `latest`) → FAIL; REVIEW includes unpinned model ids and LiteLLM fallback defaults · 3 = BLOCKED (a delegate validator is missing or crashed). ADVISORY lines are pattern-only and never count as pass or fail. R1: no `r1` marker → NOT RUN; executed count 0 → FAIL. Judged (R2), red-team and live-provider suites are NOT RUN here (`eval-guide/reference/ci-tiers.md`).
+
+**Status vocabulary** (per check, never blended): `PASS` ran and succeeded · `FAIL` ran and failed · `BLOCKED` could not run (say why: no device, tool missing, backend down) · `NOT RUN` skipped by choice (say why) · `NOT APPLICABLE` the change cannot affect it. Only `PASS` counts as a pass.
 
 ## Output Format
 
@@ -461,6 +462,7 @@ cannot affect it. Only `PASS` counts as a pass.
 | Angular `web/admin` | ✅ EXIT 0 (lint NOT RUN: no linter) | ✅ 12 passed | PASS |
 | React `apps/site` | ✅ EXIT 0 | ❌ 1 failed | FAIL |
 | Flutter | ✅ EXIT 0 | ✅ 31 passed | PASS |
+| AI assets | ✅ EXIT 0 (2 REVIEW listed) | ✅ R1 24 passed | PASS |
 
 ### FAIL Details
 Python — 2 failures:

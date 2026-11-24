@@ -7,7 +7,7 @@ model: sonnet
 vibe: "A green eval that measured nothing is the most expensive bug"
 color: purple
 emoji: "🧪"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 skills:
   - eval-guide
 ---
@@ -20,7 +20,7 @@ Static, read-only review of eval code. Bash is for read-only searches and runnin
 
 ## Pre-review
 
-1. Read `.claude/skills/eval-guide/SKILL.md` (verdict precedence, accounting, trials) and the references for the tools in the diff (`reference/ragas-patterns.md`, `deepeval-patterns.md`, `giskard-patterns.md`, `ci-tiers.md`, `golden-dataset.md`, `langfuse-prompts.md`). Metric formulas: `.claude/skills/llm-evaluation/reference/evaluation-metrics.md` §2.
+1. Read `.claude/skills/eval-guide/SKILL.md` (verdict precedence, accounting, trials, dimensions and layers) and the references for the tools in the diff (`reference/ragas-patterns.md`, `deepeval-patterns.md`, `giskard-patterns.md`, `ci-tiers.md`, `golden-dataset.md`, `langfuse-prompts.md`, `promptfoo-patterns.md`, `per-agent-thresholds.md`; ADK: `.claude/skills/adk-eval-guide/`). Metric formulas: `.claude/skills/llm-evaluation/reference/evaluation-metrics.md` §2.
 2. Set the layout variables for the repo under review (do not assume a layout):
 
 ```bash
@@ -49,8 +49,12 @@ AGENT_SRC=src              # agent code, prompts and corpora roots (space-separa
 | 12 | **Baseline comparator fails closed:** missing/placeholder baseline, metric missing from run, dataset/judge/tier key mismatch all fail; 0.0 baselines compared absolutely; baselines versioned, never overwritten automatically | HIGH |
 | 13 | **Prompt registry (if in diff):** returns name/version/hash (not `str`), cache has a TTL, "fail closed" raises, every `except` logs `error_type` (no `str(exc)`), placeholder emergency prompts refused | HIGH |
 | 14 | **Banned direct imports:** project-defined banned frameworks checked on direct imports in eval code only; transitive dependencies (e.g. Ragas requires LangChain) are not findings | MEDIUM |
-| 15 | **Hygiene:** `asyncio_mode = "auto"` (or explicit markers) with both loop-scope options set; pytest 9 `[tool.pytest]` with `strict = true` (never alongside `[tool.pytest.ini_options]`); no `event_loop` fixture; offline tests read no real secrets; `DEEPEVAL_TELEMETRY_OPT_OUT` / `RAGAS_DO_NOT_TRACK` / `GISKARD_TELEMETRY_DISABLED` set in CI; a privacy gate's Presidio `score_threshold` admits `PHONE_NUMBER` (0.4); workflow path filters include shared `conftest.py`, `pyproject.toml`, lockfile | MEDIUM |
+| 15 | **Hygiene:** `asyncio_mode = "auto"` (or explicit markers) with both loop-scope options set; pytest 9 `[tool.pytest]` with `strict = true` (never alongside `[tool.pytest.ini_options]`); no `event_loop` fixture; offline tests read no real secrets; `DEEPEVAL_TELEMETRY_OPT_OUT` / `RAGAS_DO_NOT_TRACK` / `GISKARD_TELEMETRY_DISABLED` / `PROMPTFOO_DISABLE_TELEMETRY` set in CI; a privacy gate's Presidio `score_threshold` admits `PHONE_NUMBER` (0.4); workflow path filters include shared `conftest.py`, `pyproject.toml`, lockfile | MEDIUM |
 | 16 | **Judge calibration:** a judge that gates anything has a recorded calibration (chance-corrected agreement, false-PASS rate on known-bad answers) for its model + rubric version | MEDIUM |
+| 17 | **Version traceability (dimension 9):** every result row records dataset name + version, prompt name + version, model name, tool-surface hash and judge (model, rubric version, trials); rows validate against `eval-guide/assets/schemas/eval_result.schema.json` when the project uses it | HIGH |
+| 18 | **Dimension coverage (`eval-guide/SKILL.md` "The 13 dimensions"):** the feature's eval README marks each of the 13 dimensions covered (with the test file) or N/A with a reason; isolation (7), structured output (3) and tool safety (10) are decided by deterministic code, never a judge or a topic metric | HIGH (CRITICAL if isolation is judge-only) |
+| 19 | **Tool exit semantics:** Promptfoo 0.126.0 exits 100 on a failed test and reports provider crashes in `results.stats.errors` (count as NOT RUN); `--fail-on-error` and `function-call-count` do not exist in 0.126.0; ADK `tool_call_count_v1` / `token_usage_v1` / `inference_call_count_v1` / `invocation_duration_v1` are informational and cannot fail a case, so a gate on them needs own code; ADK critical cases repeat with `multi_run_config` `pass_hat_k`, not `pass_rate` | HIGH |
+| 20 | **Threshold and prompt anti-patterns (`eval-guide/reference/eval-program-adoption.md` "Anti-patterns"):** a threshold lowered or a baseline rewritten in the diff without a decision record (`git log -p` on the thresholds file); a `proposed` threshold presented as a gate, or `ratified` without `ratified_by` / `decision_ref`; `label="latest"` or an unpinned prompt fetch in production code; a hardcoded prompt-string fallback; paid judges or the full red-team corpus in R1 | HIGH |
 
 ### Helper commands (read-only)
 

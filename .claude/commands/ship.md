@@ -70,6 +70,20 @@ flutter build apk --release > /tmp/build.log 2>&1; echo "BUILD EXIT:$?"; tail -1
 - Before releasing an MCP server, also review `.mcp.json` hygiene from `session-mcp-governance.sh` (unpinned packages, secrets in args).
 - Zero findings from a scan is evidence only with a positive control; a diff-aware check on uncommitted work is vacuous.
 
+### AI release gate (only when the repo has golden data, `prompts/`, governance records or AI code; otherwise NOT APPLICABLE)
+
+Release gating for AI follows the eval strategy (§5.2 hard blockers, §7.12, §8.3 R3), the guardrails release checklist (§8) and governance release gates (§10.4, §9.3). Deterministic rows block here; organisational approvals are listed as evidence the human supplies, never inferred.
+
+| Row | Check | Status rule |
+|---|---|---|
+| AI assets | `python3 .claude/scripts/check-ai-assets.py --root . --json ai-assets.json > ai-assets.log 2>&1; echo "EXIT:$?"` | 1 → NOT READY; 3 → BLOCKED (NOT READY); each REVIEW line listed with a decision |
+| R1 deterministic evals | the `/verify` AI block (`pytest -m r1`) | FAIL or executed 0 → NOT READY |
+| Release-candidate eval (R3) | the eval report for THIS commit names `dataset_name`, `dataset_version`, `prompt_version`, `model_name`, `tool_surface_hash` and passes the ratified thresholds: `uv run --script .claude/skills/eval-guide/scripts/eval_gate.py check --thresholds tests/eval/thresholds.yaml --results <report>` (exit 0 = pass, 1 = gate failed, 2 = invalid input) | no report, a report for another commit, or any hard blocker (isolation, injection success, unauthorized tool call, schema break, write tool without audit log, P95 latency or cost > 1.2× baseline) → NOT READY |
+| Prompt drift (prompt standard §17) | when `prompts/` exists and the release has a registry snapshot: `uv run --script .claude/skills/prompt-engineering-patterns/scripts/prompt_drift.py --prompts-root prompts --registry <snapshot.json> --mode prerelease > drift.log 2>&1; echo "EXIT:$?"` (0 = staging serves the Git release content, 1 = DRIFT_STAGING_MISMATCH, 2 = unreadable input or no prompt files) | no snapshot → NOT RUN (caps the verdict at NOT READY until supplied); 1 or 2 → NOT READY |
+| Launch checklist | `/ai-launch-check` verdict for the capability's risk tier (T0–T3) | not run → BLOCKED; open items → NOT READY |
+| T2/T3 sign-off | independent owner sign-off and feature flag default OFF (guardrails §6, §8) | a link to the recorded approval is listed (an `ai-governance` record passes `check-ai-assets.py` for structure only; it never proves the approval happened); none → NOT READY. Never state that an approval exists without the record |
+| Durable memory / fine-tuning | AI BOM complete, artifact integrity, deletion-propagation tests (governance §9.3) | applies only when the system fine-tunes or keeps durable memory; missing → NOT READY |
+
 ## Step 3 — High Priority (should pass)
 
 ```bash
@@ -142,6 +156,7 @@ Lint           ✅ clean     |  ❌ N issues  |  ⏸ NOT RUN — [reason; not a 
 Build          ✅ success   |  ❌ failed — [detail]
 CVE audit      ✅ none      |  ❌ N high/critical — [list]
 Web apps       ✅ all PASS  |  ❌ FAIL/BLOCKED — [root | check]  |  ⏸ NOT RUN — [check: reason]
+AI release     ✅ all rows PASS  |  ❌ [row: reason]  |  — NOT APPLICABLE (no AI assets)
 
 HIGH PRIORITY
 ─────────────────────────────────────────────────
@@ -158,7 +173,7 @@ Localhost refs ✅ clean     |  ⚠️  N in prod config
 Debug flags    ✅ off       |  ⚠️  found
 
 ─────────────────────────────────────────────────
-Blockers:      X/6 passed
+Blockers:      X/7 passed (AI release counts only when applicable)
 High priority: X/4 passed
 Recommended:   X/4 passed
 

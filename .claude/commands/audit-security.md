@@ -18,6 +18,7 @@ Run a comprehensive security audit on the codebase.
    - Missing input validation at system boundaries
    - Insecure cryptographic practices
    - Exposed debug endpoints or verbose error messages in production
+   - **AI security (only when the scope sends untrusted content to a model, lets a model call tools, retrieves from a shared corpus or renders model output):** load `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md`. For each applicable attack class AC-01–AC-18 record the deterministic control on its highest-harm path (file:line) or a finding; a control that exists only in a prompt counts as missing. Check the hard-blocker union (§5), secrets in prompts/memory/embeddings/traces (§10) and intake records for new models, plugins and tool servers (§9). Rate AI findings with the SEV-1–SEV-4 matrix (§6): SEV-1 = CRITICAL, SEV-2 = HIGH. Code review finds missing controls only; whether the controls hold is proven by red-team cases (`.claude/skills/eval-guide/reference/red-teaming.md`), so report "red-team evidence: present / NOT RUN" rather than inferring it. Escalate full AI reviews to the `ai-security-reviewer` agent
 3. **Check configuration files**:
    - `.env` files not in `.gitignore`
    - Secrets in `docker-compose.yml` or CI config
@@ -58,6 +59,13 @@ Run a comprehensive security audit on the codebase.
    | Missing audit logs, no security event logging, debug in prod | Monitoring (10%) |
    | CVEs in dependencies, unsafe base images, CI/CD misconfig | Supply Chain (10%) |
    | OWASP violations, compliance gaps (aggregated) | Compliance (5%) |
+   | AI: cross-scope retrieval or tool access, model-supplied scope, missing tool authz or confirmation | Auth & Authorization (15%) |
+   | AI: injection reaching a tool or sink, unencoded model output, generated UI outside the schema | Input Validation (15%) |
+   | AI: secrets in prompts, memory, embeddings or traces; system-prompt leakage | Secrets & Credentials (20%) |
+   | AI: PII or other-scope metadata in output or provider egress | Data Protection (15%) |
+   | AI: missing budgets, caps or kill switch | Resilience (10%) |
+   | AI: no audit record per write tool, no isolation or canary alerting | Monitoring (10%) |
+   | AI: unpinned model or tool server, no intake record | Supply Chain (10%) |
 
    **Final score** = Σ(domain_score × weight). Round to integer.
 
@@ -100,6 +108,10 @@ Run a comprehensive security audit on the codebase.
 
 ### Agentic CI/CD
 - [findings or "No Claude Code Action workflows detected — agentic CI/CD audit skipped."]
+
+### AI Security
+- [AC-xx] [file:line] [SEV-n] [missing or prompt-only control] — or "No AI surfaces in scope — AI security checks not applicable."
+- Red-team evidence: [suite + run id] / NOT RUN
 
 ### Summary
 - Critical: N | Warning: N | Info: N

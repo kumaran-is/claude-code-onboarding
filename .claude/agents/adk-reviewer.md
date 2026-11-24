@@ -55,6 +55,9 @@ Reasoning for each item: `.claude/skills/google-adk/reference/` (cite the file i
 - [ ] Tool docstrings describe purpose, Args and Returns (they become the function schema).
 - [ ] structlog through the toolkit logging stack; no `print()`.
 
+### Guardrail ids (`.claude/skills/ai-playbook/reference/engineering-guardrails.md`)
+Tag each finding: unbounded run / `max_llm_calls` → G5; session IDOR, model-supplied scope → G2/G9; side-effecting tool gate, `require_confirmation`, idempotency → G2/G4; structured output, tool result shape → G3; failover/retry classes → G6; model id from settings → G11/G20; secrets, exception text → G8/G9; memory injection → G16/G9. When the service implements the guardrail contract suite adapter (`.claude/skills/ai-launch-check/assets/guardrail_contract_tests.py`), run it and report exit code and skips; else NOT RUN. Map: `.claude/skills/ai-playbook/reference/engineering-guardrails.md`.
+
 ### LOW — track
 - [ ] Golden happy + failure cases exist and run against the service (`adk-eval-guide`); retry counters and cap hits exported as metrics.
 - [ ] Agent description < 200 characters.

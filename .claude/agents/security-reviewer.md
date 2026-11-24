@@ -108,7 +108,7 @@ Live headers are evidence only from a command run this session (for example the 
 
 ## MCP Server Review (TypeScript / Python MCP servers, `.mcp.json`)
 
-Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/mcp` routes, `.well-known/oauth-protected-resource`, `.mcp.json`. Read [reference/mcp-security.md](../skills/security-reviewer/reference/mcp-security.md) first; it separates protocol MUSTs (revision 2026-07-28) from practice and owns the severities. Tool-execution and autonomy findings (T1–T8: approvals, tool output as authority, generic tools) belong to `ai-security-reviewer`; report S1–S13 here.
+Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/mcp` routes, `.well-known/oauth-protected-resource`, `.mcp.json`. Read [reference/mcp-security.md](../skills/security-reviewer/reference/mcp-security.md) first; it separates protocol MUSTs (revision 2026-07-28) from practice and owns the severities. Tool-execution and autonomy findings (T1–T13: approvals, tool output as authority, generic tools, payload-bound idempotency, stale intent, delegation) belong to `ai-security-reviewer`; report S1–S16 here.
 
 | Check | Fail = |
 |-------|--------|
@@ -122,5 +122,7 @@ Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/m
 | No `Origin` validation; local bind 0.0.0.0; remote bind without allowed hosts/origins | HIGH |
 | No Protected Resource Metadata / no `resource_metadata` in the 401 challenge | HIGH |
 | Secret in `.mcp.json` `args`, a deprecated/archived server package, or `@latest`/unpinned server versions | HIGH / HIGH / MEDIUM |
+| Write tool without an audit-log call, or the effect still runs when the audit write fails (S14); a cross-scope input id accepted or an unauthorized call succeeding in any test (S15) | CRITICAL |
+| No committed tool-surface lock checked in CI (S16); a tool shipped without evidence for all five tool-eval layers | MEDIUM / NEEDS_REVIEW (layer NOT RUN) |
 
 For each guard you mark PASS, cite the guard's `file:line` and every call path that must pass through it, and the test that fails when the guard is removed; without that test, say "guard present, negative control NOT FOUND".

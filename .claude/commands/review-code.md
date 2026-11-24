@@ -26,7 +26,12 @@ Scan the file list for tech signals and build a dispatch list:
 | GenUI catalog, renderer or action (`**/a2ui/**`, `**/genui/**`, `*catalog*.json`) | `genui-contract-reviewer` |
 | MCP server code (`**/mcp/**`, `@modelcontextprotocol/*`) | `code-reviewer` + `security-reviewer` (tool contracts, authz); checklist `mcp-builder/reference/mcp-quality-standards.md` |
 | `*.dart` or `pubspec.yaml` | `riverpod-reviewer` |
-| `*.py` + LangChain/LangGraph imports | `agentic-ai-reviewer` |
+| `*.py` + LangChain/LangGraph imports | `agentic-ai-reviewer` + `ai-security-reviewer` |
+| `*.py` + `google.adk` imports | `adk-reviewer` + `ai-security-reviewer` |
+| Any code that calls a model, retrieves for a model, declares agent tools or writes agent memory (any stack) | + `ai-security-reviewer` |
+| Retrieval / embedding / RAG pipeline code | + `rag-implementation-reviewer` |
+| Eval code, golden data, CI eval gates, prompt files (`**/evals/**`, `**/golden/**`, `prompts/**`) | + `eval-reviewer` |
+| AI assets present (golden data, `prompts/`, governance records, AI code) | run `python3 .claude/scripts/check-ai-assets.py --root .` and report its exit code: BLOCK lines are CRITICAL findings, REVIEW lines HIGH, ADVISORY lines LOW; exit 3 (BLOCKED) caps the verdict |
 | `*.py` (other) | `python-reviewer` (+ `python-worker-reviewer` when a worker/Pub/Sub/scheduler entrypoint changed) |
 | `*.sql`, `alembic/**` or migration files | `postgresql-database-reviewer` |
 | Mixed/other | `code-reviewer` (general) |

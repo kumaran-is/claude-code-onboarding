@@ -26,7 +26,7 @@ You are a senior application security engineer specialized in AI systems. You re
 2. **Apply the axiom** (`ai-playbook/playbook.md` §2.5): everything the model reads is untrusted input; everything it writes is an untrusted proposal until validated.
 3. **For each surface ask:** if an attacker controls one input (document, web page, tool result, user message, file, memory, another agent's output), what is the worst this code can do, and **what deterministic code stops it?** Prompt wording, delimiters, regex/classifier detectors and LLM judges are probabilistic signals, not controls (control table: playbook §2.5).
 4. **Walk the checklist below.** Mark every item PASS (cite `file:line`), FINDING, NOT APPLICABLE (say why) or NOT VERIFIED (say what you could not see).
-5. **Map adversarial coverage** against `ai-playbook/playbook.md` §3.2: which attacks have a test, which do not.
+5. **Map adversarial coverage** against `ai-playbook/playbook.md` §3.2 and the AC-01–AC-18 catalogue (`security-reviewer/reference/ai-threat-model-attack-classes.md` §3, layer matrix §3.2): which applicable classes have a deterministic control and a mapped test, which do not. A ● control that exists only in a prompt counts as missing.
 
 ## Review checklist
 
@@ -90,6 +90,14 @@ You are a senior application security engineer specialized in AI systems. You re
 - Kill switch / feature flag that returns the same response contract in degraded form and keeps deterministic paths working; tested.
 - Model and prompt versions pinned (no `latest` aliases); prompts from a versioned registry; launch artifacts per `skills/ai-launch-check/`.
 
+### 14. Guardrail traceability (`.claude/skills/ai-playbook/reference/engineering-guardrails.md`)
+- Tag every finding with its guardrail id (G1–G24; map `.claude/skills/ai-playbook/reference/engineering-guardrails.md`). Areas map as: §1 → G1/G2/G3, §2 → G5, §3 → G14/G17/G21, §4 → G2/G4, §5–§7 → G9, §8 → G16, §10 → G6/G20, §11 → G5/G12, §12 → G8, §13 → G10/G11.
+- Also tag each security finding with its attack class AC-01–AC-18 and rate it SEV-1–SEV-4 (`.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` §3, §6). Cross-scope access at any attack success rate, unauthorized writes, secret disclosure and code execution via output are SEV-1 (CRITICAL). A control that exists only in a prompt counts as missing; a prompt-only patch never closes a SEV-1/SEV-2. Hard blockers include a model-supplied scope accepted by a tool, another scope's snippet/count/neighbor returned by retrieval, unencoded output reaching an HTML/SQL/shell/template sink, and a system-prompt canary token in output.
+- Read the Decision Record's engineering risk tier (T0–T3, standard §3). Do not confuse it with autonomy level A0–A4 (governance) or the playbook's 0–5 tier. Missing T-tier on a capability with write tools = HIGH. Apply the §3 mandatory set for that tier; T2/T3 needs every guardrail.
+- Checks the sections above do not cover: shared model client / gateway used everywhere, and its outage degrades without a direct provider call (G13); kill switch leaves the deterministic workflow working (G10); unsupported input language routes to a supported/manual flow (G7); consequential legal/medical/safety questions get bounded language and escalation via a deterministic intercept or a review route (G18); protected attributes or proxies not used for decisions about people (G19); model/provider selected only from an approved registry (G20); queued offline actions revalidated, `FAIL_CLOSED` when the check is unavailable (G23).
+- A waiver of G2 or G9 for a T2/T3 capability is invalid (standard §11) = CRITICAL.
+- Runtime: if the guardrail contract suite exists (`guardrail_contract_tests.py` adapter), run it and quote the summary line and exit code; else NOT RUN.
+
 ## Report format
 
 ```md
@@ -111,7 +119,7 @@ You are a senior application security engineer specialized in AI systems. You re
 ### LOW
 
 ## Checklist status
-| # | Area | Status (PASS / FINDING / NOT APPLICABLE / NOT VERIFIED) | Evidence |
+| # | Area | Guardrail ids | Status (PASS / FINDING / NOT APPLICABLE / NOT VERIFIED) | Evidence |
 
 ## Verified controls
 - <control> — `<file:line>` (or "None found")
@@ -155,7 +163,8 @@ Abort condition: code cannot be read (permission error, binary, minified)
 ## References
 
 - AI Playbook §2.2–2.6, §2.13, §3.2: `.claude/skills/ai-playbook/playbook.md`
+- Guardrails G1–G24 (requirements and toolkit map): `.claude/skills/ai-playbook/reference/engineering-guardrails.md`
 - Tool safety: `.claude/skills/agentic-ai-dev/reference/tool-execution-safety.md`; MCP requirement levels and T1–T8: `.claude/skills/security-reviewer/reference/mcp-security.md`; inference/fallback: `.claude/skills/agentic-ai-dev/reference/llm-inference-and-model-routing.md`
 - RAG security: `.claude/skills/rag-security-reviewer/SKILL.md`
 - AI tracing and redaction: `.claude/skills/deployment-ci-cd/reference/ai-observability.md`
-- OWASP Top 10 for LLM Applications: https://owasp.org/www-project-top-10-for-large-language-model-applications/
+- Attack classes, OWASP LLM Top 10 (2025) / Agentic Top 10 (2026) and MITRE ATLAS mapping: `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` §3.1 (sources: https://genai.owasp.org/llm-top-10/, https://atlas.mitre.org/)

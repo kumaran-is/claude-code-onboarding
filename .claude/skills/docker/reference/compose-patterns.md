@@ -213,12 +213,12 @@ printf '%s' "$REDIS_URL" | docker secret create redis_url -
 
 ---
 
-## Spring Boot WebFlux — Dev Compose
+## Spring Boot — Dev Compose
 
-Spring Boot needs slightly different configuration (R2DBC, Actuator health check).
+Spring Boot needs slightly different configuration (JDBC on MVC or R2DBC on WebFlux, Actuator health check).
 
 ```yaml
-# docker-compose.dev.yml — Spring Boot WebFlux Development
+# docker-compose.dev.yml — Spring Boot Development
 services:
   postgres:
     image: postgres:18.7-alpine

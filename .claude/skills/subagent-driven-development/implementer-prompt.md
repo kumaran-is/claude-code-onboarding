@@ -22,7 +22,7 @@ You do NOT have access to the full plan file. Everything you need is in this pro
 
 ## Tech Stack
 
-[INJECT: tech stack, e.g., "Java 21 / Spring Boot 3.5.x WebFlux"]
+[INJECT: tech stack, e.g., "Java 25 / Spring Boot 4.2 (Spring MVC + virtual threads)"]
 
 Consult the tech-stack skill for patterns and conventions:
 [INJECT: skill path, e.g., "`.claude/skills/java-spring-api/`"]

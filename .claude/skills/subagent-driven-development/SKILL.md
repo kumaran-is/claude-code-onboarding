@@ -171,7 +171,7 @@ After all tasks complete:
 
 | Tech Stack | Agent |
 |------------|-------|
-| Java / Spring Boot | `spring-reactive-reviewer` |
+| Java / Spring Boot | `spring-boot-reviewer` |
 | NestJS | `nestjs-reviewer` |
 | Python / FastAPI | `code-reviewer` |
 | Flutter | `riverpod-reviewer` |

@@ -203,7 +203,7 @@ Use `node:24-alpine` base — see `docker` skill `reference/dockerfiles.md` for 
 
 ---
 
-## Spring Boot WebFlux (eclipse-temurin:21-jre-alpine)
+## Spring Boot 4.2 WebFlux (eclipse-temurin:25-jre)
 
 ### Pub/Sub Push Handler
 
@@ -213,7 +213,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import java.util.Base64;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -221,9 +221,9 @@ import org.slf4j.LoggerFactory;
 public class PubSubController {
 
     private static final Logger log = LoggerFactory.getLogger(PubSubController.class);
-    private final ObjectMapper objectMapper;
+    private final JsonMapper objectMapper;
 
-    public PubSubController(ObjectMapper objectMapper) {
+    public PubSubController(JsonMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
@@ -257,7 +257,7 @@ public class PubSubController {
 
 ### Dockerfile Reference
 
-Use `eclipse-temurin:21-jre-alpine` runtime stage — see `docker` skill `reference/dockerfiles.md` for the full Java multi-stage template.
+Use `eclipse-temurin:25-jre` runtime stage — see `docker` skill `reference/dockerfiles.md` for the full Java multi-stage template.
 
 ---
 

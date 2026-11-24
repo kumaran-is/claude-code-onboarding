@@ -83,36 +83,42 @@ docs/
 
 ---
 
-## Spring Boot WebFlux 3.5.x / Java 21
+## Spring Boot 4.2 / Java 25
 
 ```dockerfile
-# my-service — Multi-Stage Production Dockerfile (Spring Boot WebFlux 3.5.x / Java 21)
+# my-service — Multi-Stage Production Dockerfile (Spring Boot 4.2 / Java 25)
 
 # ============================================
-# Stage 1: Build — Maven + JDK 21 (full build environment)
+# Stage 1: Build — JDK 25 + Maven wrapper (wrapper pins Maven 3.10.2)
 # ============================================
-FROM maven:3.9-eclipse-temurin-21-alpine AS build
+FROM eclipse-temurin:25-jdk AS build
 
 WORKDIR /app
 
-# Copy POM first for Maven dependency cache layer
-COPY pom.xml .
+# Copy wrapper + POM first for Maven dependency cache layer
+COPY mvnw pom.xml ./
+COPY .mvn ./.mvn
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn dependency:go-offline -q
+    ./mvnw -B -ntp dependency:go-offline
 
 # Copy source and build (skip tests — run separately in CI)
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn package -DskipTests -q
+    ./mvnw -B -ntp -DskipTests package
 
 # ============================================
 # Stage 2: Runtime — JRE only (no JDK, no Maven, no build tools)
 # ============================================
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre
+
+# Ubuntu-based image with no curl or wget: install curl for the HEALTHCHECK
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 
 # Security: non-root user
-RUN addgroup -g 1001 -S spring && \
-    adduser -S spring -u 1001 -G spring
+RUN groupadd --system --gid 1001 spring && \
+    useradd --system --uid 1001 --gid spring spring
 
 WORKDIR /app
 
@@ -125,7 +131,7 @@ EXPOSE 8080
 
 # Health check via Spring Actuator — allow 40s startup for JVM + Flyway migrations
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+  CMD curl -fsS http://localhost:8080/actuator/health || exit 1
 
 # JVM tuning: container-aware heap (75% of limit), secure random, active profile from env
 ENTRYPOINT ["java", \
@@ -140,7 +146,6 @@ ENTRYPOINT ["java", \
 target/
 .git
 .gitignore
-.mvn
 *.md
 !README.md
 .env*

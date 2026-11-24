@@ -43,7 +43,7 @@ If no trigger applies (for example a low-traffic internal admin utility), still 
 
 | Stack | Default | Override Trigger |
 |-------|---------|-----------------|
-| Java Spring WebFlux | Reactive, non-blocking. Target: < 100ms p95 for CRUD | Batch jobs, report generation |
+| Java Spring Boot 4.2 | Spring MVC + virtual threads (WebFlux when justified). Target: < 100ms p95 for CRUD | Batch jobs, report generation |
 | NestJS / Fastify | < 50ms p95 overhead, Fastify serialization on by default | Heavy CPU tasks → offload to worker |
 | Python FastAPI | < 200ms p95 for async endpoints | CPU-bound → use Celery/task queue |
 | Angular SPA | < 300ms LCP for initial load; < 100ms for interactions | Data-heavy dashboards |

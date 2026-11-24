@@ -16,7 +16,7 @@ Detailed patterns for common multi-agent orchestration scenarios in this workspa
    Focus: [specific concerns or blank for full review].
    Output: severity-bucketed findings."
 
-2. [stack-specific reviewer] (nestjs-reviewer / spring-reactive-reviewer / riverpod-reviewer / etc.)
+2. [stack-specific reviewer] (nestjs-reviewer / spring-boot-reviewer / riverpod-reviewer / etc.)
    Prompt: "Review [file list] for [framework]-specific patterns.
    Check: module correctness, framework idioms, test coverage.
    Output: framework-specific findings with file:line."
@@ -164,7 +164,7 @@ Use this template when dispatching any agent to ensure adequate context:
 Agent: [agent-name]
 Task: [specific task — not "review this code"]
 Files: [explicit file paths]
-Tech stack: [Java 21 / NestJS 11 / Python 3.14 / Flutter 3.50.x / Angular 22.3 / React 19.3 / etc.]
+Tech stack: [Java 25 / NestJS 11 / Python 3.14 / Flutter 3.50.x / Angular 22.3 / React 19.3 / etc.]
 Focus: [specific area of concern]
 Output format: [severity-bucketed findings | PASS/FAIL | recommendation list]
 Non-negotiable rules:

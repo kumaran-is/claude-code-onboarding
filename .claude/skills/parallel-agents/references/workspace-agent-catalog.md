@@ -10,7 +10,7 @@ Last verified: 2026-03-15
 
 | Agent | Trigger Phrases | Key Capabilities |
 |-------|----------------|-----------------|
-| `java-spring-api` | Java, Spring Boot, WebFlux, reactive | Controllers, services, R2DBC repos, DTOs, WebTestClient tests |
+| `java-spring-api` | Java, Spring Boot, Spring MVC, WebFlux, reactive | Controllers, services, JPA/JDBC or R2DBC repos, DTOs, MockMvc/WebTestClient tests |
 | `nestjs-api` | NestJS, Fastify, Prisma, TypeScript | Modules, controllers, guards, interceptors, Vitest tests |
 | `python-dev` | Python, FastAPI, Pydantic, async | Async endpoints, Pydantic schemas, pytest tests |
 | `flutter-mobile` | Flutter, Dart, Riverpod, Firebase | Cross-platform screens, providers, Firebase integration |
@@ -49,7 +49,7 @@ Last verified: 2026-03-15
 ### Framework-Specific
 | Agent | What It Reviews | Output |
 |-------|----------------|--------|
-| `spring-reactive-reviewer` | Spring WebFlux reactive correctness, Resilience4j, R2DBC | Blocking calls in reactive chains, circuit breaker gaps |
+| `spring-boot-reviewer` | Spring Boot 4.2 on MVC or WebFlux: stack choice, transactions, JPA/R2DBC, security, Boot 3 leftovers | Blocking calls in reactive chains, HTTP client resilience gaps |
 | `nestjs-reviewer` | NestJS module correctness, JWT security, Prisma, tests | Module structure + security findings |
 | `riverpod-reviewer` | Riverpod provider types, ref.watch/read, AsyncValue, lifecycle | Provider correctness report |
 | `agentic-ai-reviewer` | LangGraph correctness, guardrails, iteration limits, cost | Graph structure + safety findings |
@@ -107,7 +107,7 @@ nestjs-reviewer + security-reviewer + silent-failure-hunter + pr-test-analyzer
 
 ### Spring Boot feature review
 ```
-spring-reactive-reviewer + security-reviewer + silent-failure-hunter + postgresql-database-reviewer (if DB touched)
+spring-boot-reviewer + security-reviewer + silent-failure-hunter + postgresql-database-reviewer (if DB touched)
 ```
 
 ### Flutter feature review

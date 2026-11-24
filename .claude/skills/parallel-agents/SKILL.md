@@ -51,7 +51,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `security-reviewer` | Security | OWASP Top 10, input validation, secret scanning |
 | `threat-modeling-expert` | Security | STRIDE analysis, attack trees, security architecture |
 | `silent-failure-hunter` | Error Handling | Swallowed exceptions, missing error states |
-| `spring-reactive-reviewer` | Java/Spring | Reactive correctness, Resilience4j, R2DBC |
+| `spring-boot-reviewer` | Java/Spring | Reactive correctness, Resilience4j, R2DBC |
 | `nestjs-reviewer` | NestJS | Module correctness, JWT, Prisma patterns |
 | `riverpod-reviewer` | Flutter | Provider types, ref usage, AsyncValue handling |
 | `agentic-ai-reviewer` | LangGraph | Graph correctness, guardrails, cost, production readiness |
@@ -67,7 +67,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `output-evaluator` | Advisory check | LLM-as-Judge pre-commit verdict (advisory, not a merge gate) |
 | `pr-test-analyzer` | Testing | Behavioral coverage gaps, critical paths |
 | `architect` | Architecture | C4 diagrams, API contracts, ADRs |
-| `java-spring-api` | Java | Spring Boot WebFlux implementation |
+| `java-spring-api` | Java | Spring Boot 4.2 implementation (MVC default, WebFlux when justified) |
 | `nestjs-api` | NestJS | NestJS modules, controllers, services |
 | `python-dev` | Python | FastAPI services, async patterns |
 | `flutter-mobile` | Flutter | Cross-platform mobile features |

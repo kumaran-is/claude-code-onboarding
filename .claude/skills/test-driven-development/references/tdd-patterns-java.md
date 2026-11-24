@@ -1,6 +1,8 @@
-# TDD Patterns — Java 21 / Spring Boot WebFlux
+# TDD Patterns — Java 25 / Spring Boot 4.2 WebFlux
 
-## Test Structure (JUnit 5)
+These samples are for WebFlux services. Spring MVC (the default stack) uses `@WebMvcTest` + `MockMvc` (`@AutoConfigureMockMvc` with `@SpringBootTest`); see the `java-spring-api` skill.
+
+## Test Structure (JUnit 6 / Jupiter)
 
 ```java
 // Unit test — no Spring context
@@ -62,7 +64,7 @@ class UserControllerIntegrationTest {
 class UserControllerTest {
 
     @Autowired WebTestClient webTestClient;
-    @MockBean UserService userService;
+    @MockitoBean UserService userService;
 
     @Test
     void GET_users_id_whenNotFound_returns404() {
@@ -95,7 +97,7 @@ StepVerifier.create(userService.findById("missing"))
 ## Mocking Rules
 
 - Use `@Mock` + `@InjectMocks` for unit tests (no Spring context)
-- Use `@MockBean` for slice tests that load Spring context
+- Use `@MockitoBean` for slice tests that load Spring context (`@MockBean` was removed in Boot 4)
 - Mock at the boundary (repository, external HTTP client) — not at service internals
 - Always use `Mono.just()` / `Mono.error()` / `Flux.just()` for reactive mock returns
 

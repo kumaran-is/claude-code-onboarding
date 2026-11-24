@@ -70,12 +70,12 @@ This project is licensed under the ${LICENSE} License.
 ```markdown
 # ${SERVICE_NAME} — Spring Boot Service
 
-Java 21, Spring Boot 3.5.x (WebFlux / Reactive), PostgreSQL
+Java 25, Spring Boot 4.2 (MVC default, WebFlux when justified), PostgreSQL
 
 ## Prerequisites
 
-- JDK 21+
-- Maven 3.9+
+- JDK 25
+- Maven 3.10.2
 - PostgreSQL 15+
 - Docker (optional, for local deps)
 
@@ -242,7 +242,7 @@ maestro test .maestro/          # Android/iOS UI/E2E flows (Maestro only)
 ![Coverage](https://codecov.io/gh/ORG/REPO/branch/main/graph/badge.svg)
 ![Version](https://img.shields.io/github/package-json/v/ORG/REPO)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Java](https://img.shields.io/badge/java-21-orange)
-![Spring Boot](https://img.shields.io/badge/spring--boot-3.5.x-green)
+![Java](https://img.shields.io/badge/java-25-orange)
+![Spring Boot](https://img.shields.io/badge/spring--boot-4.2-green)
 ![Flutter](https://img.shields.io/badge/flutter-3.50.x-blue)
 ```

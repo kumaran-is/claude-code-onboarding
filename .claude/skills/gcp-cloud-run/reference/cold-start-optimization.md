@@ -112,7 +112,7 @@ Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3, MCP SDK 2.4.0 and es
 
 ---
 
-## Spring Boot WebFlux (Java 21)
+## Spring Boot 4.2 (Java 25)
 
 ### JVM Startup Flags
 
@@ -131,7 +131,7 @@ CMD ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
 ### Distroless Java
 
 ```dockerfile
-FROM gcr.io/distroless/java21-debian12
+FROM gcr.io/distroless/java25-debian13
 COPY --from=builder /app/target/app.jar /app.jar
 CMD ["/app.jar"]
 ```

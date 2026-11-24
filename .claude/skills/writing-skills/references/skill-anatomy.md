@@ -115,5 +115,5 @@ Arbitrary key-value store. Use for tagging, versioning, or domain classification
 |------|------------|---------|
 | Skill directory | lowercase-hyphenated | `nestjs-api` |
 | Reference files | descriptive-hyphenated | `reactive-patterns.md` |
-| Review checklists | `*-review-checklist.md` | `spring-reactive-review-checklist.md` |
+| Review checklists | `*-review-checklist.md` | `spring-boot-review-checklist.md` |
 | Stack patterns | `patterns-<stack>.md` | `patterns-java.md` |

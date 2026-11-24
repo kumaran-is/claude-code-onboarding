@@ -38,9 +38,11 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 ### pip / uv (Python)
 
 ```dockerfile
-# Cache uv download cache across builds
+# Cache uv's download/build cache across builds (lock and pyproject bind-mounted, not copied)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-dev --no-install-project --no-editable
 ```
 
 **Impact:** Maven cold build ~3 min -> cached ~15 sec. npm cold ~90 sec -> cached ~5 sec.

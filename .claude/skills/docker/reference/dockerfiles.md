@@ -160,132 +160,72 @@ docs/
 
 ## Python FastAPI 3.14 (uv — multi-stage)
 
-Executed pieces: `uv sync --locked` on a deps-only layer then the project (non-editable), stale lock fails `--locked` but not `--frozen`, `exec` keeps the server as PID 1, stdlib healthcheck exits 0/1. The `docker build` itself was not run here: build and `docker run` once before trusting it. Pinning rules and resolve commands: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
+Verified 2026-11-23 against uv 0.13.9, CPython 3.14.10 and Docker Engine 29.8.0: `docker build --check` 0, build 0 (263 MB), run with `--read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --memory 256m --pids-limit 128`: `/health/live` 200, uid 10001, write to `/app` refused, `CapEff` 0, `NoNewPrivs` 1, Docker health `healthy`, `docker stop` in under 1 s with exit 0 and the lifespan shutdown logged (exit 0 because uvicorn is PID 1; the same server on a host or behind `--init` exits 143 after a clean shutdown: `deployment-ci-cd/reference/python-ci-supply-chain.md` section 8). Controls: the same server wrapped as `sh -c "uvicorn ...; true"` ignored SIGTERM (stop took the full 5 s timeout, exit 137, no shutdown log); `CMD sleep` turned the health status `unhealthy`. Digests resolved with `docker buildx imagetools inspect` on that date; pinning rules: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ```dockerfile
-# my-service — Multi-Stage Production Dockerfile (Python FastAPI 3.14 / uv)
-FROM ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> AS uv
-FROM python:3.14-slim@sha256:<index-digest> AS builder
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
+FROM python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS builder
 COPY --from=uv /uv /uvx /bin/
 WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
-
-# Dependencies layer: cached until the lock changes; --locked fails on a stale lock
-RUN --mount=type=bind,source=uv.lock,target=uv.lock \
+# Use the image's Python (a uv-downloaded one would not exist in the runtime stage);
+# compile bytecode at build time because the runtime filesystem is read-only.
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_NO_DEV=1 UV_NO_BUILD=1
+# Dependencies layer: cached until the lock changes. UV_NO_BUILD: fail instead of compiling a third-party sdist.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project
-
-COPY pyproject.toml uv.lock ./
+    --mount=type=bind,source=.python-version,target=.python-version \
+    uv sync --locked --no-install-project --no-editable
+COPY pyproject.toml uv.lock .python-version README.md ./
 COPY src/ src/
-RUN uv sync --locked --no-dev --no-editable      # project layer; only .venv is copied to runtime
+# Project layer: non-editable, so only .venv is copied to the runtime stage.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
 
-FROM python:3.14-slim@sha256:<index-digest> AS runtime
+FROM python:3.14.10-slim-trixie@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f AS runtime
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --no-create-home app
 WORKDIR /app
-COPY --from=builder --chown=app:app /app/.venv /app/.venv
+# root-owned venv: the app user can read and execute it, not modify it
+COPY --from=builder --chown=root:root /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER app
 EXPOSE 8080
-
 # stdlib only: the runtime image needs neither curl nor httpx; LIVENESS path (no dependency calls)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"]
-
-# `exec` makes uvicorn PID 1 so SIGTERM reaches it (Cloud Run: SIGKILL follows after 10 s); $PORT expanded by the shell
-CMD ["sh", "-c", "exec uvicorn my_service.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080} --no-access-log"]
+# Exec form: uvicorn is PID 1 and receives SIGTERM directly (graceful shutdown runs the lifespan exit).
+CMD ["uvicorn", "my_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "8", "--no-access-log"]
 ```
 
-Mutable `:latest` and `COPY --from=<image>:<tag>` are tag pins; a tag can be re-pointed after review. Non-root UID is numeric so Kubernetes `runAsNonRoot` can verify it.
+- Port 8080 is Cloud Run's default `$PORT`. If a platform injects another port, use `CMD ["sh", "-c", "exec uvicorn ... --port ${PORT:-8080}"]`: the `exec` is what keeps uvicorn PID 1 (the control above shows what happens without it). Keep `--timeout-graceful-shutdown` below the platform's SIGKILL window (Cloud Run: 10 s after SIGTERM).
+- Run with `--read-only --tmpfs /tmp`: `/tmp` must stay writable because multiprocessing's `forkserver` (the Linux default since 3.14) needs it (`python-dev/reference/asyncio-concurrency-and-tasks.md` section 5).
+- Workspace member image (one lock, several services): `uv-package-manager` playbook section 6 (`--frozen --no-install-workspace --package <member>` then `--locked --package <member>`; built and verified).
+- Mutable `:latest` and `COPY --from=<image>:<tag>` are tag pins; a tag can be re-pointed after review. Non-root UID is numeric so Kubernetes `runAsNonRoot` can verify it.
 
-**.dockerignore (Python):**
+**.dockerignore (Python) — allow-list:**
 ```
-.venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache
-.mypy_cache
-.ruff_cache
-htmlcov
-.coverage
-dist
-build
-*.egg-info
-.git
-.gitignore
-.env*
-!.env.example
-.vscode
-.idea
-tests/
-docs/
-*.md
+*
+!pyproject.toml
+!uv.lock
+!.python-version
 !README.md
-*.log
-.DS_Store
+!src
 ```
+
+An allow-list keeps tests, `.venv`, `.env*`, caches and `.git` out of the build context without enumerating them; add a line per extra path the build needs (e.g. `!alembic`, `!alembic.ini`).
 
 ---
 
-## Python Agentic AI (uv + gunicorn workers)
+## Python Agentic AI / several workers per container
+
+Use the same Dockerfile. One process per container is the default on Cloud Run (scale with instances and `--concurrency`). Where several worker processes per container are wanted (VMs, fixed-size pods), uvicorn's own process manager is enough:
 
 ```dockerfile
-# my-agent-service — Multi-Stage Production Dockerfile (Python 3.14 / LangGraph / gunicorn)
-
-# ============================================
-# Stage 1: Builder
-# ============================================
-FROM python:3.14-slim AS builder
-
-WORKDIR /app
-
-COPY --from=ghcr.io/astral-sh/uv:<x.y.z>@sha256:<digest> /uv /uvx /bin/   # pinned; see python-ci-supply-chain.md
-
-COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project       # deps layer; fails on a stale lock
-
-COPY src/ src/
-RUN uv sync --locked --no-dev --no-editable
-
-# ============================================
-# Stage 2: Runtime — gunicorn + uvicorn workers
-# ============================================
-FROM python:3.14-slim AS runtime
-
-RUN groupadd -r agent && useradd -r -g agent agent
-
-WORKDIR /app
-
-COPY --from=builder --chown=agent:agent /app/.venv /app/.venv
-COPY --from=builder --chown=agent:agent /app/src /app/src
-
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/src"
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"]
-
-EXPOSE 8000
-
-USER agent
-
-# gunicorn + uvicorn workers: 4 workers, 120s timeout, graceful shutdown 30s
-# `uvicorn.workers.UvicornWorker` is deprecated (DeprecationWarning, uvicorn 0.54): add the `uvicorn-worker` package;
-# `from uvicorn_worker import UvicornWorker` imports cleanly (executed)
-# app factory, no module-level `app`: gunicorn calls `create_app()` (executed with uvicorn_worker)
-CMD ["gunicorn", "my_agent_service.main:create_app()", \
-     "--worker-class", "uvicorn_worker.UvicornWorker", \
-     "--workers", "4", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--graceful-timeout", "30", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "100", \
-     "--access-logfile", "-"]
+CMD ["uvicorn", "my_agent_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--workers", "2", "--timeout-graceful-shutdown", "8", "--no-access-log"]
 ```
+
+Executed in the hardened container above (`--read-only --tmpfs /tmp --memory 512m`): two workers served `/health/live`, `docker stop` took 2 s with exit 0 and both workers logged their lifespan shutdown. Size `--workers` from the memory limit (each worker loads the full app, model clients included). Gunicorn (27.0.1) with `uvicorn_worker.UvicornWorker` (uvicorn-worker 0.4.0; `uvicorn.workers.UvicornWorker` is deprecated) is an alternative when you need its `--max-requests` recycling; not re-validated in this pass.
 
 ---
 

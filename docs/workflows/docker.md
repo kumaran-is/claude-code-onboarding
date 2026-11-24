@@ -33,7 +33,7 @@ Pick the matching stack:
 |-------|-------------|---------------|------|
 | NestJS 11.x / Node 24 | `node:24-alpine` | `node:24-alpine` | 3000 |
 | Spring Boot WebFlux 3.5.x | `maven:3.9-eclipse-temurin-21-alpine` | `eclipse-temurin:21-jre-alpine` | 8080 |
-| Python FastAPI 3.14 | `python:3.14-slim` | `python:3.14-slim` | 8000 |
+| Python FastAPI 3.14 | `ghcr.io/astral-sh/uv:<v>` + `python:3.14.x-slim-trixie` (digest-pinned) | `python:3.14.x-slim-trixie` (digest-pinned) | 8080 — template in `deployment-ci-cd/reference/python-ci-supply-chain.md` §8, `/scaffold-python-api` |
 | TypeScript/Fastify / Node 24 | `node:24-alpine` | `node:24-alpine` | 3000 |
 | TypeScript MCP server / Node 26 | `node:26.13.1-trixie-slim` (digest-pinned) | same | 3000 — template in `/scaffold-mcp-server` |
 

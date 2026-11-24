@@ -11,70 +11,130 @@ All patterns share the same container model: build a Docker image, deploy to Clo
 
 ---
 
-## Python FastAPI (python:3.14-slim)
+## Python FastAPI (python:3.14.10-slim-trixie)
+
+Validated 2026-11-23 on CPython 3.14.10 with fastapi 0.165.0, pydantic 2.14.4, structlog 26.1.0: 5 pytest cases pass (valid message acked 204; invalid JSON payload and invalid base64 answered 400; processor exception answered 500; storage `finalized` handled, other event types ignored, missing `ce-*` headers 422), `mypy --strict` and ruff clean. Control: making the invalid-payload branch return 204 failed 2 tests.
 
 ### Pub/Sub Push Handler
 
+Pub/Sub treats 102, 200, 201, 202 and 204 as an acknowledgement and any other status as a negative acknowledgement, then redelivers (Pub/Sub push docs). Every failure therefore returns non-2xx, and the subscription needs a dead-letter topic with `max_delivery_attempts` so a poison message stops retrying.
+
 ```python
-# main.py
+# src/push_handler/main.py
+"""Pub/Sub push endpoint: 2xx acks the message, any other status makes Pub/Sub redeliver it."""
+
 import base64
-import json
-import logging
-import os
-from fastapi import FastAPI, Request, HTTPException
-from pydantic import BaseModel
+import binascii
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
-app = FastAPI()
+import structlog
+from fastapi import FastAPI, HTTPException, Response, status
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-class PubSubMessage(BaseModel):
-    data: str      # base64-encoded payload
-    messageId: str
-    publishTime: str
+logger = structlog.get_logger(__name__)
 
-class PubSubEnvelope(BaseModel):
-    message: PubSubMessage
+
+class PushMessage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: str = ""  # base64; absent when the message has only attributes
+    attributes: dict[str, str] = Field(default_factory=dict)
+    message_id: str = Field(alias="messageId")
+    publish_time: datetime = Field(alias="publishTime")
+
+
+class PushEnvelope(BaseModel):
+    message: PushMessage
     subscription: str
+    delivery_attempt: int | None = Field(default=None, alias="deliveryAttempt")
 
-@app.post("/")
-async def handle_pubsub(envelope: PubSubEnvelope) -> dict:
-    try:
-        payload = json.loads(base64.b64decode(envelope.message.data).decode("utf-8"))
-        logger.info("Received message", extra={"messageId": envelope.message.messageId, "payload": payload})
-        # TODO: process payload
+
+class OrderEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: str
+    amount_cents: int = Field(ge=0)
+
+
+Processor = Callable[[OrderEvent, str], Awaitable[None]]
+
+
+def create_app(process: Processor) -> FastAPI:
+    app = FastAPI(title="push-handler")
+
+    @app.post("/pubsub/orders", status_code=status.HTTP_204_NO_CONTENT)
+    async def receive(envelope: PushEnvelope) -> Response:
+        msg = envelope.message
+        log = logger.bind(message_id=msg.message_id, delivery_attempt=envelope.delivery_attempt)
+        try:
+            event = OrderEvent.model_validate_json(base64.b64decode(msg.data, validate=True))
+        except (binascii.Error, ValidationError) as exc:
+            # Non-2xx: Pub/Sub redelivers until the dead-letter policy moves it aside.
+            log.warning("pubsub_payload_invalid", error_type=type(exc).__name__)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid payload") from exc
+        # The processor must be idempotent on message_id: push delivery is at-least-once.
+        await process(event, msg.message_id)
+        log.info("pubsub_message_processed", order_id=event.order_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/health/live")
+    async def live() -> dict[str, str]:
         return {"status": "ok"}
-    except Exception as e:
-        logger.error("Failed to process Pub/Sub message", exc_info=e)
-        # Return 500 so Cloud Run retries (do NOT return 200 on failure)
-        raise HTTPException(status_code=500, detail="Processing failed")
 
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), workers=1)
+    return app
 ```
 
-### Cloud Storage Trigger Handler
+Delivery is at-least-once: the injected `process` must be idempotent on `message_id` (`python-dev/reference/reliability-idempotency-retries-outbox.md`). Push requests authenticate with an OIDC token from the subscription's service account: deploy with `--no-allow-unauthenticated` and grant that account `roles/run.invoker`.
+
+### Cloud Storage Trigger Handler (Eventarc)
 
 ```python
-@app.post("/storage")
-async def handle_storage(request: Request) -> dict:
-    event = await request.json()
-    bucket = event.get("bucket")
-    name = event.get("name")
-    event_type = event.get("eventType")
-    logger.info("Storage event", extra={"bucket": bucket, "name": name, "eventType": event_type})
-    # TODO: process file event
-    return {"status": "ok"}
+# src/push_handler/storage.py
+"""Eventarc Cloud Storage trigger: binary-mode CloudEvent (ce-* headers, object metadata body)."""
+
+from collections.abc import Awaitable, Callable
+from typing import Annotated
+
+import structlog
+from fastapi import APIRouter, Header, Response, status
+from pydantic import BaseModel
+
+logger = structlog.get_logger(__name__)
+
+
+class StorageObject(BaseModel):
+    bucket: str
+    name: str
+    generation: str
+
+
+ObjectHandler = Callable[[StorageObject], Awaitable[None]]
+
+
+def storage_router(handle: ObjectHandler) -> APIRouter:
+    router = APIRouter()
+
+    @router.post("/events/storage", status_code=status.HTTP_204_NO_CONTENT)
+    async def on_object(
+        obj: StorageObject,
+        ce_type: Annotated[str, Header()],
+        ce_id: Annotated[str, Header()],
+    ) -> Response:
+        if ce_type != "google.cloud.storage.object.v1.finalized":
+            logger.info("storage_event_ignored", ce_type=ce_type, ce_id=ce_id)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        # (bucket, name, generation) identifies one object version: use it as the idempotency key.
+        await handle(obj)
+        logger.info("storage_event_processed", ce_id=ce_id, bucket=obj.bucket)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return router
 ```
 
 ### Dockerfile Reference
 
-Use `python:3.14-slim` base — see `docker` skill `reference/dockerfiles.md` for the full Python multi-stage template.
-Port binding: `CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]`
+Use the Python multi-stage template in the `docker` skill `reference/dockerfiles.md` (uv 0.13.9, `python:3.14.10-slim-trixie@sha256:...`, built and run hardened). Start the factory with exec-form `CMD ["uvicorn", "push_handler.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "8"]`; when the factory takes arguments (as `create_app(process)` does here), expose a zero-argument wrapper that wires the real processor. Cloud Run sends SIGTERM 10 seconds before SIGKILL (container contract), so the graceful timeout stays below 10.
 
 ---
 

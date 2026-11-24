@@ -39,32 +39,26 @@ gcloud run deploy my-function \
 ### Lazy Imports
 
 ```python
-# BAD — imports at module level, loaded on every cold start
-import pandas as pd
-import torch
+# Heavy, rarely used dependency: import inside the function that needs it
+def render_report(html: str) -> bytes:
+    import weasyprint  # deferred until the first report request
 
-# GOOD — import inside function if only used occasionally
-def handle_heavy_request():
-    import pandas as pd   # deferred until first call
-    ...
+    return weasyprint.HTML(string=html).write_pdf()
 ```
 
-### Uvicorn Workers
+Measure before moving imports: `python -X importtime -c "import my_service.main" 2> import.log` lists cumulative import time per module. Python 3.15 adds explicit `lazy import` statements (PEP 810); the stack is on 3.14, so that is DEFER (`python-patterns` skill, runtime decision).
 
-Cloud Run manages concurrency externally. Use `--workers 1` — multiple workers in one container fight for CPU during startup.
+### One worker per instance
+
+Cloud Run scales instances and sets per-instance `--concurrency`; one uvicorn process per container avoids several workers competing for the boosted startup CPU.
 
 ```dockerfile
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["uvicorn", "my_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--timeout-graceful-shutdown", "8"]
 ```
 
-### Distroless Option
+### Base image
 
-```dockerfile
-# Use distroless/python3 for smaller attack surface (adds ~10-15% startup speed)
-FROM gcr.io/distroless/python3-debian12
-COPY --from=builder /app /app
-CMD ["/app/main.py"]
-```
+Stay on `python:3.14.10-slim-trixie@sha256:...` for builder and runtime. `gcr.io/distroless/python3-debian13` is REJECTED for this stack: it ships Debian's CPython 3.13 (executed: `3.13.5`), so a venv built for 3.14 cannot run on it.
 
 ---
 

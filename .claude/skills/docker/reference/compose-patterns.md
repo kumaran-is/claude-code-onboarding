@@ -281,7 +281,7 @@ services:
 | Redis | `redis-cli ping` | 5s |
 | NestJS / Fastify | `wget --spider http://localhost:3000/health/live` | 5s |
 | Spring Boot | `wget --spider http://localhost:8080/actuator/health` | 40s |
-| Python FastAPI | `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"` (stdlib; no httpx/curl needed in the image) | 15s |
+| Python FastAPI | `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"` (stdlib; no httpx/curl needed in the image; port matches the Dockerfile's 8080) | 15s |
 
 ---
 

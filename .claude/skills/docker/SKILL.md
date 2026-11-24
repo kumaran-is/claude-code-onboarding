@@ -50,8 +50,8 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 |-------|-----------|-----------|------|
 | NestJS 11.x / Node 24 | node:24-alpine | pnpm | 3000 |
 | Spring Boot WebFlux 3.5.x | maven:3.9-eclipse-temurin-21-alpine → eclipse-temurin:21-jre-alpine | Maven | 8080 |
-| Python FastAPI 3.14 | python:3.14-slim | uv | 8000 |
-| Python Agentic AI | python:3.14-slim | uv + gunicorn | 8000 |
+| Python FastAPI 3.14 | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 | 8080 |
+| Python Agentic AI | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 (+ `uvicorn --workers N` off Cloud Run) | 8080 |
 | TypeScript/Fastify, MCP servers / Node 26 | node:26.13.1-trixie-slim@sha256 (distroless `nodejs26-debian13` optional) | npm | 3000 |
 
 ### Step 2: Set Up Docker Compose

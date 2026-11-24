@@ -68,7 +68,7 @@ Before writing any Cloud Run Function code:
 
 - [ ] Chose event trigger type: Pub/Sub push | Cloud Storage notification | HTTP
 - [ ] Selected target stack: Python FastAPI | NestJS | Spring Boot WebFlux | TypeScript/Fastify
-- [ ] Verified runtime version: `python:3.14-slim` | `node:24-alpine` | `eclipse-temurin:21-jre-alpine`
+- [ ] Verified runtime version: `python:3.14.10-slim-trixie@sha256:<digest>` | `node:24-alpine` | `eclipse-temurin:21-jre-alpine`
 - [ ] Confirmed port binding: `PORT` env var (Cloud Run injects this, default 8080)
 - [ ] Health check endpoint planned: `GET /health` → `{ "status": "ok" }`
 - [ ] WIF configured or planned (no service account JSON keys)

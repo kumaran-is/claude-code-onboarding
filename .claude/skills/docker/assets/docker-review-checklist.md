@@ -14,13 +14,13 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
   - NestJS: `node:24-alpine` (not node:18, not node:22)
   - TypeScript/Fastify services and MCP servers: `node:26.13.1-trixie-slim` (or `node:26.13.1-alpine3.23` when every native dependency ships musl builds; runtime may be `gcr.io/distroless/nodejs26-debian13:nonroot`); builder and runtime on the same Node major and libc
   - Spring Boot: `eclipse-temurin:21-jre-alpine` runtime (not JDK, not full Debian)
-  - Python: `python:3.14-slim` (not python:3.14 full, not buster/bullseye)
+  - Python: `python:3.14.10-slim-trixie@sha256:<index-digest>` (patch tag matches `.python-version`; not the full image, not bookworm/bullseye)
 - [ ] RUN commands that modify the same layer are consolidated (avoids layer bloat)
 - [ ] Package manager cache cleaned in the same RUN layer (or use `--mount=type=cache`)
 
 ## Container Security
 
-- [ ] Non-root user created with specific UID/GID (1001 recommended)
+- [ ] Non-root user created with specific UID/GID and a numeric `USER` (the Node/Java patterns use 1001, the Python pattern 10001)
 - [ ] `USER` directive set before `EXPOSE` and `CMD`
 - [ ] `COPY --chown=user:group` used when copying files to non-root-owned directories
 - [ ] No secrets, API keys, or passwords in `ENV`, `ARG`, or `RUN` commands
@@ -29,7 +29,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
   - NestJS (alpine has busybox wget): `wget --spider http://localhost:3000/health/live`
   - Node 26 slim / distroless (no curl or wget): exec-form `node -e "fetch('http://127.0.0.1:3000/health/live')..."` (distroless: `/nodejs/bin/node`)
   - Spring Boot: `wget --spider http://localhost:8080/actuator/health`
-  - Python: stdlib only, on the LIVENESS path: `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).status == 200 else 1)"` (a slim image has no curl, and httpx may not be a runtime dependency)
+  - Python: stdlib only, on the LIVENESS path: `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"` (a slim image has no curl, and httpx may not be a runtime dependency)
 - [ ] Configuration is not baked into the image: no `ENV` for env-varying values, no secrets in `ARG`; required settings have no code default
 - [ ] `.dockerignore` is an ALLOW-list (`*` then `!src`, `!pyproject.toml`, `!uv.lock`) and the build-context size is checked; image file list compared before/after the change
 - [ ] `CMD` is exec form, or a shell form that `exec`s the server, so PID 1 receives SIGTERM
@@ -84,8 +84,11 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 
 ### Python FastAPI 3.14
 - [ ] Uses `uv` (not pip) — from a pinned stage `FROM ghcr.io/astral-sh/uv:<x.y.z>@sha256:... AS uv`, never `:latest`, never `pip install uv`
-- [ ] `uv sync --locked --no-dev` (fails on a stale lock; `--frozen` installs it silently); deps layer uses `--no-install-project`, project layer `--no-editable`
-- [ ] `UV_PYTHON_DOWNLOADS=0` so the venv uses the image's Python, which exists in the runtime stage
+- [ ] `uv sync --locked` with `UV_NO_DEV=1` (fails on a stale lock; `--frozen` installs it silently); deps layer uses `--no-install-project`, project layer `--no-editable`
+- [ ] `UV_PYTHON_DOWNLOADS=0` so the venv uses the image's Python, which exists in the runtime stage; `UV_NO_BUILD=1` so a missing wheel fails the build instead of compiling
+- [ ] `UV_COMPILE_BYTECODE=1` (the runtime runs `--read-only`; bytecode cannot be written later)
+- [ ] Exec-form `CMD ["uvicorn", ...]` (or `sh -c 'exec uvicorn ...'`): uvicorn is PID 1; `docker stop` exits 0 with the lifespan shutdown logged, not 137
+- [ ] Runs with `--read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges` and a memory limit (`/tmp` needed by the 3.14 `forkserver` default)
 - [ ] Framework (and any instrumentation library) pinned `==` in `pyproject.toml`; a test asserts spans are emitted
 - [ ] `PYTHONUNBUFFERED=1` and `PYTHONDONTWRITEBYTECODE=1` set
 

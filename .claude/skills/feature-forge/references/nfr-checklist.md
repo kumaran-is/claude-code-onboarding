@@ -21,6 +21,8 @@ Never accept vague NFR answers. Always follow up:
 | "should handle failures" | "Define failure: 503 from upstream? DB timeout? Partial write? Recovery time objective?" | Determines retry strategy and circuit breakers |
 | "not sure yet" | Stop. Do not proceed. Mark as OPEN NFR — implementation must not start until resolved. | Ambiguous NFRs become unverifiable acceptance criteria |
 
+If no trigger applies (for example a low-traffic internal admin utility), still ask once: "Are there any latency, availability or compliance requirements?" If the answer is "none", write "none" in each NFR section of the spec. An empty section is read as "not asked", not as "no requirement".
+
 ---
 
 ## NFR Categories
@@ -47,7 +49,7 @@ Never accept vague NFR answers. Always follow up:
 | Angular SPA | < 300ms LCP for initial load; < 100ms for interactions | Data-heavy dashboards |
 | Flutter mobile | < 16ms frame render (60fps); < 32ms (30fps acceptable) | Background sync, offline-first |
 
-**AskUserQuestions example (latency tier):**
+**AskUserQuestion example (latency tier):**
 
 ```
 Header: "Latency target"
@@ -75,7 +77,7 @@ Options (single-select):
 | **Data growth** | How fast does the dataset grow? Will queries degrade as rows increase? |
 | **Rate limiting** | Should this feature be rate-limited per user/tenant? What limits? |
 
-**AskUserQuestions example (scale tier):**
+**AskUserQuestion example (scale tier):**
 
 ```
 Header: "Scale expectations"
@@ -111,7 +113,7 @@ Options (single-select):
 | High | 99.99% | 4.4 min | Payment flows, auth services |
 | Critical | 99.999% | 26 sec | Core infrastructure, safety systems |
 
-**AskUserQuestions example (availability tier):**
+**AskUserQuestion example (availability tier):**
 
 ```
 Header: "Availability requirement"
@@ -141,7 +143,7 @@ Options (single-select):
 | **Secrets** | Does this feature need API keys, tokens, or credentials? Where are they stored? |
 | **Compliance** | Does this feature fall under GDPR, HIPAA, SOC 2, PCI-DSS, or local data residency law? |
 
-**AskUserQuestions example (data sensitivity):**
+**AskUserQuestion example (data sensitivity):**
 
 ```
 Header: "Data sensitivity"
@@ -210,7 +212,7 @@ Options (multi-select):
 | **Audit requirements** | Must access logs be immutable and retained for N years? |
 | **Third-party data sharing** | Does this feature share data with third parties? DPA required? |
 
-**AskUserQuestions example (compliance):**
+**AskUserQuestion example (compliance):**
 
 ```
 Header: "Compliance requirements"
@@ -248,10 +250,25 @@ NFR answers must appear as testable acceptance criteria in the spec. Transform a
 | "99.99% uptime" | WHEN a single instance fails THE SYSTEM SHALL failover within 30 seconds without user-visible errors |
 | "PII must not appear in logs" | WHEN any request containing user email is logged THE SYSTEM SHALL redact the email field |
 | "GDPR right to erasure" | WHEN a user submits a deletion request THE SYSTEM SHALL remove all PII within 30 days |
+| "Rate limit per user" | WHEN a user exceeds 100 requests per minute THE SYSTEM SHALL return HTTP 429 with a Retry-After header |
+
+### NFR → Implementation Tasks
+
+Every NFR must own at least one task in the spec's Implementation TODO:
+
+| NFR category | Typical implementation tasks |
+|--------------|------------------------------|
+| Performance | Caching layer, query index review (`EXPLAIN ANALYZE`), async offload to a queue |
+| Scalability | Stateless service design, connection pool sizing, rate limiter middleware |
+| Availability | Health check endpoint, circuit breaker config, retry policy |
+| Security | Input validation, auth middleware, secrets from env (never code) |
+| Observability | Structured logging, trace ID propagation, alert rules |
+| Maintainability | OpenAPI spec, feature flag config, migration reversibility check |
+| Compliance | PII masking in logs, data retention policy, erasure endpoint |
 
 ---
 
-## AskUserQuestions — NFR Batch Pattern
+## AskUserQuestion — NFR Batch Pattern
 
 Group related NFR questions to reduce interview fatigue. Example NFR batch for an API feature:
 

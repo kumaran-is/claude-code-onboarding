@@ -111,15 +111,24 @@ npx eslint . --max-warnings 0   # must exit 0
 
 The `description` gets the skill selected; the Iron Law prevents silent skips; the verify command gives a binary pass/fail gate.
 
-## 6-Step Creation Checklist
+## 8-Step Creation Checklist
 
 ```
+[] 0. OVERLAP     -- ls .claude/skills/ and grep the domain's trigger words across
+                     .claude/skills/*/SKILL.md; if a skill already covers it in part,
+                     extend that skill (new section or reference file) instead
 [] 1. NAME        -- matches directory, lowercase-hyphenated, specific domain
 [] 2. DESCRIPTION -- includes all trigger words; passes the CSO test above
 [] 3. ALLOWED-TOOLS -- listed explicitly; minimum needed for the skill's tasks
 [] 4. BODY        -- Iron Law first; decision trees > prose; <=500 lines
-[] 5. REFERENCES  -- deep patterns offloaded; each reference file < 300 lines
+[] 5. REFERENCES  -- deep patterns offloaded to the skill's reference folder
+                     (`reference/` is the common convention here; keep whichever
+                     the skill already uses); each file < 300 lines
 [] 6. TEST        -- load the skill, ask it a question, verify it triggers correctly
+[] 7. REGISTER    -- add a row to the CLAUDE.md Code Conventions table (technology
+                     skills) and the Code Review Agents table (if a reviewer agent
+                     applies); add the skill to `.claude/SKILLS_GUIDE.md` under its
+                     domain; run `bash .claude/scripts/lint-skills.sh` and `skill-reviewer`
 ```
 
 ## Verify Command (required in every skill)

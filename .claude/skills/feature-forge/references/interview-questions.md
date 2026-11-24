@@ -52,9 +52,9 @@ For a "User Export" feature:
 - Need progress indicator for large exports?
 ```
 
-## Tool Usage: AskUserQuestions
+## Tool Usage: AskUserQuestion
 
-Use `AskUserQuestions` when questions have a finite set of likely answers. Use open-ended follow-up when answers are unbounded.
+Use `AskUserQuestion` when questions have a finite set of likely answers. Use open-ended follow-up when answers are unbounded.
 
 ### When to Use Structured Options
 
@@ -96,28 +96,28 @@ Use open-ended questions to understand the problem space:
 1. "Tell me about this feature in your own words"
 2. "What problem are we solving?"
 
-Then use `AskUserQuestions` to narrow down:
+Then use `AskUserQuestion` to narrow down:
 - Target users (single select from identified personas)
 - Usage frequency (Daily, Weekly, Monthly, Rarely)
 - Priority (Must-have, Should-have, Nice-to-have)
 - Anti-Goal confirmation: "What is explicitly out of scope for this iteration?" (open-ended — do not provide options, force explicit statement)
 
 ### Phase 2: Details
-Use `AskUserQuestions` for scope and constraint decisions:
+Use `AskUserQuestion` for scope and constraint decisions:
 - Scope: MVP vs Full vs Phased (single select)
 - Key capabilities (multi-select from discovered items)
 
 Then open-ended: "Walk me through the user journey"
 
 ### Phase 3: Edge Cases
-Use `AskUserQuestions` for technical trade-offs:
+Use `AskUserQuestion` for technical trade-offs:
 - Error handling approach (Retry, Fail fast, Queue, Notify)
 - Data limits (multi-select thresholds)
 
 Then open-ended: "What happens when [X] fails?"
 
 ### Phase 4: Validation
-Present spec summary, then use `AskUserQuestions`:
+Present spec summary, then use `AskUserQuestion`:
 - "Does this capture your requirements?" (Yes / Needs changes / Major gaps)
 - Per-requirement priority confirmation if needed
 
@@ -147,7 +147,7 @@ This ensures the Feature Forge interview starts with concrete technical context 
 | Phase | Focus | Tool |
 |-------|-------|------|
 | Pre-Discovery | Technical context | Task subagents with skills |
-| Discovery | Problem, users, value | Open-ended → AskUserQuestions |
-| Details | Journey, scope, constraints | AskUserQuestions → Open-ended |
-| Edge Cases | Failures, limits, security | AskUserQuestions → Open-ended |
-| Validation | Summary, gaps | AskUserQuestions |
+| Discovery | Problem, users, value | Open-ended → AskUserQuestion |
+| Details | Journey, scope, constraints | AskUserQuestion → Open-ended |
+| Edge Cases | Failures, limits, security | AskUserQuestion → Open-ended |
+| Validation | Summary, gaps | AskUserQuestion |

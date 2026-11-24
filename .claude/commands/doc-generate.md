@@ -47,6 +47,8 @@ Dispatch `mermaid-expert` agent to create a system diagram from the project stru
 
 Output to `docs/diagrams/[detected-service-name]-architecture.md`.
 
+Keep existing diagrams current: a diagram's file name starts with the folder it describes (`src/auth/` → `docs/diagrams/auth-flow.md`). When a change touches files under a folder that already has a diagram, update that diagram in the same change, not in a follow-up. A new service, flow or integration with no diagram gets `docs/diagrams/<feature>-flow.md` (Mermaid).
+
 ## Step 4: README
 
 Check if `README.md` exists:

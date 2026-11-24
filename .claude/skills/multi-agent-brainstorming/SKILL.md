@@ -114,6 +114,18 @@ The Arbiter must explicitly decide which objections are accepted (with revisions
 
 ---
 
+### Phase 4 — Persist and Route
+
+Save the Decision Log to `docs/decisions/YYYY-MM-DD-<feature>.md` for **every** verdict, including REVISE and REJECT. Then route:
+
+| Verdict | Next step |
+|---------|-----------|
+| `APPROVED` | `/plan-review` to lock the implementation plan |
+| `REVISE` | Primary Designer makes the required changes, re-invokes **only** the reviewer(s) whose objections drove the revision, then re-runs arbitration. Append to the same Decision Log |
+| `REJECT` | Return to `/brainstorm` with a fresh design; keep the Decision Log as input to the next pass. Never patch the rejected design |
+
+---
+
 ## Exit Criteria (Hard Stop)
 
 You may exit only when **all** of these are true:
@@ -188,7 +200,8 @@ If any criterion is unmet — continue review. Do NOT proceed to implementation.
 ### Arbiter Verdict
 **APPROVED / REVISE / REJECT**
 **Rationale:** [one paragraph]
-**Next step:** [proceed to /plan-review | revise design and re-review | abandon]
+**Next step:** [proceed to /plan-review | revise and re-run affected reviewers | return to /brainstorm]
+**Decision Log:** docs/decisions/YYYY-MM-DD-<feature>.md
 ```
 
 ---

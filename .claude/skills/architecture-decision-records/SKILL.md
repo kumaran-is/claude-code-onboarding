@@ -102,12 +102,14 @@ Read `reference/adr-templates.md` for all template formats ready to copy-paste.
 - Submit as PR with 2+ senior engineer reviewers
 - Consult affected teams
 - Assess security, cost, and reversibility implications
+- Before accepting, run a pre-mortem with the `the-fool` skill: "What would make us regret this in 2 years?", "Which assumption might be wrong?", "What would change our answer?" Fold each valid challenge into Consequences (Bad) and Mitigations
 
 ### 4. Maintain
 
 - Update ADR index after acceptance
 - Create implementation tickets
 - Never edit accepted ADRs -- write new ones to supersede
+- Reference the ADR id where the decision lands: link it from the feature plan (`See: [ADR-NNNN: Title](../adr/NNNN-title.md)`), and cite it in a code comment when an implementation choice would look surprising without it (`// Uses X instead of Y, per ADR-NNNN`)
 
 Read `reference/adr-examples.md` for complete worked examples (PostgreSQL selection, TypeScript adoption, MongoDB deprecation, event sourcing RFC).
 

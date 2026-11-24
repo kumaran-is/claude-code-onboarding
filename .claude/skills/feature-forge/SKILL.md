@@ -39,10 +39,10 @@ You are a senior product analyst with 10+ years of experience. You operate with 
 
 ## Core Workflow
 
-1. **Discover** - Use `AskUserQuestions` to understand the feature goal, target users, and user value. Present structured choices where possible (e.g., user types, priority level).
-2. **Interview** - Systematic questioning from both PM and Dev perspectives using `AskUserQuestions` for structured choices and open-ended follow-ups. Use multi-agent discovery with Task subagents when the feature spans multiple domains (see interview-questions.md for guidance).
+1. **Discover** - Use `AskUserQuestion` to understand the feature goal, target users, and user value. Present structured choices where possible (e.g., user types, priority level).
+2. **Interview** - Systematic questioning from both PM and Dev perspectives using `AskUserQuestion` for structured choices and open-ended follow-ups. Use multi-agent discovery with Task subagents when the feature spans multiple domains (see interview-questions.md for guidance).
 3. **Document** - Write EARS-format requirements
-4. **Validate** - Use `AskUserQuestions` to review acceptance criteria with stakeholder, presenting key trade-offs as structured choices
+4. **Validate** - Use `AskUserQuestion` to review acceptance criteria with stakeholder, presenting key trade-offs as structured choices
 5. **Plan** - Create implementation checklist
 
 ## Reference Guide
@@ -63,7 +63,7 @@ Load detailed guidance based on context:
 ## Constraints
 
 ### MUST DO
-- Use `AskUserQuestions` tool for structured elicitation (priority, scope, format choices)
+- Use `AskUserQuestion` tool for structured elicitation (priority, scope, format choices)
 - Use open-ended questions only when choices cannot be predetermined
 - Conduct thorough interview before writing spec
 - Use EARS format for all functional requirements
@@ -73,7 +73,7 @@ Load detailed guidance based on context:
 - Ask for clarification on ambiguous requirements
 
 ### MUST NOT DO
-- Output interview questions as plain text when `AskUserQuestions` can provide structured options
+- Output interview questions as plain text when `AskUserQuestion` can provide structured options
 - Generate spec without conducting interview
 - Accept vague requirements ("make it fast")
 - Skip security considerations
@@ -92,6 +92,21 @@ The final specification must include:
 6. Implementation TODO checklist
 
 Save as: `specs/{feature_name}.spec.md`
+
+## Idea → Spec Pipeline
+
+The end-to-end chain from a raw idea to an approved, committed spec and plan. Each step's exit gate must hold before the next starts; no implementation before step 6.
+
+| # | Step | Run | Exit gate |
+|---|------|-----|-----------|
+| 1 | Explore (only when the approach is undecided) | `/brainstorm [topic]` | An approach is selected, or explicitly left open in the spec |
+| 2 | Specify | This skill: Discover → Interview → Document (EARS) → Validate → Plan | The user explicitly confirms the spec (Iron Law) |
+| 3 | Pre-mortem | `the-fool` skill (Find the Failure Modes, or Expose Assumptions) | Every critical risk resolved or accepted with a written rationale |
+| 4 | Plan | `/plan-review` (`plan-mode-review` skill) | Plan saved to `docs/plans/YYYY-MM-DD-<feature>.md`; all review phases pass or open items are accepted |
+| 5 | Challenge | `plan-challenger` agent (read-only) | No unresolved Blocker; each Concern fixed or accepted with written rationale |
+| 6 | Commit | Fold clarifications into the spec and mitigations into the plan; commit both (`docs: add spec and plan for <feature>`) | Spec and plan are in git; hand off to implementation (`subagent-driven-development` for 3+ tasks) |
+
+Spec = WHAT (user-facing behaviour); plan = HOW (steps with file paths). A plan that exists only in chat is lost on the next context reset.
 
 ## ICE Scoring — Backlog Prioritisation
 

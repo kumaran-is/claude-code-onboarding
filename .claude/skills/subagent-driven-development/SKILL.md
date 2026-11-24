@@ -325,6 +325,7 @@ Each phase receives exactly what it needs — no more:
 | Writing a new plan | `docs/plans/TEMPLATE.md` — required format for context briefs, rollback, and mutations |
 | Security findings during review | `security-reviewer` agent |
 | Passing context between pipeline stages | [reference/handoff-tags.md](reference/handoff-tags.md) — structured tag format |
+| Feature with 10+ tasks across several domains and sessions | [reference/nexus-state-template.md](reference/nexus-state-template.md) — NEXUS phases, go/no-go gates, PR slicing, session resume, state file |
 
 ---
 

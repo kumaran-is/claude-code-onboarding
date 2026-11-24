@@ -104,3 +104,24 @@ Present results as:
 ### Key Tension: [Where Elon and Steve disagree, if applicable]
 ### Recommendation: [One paragraph — build, refine, or rethink]
 ```
+
+## Product Ideation Pipeline
+
+Titan scoring is one stage of the chain from a one-sentence idea to published wireframes and a deck. Run the commands in order:
+
+| # | Command | Agent | Exit gate |
+|---|---------|-------|-----------|
+| 1 | `/research [topic]` (recommended) | `reddit-research` | Ranked pain points with behavioural evidence |
+| 2 | `/backlog [idea]` | `idea-to-backlog` | 20-40 features, each tracing to a validated pain point |
+| 3 | `/shortlist [backlog path]` | `mvp-shortlist` | MVP = features with combined Titan score >= 8.0 (6.0+ only with a written Product Soul or revenue justification) |
+| 4 | `/wireframe` (hi-fi) or `/sketch-wireframe` (lo-fi) | `premium-wireframe-2026` / `wireframe-agent` | Every MVP feature appears on a screen |
+| 5 | `/review-wireframe [file]` | `wireframe-reviewer` | Score /100 decides the branch below |
+| 6 | `/iterate-wireframe [file]` (ITERATE only) | `wireframe-iterator` | P0 → P1 → P2 passes applied, then back to step 5 |
+| 7 | `/publish-wireframes` | `publish-wireframes` | Lock Document saved, no open P0 issue |
+| 8 | `/slides [topic or artifacts]` | `presentation` | Self-contained HTML deck |
+
+Review branching (thresholds owned by `.claude/agents/wireframe-reviewer.md`):
+
+- **APPROVED** (>= 80): the Lock Document is saved, then publish (step 7).
+- **ITERATE** (60-79): `/iterate-wireframe`, then re-review. Cap: 3 iterate → re-review cycles; if the third re-review is still below 80, escalate to REDESIGN instead of a fourth cycle.
+- **REDESIGN** (< 60): back to step 4 with a revised approach.

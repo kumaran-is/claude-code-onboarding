@@ -33,6 +33,22 @@ While <precondition>, when <trigger>, the system shall <response>.
 - Peak load handling: Auto-scale to 3x
 - Data retention: 90 days
 
+### Availability
+- Uptime SLA: 99.9%
+- RTO: 30 minutes
+- RPO: 5 minutes of data loss (or zero)
+
+### Observability
+- Events logged: [business events that must appear in logs]
+- PII masking: [fields redacted in logs]
+- Alerting: [conditions that page on-call]
+- Log retention: [N days / N years]
+
+### Open NFR Items
+- [Unresolved NFR: implementation must not start until it is resolved]
+
+<!-- Write "none" in any NFR section that genuinely has no requirement; never leave it blank or "TBD". -->
+
 ## Acceptance Criteria
 
 ### AC-001: [Scenario Name]

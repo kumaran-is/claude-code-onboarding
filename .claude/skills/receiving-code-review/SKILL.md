@@ -44,6 +44,18 @@ Process ALL feedback before implementing ANY of it:
 
 **Instead:** Restate the requirement, or just act — code shows you heard the feedback.
 
+## Categorize Each Comment
+
+| Category | Example | Response |
+|----------|---------|----------|
+| Bug / correctness | "This throws when the list is empty" | Fix now, with a test that reproduces it |
+| Security | "This endpoint has no auth guard" | Fix now |
+| Clear improvement | "Extract this to a named constant" | Implement |
+| Style / preference | "Name this `orderId`, not `id`" | Implement if it matches codebase style |
+| Questionable | "Use pattern X instead of Y" | Run steps 3-4 (VERIFY, EVALUATE) before implementing |
+| Disagreement | "This architecture is wrong" | Discuss before implementing (see When to Push Back) |
+| Out of scope | "While you're here, fix Z" | Do not fix in this PR (`core-behaviors.md` §5); create a ticket and reply "Tracked in #N" |
+
 ## Handling Unclear Feedback
 
 If ANY item is unclear: **STOP. Do not implement anything yet.**
@@ -175,10 +187,27 @@ Step 6 — IMPLEMENT:
   - Run tests: all pass
 ```
 
+## After Implementing
+
+Re-run the gates the fixes touched, each with its own exit code:
+
+- The stack's test suite (`/verify` detects the stacks)
+- `/lint-design-system` when any UI file changed
+- `/audit-security` when a fix touched auth, crypto, input handling or file uploads
+
+Then add a summary to the PR description:
+
+```markdown
+## Review Feedback Addressed
+- [x] Fixed exception on empty order list (commit abc123)
+- [x] Added auth guard to /orders/bulk (commit def456)
+- [ ] OrderService architecture suggestion: out of scope, tracked in #45
+```
+
 ## Integration
 
 - Use after: `/review-code`, SDD pipeline (after quality reviewer responds), any PR review
-- Pairs with: `requesting-code-review` skill (send path → receive path)
+- Pairs with: `pr-review` skill and `/review-pr` (send path → receive path)
 - GitHub replies: use inline thread replies, not top-level PR comments
   (`gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies`)
 

@@ -53,20 +53,19 @@ echo "[$(date -Iseconds)] Cleaned up backups older than ${RETENTION_DAYS} days"
 
 ### Cloud Run Jobs (Serverless Alternative)
 
-```yaml
-# cloudbuild-backup.yaml
-steps:
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['run', '--rm',
-      '-e', 'DATABASE_URL=${_DATABASE_URL}',
-      '-e', 'GCS_BACKUP_BUCKET=${_GCS_BACKUP_BUCKET}',
-      'postgres:16-alpine',
-      '/scripts/backup-db.sh']
+Run `scripts/backup-db.sh` as a Cloud Run job whose image is built `FROM postgres:18.7` pinned by the digest you resolved (`docker buildx imagetools inspect postgres:18.7`), with `pg_dump` matching the server's major version. A GitHub Actions workflow builds and pushes that image; Cloud Scheduler starts the job.
 
-# Trigger via Cloud Scheduler
-# gcloud scheduler jobs create http backup-daily \
-#   --schedule="0 2 * * *" \
-#   --uri="https://cloudbuild.googleapis.com/v1/projects/.../triggers/...:run"
+```bash
+gcloud run jobs create backup-db --region=<region> --image=<registry>/backup-db@sha256:<digest> \
+  --set-secrets=DATABASE_URL=backup-db-url:latest --set-env-vars=GCS_BACKUP_BUCKET=<bucket> \
+  --service-account=<backup-job-sa> --max-retries=1 --task-timeout=3600s
+gcloud run jobs execute backup-db --region=<region> --wait    # manual run / drill
+
+# Daily at 02:00 via Cloud Scheduler (service account needs roles/run.invoker on the job)
+gcloud scheduler jobs create http backup-daily --location=<region> --schedule="0 2 * * *" \
+  --http-method=POST \
+  --uri="https://run.googleapis.com/v2/projects/<project>/locations/<region>/jobs/backup-db:run" \
+  --oauth-service-account-email=<scheduler-sa>
 ```
 
 ## Restoration Drill

@@ -41,16 +41,20 @@ SHOW max_connections;
 
 **Stack-specific configuration:**
 
-**Python / asyncpg:**
+**Python / SQLAlchemy 2.1 + asyncpg** (engine built once in the FastAPI lifespan; full pattern in `python-dev/reference/sqlalchemy-async-sessions-and-transactions.md` sections 2 and 8):
 ```python
-# In database.py — set pool limits matching your pool_size calculation
-pool = await asyncpg.create_pool(
-    dsn=DATABASE_URL,
-    min_size=2,
-    max_size=10,           # = (CPU_cores * 2) + spindles
-    max_inactive_connection_lifetime=300,  # idle timeout in seconds
+# pool_size + max_overflow per instance comes from the connection budget:
+# instances x (pool_size + max_overflow), summed over all services, < ~80% of max_connections
+engine = create_async_engine(
+    settings.database_url.get_secret_value(),   # postgresql+asyncpg://... (always name the driver)
+    pool_size=5, max_overflow=5,
+    pool_timeout=10,       # fail fast -> 503, do not queue for 30 s
+    pool_pre_ping=True,
+    pool_recycle=1800,     # below any proxy/server idle limit
 )
 ```
+`(CPU_cores * 2) + spindles` sizes the server's active connections (a pooler's server pool), not each application pool.
+Behind a transaction-mode pooler, disable asyncpg prepared statements (section 8 of the sessions reference).
 
 **NestJS / Prisma:**
 ```

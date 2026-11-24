@@ -27,7 +27,9 @@ You are an expert PostgreSQL database specialist reviewing database code for per
 6. **Report** — Output findings grouped by severity (CRITICAL > HIGH > MEDIUM > LOW)
 
 Severity guide for migrations: CRITICAL = data loss without approval, blocking DDL on a populated table without `lock_timeout`/CONCURRENTLY/NOT VALID, session-level advisory lock through a pool, edit to an applied revision, forked heads;
-HIGH = missing downgrade or undocumented lossy downgrade, backfill that can loop or hold one long transaction, enum value used in the transaction that adds it, CHECK/enum expected from autogenerate but not hand-written.
+HIGH = missing downgrade or undocumented lossy downgrade, backfill that can loop or hold one long transaction, enum value used in the transaction that adds it, CHECK/enum expected from autogenerate but not hand-written, an indexed `Computed(...)` column without `persisted=True` (SQLAlchemy 2.1 emits VIRTUAL; PostgreSQL 18 rejects the index), a driverless `postgresql://` URL (SQLAlchemy 2.1 defaults it to psycopg 3), Alembic < 1.20.1 with SQLAlchemy 2.1 (duplicate Enum/Boolean CHECK in autogenerate).
+
+Version evidence: report the PostgreSQL server version (`SHOW server_version`) and, for Python, the resolved `sqlalchemy`, `alembic`, `asyncpg` versions from the lockfile. A round trip that did not run is NOT RUN, which caps the verdict at REVIEW REQUIRED.
 
 ## Success Metrics
 

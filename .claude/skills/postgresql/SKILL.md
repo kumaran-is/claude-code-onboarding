@@ -174,7 +174,7 @@ Enable with `ALTER TABLE tbl ENABLE ROW LEVEL SECURITY`. Create policies: `CREAT
 
 ## Generated Columns
 
-- `... GENERATED ALWAYS AS (<expr>) STORED` for computed, indexable fields. PG18+ adds `VIRTUAL` columns (computed on read, not stored).
+- `... GENERATED ALWAYS AS (<expr>) STORED` for computed, indexable fields. PG18+ adds `VIRTUAL` columns (computed on read, not stored) and makes VIRTUAL the default when neither keyword is given; an index on a virtual column fails (`indexes on virtual generated columns are not supported`, executed on 18.7). Always write `STORED` for indexed columns; in SQLAlchemy 2.1 that is `Computed(..., persisted=True)` (without it 2.1 emits no `STORED`).
 
 ## Extensions
 
@@ -185,7 +185,7 @@ Enable with `ALTER TABLE tbl ENABLE ROW LEVEL SECURITY`. Create policies: `CREAT
 - **`btree_gin`/`btree_gist`**: enable mixed-type indexes (e.g., GIN index on both JSONB and text columns).
 - **`hstore`**: key-value pairs; mostly superseded by JSONB but useful for simple string mappings.
 - **`timescaledb`**: essential for time-series—automated partitioning, retention, compression, continuous aggregates.
-- **`postgis`**: comprehensive geospatial support beyond basic geometric types—essential for location-based applications.
+- **`postgis`**: comprehensive geospatial support beyond basic geometric types—essential for location-based applications. Pin the image with both versions in the tag (e.g. `postgis/postgis:18-3.7` + digest). Python: GeoAlchemy2 0.21.0 (`Geometry`, `Geography`, `WKTElement`; import-checked on Python 3.14, not run against a PostGIS server in this toolkit's verification).
 - **`pgvector`**: vector similarity search for embeddings.
 - **`pgaudit`**: audit logging for all database activity.
 

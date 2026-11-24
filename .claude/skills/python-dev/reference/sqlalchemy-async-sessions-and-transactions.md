@@ -2,8 +2,9 @@
 
 > One rule set for session and transaction ownership. Other references (`fastapi-templates.md`,
 > `backend-service-patterns.md`, `python-advanced-patterns.md`) link here instead of restating it.
-> Validated against SQLAlchemy 2.1.9 + asyncpg 0.32 + PostgreSQL 16 + FastAPI 0.165. FastAPI behaviour
-> below needs >= 0.118 (exit-after-response) and >= 0.121 (`scope="function"`); the toolkit pin 0.135.x satisfies both.
+> Validated against SQLAlchemy 2.1.9 + asyncpg 0.32.0 + Alembic 1.20.1 on Python 3.14.10 and PostgreSQL 18.7, FastAPI 0.165.
+> FastAPI behaviour below needs >= 0.118 (exit-after-response) and >= 0.121 (`scope="function"`).
+> Install `sqlalchemy[asyncio]`: from 2.1 `greenlet` (needed by `sqlalchemy.ext.asyncio`) is only in that extra.
 
 ---
 
@@ -119,6 +120,9 @@ Rules:
 
 An `AsyncSession` is not safe for concurrent use. Never pass the request session to `asyncio.gather` branches,
 `BackgroundTasks` or `spawn()`ed coroutines (it is closed when the request ends). Open a new session inside the task.
+Executed on 2.1.9: three `asyncio.gather` branches on one session -> two raised `InvalidRequestError: This session is provisioning
+a new connection; concurrent operations are not permitted`; closing the session while a branch still ran raised `IllegalStateChangeError`.
+Five tasks, each with its own `async with factory() as session, session.begin():`, all succeeded.
 
 ```python
 async def refresh_one(factory: async_sessionmaker[AsyncSession], account_id: uuid.UUID) -> None:
@@ -151,6 +155,10 @@ orders = (await s.scalars(select(Order).options(selectinload(Order.lines)))).all
 ```
 
 Find hazards: `inspect(obj).unloaded` after commit/rollback lists what would trigger IO.
+
+Typed constructors: with a plain `DeclarativeBase`, `mypy --strict` accepts `Order(quantity=str(x))` for a `Mapped[int]` column
+(executed on 2.1.9: exit 0). `class Base(AsyncAttrs, MappedAsDataclass, DeclarativeBase)` makes it an `arg-type` error (exit 1);
+mark PK/server-default columns `init=False` (`mapped_column(primary_key=True, server_default=func.uuidv7(), init=False)`).
 
 ---
 
@@ -212,10 +220,32 @@ Session-level state (`SET`, advisory locks, temp tables) is also unsafe there: s
 - `on_conflict_do_update` on a **partial** unique index needs `index_where=` written the same way as the index predicate
   (executed: no `index_where` -> "no unique or exclusion constraint matching"; `index_where=t.c.live` works, `.is_(True)` did not match a `WHERE live` index).
   The `set_` dict touches only the columns it names: `onupdate` defaults do NOT run (set `updated_at` yourself), omitted columns keep old values.
+- Idempotent re-ingest: add `where=Model.content_hash.is_distinct_from(stmt.excluded.content_hash)` so an unchanged row is not rewritten
+  (executed: the same upsert twice -> one row, `updated_at` unchanged; changed content -> updated in place; a plain `insert` twice -> `IntegrityError`).
 
 ---
 
-## 10. Review checklist
+## 10. SQLAlchemy 2.0 -> 2.1 changes that affect this toolkit
+
+Source: SQLAlchemy "What's New in 2.1" (docs.sqlalchemy.org/en/21/changelog/migration_21.html). Rows marked *executed*
+were run on 2.1.9 + PostgreSQL 18.7.
+
+| Change | Impact | Do |
+|--------|--------|----|
+| `greenlet` no longer installed by default | `ImportError`/`ValueError` on first async call | Depend on `sqlalchemy[asyncio]==2.1.9` |
+| Python >= 3.11 | Older runtimes cannot install 2.1 | Toolkit target is 3.14 |
+| Autoflush runs before every execution, including `text()` / Core (*executed*: a pending `add()` was counted by `text("SELECT count(*) ...")`) | Raw SQL now sees pending ORM objects; a bad pending object raises at the `text()` call | Flush deliberately; do not rely on `text()` skipping the flush |
+| `postgresql://` URLs default to psycopg 3, not psycopg2 | A driverless URL changes driver | Always name the driver: `postgresql+asyncpg://` (or `postgresql+psycopg://`) |
+| `Computed(...)` without `persisted` renders VIRTUAL on PostgreSQL (*executed*: DDL had no `STORED`). PostgreSQL 18 makes VIRTUAL the default and rejects indexes on it (*executed*: `indexes on virtual generated columns are not supported`) | A generated `tsvector` with a GIN index (hybrid search) fails to migrate | `Computed("to_tsvector('english', content)", persisted=True)` for any indexed generated column |
+| `func.uuidv7(monotonic=True)` as `server_default` (PostgreSQL 18 `uuidv7()`) | Batched ORM `INSERT ... RETURNING` (insertmanyvalues) can keep row order with server-generated ids (docs; *executed* here only as the `server_default` of a 20,000-row multi-VALUES upsert, not the RETURNING path) | Prefer it over client `uuid4()` for time-ordered keys on PG18 |
+| `tstring(t"... {value}")` (Python 3.14 t-strings) | Interpolated values become bound parameters (*executed*: rendered `:param_1`) | Allowed for raw SQL; never use f-strings for values |
+| `Select[int, str]` / `Row[int, str]` typing (PEP 646) replaces `Tuple[...]` | Drop `Row._t` workarounds; needs mypy >= 1.7 | - |
+| Named types (`Enum`, `DOMAIN`) belong to `MetaData`, inherit its schema; `inherit_schema` deprecated | Enum DDL lands in `MetaData(schema=...)` | Set `Enum(..., schema=...)` explicitly when it differs |
+| `execution_options=` on `Session` / `async_sessionmaker` | Options apply to flushes and eager loads too | Use for `schema_translate_map` per tenant schema instead of per-statement options |
+
+---
+
+## 11. Review checklist
 
 - [ ] No `commit()` after `yield` in a dependency; routes do not touch the session
 - [ ] Engine built in the lifespan (on `app.state`, `try/finally` dispose), pool sized from a documented budget
@@ -223,3 +253,4 @@ Session-level state (`SET`, advisory locks, temp tables) is also unsafe there: s
 - [ ] Nothing reads attributes after `rollback()`; `onupdate` columns refreshed; relationships eager-loaded or `lazy="raise"`
 - [ ] `IntegrityError` handled by constraint name, after `rollback()`
 - [ ] `text()` uses `CAST(...)`; partial-index upserts set `index_where`
+- [ ] `sqlalchemy[asyncio]` pinned; URLs name the driver; indexed `Computed` columns set `persisted=True`

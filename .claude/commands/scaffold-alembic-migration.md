@@ -54,7 +54,9 @@ cat docs/database/entity-erd.md
 Locate the shared models directory for this project and update the relevant model file.
 
 Rules:
-- Use `Mapped[]` type annotations (SQLAlchemy 2.0+ async)
+- Use `Mapped[]` type annotations (SQLAlchemy 2.1.9 with the `[asyncio]` extra, Alembic 1.20.1, asyncpg 0.32.0); name every constraint through the `MetaData` naming convention
+- Indexed generated columns (e.g. `tsvector` for hybrid search): `Computed(..., persisted=True)`; SQLAlchemy 2.1 otherwise emits a VIRTUAL column that PostgreSQL 18 cannot index
+- PostgreSQL 18 time-ordered UUID keys: `server_default=func.uuidv7(monotonic=True)`
 - Import and extend the project's `Base` and any shared mixins (e.g. `TimestampMixin`, `UUIDMixin`)
 - Add proper foreign keys with `ForeignKey()` constraints
 - Add relationship back-references where needed
@@ -89,7 +91,7 @@ Read the generated migration file and check for these known autogenerate problem
 
 | Problem | Detection | Fix |
 |---------|-----------|-----|
-| Column rename → shows as drop+add | `op.drop_column` + `op.add_column` for same data | Rewrite as `op.alter_column(table, old_name, new_column_name=new_name)` |
+| Column rename → shows as drop+add | `op.drop_column` + `op.add_column` for same data | Never accept (data loss). While old code still runs: expand-contract (add, dual-write, backfill, switch reads, drop later). `op.alter_column(new_column_name=...)` only when no running code reads the old name |
 | Enum value addition | PostgreSQL enums need `ALTER TYPE ... ADD VALUE` | Wrap in `with op.get_context().autocommit_block():` + `ADD VALUE IF NOT EXISTS`; the value is unusable in the same transaction; downgrade is a documented no-op |
 | CHECK constraint in `__table_args__` | Not emitted by autogenerate by default | Hand-write `op.create_check_constraint(...)` and drop it in `downgrade()`; on a populated table add `NOT VALID`, then `VALIDATE CONSTRAINT` |
 | Extension / partition / ANN-index drops | False positives | Filter once with `include_object` in `env.py`; never accept the drop |
@@ -101,7 +103,9 @@ Read the generated migration file and check for these known autogenerate problem
 | Data loss risk | Any `op.drop_column` or `op.drop_table` | Flag with `# WARNING: DATA LOSS — requires human approval` comment |
 | Missing index | New FK column without index | Add `op.create_index()` for expected query patterns |
 | pgvector column | Vector columns need special handling | Ensure `from pgvector.sqlalchemy import Vector` is imported |
-| Nullable mismatch | Default nullable doesn't match model intent | Verify `nullable=True/False` matches `Optional[]` in model |
+| Nullable mismatch | Default nullable doesn't match model intent | Verify `nullable=True/False` matches `X \| None` in the `Mapped[...]` annotation |
+| `Enum` / `Boolean(create_constraint=True)` emitted twice | Duplicate `sa.CheckConstraint` beside the type in `op.create_table` (Alembic < 1.20.1 with SQLAlchemy 2.1) | Pin `alembic>=1.20.1`; delete the duplicate |
+| `Computed` without `persisted=True` | Generated column with no `STORED` and an index on it | Add `persisted=True`; PostgreSQL 18 rejects indexes on virtual columns |
 
 If ANY issue is found, fix the migration file before proceeding.
 

@@ -2,7 +2,10 @@
 
 > For Python services that use Alembic. Java/Flyway and Node/Prisma equivalents live in
 > `database-schema-designer/reference/expand-contract-migrations.md`; the phase model (expand, migrate, contract) is shared.
-> Every snippet below was run against PostgreSQL 16 with Alembic 1.20.1 + SQLAlchemy 2.1.9 + asyncpg.
+> Snippets were run against PostgreSQL 16 (sections 2-8) and re-run on PostgreSQL 18.7 + pgvector 0.8.7 with Alembic 1.20.1,
+> SQLAlchemy 2.1.9, asyncpg 0.32.0 on Python 3.14.10 (runner, `CONCURRENTLY` HNSW build, expand revision with backfill, and the section 7 round trip
+> with rows preserved). Pin `alembic==1.20.1` or later with SQLAlchemy 2.1: 1.20.1 fixed autogenerate emitting a duplicate CHECK for
+> `Enum`/`Boolean(create_constraint=True)` (duplicate-constraint error at upgrade) and false "Computed default cannot be modified" warnings.
 
 ---
 
@@ -215,6 +218,8 @@ Never edit a revision that is pushed or applied elsewhere: write a new one.
 | Enum value added/removed | Not detected | Hand-write (section 6); removal needs a new type |
 | Extension tables, partition children, ANN indexes | False `drop_*` | Filter once in `env.py` with `include_object`; never accept the drop |
 | Server defaults, partial-index predicates | Often missed | Review the diff against the model |
+| `Computed(...)` without `persisted=True` (SQLAlchemy 2.1) | Renders a VIRTUAL generated column; on PostgreSQL 18 an index on it fails (`indexes on virtual generated columns are not supported`, executed) | `persisted=True` for every indexed generated column (`tsvector` for hybrid search) |
+| Unnamed constraint dropped in `downgrade()` | 1.20 adds a warning comment above `op.drop_constraint(None, ...)` | Name every constraint (naming convention); never ship a `None` drop |
 
 Naming-convention trap: with `MetaData(naming_convention={"ck": "ck_%(table_name)s_%(constraint_name)s"})`, Alembic applies the convention to names you pass to `op.*`.
 Passing the already-expanded name doubles it (`op.drop_constraint("ck_documents_positive_version", ...)` emitted `DROP CONSTRAINT ck_documents_ck_documents_positive_version`,

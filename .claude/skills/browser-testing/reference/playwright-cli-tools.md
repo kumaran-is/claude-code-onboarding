@@ -1,19 +1,28 @@
 # playwright-cli — Tool Reference
 
-`playwright-cli` is the stateful Bash CLI for interactive browser QA of **web targets** (Angular, React, any served site). The npm package is `@playwright/cli`; its binary is `playwright-cli`. (`@playwright/mcp` is a different package whose binary is `playwright-mcp`.) Every command below was run against `@playwright/cli@0.1.25` in real Chromium; re-check with `playwright-cli --help <command>` after upgrading.
+Playwright CLI is the stateful Bash CLI Claude uses for interactive browser automation of **web targets** (Angular, React, marketing sites, any served site). It ships two ways, with the same commands:
+
+- inside Playwright >= 1.59: `npx --no-install playwright cli <command>` (preferred: same version as the project's pinned `@playwright/test`);
+- as the standalone package `@playwright/cli` (binary `playwright-cli`) for projects without Playwright.
+
+The commands below were re-run on 2026-11-24 with `npx playwright cli` from `@playwright/test@1.65.1` (Node 26.13.1) and spot-checked on `@playwright/cli@0.1.25`. Re-check with `--help <command>` after upgrading; the version-matched upstream skill is at `node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md`. In the examples, `playwright-cli` stands for either form.
 
 For CI test suites use `@playwright/test` instead: [playwright-test-suite.md](playwright-test-suite.md). Flutter Android/iOS apps are never tested here: `.claude/rules/testing-tool-selection.md`.
 
 ## Install
 
 ```bash
-npm install -g @playwright/cli@0.1.25    # pin; check the current version with: npm view @playwright/cli version
-playwright-cli install-browser chromium  # once per machine
-playwright-cli install-browser ffmpeg    # only if you record video (video-start fails without it)
-playwright-cli --version                 # 0.1.25
+npm i -D --save-exact @playwright/test@1.65.1      # project with a web E2E suite: the CLI comes with it
+npx --no-install playwright cli --version          # Version 1.65.1
+
+npm i -D --save-exact @playwright/cli@0.1.25       # project without Playwright
+npx --no-install playwright-cli --version          # 0.1.25 (runs on playwright-core 1.66.0-alpha-2026-11-18)
+
+playwright-cli install-browser firefox            # only for a browser the machine lacks; --dry-run first
+playwright-cli install-browser ffmpeg             # only if you record video (video-start fails without it)
 ```
 
-Per project, `npm i -D @playwright/cli@0.1.25` and `npx playwright-cli ...` keeps the version in the lockfile.
+The CLI is an interactive tool: it is never a CI dependency, and never installed from a floating `@latest`. A per-project default config lives in `.playwright/cli.config.json` (`--config` overrides).
 
 ## Session model
 
@@ -31,7 +40,9 @@ playwright-cli -s=qa close
 
 `click`, `fill`, `hover`, `select`, `check`, `screenshot`, `eval` and `snapshot` take a **ref from the latest snapshot** (`e9`) or a **unique selector** (`"button[type=submit]"`). Refs change after re-renders: re-run `snapshot` (or `find <text>`) before acting.
 
-## Commands (verified in 0.1.25)
+## Commands
+
+Names from `--help` on 1.65.1 (first verified in full on 0.1.25). Re-run on 2026-11-24: `open`, `snapshot`, `fill`, `click`, `find`, `requests`, `console`, `screenshot`, `route` / `unroute`, `network-state-set`, `tracing-*`, `state-save`, `resize`, `eval --raw`, `list`, `close-all`, `attach`, `step-over`, `resume`.
 
 | Group | Commands |
 |---|---|
@@ -44,8 +55,13 @@ playwright-cli -s=qa close
 | Mocking | `route <pattern>` (`--status`, `--body`, `--content-type`, `--header`), `route-list`, `unroute [pattern]`, `network-state-set offline\|online` |
 | Storage | `state-save [file]`, `state-load <file>`, `cookie-list/get/set/delete/clear`, `localstorage-*`, `sessionstorage-*` |
 | Emulation | `resize <w> <h>`, `set-color-scheme`, `set-reduced-motion reduce`, `set-forced-colors`, `set-contrast`, `set-media` (and matching `clear-*`) |
-| Code | `run-code "async page => ..."`, `recording-start` / `recording-stop` (prints Playwright code) |
-| Sessions | `list`, `close`, `close-all`, `kill-all`, `delete-data`, `tab-list`, `tab-new [url]`, `tab-select <i>`, `tab-close [i]` |
+| Code | `run-code "async page => ..."`, `recording-start` / `recording-stop` (prints Playwright code), `generate-locator <target>`, `highlight [target]` |
+| Test debugging (1.59+) | `attach <session>` to a test started with `npx playwright test --debug=cli`, then `step-over`, `pause-at <file:line>`, `resume`; `detach` |
+| Sessions | `list`, `close`, `close-all`, `kill-all`, `delete-data`, `tab-list`, `tab-new [url]`, `tab-select <i>`, `tab-close [i]`; `open --idle-timeout <ms>` |
+| Output | `--raw` (result value only, pipe-friendly), `--json` (machine-readable, errors as `{"isError": true}`) |
+| Other | `show` (session dashboard), `video-chapter <title>`, `webmcp-list` / `webmcp-call` (pages that register WebMCP tools; experimental, defer) |
+
+Exit codes (verified): a missing ref or locator, an unopened session, a blocked `file://` URL and an unknown command exit **1**. `find` exits **0** when nothing matches; read `No matches found`, not the exit code.
 
 Renamed or removed versus older docs: there is no `network` command (use `requests` / `request <n>`); there is no `--output` flag (use `--filename`); `tracing-stop` takes no file argument and prints the trace path (under `.playwright-cli/traces/`).
 
@@ -115,10 +131,12 @@ playwright-cli close-all     # kill-all for zombie sessions
 
 | Task | playwright-cli | Chrome DevTools MCP |
 |------|---------------|---------------------|
-| Live debugging: DOM snapshot, console, network, JS in the page | Possible | Preferred ([chrome-devtools-tools.md](chrome-devtools-tools.md)) |
+| Drive the page: navigate, fill forms, click, snapshot, evidence | Default | Possible |
+| Quick console / network check after an action | Default (`console`, `requests`) | Possible |
+| Deep JS debugging, heap snapshots, logpoints, CSS inspection | Possible | Preferred ([chrome-devtools-tools.md](chrome-devtools-tools.md)) |
 | Request mocking, offline, saved sessions | `route`, `network-state-set`, `-s=<session>` | No mocking |
 | Performance traces, throttling, Lighthouse | Traces only | Preferred |
 | Traces / video files as evidence | `tracing-*`, `video-*` | Performance trace only |
 | Repeatable, gates a PR | No: write a `@playwright/test` spec ([playwright-test-suite.md](playwright-test-suite.md)) | No |
 
-**Rule:** Chrome DevTools MCP is the default for interactive debugging; use playwright-cli when the check needs mocking, offline state or a saved session.
+**Rule** (`.claude/rules/testing-tool-selection.md`): Playwright CLI is the default for interactive browser automation; Chrome DevTools MCP is for performance traces, Lighthouse and deep diagnostics; anything that must run again becomes a `@playwright/test` spec.

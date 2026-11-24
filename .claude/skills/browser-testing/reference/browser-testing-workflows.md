@@ -1,6 +1,6 @@
 # Browser Testing — Interactive QA Workflows (web targets)
 
-Step-by-step `playwright-cli` workflows for **interactive** QA of a running web app. Commands are verified against `@playwright/cli@0.1.25` (full list: [playwright-cli-tools.md](playwright-cli-tools.md)). Anything that must run on every PR belongs in a committed `@playwright/test` suite: [playwright-test-suite.md](playwright-test-suite.md). Flutter Android/iOS apps use Maestro, never these workflows (`.claude/rules/testing-tool-selection.md`).
+Step-by-step `playwright-cli` workflows for **interactive** QA of a running web app. Commands were verified on `@playwright/cli@0.1.25`; the core ones were re-run on `npx playwright cli` 1.65.1 on 2026-11-24 (`playwright-cli` below means either form; full list: [playwright-cli-tools.md](playwright-cli-tools.md)). Anything that must run on every PR belongs in a committed `@playwright/test` suite: [playwright-test-suite.md](playwright-test-suite.md). Flutter Android/iOS apps use Maestro, never these workflows (`.claude/rules/testing-tool-selection.md`).
 
 Conventions in every pattern:
 - Refs such as `e9` come from the latest `snapshot`; re-snapshot after each re-render. A unique CSS selector also works as a target.

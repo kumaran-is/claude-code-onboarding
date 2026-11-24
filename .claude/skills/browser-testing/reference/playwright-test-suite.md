@@ -2,7 +2,7 @@
 
 Committed, CI-run E2E suites for **web targets** (Angular, React, any SPA, or a Flutter **web** build). `playwright-cli` (see `playwright-cli-tools.md`) is for interactive QA and debugging; this file is for `.spec.ts` suites that gate PRs. Flutter Android/iOS apps are tested with Maestro, never here (`.claude/rules/testing-tool-selection.md`).
 
-Every config and spec below ran in real Chromium against `@playwright/test@1.58.2` and `@axe-core/playwright@4.11.0` (clean run: 31 passed, exit 0; each planted regression: exit 1). The current pins for Angular 22 and React are 1.65.1 / 4.14.0: a React 19.3 SPA suite (4 specs × 375/1280 px, axe included) passed on them on 2026-11-23, but this file's 31 specs have not been re-run on 1.65.1. Pin the versions your lockfile resolves; check newer releases with `npm view @playwright/test version`.
+Re-verified 2026-11-24 on `@playwright/test@1.65.1` + `@axe-core/playwright@4.14.1`, Node 26.13.1, TypeScript 6.0.3, real Chromium, in a disposable app (cookie session, JSON API, static pages): config, auth setup, routing, forms, success/empty/500/network-failure states, signed-out 401, axe (and its planted-violation control), layout and element-level visual regression — 29 passed, exit 0; `--repeat-each=3 --shuffle` 85 passed; CI mode in 2 shards plus `merge-reports`, exit 0. Every negative control in [Negative controls](#negative-controls-proven-on-1651) exited as listed. The patterns were first proven on 1.58.2 (31 specs). Pin the versions your lockfile resolves; check newer releases with `npm view @playwright/test version` (stable `latest`, never the `next` / `beta` tags).
 
 ## Where E2E sits in the web test pyramid
 
@@ -18,7 +18,7 @@ E2E never owns business rules; if a rule can be tested below the browser, test i
 ## Install
 
 ```bash
-npm install -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.0
+npm install -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.1
 npx playwright install --with-deps chromium     # browser build that matches the installed @playwright/test
 echo "playwright/.auth/" >> .gitignore           # saved sessions are credentials
 ```
@@ -37,8 +37,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  retryStrategy: 'isolated',                     // 1.62+: retries run at the end, one by one, away from the rest of the suite
   failOnFlakyTests: !!process.env.CI,            // a test that passes only on retry fails the CI run
-  reporter: process.env.CI ? [['blob'], ['github']] : [['list'], ['html', { open: 'never' }]],
+  reporter: process.env.CI
+    ? [['blob'], ['github'], ['junit', { outputFile: 'test-results/junit.xml' }]]
+    : [['failures'], ['html', { open: 'never' }]],   // 1.65+: 'failures' prints only failures and flaky retries
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   use: {
     baseURL,
@@ -54,6 +57,8 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     { name: 'desktop', use: { ...devices['Desktop Chrome'], storageState: 'playwright/.auth/user.json' }, dependencies: ['setup'] },
     { name: 'phone-viewport', use: { ...devices['Pixel 7'], storageState: 'playwright/.auth/user.json' }, dependencies: ['setup'] },
+    // 1.64+: kept in the config, runs only when named (--project=firefox), e.g. in a nightly job
+    { name: 'firefox', default: false, use: { ...devices['Desktop Firefox'], storageState: 'playwright/.auth/user.json' }, dependencies: ['setup'] },
   ],
   webServer: {
     command: 'npx ng serve --port 4200',         // React/Vite: 'npx vite --port 5173 --strictPort'
@@ -72,7 +77,10 @@ Why each setting:
 | `locale`, `timezoneId`, `colorScheme`, `reducedMotion` | Deterministic dates, number formats, theme and animations for assertions and screenshots. |
 | `phone-viewport` project | A phone-sized **web layout**. It is never evidence about a mobile app. Never name it "mobile". |
 | `trace/screenshot/video` on failure | Each failure leaves `trace.zip`, `test-failed-1.png` and `video.webm` under `outputDir`. |
-| Firefox / WebKit | Chromium on every PR. Add `devices['Desktop Firefox']` / `devices['Desktop Safari']` projects nightly, or per PR for browser-sensitive code (date inputs, CSS features). |
+| `retryStrategy: 'isolated'` | A failed test is retried after the rest of the run, alone in one worker, so a retry does not pass only because the load dropped. |
+| `failures` / `junit` reporters | `failures` keeps the local log to what broke; JUnit XML gives CI an executed/skipped count to gate on (see below) and feeds flaky-test dashboards. |
+| Firefox / WebKit with `default: false` | Chromium on every PR. Keep Firefox/WebKit projects in the config with `default: false` and run them nightly (`--project=firefox`), or per PR for browser-sensitive code. Verified: `--list` without `--project` shows 0 firefox tests. |
+| `screen` (1.64) | Device descriptors now also emulate `window.screen` and screen media queries; set `screen: undefined` to opt out if a layout test depended on the old behaviour. |
 
 ## Locators and waiting
 
@@ -82,6 +90,11 @@ Why each setting:
 - **Never** `page.waitForTimeout(ms)`: it is a race on fast machines and dead time on slow ones. For animations set `reducedMotion: 'reduce'` and assert the end state.
 - **Never** `waitForLoadState('networkidle')` / `waitUntil: 'networkidle'`. The installed types mark it **DISCOURAGED**: "rely on web assertions to assess readiness instead".
 - `expect.poll(fn)` or `expect(async () => { … }).toPass()` only for genuinely eventual state (a backend job, a polled count).
+- `locator.visible()` (1.63) replaces the `:visible` pseudo-class: `page.getByRole('button').visible()`.
+- `locator.within(parent)` (1.64) reads "this button, within that dialog", and resolves `nth()`/`first()` per parent (column queries in tables).
+- `page.frameLocator()` with no selector (1.63) searches every frame for the rest of the chain; it throws if several frames match.
+- Actions wait for an element to stop being `inert` (1.65): a click on an element inside an open modal's inert background now times out instead of hitting it.
+- Page objects: TypeScript class fields follow `useDefineForClassFields` (1.65). A field initializer that reads a constructor parameter property (`readonly submit = this.page.getByRole(...)` with `constructor(private readonly page: Page)`) now throws; assign locators in the constructor.
 
 ## Console guard fixture (deny by default)
 
@@ -312,9 +325,19 @@ Emit the meta tag (or a `/version.json`) from the build with the commit SHA and 
 
 - `retries` is allowed in CI only together with `failOnFlakyTests: true` (or `--fail-on-flaky-tests`).
 - Reproduce flakiness: `npx playwright test path/to.spec.ts --repeat-each=20 --workers=4`.
+- Find order dependence: `--shuffle` (1.64) runs tests in random order; combine with `--repeat-each`. Verified: `--repeat-each=3 --shuffle` → 85 passed.
+- Shared resources (one test account, a global setting): declare a test lock, `test('...', { lock: 'user-settings' }, ...)` (1.63); tests holding the same lock never overlap, the rest stays parallel. `lock: '-exclusive-'` (1.65) runs a test alone.
 - Quarantine = tag the title `@quarantine`, link an issue and an expiry date in a comment, run PRs with `--grep-invert @quarantine`, and run the quarantined set in a separate non-blocking job. Never `test.skip(!!process.env.CI)`: it hides the failure exactly where it matters.
 - Put a conditional `test.skip(condition, reason)` at the **top** of a test. Called after assertions it marks the whole test skipped and drops the evidence it produced.
 - A step that prints "skipped" and exits 0 is NOT RUN, never PASS.
+- **An all-skipped run exits 0** (verified: 3 skipped, exit 0). Gate on the executed count: `PLAYWRIGHT_JSON_OUTPUT_FILE=r.json npx playwright test --reporter=line,json --fail-on-flaky-tests`, then `stats.expected + stats.unexpected + stats.flaky > 0` (`/verify` does this), or count `tests - skipped` in the JUnit XML.
+- Never `--pass-with-no-tests` in a gate: it turns "No tests found" (exit 1) into exit 0. Since 1.65 a sharded run with no matching tests in any shard fails instead of passing.
+
+## Debugging a failing test
+
+- `npx playwright show-report` (HTML), `npx playwright show-trace <trace.zip>` (Trace Viewer: DOM snapshots, network, console per step), `npx playwright test --ui` (UI mode, local only).
+- For Claude: `PLAYWRIGHT_HTML_OPEN=never npx playwright test <spec> --debug=cli` in the background, then `npx playwright cli attach <session>` and `step-over` / `pause-at` / `snapshot` / `resume` (1.59+, verified on 1.65.1; see the browser-testing SKILL.md). Every action the CLI takes prints the matching Playwright code to paste back into the spec.
+- `error-context.md` next to each failure holds the aria snapshot at the failing assertion: read it before re-running.
 
 ## Evidence and artifacts
 
@@ -329,43 +352,91 @@ Emit the meta tag (or a `/version.json`) from the build with the commit SHA and 
 # .github/workflows/e2e.yml (Node 26 = Active LTS; Angular 22 engines ^22.22.3 || ^24.15.0 || ^26.0.0)
 name: e2e
 on: pull_request
+permissions: { contents: read }
 jobs:
   e2e:
     runs-on: ubuntu-latest
     strategy: { fail-fast: false, matrix: { shard: [1, 2, 3, 4] } }
     steps:
-      - uses: actions/checkout@v4      # pin to a full commit SHA: deployment-ci-cd/reference/python-ci-supply-chain.md
-      - uses: actions/setup-node@v4    # pin to a full commit SHA
-        with: { node-version: '26', cache: 'npm' }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1        # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1      # v7.1.0
+        with: { node-version: '26', cache: 'npm' }                             # caches npm downloads, not browsers
       - run: npm ci
       - run: npm exec --no -- playwright install --with-deps chromium   # --no: never downloads a package; uses the lockfile's @playwright/test
-      - run: npm exec --no -- playwright test --shard=${{ matrix.shard }}/4 --grep-invert @quarantine
+      - run: npm exec --no -- playwright test --shard=${{ matrix.shard }}/4 --grep-invert @quarantine --fail-on-flaky-tests
         env: { E2E_USER: '${{ secrets.E2E_USER }}', E2E_PASSWORD: '${{ secrets.E2E_PASSWORD }}', EXPECTED_BUILD: '${{ github.sha }}' }
-      - uses: actions/upload-artifact@v4   # pin to a full commit SHA
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: e2e-${{ matrix.shard }}
           path: |
             blob-report
             test-results/playwright
+            test-results/junit.xml
           retention-days: 7
   report:
     if: ${{ !cancelled() }}
     needs: e2e
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1        # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1      # v7.1.0
         with: { node-version: '26', cache: 'npm' }
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with: { path: all-blob-reports, pattern: 'e2e-*', merge-multiple: true }
       - run: npm exec --no -- playwright merge-reports --reporter html ./all-blob-reports/blob-report
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with: { name: playwright-report, path: playwright-report, retention-days: 14 }
 ```
 
-The backend for E2E is a disposable service started by `webServer` (an array of servers is allowed; each waits for its `url` before tests start), never `npm run start &` without a health wait. Run on `pull_request` once, not on both `push` and `pull_request`. The workflow YAML above is not executed in this repo's sandbox: validate it with `actionlint` and a real PR run before relying on it.
+The backend for E2E is a disposable service started by `webServer` (an array of servers is allowed; each waits for its `url` before tests start), never `npm run start &` without a health wait. Run on `pull_request` once, not on both `push` and `pull_request`.
+
+- Actions are pinned to the commit SHA of the tag in the comment (resolved 2026-11-24 with `git ls-remote`); Dependabot or Renovate keeps them current. `permissions: contents: read` at the top of the workflow.
+- Do not cache browser binaries: Playwright's CI guide says restoring takes about as long as downloading, and the OS dependencies cannot be cached anyway. `setup-node`'s npm cache is enough.
+- Shard only when one job exceeds ~10 minutes; each shard repeats `npm ci`, browser install and auth setup (verified: setup runs once per shard).
+- Flaky reporting: `--fail-on-flaky-tests` fails the job; the merged HTML report and `junit.xml` list each flaky test with its retries for the issue tracker.
+- Proven locally in CI mode (`CI=1`, shards 1/2 and 2/2, blob + github + junit reporters, `merge-reports --reporter html`): every step exit 0. The workflow file itself passes `actionlint`; a real GitHub run is still required before relying on it.
+
+## Negative controls (proven on 1.65.1)
+
+Each control was planted in the disposable app and run with `npx playwright test`; the exit code is the runner's own.
+
+| Planted fault | Result |
+|---|---|
+| Wrong expected heading (`toHaveText`) | exit 1, `expect(locator).toHaveText(expected) failed`, `trace.zip` + `test-failed-1.png` + `error-context.md` kept |
+| Uncaught page error | exit 1 via the console guard fixture (`unexpected console errors`) |
+| Missing element (`toBeVisible` on an absent dialog) | exit 1, `element(s) not found` |
+| Action on a missing button (`actionTimeout: 1000`) | exit 1, `TimeoutError: locator.click: Timeout 1000ms exceeded` |
+| Passes only on retry, `--retries=1` | **exit 0** ("flaky"); with `--fail-on-flaky-tests` exit 1 |
+| Every test skipped | **exit 0**: gate on the executed count |
+| `--grep` matching nothing, plain and `--shard=1/2` | exit 1, `No tests found`; with `--pass-with-no-tests` exit 0 |
+| Price changed under an element screenshot with `maxDiffPixels: 0` | exit 1, `toHaveScreenshot(expected) failed` |
+| Invalid config (`projects: 'oops'`) | exit 1, `config.projects must be an array` |
+| No browser (`PLAYWRIGHT_BROWSERS_PATH` empty dir) | exit 1, `Executable doesn't exist` → report **BLOCKED**, never FAIL-as-regression or PASS |
+| axe on a page with low-contrast text, an unlabelled input, an icon-only button | `color-contrast`, `label`, `button-name` reported |
+
+## Playwright 1.59–1.65: what the toolkit adopts
+
+Source: the official release notes (`docs/src/release-notes-js.md`, read 2026-11-24; Context7 was over quota). Breaking changes are folded into the sections above.
+
+| Feature (version) | Decision | Where |
+|---|---|---|
+| CLI inside Playwright, `npx playwright cli` (1.59) and `--debug=cli` + `attach` / `step-over` / `resume` | ADOPT | SKILL.md, "Debugging a failing test" |
+| `retryStrategy: 'isolated'` (1.62) | ADOPT | config |
+| Test locks `lock` (1.63), `-exclusive-` (1.65) | ADOPT for shared resources | Flaky tests |
+| `locator.visible()` (1.63), `frameLocator()` without selector (1.63), `locator.within()` (1.64) | ADOPT | Locators |
+| `TestProject.default: false` (1.64), `--shuffle` (1.64) | ADOPT | config, Flaky tests |
+| `failures` reporter, `onlyFailures` for html/json/junit (1.65) | ADOPT `failures` locally; `onlyFailures` OPTIONAL for large suites | config |
+| `--add-reporter` (1.63), `reducedMotion` / `forcedColors` / `contrast` test options (1.63) | OPTIONAL | — |
+| WebP screenshots, `toHaveScreenshot` `type: 'webp'` (1.62/1.64) | OPTIONAL (smaller baselines; regenerate all at once) | Visual regression |
+| `perfetto` reporter (1.63), HAR on tracing (1.60), video `fps` (1.64) | OPTIONAL diagnostics | — |
+| New component-testing model, stories and galleries (1.62) | DEFER: component tests stay in Vitest + Testing Library / `ng test` | `.claude/rules/testing-tool-selection.md` |
+| WebMCP (`page.webmcp`, 1.64) | DEFER: experimental browser API | — |
+| Running the runner under Bun (1.65) | REJECT for this toolkit: Node 26 is the pinned runtime | — |
+| `--update-snapshots=missing` now passes (1.64) | ADOPT with care: CI generates missing baselines only in the pinned image | Visual regression |
 
 ## Report template
 

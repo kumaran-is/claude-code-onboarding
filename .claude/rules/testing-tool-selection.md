@@ -2,12 +2,23 @@
 
 Choose the test tool from the **application target under test**, never from the repository's overall stack. In a hybrid repo (Flutter app + Angular/React site) each target gets its own tool. Other files link here instead of restating this table.
 
+**Browser tool routing (web targets)** — one tool per job:
+
+| Task | Tool |
+|---|---|
+| Interactive browser automation by Claude (reproduce, explore, fill forms, evidence screenshots, mock a response) | **Playwright CLI** via Bash: `npx playwright cli` from the project's pinned `@playwright/test`, else pinned `@playwright/cli` |
+| Automated, repeatable web regression (PR gate, CI) | **Playwright Test** (`@playwright/test`, `npx playwright test`) |
+| Performance traces, Core Web Vitals, Lighthouse, deep network/console/JS diagnostics | **Chrome DevTools MCP** |
+| Flutter Android/iOS UI/E2E | **Maestro CLI/MCP** (table below) |
+
+No Playwright MCP server and no Browser Use MCP server: neither is configured in this toolkit, and the lint (`lint-testing-tools.sh` R5) flags instructions that call them.
+
 | Target under test | UI / E2E tool | Never use |
 |---|---|---|
 | Flutter app on an Android emulator, iOS simulator or physical device | **Maestro CLI** (`maestro test`) and **Maestro MCP** (`list_devices` → `inspect_screen` → `run`) — exclusively | Playwright, Chrome DevTools, claude-in-chrome, or any browser automation |
 | Flutter unit, widget, golden and accessibility-guideline tests | `flutter test` | — |
 | Flutter static validation | `flutter analyze`, `dart format --output=none --set-exit-if-changed .` | — |
-| Angular website or web app (E2E, responsive-viewport, a11y, visual) | Playwright: `@playwright/test` suites (CI) and `playwright-cli` (interactive); Chrome DevTools MCP (default interactive debugging, performance) | Maestro device flows |
+| Angular website or web app, marketing site (E2E, responsive-viewport, a11y, visual) | `@playwright/test` suites (CI), Playwright CLI (interactive), Chrome DevTools MCP (performance and diagnostics) | Maestro device flows |
 | React website or web app (E2E, responsive-viewport, a11y, visual) | Same as Angular: `@playwright/test`, `playwright-cli`, Chrome DevTools MCP | Maestro device flows |
 | Angular unit and component tests | `ng test` (Vitest via `@angular/build:unit-test`, jsdom by default; CI: `ng test --no-watch`) — or the runner the `angular.json` test builder already names | a browser E2E tool for logic a unit test can cover |
 | React unit and component tests | Vitest + React Testing Library + user-event (`vitest run`) | snapshot-only tests as the sole assertion |

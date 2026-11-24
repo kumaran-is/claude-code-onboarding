@@ -2,7 +2,7 @@
 
 ## When to Use Chrome DevTools MCP
 
-Use chrome-devtools when the task involves looking under the hood:
+Routing (`.claude/rules/testing-tool-selection.md`): driving a page — navigating, filling forms, clicking through a flow, capturing evidence — is Playwright CLI's job ([playwright-cli-tools.md](playwright-cli-tools.md)); repeatable checks are `@playwright/test` specs. Use chrome-devtools when the task involves looking under the hood:
 
 - Performance tracing and Core Web Vitals (LCP, CLS, TBT)
 - Console error monitoring
@@ -10,7 +10,7 @@ Use chrome-devtools when the task involves looking under the hood:
 - JavaScript execution in page context
 - DOM and CSS debugging
 - CPU/Network throttling
-- Connecting to user's running Chrome session (`--autoConnect`)
+- Connecting to user's running Chrome session (`--autoConnect`): only when the user asks, since it exposes their logged-in sessions; QA uses a fresh browser
 
 ## Navigation & Page Control
 

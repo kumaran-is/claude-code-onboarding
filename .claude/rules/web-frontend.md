@@ -7,6 +7,7 @@ paths:
   - "**/vite.config.*"
   - "**/next.config.*"
   - "**/playwright.config.*"
+  - "**/e2e/**/*.{ts,tsx}"
 ---
 
 # Web frontend guardrails (Angular 22 / React)
@@ -33,6 +34,10 @@ Path-scoped: loads for web-app files only. Globs avoid `**/*.ts` and `**/src/**/
 
 **Angular scaffolding is CLI-first:** new workspaces come from `/scaffold-angular-app` (`ng new`); components, services, guards, interceptors, interfaces, environments and libraries come from `ng generate`, and integrations from `ng add`, run with the workspace's local CLI (`npm exec --no -- ng …`). Never hand-write `angular.json`, `main.ts`, `tsconfig*.json` or a skeleton the CLI generates; hand-write only application logic, and replace every generated placeholder (`return true` guard, empty interface) before lint. Older majors are upgraded with `ng update` plus `ng generate @angular/core:<migration>` (dry run first), never re-scaffolded over. Do not overwrite a non-empty directory.
 
-**Testing and gates:** web UI/E2E uses Playwright / Chrome DevTools (`.claude/rules/testing-tool-selection.md`). Angular template errors are caught only by `ng build` / `ng test`, not `tsc`. Run `/verify` (web block: type-check, lint or NOT RUN, unit, build, E2E) before claiming done.
+**Testing and gates:** tool routing in `.claude/rules/testing-tool-selection.md` (Playwright CLI interactive, `@playwright/test` regression, Chrome DevTools MCP diagnostics). Angular template errors are caught only by `ng build` / `ng test`, not `tsc`. Run `/verify` (web block: type-check, lint or NOT RUN, unit, build, E2E with an executed-test count) before claiming done.
+
+**When a UI change needs a Playwright Test spec** (`.claude/skills/browser-testing/reference/playwright-test-suite.md`): add or update one when the change alters user-visible behaviour — navigation or routing (guards, redirects, deep links, 404), a form (validation, submit, server errors), sign-in/sign-out or role-dependent UI, a critical journey (checkout, onboarding, booking), how an HTTP failure, empty or offline state is shown, or a responsive breakpoint. Each such spec asserts the visible outcome and the server's answer, and the affected state gets an axe scan. Cosmetic edits (copy, colour tokens, spacing with no breakpoint change) need no new E2E; unit/component tests cover logic. If no spec is added for a material change, say so in the change description with the reason.
+- React frameworks: respect the rendering boundary. For SSR / React Router framework mode / Next.js App Router, assert the server-rendered HTML (`page.request.get(url)` body or JS disabled via `javaScriptEnabled: false`) and that hydration produces no console errors; test client-only behaviour after hydration with web-first assertions.
+- Marketing sites are not exempt: cover primary navigation and every critical CTA, the contact/lead form (validation, success, server error), responsive layout at phone and desktop widths, axe on each template, no broken assets (`page.on('response')` status >= 400 for same-origin requests) and no console errors.
 
 **Versions:** pin exact versions in scaffolds (`@angular/cli@22.3.0`, `create-vite@<version>`, never `@latest`); TypeScript follows each stack's pin: Angular 22 requires `>=6.0 <6.1` (6.0.3; TypeScript 7 is not supported); React keeps its own 5.9.x pin (create-vite templates may pull a newer major).

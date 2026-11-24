@@ -32,19 +32,6 @@
       ],
       "timeout": 60000
     },
-    "browser-use": {
-      "type": "stdio",
-      "disabled": false,
-      "description": "Browser automation for web testing, form filling, screenshots, and data extraction.",
-      "command": "uvx",
-      "args": [
-        "--from",
-        "browser-use[cli]==1.0.8",
-        "browser-use",
-        "--mcp"
-      ],
-      "timeout": 60000
-    },
     "firebase": {
       "type": "stdio",
       "disabled": false,

@@ -6,6 +6,9 @@
 #   3. Mock / test-framework code in non-test files
 #   4. Hedging comments left in code
 #   5. Placeholder values ("changeme", "YOUR_API_KEY", ...)
+#   6. AI guardrail signals from `.claude/scripts/check-ai-assets.py --file` (one detector, shared with CI):
+#      retrieval without a tenant/principal filter (G9), state-changing tool without idempotency/authorization
+#      markers (G2, G4), prompt label 'latest' (G11). Pattern-only: cannot prove semantics.
 #
 # Contract (see .claude/rules/hook-and-gate-authoring.md):
 #   - Advisory only: always exit 0; never blocks a write. Fails open when jq is missing.
@@ -17,6 +20,7 @@
 set -uo pipefail
 
 MAX_FINDINGS=15
+AI_ASSET_CHECK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/check-ai-assets.py"
 
 is_test_path() {
   printf '%s' "$1" | grep -qiE '(^|/)(tests?|__tests__|__mocks__|fixtures|e2e)/|(\.|_)(test|spec)\.[a-z]+$|(^|/)test_[^/]*$|(^|/)conftest\.py$'
@@ -54,6 +58,15 @@ abstract_not_implemented() { # $1 file: stub lines for raise NotImplementedError
     }' "$1" | head -3
 }
 
+ai_asset_signals() { # $1 file -> guardrail signals from the shared detector; says once when it cannot run
+  local marker="${TMPDIR:-/tmp}/claude-ai-asset-check-unavailable"
+  if ! command -v python3 >/dev/null 2>&1 || [ ! -f "$AI_ASSET_CHECK" ]; then
+    [ -f "$marker" ] || { : > "$marker" 2>/dev/null; echo "AI_ASSET_CHECK_UNAVAILABLE: python3 or check-ai-assets.py missing; guardrail signals not checked"; }
+    return 0
+  fi
+  python3 "$AI_ASSET_CHECK" --file "$1" 2>/dev/null | head -5
+}
+
 collect_findings() { # $1 file -> findings, one per line
   local file="$1" ext="${1##*.}"
   case "$ext" in
@@ -66,6 +79,10 @@ collect_findings() { # $1 file -> findings, one per line
   if ! is_test_path "$file"; then
     scan "$file" 'jest\.mock\(|sinon\.|unittest\.mock|MockProvider|createMockStore|mockReturnValue|spyOn\(|\.mockImplementation\(|TestBed\.|factory_boy|(import|from)[[:space:]]+faker' 2 MOCK_LEAK
   fi
+
+  case "$ext" in
+    py|ts|tsx|js|jsx|mjs|java|dart) ai_asset_signals "$file" ;;
+  esac
 
   scan "$file" '(#|//) (Note: this may not work|This might need adjustment|You may want to change|I think|Not sure if)' 2 AI_HEDGE_COMMENT
   scan "$file" '"your-api-key-here"|"YOUR_API_KEY"|"REPLACE_ME"|"TODO_FILL_IN"|"changeme"|'"'changeme'"'|"placeholder"|'"'placeholder'"'|"example\.com"|http://localhost:3000.*TODO' 2 HARDCODED_PLACEHOLDER
@@ -122,6 +139,18 @@ selftest() {
   out=$(run "$tmp/tests/test_prod.py"); expect_silent "mock import in a test file not flagged" "$out"
   printf 'See fixtures.md and the faker. library docs\n' > "$tmp/prose.py"
   out=$(run "$tmp/prose.py"); expect_silent "prose mentioning fixtures./faker. not flagged" "$out"
+
+  mkdir -p "$tmp/rag"
+  printf 'docs = store.similarity_search(query, k=5)\n' > "$tmp/rag/search.py"
+  out=$(run "$tmp/rag/search.py"); expect_has "retrieval without scope filter flagged (shared detector)" "$out" "RETRIEVAL_WITHOUT_SCOPE_FILTER"
+  printf 'docs = store.similarity_search(query, k=5, filter={"tenant_id": tid})\n' > "$tmp/rag/scoped.py"
+  out=$(run "$tmp/rag/scoped.py"); expect_silent "tenant-filtered retrieval not flagged" "$out"
+  printf '@tool\ndef send_payment(amount: int) -> str:\n    return "ok"\n' > "$tmp/rag/tools.py"
+  out=$(run "$tmp/rag/tools.py"); expect_has "state-changing tool without idempotency/authz flagged" "$out" "STATE_CHANGING_TOOL_UNGUARDED"
+  printf '"""Compare a <-> b."""\n' > "$tmp/rag/prose.py"
+  out=$(run "$tmp/rag/prose.py"); expect_silent "pgvector operator in prose not flagged as retrieval" "$out"
+  printf 'MODEL = "gemini-3-flash-preview"\n' > "$tmp/rag/agent.py"
+  out=$(run "$tmp/rag/agent.py"); expect_has "preview model id flagged, as ADVISORY" "$out" "ADVISORY MODEL_UNPINNED"
 
   printf 'KEY = "changeme"\n' > "$tmp/cfg.py"
   out=$(run "$tmp/cfg.py"); expect_has "placeholder value flagged" "$out" "HARDCODED_PLACEHOLDER"

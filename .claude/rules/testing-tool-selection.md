@@ -4,11 +4,11 @@ Choose the test tool from the **application target under test**, never from the 
 
 | Target under test | UI / E2E tool | Never use |
 |---|---|---|
-| Flutter app on an Android emulator, iOS simulator or physical device | **Maestro CLI** (`maestro test`) and **Maestro MCP** (`list_devices` → `inspect_screen` → `run`) — exclusively | Playwright, Chrome DevTools, Browser-Use, claude-in-chrome, or any browser automation |
+| Flutter app on an Android emulator, iOS simulator or physical device | **Maestro CLI** (`maestro test`) and **Maestro MCP** (`list_devices` → `inspect_screen` → `run`) — exclusively | Playwright, Chrome DevTools, claude-in-chrome, or any browser automation |
 | Flutter unit, widget, golden and accessibility-guideline tests | `flutter test` | — |
 | Flutter static validation | `flutter analyze`, `dart format --output=none --set-exit-if-changed .` | — |
-| Angular website or web app (E2E, responsive-viewport, a11y, visual) | Playwright: `@playwright/test` suites (CI) and `playwright-cli` (interactive); Chrome DevTools MCP (performance); Browser-Use MCP (exploratory) | Maestro device flows |
-| React website or web app (E2E, responsive-viewport, a11y, visual) | Same as Angular: `@playwright/test`, `playwright-cli`, Chrome DevTools MCP, Browser-Use MCP | Maestro device flows |
+| Angular website or web app (E2E, responsive-viewport, a11y, visual) | Playwright: `@playwright/test` suites (CI) and `playwright-cli` (interactive); Chrome DevTools MCP (default interactive debugging, performance) | Maestro device flows |
+| React website or web app (E2E, responsive-viewport, a11y, visual) | Same as Angular: `@playwright/test`, `playwright-cli`, Chrome DevTools MCP | Maestro device flows |
 | Angular unit and component tests | `ng test` (Vitest via `@angular/build:unit-test`, jsdom by default; CI: `ng test --no-watch`) — or the runner the `angular.json` test builder already names | a browser E2E tool for logic a unit test can cover |
 | React unit and component tests | Vitest + React Testing Library + user-event (`vitest run`) | snapshot-only tests as the sole assertion |
 | Flutter **web** build served in a browser | browser tools are allowed (it is a web target) | treating the result as proof about the Android/iOS app |

@@ -4,7 +4,7 @@
 # Rule (canonical): .claude/rules/testing-tool-selection.md
 #   Flutter Android/iOS UI/E2E -> Maestro CLI/MCP only; browser automation is for web targets.
 #
-# Fires when the call is a browser tool (mcp__chrome-devtools__*, mcp__browser-use__*, mcp__claude-in-chrome__*,
+# Fires when the call is a browser tool (mcp__chrome-devtools__*, mcp__claude-in-chrome__*, mcp__playwright__*,
 # or a Bash command that starts playwright-cli / npx|pnpm exec|yarn|bunx playwright / puppeteer / cypress / selenium) AND the
 # workspace contains a Flutter MOBILE app (a pubspec.yaml that depends on the Flutter SDK with an android/ or
 # ios/ directory beside it, up to 4 levels deep). A web-only repo, or a Flutter project with no mobile target,
@@ -15,7 +15,7 @@
 # Test: bash .claude/hooks/pre-browser-tool-advisory.sh --selftest
 set -uo pipefail
 
-BROWSER_TOOL='^mcp__(chrome-devtools|browser-use|claude-in-chrome|playwright)__'
+BROWSER_TOOL='^mcp__(chrome-devtools|claude-in-chrome|playwright)__'
 BROWSER_CMD='(^|[;&|])[[:space:]]*(npx[[:space:]]+(-y[[:space:]]+)?|pnpm[[:space:]]+((exec|dlx)[[:space:]]+)?|yarn[[:space:]]+(dlx[[:space:]]+)?|bunx[[:space:]]+)?(playwright-cli|playwright[[:space:]]+(test|codegen|install|open)|puppeteer|cypress[[:space:]]+(run|open)|selenium)'
 
 flutter_mobile_app() { # $1 = root; prints the first mobile app dir found
@@ -55,7 +55,7 @@ selftest() {
       advise) printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext|test("Maestro")' >/dev/null 2>&1 && echo "  ok   $1" || { echo "  FAIL $1 (no advisory)"; fail=1; } ;;
       silent) [ -z "$out" ] && echo "  ok   $1" || { echo "  FAIL $1 (unexpected output)"; fail=1; } ;; esac; }
   chk "Flutter Android app + Chrome DevTools MCP -> advises"        advise mcp__chrome-devtools__navigate_page "" "$t/mobile" s1
-  chk "Flutter iOS app + Browser-Use MCP -> advises"                advise mcp__browser-use__browser_exec "" "$t/hybrid" s2
+  chk "Flutter iOS app + Chrome DevTools MCP -> advises"            advise mcp__chrome-devtools__take_snapshot "" "$t/hybrid" s2
   chk "Flutter app + claude-in-chrome -> advises"                   advise mcp__claude-in-chrome__navigate "" "$t/mobile" s3
   chk "Flutter app + Bash playwright-cli -> advises"                advise Bash "playwright-cli goto http://localhost:4200" "$t/mobile" s4
   chk "Flutter app + npx playwright test -> advises"                advise Bash "cd web && npx playwright test" "$t/mobile" s5

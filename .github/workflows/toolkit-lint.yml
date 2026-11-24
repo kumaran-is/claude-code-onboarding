@@ -45,6 +45,89 @@ jobs:
       - name: Testing-tool routing
         run: bash .claude/scripts/lint-testing-tools.sh
 
+      - name: Standards coverage register (IDs, statuses, refs exist, line ranges in file)
+        run: |
+          bash .claude/scripts/check-coverage-register.sh --selftest
+          bash .claude/scripts/check-coverage-register.sh docs/audits/ai-engineering-standards-coverage.tsv
+
+  ai-asset-gates:
+    name: AI asset validators (golden data, eval gate, prompts, governance, model registry, memory, attack classes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install uv (runs the PEP 723 validators on their pinned Python and dependencies)
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.13.9"
+
+      - name: Validator selftests (positive and negative fixtures)
+        run: |
+          failed=0
+          run_selftest() { # $1 label, rest: command
+            label="$1"; shift
+            rc=0; "$@" > selftest.log 2>&1 || rc=$?
+            echo "$label exit=$rc"
+            if [ "$rc" -ne 0 ]; then cat selftest.log; echo "::error::$label selftest exit $rc"; failed=$((failed + 1)); fi
+          }
+          run_selftest validate_golden uv run --script .claude/skills/eval-guide/scripts/validate_golden.py --selftest
+          run_selftest eval_gate uv run --script .claude/skills/eval-guide/scripts/eval_gate.py --selftest
+          run_selftest validate_governance_record python3 .claude/skills/ai-governance/scripts/validate_governance_record.py --selftest
+          run_selftest validate_prompts uv run --script .claude/skills/prompt-engineering-patterns/scripts/validate_prompts.py --selftest
+          run_selftest prompt_drift uv run --script .claude/skills/prompt-engineering-patterns/scripts/prompt_drift.py --selftest
+          run_selftest promptops_runtime uv run --script .claude/skills/prompt-engineering-patterns/assets/prompts-scaffold/promptops/test_prompt_registry.py
+          run_selftest validate_model_registry python3 .claude/skills/agentic-ai-dev/scripts/validate_model_registry.py --selftest
+          run_selftest validate_memory_item python3 .claude/skills/agentic-ai-dev/scripts/validate_memory_item.py --selftest
+          run_selftest rag_response_contract python3 .claude/skills/rag-architect/scripts/test_response_contract.py
+          run_selftest check_attack_class_ids uv run --script .claude/skills/security-reviewer/scripts/check_attack_class_ids.py --selftest
+          run_selftest check-ai-assets python3 .claude/scripts/check-ai-assets.py --selftest
+          grep -q '^  NOT RUN' selftest.log && { echo "::error::check-ai-assets live controls did not run"; failed=$((failed + 1)); }
+          echo "failed=$failed"
+          [ "$failed" -eq 0 ]
+
+      - name: Gate the shipped golden and prompt scaffolds (JSON evidence)
+        run: |
+          mkdir -p reports
+          failed=0
+          gate_scaffold() { # $1 name, $2 root, $3 required scanned count (proves the scan saw input)
+            rc=0
+            python3 .claude/scripts/check-ai-assets.py --root "$2" --json "reports/ai-assets-$1.json" \
+              > "reports/ai-assets-$1.log" 2>&1 || rc=$?
+            cat "reports/ai-assets-$1.log"
+            echo "$1 check-ai-assets exit=$rc"
+            grep -q "$3" "reports/ai-assets-$1.log" || { echo "::error::$1 scan did not report $3"; failed=$((failed + 1)); }
+            [ "$rc" -eq 0 ] || { echo "::error::$1 scaffold gate exit $rc"; failed=$((failed + 1)); }
+          }
+          gate_scaffold golden .claude/skills/eval-guide/assets/golden-scaffold 'golden_trees=1'
+          gate_scaffold prompts .claude/skills/prompt-engineering-patterns/assets/prompts-scaffold 'prompt_files=1'
+          [ "$failed" -eq 0 ]
+
+      - name: AI attack-class fixture (38 tests + every control proven load-bearing)
+        working-directory: .claude/skills/security-reviewer/assets/ai-attack-class-fixture
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/acfx
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          rc=0; uv run --frozen --python 3.14 pytest || rc=$?
+          echo "fixture pytest exit=$rc"
+          [ "$rc" -eq 0 ] || exit 1
+          rc=0; LOG_DIR="$RUNNER_TEMP/acneg" ./run_negative_controls.sh || rc=$?
+          echo "negative controls exit=$rc"
+          [ "$rc" -eq 0 ]
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ai-asset-gates
+          path: reports/
+          if-no-files-found: error
+
   hooks:
     name: Hook and script syntax + selftests
     runs-on: ubuntu-latest

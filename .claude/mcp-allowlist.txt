@@ -1,7 +1,6 @@
 adk-docs
 angular-cli
 appstore-connect
-browser-use
 chrome-devtools
 cloud-sql-admin
 cloud-sql-postgres

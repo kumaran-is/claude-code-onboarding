@@ -94,7 +94,6 @@ New additions must pass this scan before use:
 | `github` (api.githubcopilot.com) | ✅ Trusted | HTTP MCP, reads/writes GitHub only |
 | `angular-cli` (npx @angular/cli mcp) | ✅ Trusted | Local CLI, no network write calls |
 | `chrome-devtools` (chrome-devtools-mcp) | ✅ Trusted | Local browser automation |
-| `browser-use` (uvx browser-use) | ✅ Trusted | Local browser automation |
 | `firebase` (npx firebase-tools mcp) | ✅ Trusted | Scoped to authenticated Firebase project |
 | `context7` (npx @upstash/context7-mcp) | ✅ Trusted | Read-only doc fetcher |
 | `dart-mcp-server` (dart mcp-server) | ✅ Trusted | Local Dart/Flutter tooling |
@@ -134,3 +133,4 @@ prevent false triggers.
 | GenUI/A2UI catalog, renderer or action change | Load `genui-contract` skill; review with `genui-contract-reviewer`; gate with `/audit-a2ui-parity` + `/validate-genui-feature` | Single-platform styling change with no catalog/action/protocol impact |
 | New TypeScript MCP server | Run `/scaffold-mcp-server`, load `mcp-builder` | Python MCP server (`python-mcp-setup.md`); adding tools to an existing server |
 | Architecture change proposed | Load `architecture-design` skill + create ADR | Single-file refactor with no cross-service impact |
+| AI risk assessment, autonomy promotion, governance audit or readiness | Load `ai-governance`; validate records with its script | Low-risk prototype with no governance ask |

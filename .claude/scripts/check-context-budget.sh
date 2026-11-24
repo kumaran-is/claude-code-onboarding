@@ -27,7 +27,7 @@ is_path_scoped() {
 }
 
 selftest() {
-  local tmp fail=0 f
+  local tmp fail=0 f out rc
   if bash -n "${BASH_SOURCE[0]}" 2>/dev/null; then echo "  ok   parses (bash -n)"; else echo "  FAIL does not parse"; return 1; fi
   tmp=$(mktemp -d) || return 1
   mkdir -p "$tmp/.claude/rules/web"
@@ -50,6 +50,16 @@ selftest() {
   want=$(cat "$tmp/CLAUDE.md" "$tmp/.claude/rules/always.md" "$tmp/.claude/rules/web/nested-always.md" "$tmp/.claude/rules/body-paths.md" | wc -c | tr -d ' ')
   if printf '%s' "$out" | grep -qF "Always-loaded total: ${want} bytes"; then echo "  ok   total = ${want} bytes (scoped rules excluded)"
   else echo "  FAIL total is not ${want} bytes: $(printf '%s' "$out" | grep 'Always-loaded total')"; fail=1; fi
+  out=$(CLAUDE_PROJECT_DIR="$tmp" bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "Status: PASS (--strict)"; then echo "  ok   negative: --strict under the ceiling exits 0 and says PASS"
+  else echo "  FAIL --strict under the ceiling: rc=$rc $(printf '%s' "$out" | tail -1)"; fail=1; fi
+  awk 'BEGIN { print "# Big"; for (i = 0; i < 1600; i++) printf "%0100d\n", 0 }' > "$tmp/.claude/rules/big.md"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "exceeds the 150k-char ceiling"; then echo "  ok   positive: --strict fails on a 160k-char rule file"
+  else echo "  FAIL --strict did not fail on a 160k-char rule file: rc=$rc"; fail=1; fi
+  out=$(CLAUDE_PROJECT_DIR="$tmp" bash "${BASH_SOURCE[0]}" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "report-only"; then echo "  ok   negative: report mode stays exit 0 on the same breach"
+  else echo "  FAIL report mode: rc=$rc"; fail=1; fi
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
@@ -155,5 +165,9 @@ if [ "$MODE" = "--strict" ] && [ "$FAIL" -gt 0 ]; then
   echo "Status: FAIL — an instruction file exceeds the 150k-char ceiling; split it."
   exit 1
 fi
-echo "Status: report-only (advisory). Re-run with --strict to fail on a 150k-char breach."
+if [ "$MODE" = "--strict" ]; then
+  echo "Status: PASS (--strict) — no instruction file exceeds the 150k-char ceiling; size and growth warnings stay advisory."
+else
+  echo "Status: report-only (advisory). Re-run with --strict to fail on a 150k-char breach."
+fi
 exit 0

@@ -115,7 +115,7 @@ updates:
 - **Mandatory audit triggers:** Audit log required for: record deletions, role/permission changes, payment events, data exports, account modifications, admin actions. If a critical action has no audit trail, flag it as HIGH severity.
 
 ### 10. MCP Servers and Agent Tools (CRITICAL/HIGH, when applicable)
-Requirement levels (spec MUST vs practice) and severities S1–S13 / T1–T8: `mcp-security.md`. Minimum checks:
+Requirement levels (spec MUST vs practice) and severities S1–S16 / T1–T13: `mcp-security.md`. Minimum checks:
 - Remote (HTTP) server: Protected Resource Metadata served, 401 carries `resource_metadata`, tokens validated for `alg`, `iss`, `aud` = this server and `exp`; no token passthrough to upstream APIs
 - `Origin` validated (403); local servers bind 127.0.0.1; remote binds list allowed hosts and origins
 - Per-tool scopes; tenant and user only from the verified token, never tool arguments or client headers
@@ -129,6 +129,11 @@ Canonical checklist: `agent-guardrails-checklist.md`; RAG retrieval isolation: `
 - Tenant and user scope injected server-side from the verified token; model-supplied ids ignored
 - Side-effecting tools have a deterministic server-side check and, when destructive, human approval
 - LLM guardrails and classifiers are an extra block, never a substitute for authorization
+- Every applicable attack class AC-01–AC-18 has a deterministic control on its highest-harm path and at least one mapped red-team case; a control that exists only in a prompt does not count (`ai-threat-model-attack-classes.md` §3)
+- Model output reaching HTML, SQL, shell or template sinks is validated and encoded; markdown images and links to non-allowlisted hosts are stripped (AC-07, AC-14)
+- No secrets, keys or authorization logic in prompts, few-shot examples, tool descriptions, memory, embeddings or traces; a system-prompt canary in output is a hard blocker (AC-06, §10 of the same file)
+- AI finding severity uses the SEV-1–SEV-4 matrix: cross-scope access at any attack success rate, unauthorized writes, secret disclosure and code execution via output are CRITICAL; a prompt-only patch never closes a CRITICAL or HIGH finding
+- New model, embedding model, dataset, plugin or tool server: third-party intake record exists (§9 of the same file)
 
 ### 12. Claude Code Configuration (HIGH, when `.claude/` or `.mcp.json` changes)
 `claude-config-security.md`: permission allow rules, guard hooks that fail open, MCP pins and argv secrets, agent permission modes.

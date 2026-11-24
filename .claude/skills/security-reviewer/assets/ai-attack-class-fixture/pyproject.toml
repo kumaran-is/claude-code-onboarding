@@ -1,0 +1,8 @@
+[project]
+name = "ai-security-ac-fixture"
+version = "0.1.0"
+requires-python = ">=3.14,<3.15"
+dependencies = ["jsonschema==4.26.0", "pytest==9.2.0"]
+
+[tool.pytest.ini_options]
+addopts = "-q -p no:cacheprovider"

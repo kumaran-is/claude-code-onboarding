@@ -114,7 +114,7 @@ chunks_used:
 model: <generation model id>
 prompt_template_version: v2.3
 citations_validated: true    # cited ids ⊂ retrieved ids
-abstained: false
+status: ANSWERED             # closed enum: rag-architect/references/rag-response-contract.md §3 (abstained is only an eval/LLM-schema boolean)
 ```
 
 This is required for: compliance investigations, debugging wrong answers, citation verification, demonstrating ACL enforcement.
@@ -132,13 +132,16 @@ Redact at multiple stages, not just one:
 
 ## Multi-tenancy security checklist
 
-| Pattern | Strengths | Weaknesses |
-|---|---|---|
-| Shared index + tenant filter (+ RLS) | Cheapest; cross-tenant analytics possible | Chokepoint must be airtight; filtered-ANN recall loss on small tenants (see §1) |
-| Native multi-tenancy (Weaviate tenant shards) | Structural isolation; cold tenants can be deactivated/offloaded | Every call needs `with_tenant`; lazy-created tenants raise on read before first write |
-| Per-tenant indexes/partitions | Strongest isolation | Highest cost; ops complexity |
+| Pattern | Isolation strength | Fits | Weaknesses |
+|---|---|---|---|
+| Shared index + mandatory scope filter | Logical; depends on every query carrying the filter | Many small tenants, low per-tenant volume; cross-tenant analytics possible | Cheapest; one forgotten filter is a breach; selective filters hurt ANN recall (§1); noisy neighbours |
+| Shared index + database-enforced row security (RLS) | Logical, enforced below the application | Relational vector store | Defence in depth; needs session-scoped tenant context through the connection pool |
+| Namespace / partition / per-tenant shard (Weaviate tenant shards) | Physical-ish; the query is addressed to one tenant | Medium tenant count; per-tenant deletion (drop the shard) | Per-store tenant-count limits; every call needs `with_tenant`; lazy-created tenants raise on read before first write; cross-tenant search impossible by design |
+| Per-tenant index / collection / database | Strongest | Few large or regulated tenants; per-tenant residency | Highest cost and ops overhead; schema migrations × N |
 
-Choose by shape: many small tenants → native multi-tenancy; few large tenants or cross-tenant analytics → shared index + mandatory server-side filter + RLS/partitions. For any pattern: **single chokepoint, filter inside the retrieval call, audited**.
+Choose by tenant count, size skew, regulatory requirements and deletion needs: many small tenants → native multi-tenancy; few large tenants or cross-tenant analytics → shared index + mandatory server-side filter + RLS/partitions. Mixed models are allowed (shared for the long tail, dedicated for large or regulated tenants) only when routing to them is deterministic. The isolation boundary **must** be enforced in code or in the store, never by prompt (G9). For any pattern: **single chokepoint, filter inside the retrieval call, audited**.
+
+**ADAPT (record per corpus):** `isolation_boundary` (tenant / org / business unit / user), the chosen pattern, and the cross-scope negative test suite (results, snippets, counts/facets, nearest neighbours, rerank inputs, caches).
 
 ## Adversarial testing
 
@@ -154,6 +157,28 @@ Build a red-team suite as part of CI:
 | Tenant-bypass probes | Queries crafted to exploit filter logic edge cases |
 
 Track injection success rate as a security metric. Run in CI before every deployment.
+
+## Query-side controls (injection, exfiltration, poisoning)
+
+| Control | Check |
+|---|---|
+| Output validator | Rejects answer content drawn from chunks outside the caller's scope (defence in depth behind the retrieval filter) |
+| Links and markup | URLs and active markup in answers are stripped or allowlisted; model-generated links to unknown domains are never rendered |
+| Tool calls | Require policy authorization independent of retrieved content; no tool argument is taken verbatim from retrieved text without validation |
+| Cross-scope negatives | Cover results, snippets, counts/facets, nearest neighbours, rerank inputs and caches |
+| Vectors | As sensitive as their source text: same access control, encryption and residency |
+| Injected instructions in documents | Retrieved text delimited as data (`rag-architect/references/context-packing-patterns.md` §0); system prompt states chunks are never instructions; instruction-like text flagged at ingestion; output validation |
+| Corpus / embedding poisoning | Untrusted contributors cannot write to shared corpora without review; `trust_level` usable as a filter or ranking signal; alert on new chunks that are nearest neighbours of many high-value queries and on abnormal retrieval frequency; cap one source's share of the final context; hybrid retrieval reduces pure-vector manipulation |
+| Stale or superseded content resurfacing | Version filters (`rag-architect/references/versioning-and-freshness.md` §3) |
+| Embedding inversion / membership inference | Vectors get the same access control, encryption and residency as the source text (row above) |
+
+Red-team coverage for indirect injection and poisoning is **mandatory** for any corpus with `trust_level` below `trusted-internal` (procedures: `eval-guide/reference/red-teaming.md`).
+
+Ingestion-side poisoning controls: `vector-database/references/rag-ingest-checklist.md` §P.
+
+## Guardrail mapping
+
+Controls 1–3 implement guardrails G9 (authorize before retrieval; retrieved text is data) and G14 (retrieval is evidence, not authority); deletion, ACL metadata, freshness and poisoning defence below implement G15 (`.claude/skills/ai-playbook/reference/engineering-guardrails.md`). Executable negatives: `ai-launch-check/assets/guardrail_contract_tests.py` (`test_cross_scope_query_returns_nothing_from_other_org` covers results, facets and neighbours; `test_secret_bearing_text_is_excluded_from_index`; `test_deleted_source_not_retrievable_after_sla`; `test_injected_instruction_in_retrieved_content_triggers_no_tool`). ACL-change propagation and deletion SLAs are values the organisation sets; the test asserts the SLA it is given.
 
 ## Deletion / right-to-be-forgotten
 

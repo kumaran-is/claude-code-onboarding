@@ -87,6 +87,11 @@ checks:
 - [ ] Remote HTTP servers prefer OAuth over a static `Authorization` header.
 - [ ] Every server in `.mcp.json` is listed with its risk in `.claude/rules/skill-triggers.md` §P0;
       `.claude/mcp-config.sha256` is refreshed only after that review.
+- [ ] A new MCP server, plugin or skill from outside the repo passes third-party intake first
+      (provenance, pin, data handling, permissions, tool-surface review for hidden instructions,
+      egress, exit plan): [ai-threat-model-attack-classes.md](ai-threat-model-attack-classes.md) §9.
+      Its tool descriptions and outputs are untrusted content (AC-08); an upgrade that changes
+      the tool surface is re-reviewed before use.
 
 ## 5 — Agents (`.claude/agents/*.md`)
 

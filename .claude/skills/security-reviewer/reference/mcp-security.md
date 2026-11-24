@@ -79,8 +79,13 @@ Level = the keyword in the cited page. "Practice" = not in the MCP specification
 | S9 | Secrets in argv, in tool arguments or results, in logs; `error.message` from upstreams returned to the client | HIGH |
 | S10 | Invalid token answered with 403 or 200; insufficient scope answered with 401 | MEDIUM |
 | S11 | Unpinned or deprecated MCP SDK/adapter version on a security path | MEDIUM |
-| S12 | No audit record for authorization denials and destructive calls | MEDIUM (HIGH for payments/deletes) |
+| S12 | No audit record for authorization denials, or a read tool returning PII/financial data/documents without one | MEDIUM (HIGH for payments/deletes) |
 | S13 | Secret or credential requested through form-mode elicitation | HIGH (spec MUST NOT) |
+| S14 | Write tool with no audit-log call, or the effect runs when the audit write fails | CRITICAL (eval-standard hard blocker: merge blocked) |
+| S15 | Tool accepts a cross-scope input id, or an unauthorized tool call succeeds, in any test or canary | CRITICAL (eval-standard hard blocker) |
+| S16 | No committed tool-surface lock (name + description + input schema hashes) checked in CI | MEDIUM |
+
+Attack classes: tool-description or tool-output poisoning and excessive agency are AC-08, unsafe tool calls (forbidden transition, wrong recipient, mass action) AC-09; third-party tool-server intake (provenance, pin, surface review, egress, sandboxed identity with short-lived audience-restricted tokens, re-review on surface change, remote non-enterprise servers default to T2): `ai-threat-model-attack-classes.md` §3, §9.
 
 ## 3. Reviewer severity — tool execution (`ai-security-reviewer`)
 
@@ -94,6 +99,11 @@ Level = the keyword in the cited page. "Practice" = not in the MCP specification
 | T6 | No per-principal rate limit/quota on expensive or fan-out tools | MEDIUM |
 | T7 | Regex injection detector used as a blocking control instead of a signal | MEDIUM |
 | T8 | No `outputSchema` / result validation for tools whose output drives code | MEDIUM |
+| T9 | Idempotency key not bound to a payload hash: a reused key with changed amount, recipient or date executes again or silently returns the old result | HIGH |
+| T10 | Agent-retried write with no version / `supersedes` check, so a late AI write lands after a human resolved the object | HIGH (financial, scheduling, authorization effects), MEDIUM otherwise |
+| T11 | Tool input without a strict schema (unknown fields stripped or accepted) or without a supported-version check | MEDIUM (HIGH when an extra field can carry scope, tenant or amount) |
+| T12 | An agent caller's delegated permissions not intersected with the delegator's, or no maximum delegation depth | HIGH |
+| T13 | Tool failure path returns fabricated data (empty list, `0`, default) instead of a typed error | HIGH |
 
 ## 4. MCP client configuration (`.mcp.json`, settings)
 
@@ -112,6 +122,7 @@ Complements [claude-config-security.md](claude-config-security.md) §4 (MCP laun
 - A runtime claim (401, 403, SSRF blocked, approval refused) counts only with the command and its output from this session; otherwise mark it **NOT RUN**.
 - A guard test counts only with a **negative control**: the same test fails when the guard is removed. Tests against a mock that never calls the guard prove nothing.
 - Static review cites `file:line` for the guard and for every call path that must pass through it (all fetch sites, all tools).
+- A tool counts as release-ready only with evidence for all five tool-eval layers (protocol contract, schema, authorization + isolation, security, trajectory) and at least 5 cases per tool: `eval-guide/reference/mcp-eval-patterns.md`. A missing layer is NOT RUN, never PASS. Authorization and isolation verdicts come from deterministic tests, never from an LLM judge.
 
 ## 6. Sources (fetched 2026-11-23)
 

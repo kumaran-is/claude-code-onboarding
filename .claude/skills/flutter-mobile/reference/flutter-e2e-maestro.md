@@ -141,6 +141,8 @@ Co-change is a CI/hook concern (see the Flutter hooks owner); keep it advisory i
 - Evidence layout (gitignored): `test-results/<app>/<scenario>/<timestamp>/` — PASS: `result.md`, metadata, final screenshot; non-PASS adds the runner
   log, first-failed-checkpoint screenshot and before/after shots. `takeScreenshot` writes to the process working directory unless you pass `--test-output-dir`.
   A missing screenshot is not a PASS; a log that never reached the first assertion is INFRA_FAIL.
+- After a Maestro run that PASSED on a real emulator, simulator or device, record it: `python3 .claude/scripts/review_state.py stamp write ui-mobile --note "<flows, device, passed count>"`.
+  The Stop hook reminds you when Flutter `lib/` changed without one; no device means BLOCKED, never a stamp.
 - **Open the failure screenshot before naming a root cause.** A red assert alone cannot distinguish "not rendered", "rendered off-screen" and "feature broken".
 - Attribute an intermittent red as mine vs inherited only with ≥ 3 runs on the base branch (traps §9).
 - Never name a device by literal id (`emulator-5554`, a pasted UDID). Resolve it from configuration through one script that prints the id on stdout only and

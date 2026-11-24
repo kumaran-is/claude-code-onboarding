@@ -278,7 +278,7 @@ The same entries written directly in `.mcp.json`:
 
 After adding a server:
 
-1. Run the scan-before-trust check in `.claude/rules/skill-triggers.md` §P0 and add the server to its trust table.
+1. Run the scan-before-trust check in `.claude/rules/skill-triggers.md` §P0, add a row to the risk register (`.claude/skills/security-reviewer/reference/mcp-security.md` §7), then approve it with `bash .claude/hooks/session-mcp-governance.sh --approve` (allowlist and hash).
 2. Add the server to the MCP lookup order in the `SKILL.md` of the skill that should use it (and to `CLAUDE.md` if it is cross-cutting), so Claude knows when to query it.
 
 Verified 2026-11-24 against the Claude Code MCP docs (https://code.claude.com/docs/en/mcp).

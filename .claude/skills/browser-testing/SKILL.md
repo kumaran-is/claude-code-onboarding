@@ -105,7 +105,7 @@ For a server that is not running yet. Run `python scripts/with_server.py --help`
 ## Critical rules
 
 1. **Every check must be able to fail.** Prove a new gate with a negative control. A run that exits 0 with zero executed tests (all skipped, `--pass-with-no-tests`) is NOT RUN, never PASS.
-2. **Capture the tool's own exit code** (`npx playwright test; echo "E2E EXIT:$?"`), never the exit code of a `| tail` pipe. A missing browser (`Executable doesn't exist`) is BLOCKED, not FAIL and never PASS.
+2. **Capture the tool's own exit code** (`npx playwright test; echo "E2E EXIT:$?"`), never the exit code of a `| tail` pipe. A missing browser (`Executable doesn't exist`) is BLOCKED, not FAIL and never PASS. After a run that PASSED with executed tests > 0, record it: `python3 .claude/scripts/review_state.py stamp write ui-web --note "<command, executed count>"`; the Stop hook reminds you when web UI changed without one (`verification-loop.md` §4).
 3. **Assert user-visible outcomes with web-first assertions** (`toBeVisible`, `toHaveText`, `toHaveURL`). Never `waitForTimeout`; never `networkidle`. The `post-edit-playwright-advisory.sh` hook flags both.
 4. **Each data screen**: success, empty, 500 and offline cases via `page.route` / `context.setOffline` (suite) or `route` / `network-state-set` (CLI). Assert the visible error state.
 5. **Authorization**: assert the backend's answer (401/403/200 via `request`), not that a button is hidden.

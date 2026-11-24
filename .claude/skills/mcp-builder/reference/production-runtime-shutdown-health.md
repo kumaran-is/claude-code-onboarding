@@ -2,7 +2,7 @@
 
 Liveness and readiness endpoints, in-flight tracking and a graceful shutdown for a Node MCP server over Streamable HTTP. Multi-tenant concerns: [production-runtime-multi-tenant.md](production-runtime-multi-tenant.md). Container and Kubernetes wiring: [production-deployment-docker.md](production-deployment-docker.md). NestJS (Terminus) and other stacks: [health-endpoints.md](../../deployment-ci-cd/reference/health-endpoints.md).
 
-Verified 2026-11-23 with `@modelcontextprotocol/server@2.4.0` + `@modelcontextprotocol/node@2.1.2`, Node 24.13.1, TypeScript 5.9.3 strict. The end-to-end tests spawn the real process, send SIGTERM during a 1.5 s tool call, and poll the probes. Planted defects that each failed a test: liveness calling the database, no readiness flip, no wait for in-flight work, telemetry not flushed at shutdown.
+Verified 2026-11-23 against `@modelcontextprotocol/server@2.4.0` + `@modelcontextprotocol/node@2.1.2` (+ `@modelcontextprotocol/fastify@2.0.1`, Fastify 5.12.8 for §8), Node 26.13.1, TypeScript 6.0.3 strict with `exactOptionalPropertyTypes`. The end-to-end tests spawn the real process, send SIGTERM during a 1.5 s tool call, and poll the probes. Planted defects that each failed a test: liveness calling the database, no readiness flip, no wait for in-flight work, telemetry not flushed at shutdown (the span-export check ran on Node 24.13.1; the probe, drain and exit-code checks were re-run on Node 26.13.1).
 
 ## 1. Rules
 
@@ -128,7 +128,7 @@ Sequence on SIGTERM and why each step exists:
 ```typescript
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
-import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from "@modelcontextprotocol/node";
+import { localhostHostValidation, localhostOriginValidation, toNodeHandler, type NodeIncomingMessageLike } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Logger } from "pino";
@@ -221,7 +221,8 @@ export function createAppServer(logger: Logger, lifecycle: Lifecycle, deps: Depe
     if (!validateHost(req, res) || !validateOrigin(req, res)) return;
     void lifecycle
       .track(() =>
-        nodeHandler(req, res).catch((err: unknown) => {
+        // Cast: IncomingMessage.method is `string | undefined`; NodeIncomingMessageLike.method is optional (TS2379 under exactOptionalPropertyTypes).
+        nodeHandler(req as NodeIncomingMessageLike, res).catch((err: unknown) => {
           logger.error({ err }, "mcp_request_failed");
           if (!res.headersSent) sendJson(res, 500, { jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });
         }),
@@ -298,7 +299,7 @@ process.on("unhandledRejection", (reason) => {
 ```
 
 - **One owner for signals.** The telemetry bootstrap registers no SIGTERM handler; the app's shutdown calls `shutdownTelemetry()` as its last closer. Two independent handlers race: one calls `process.exit` while the other is still flushing (SOURCE-PROVEN: spans of the last requests were lost). `process.once` guards against a second signal re-entering; `Lifecycle.shutdown` is idempotent as well.
-- **`keepAliveTimeout` above the load balancer's idle timeout** (for example 65 s against a 60 s ALB default) so the LB, not Node, closes idle sockets. Otherwise the LB reuses a socket Node just closed and returns 502. Node's defaults are `keepAliveTimeout` 5 s, `headersTimeout` 60 s, `requestTimeout` 300 s (*executed* `node -e` on 24.13.1).
+- **`keepAliveTimeout` above the load balancer's idle timeout** (for example 65 s against a 60 s ALB default) so the LB, not Node, closes idle sockets. Otherwise the LB reuses a socket Node just closed and returns 502. Node's defaults are `keepAliveTimeout` 5 s, `headersTimeout` 60 s, `requestTimeout` 300 s (*executed* `node -e` on 24.13.1 and 26.13.1: unchanged).
 - **`uncaughtException` exits.** After a programming error the process state is unknown; log fatal and let the orchestrator restart it. Do not run the graceful drain from there.
 
 ## 5. What the tests showed
@@ -323,3 +324,46 @@ With the defaults above (5 s + 20 s + ~2 s = 27 s), the default 30 s grace perio
 ## 7. stdio servers
 
 A stdio server has no probes. Handle stdin `end`/`close` and SIGTERM with the same ordered close (abort in-flight, close pools, flush telemetry, exit), and log to stderr only: stdout carries the protocol.
+
+## 8. Fastify variant
+
+For the Fastify app in [node-mcp-advanced.md](node-mcp-advanced.md#streamable-http-on-fastify): `Fastify({ return503OnClosing: true })` answers new requests on kept-alive sockets with 503 while closing, and `app.close()` waits for in-flight requests. One trap, found in testing: `close()` only drops sockets that are idle *at that instant*; a keep-alive socket whose call finishes later held `close()` open until `keepAliveTimeout` (Fastify default 72 s). Sweep idle sockets while closing.
+
+```typescript
+import { setTimeout as delay } from "node:timers/promises";
+import type { FastifyInstance } from "fastify";
+import type { McpHttpHandler } from "@modelcontextprotocol/server";
+
+export interface DrainOptions {
+  readinessDrainMs: number; // >= load balancer deregistration delay
+  drainTimeoutMs: number; // >= longest tool budget, < platform grace period
+}
+
+/** Resolves with the exit code: 1 if the drain timed out. */
+export async function shutdownFastify(
+  app: Pick<FastifyInstance, "close" | "server" | "log">,
+  handler: McpHttpHandler,
+  setReady: (ready: boolean) => void,
+  opts: DrainOptions,
+): Promise<number> {
+  setReady(false); // /health/ready -> 503; keep serving while the LB deregisters
+  await delay(opts.readinessDrainMs);
+  let exitCode = 0;
+  const timer = setTimeout(() => {
+    exitCode = 1; // budget spent: abort leftovers through the MCP handler, then drop sockets
+    app.log.error("shutdown_drain_timeout");
+    void handler.close().finally(() => app.server.closeAllConnections());
+  }, opts.drainTimeoutMs);
+  timer.unref();
+  const sweep = setInterval(() => app.server.closeIdleConnections(), 250);
+  sweep.unref();
+  await app.close(); // stop accepting, wait for in-flight requests
+  clearInterval(sweep);
+  clearTimeout(timer);
+  await handler.close(); // idempotent
+  return exitCode; // then close pools, telemetry last, and process.exit(exitCode)
+}
+```
+
+Verified with a real `Client`: SIGTERM during a 1.5 s call → ready 503, live 200, call completed, new connection `ECONNREFUSED`, exit 0. Negative controls (each failed a test): drain budget 300 ms shorter than the call → call aborted, exit 1; idle sweep removed → `close()` stalled on the client's idle keep-alive socket until the 5 s drain timeout fired: exit 1 after ~6 s instead of 0 after ~2 s. On stdio, `serveStdio()` returns a handle with `close()`; when the host closed stdin mid-call the in-flight handler's signal aborted and the process exited.
+

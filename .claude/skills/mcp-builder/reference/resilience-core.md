@@ -2,7 +2,7 @@
 
 One policy set per upstream dependency that an MCP tool calls: a per-attempt timeout, retries only for idempotent calls, a circuit breaker shared by every caller, and a bulkhead that bounds concurrency. Built on `cockatiel@4.0.0` (2026-05-26; typings read, behaviour executed). `opossum@10.0.0` is the alternative (§6).
 
-Verified 2026-11-23 on Node 24.13.1, TypeScript 5.9.3 strict: 10 tests, and 4 planted defects (retry on a non-idempotent call, breaker threshold off by one, retry wrapped outside the breaker, 4xx opening the breaker) each made a test fail.
+Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3 strict: the §2 policy compiled verbatim and its breaker, 4xx, retry, timeout and bulkhead behaviour re-ran green (5 tests). The original run on Node 24.13.1 / TypeScript 5.9.3 had 10 tests, and 4 planted defects (retry on a non-idempotent call, breaker threshold off by one, retry wrapped outside the breaker, 4xx opening the breaker) each made a test fail.
 
 ## 1. Classify errors by type, not by message
 
@@ -162,7 +162,7 @@ Executed behaviour (each with its control):
 | One failure per logical call | 2 calls × 3 attempts = 6 upstream calls, breaker still `Closed` (2 < 3) | mutant with retry outside the breaker: test failed |
 | Retry only when idempotent | `idempotent: true` + two 503s → 3 calls, success | `idempotent: false` + 503 → exactly 1 call, error surfaced |
 | No retry for a non-transient error | 404 on an idempotent call → 1 call | |
-| Timeout cancels the I/O | the attempt's `AbortSignal` fired, `TaskCancelledError` thrown | |
+| Timeout cancels the I/O | the attempt's `AbortSignal` fired, `TaskCancelledError` thrown; with a real `fetch()` to a hanging upstream, 3 attempts reached it (timeouts are retried on idempotent calls) | |
 | Bulkhead bounds concurrency | 3rd concurrent call with `maxConcurrent: 2, maxQueued: 0` → `BulkheadRejectedError`; breaker stayed `Closed` | first two completed |
 
 - `wrap(a, b, c)` runs `a` outermost (*executed*). The order above (bulkhead → breaker → retry → timeout) means a rejected or broken call does not occupy a retry loop, and the breaker sees the final outcome of all attempts.
@@ -185,6 +185,16 @@ client/agent tool-call timeout          e.g. 60 s (MCP client RequestOptions.tim
 - Pass the tool's `ctx.mcpReq.signal` (client cancellation) and the per-attempt signal into the I/O with `AbortSignal.any` (§2). A timeout that does not abort the socket just stops waiting for it.
 - Undici/`fetch` defaults (`headersTimeout`/`bodyTimeout` 300 s; undici 8.13.1 docs) are far above any tool budget: always set the per-attempt timeout.
 - Graceful shutdown's drain budget must be longer than the longest tool budget you want to finish, and shorter than the platform's termination grace period ([production-runtime-shutdown-health.md](production-runtime-shutdown-health.md)).
+
+### Deadline only, no dependency: native `AbortSignal`
+
+When a call needs a deadline and caller cancellation but no breaker, bulkhead or retry, Node's built-ins are enough:
+
+```typescript
+const res = await fetch(url, { signal: AbortSignal.any([ctx.mcpReq.signal, AbortSignal.timeout(2_000)]) });
+```
+
+*Executed* on Node 26.13.1: the deadline rejects with a `DOMException` named `TimeoutError` (~150 ms for a 150 ms timeout against a hanging server); a caller abort rejects with `AbortError`. Classify on `err.name`: `TimeoutError` is a dependency failure and transient, `AbortError` is the caller giving up (count it as neither). Inside the cockatiel policy above, cockatiel's own `timeout()` raises `TaskCancelledError` instead; do not stack both on one attempt.
 
 ## 4. Bulkheads
 

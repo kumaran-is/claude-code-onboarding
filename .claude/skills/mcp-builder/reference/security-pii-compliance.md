@@ -1,6 +1,6 @@
 # MCP Server Security: Secrets, Errors, Audit Logging and PII
 
-Credentials, what leaves the server in errors and logs, and keeping PII out of model context. Authentication: [security-core.md](security-core.md). Tool execution: [security-middleware-attacks.md](security-middleware-attacks.md). Requirement levels: [`security-reviewer/reference/mcp-security.md`](../../security-reviewer/reference/mcp-security.md). Code is copied from the tested sandbox (31 tests passing with both a 2026-07-28 and a 2025-11-25 client, 14 planted-defect controls).
+Credentials, what leaves the server in errors and logs, and keeping PII out of model context. Authentication: [security-core.md](security-core.md). Tool execution: [security-middleware-attacks.md](security-middleware-attacks.md). Requirement levels: [`security-reviewer/reference/mcp-security.md`](../../security-reviewer/reference/mcp-security.md). Code is copied from the tested sandbox (Verified 2026-11-23 against MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, `fastify` 2.0.1 / `express` 2.0.2 adapters), Node 26.13.1 and TypeScript 6.0.3: 114 tests passing with both a 2026-07-28 and a 2025-11-25 client, 20 planted-defect controls).
 
 ## 1. Secrets and credential forwarding
 
@@ -13,7 +13,7 @@ Credentials, what leaves the server in errors and logs, and keeping PII out of m
 
 ## 2. Secure error responses
 
-- HTTP layer: 401 for missing/invalid/expired tokens, 403 for valid tokens without the scope or permission, 400 for malformed requests (spec MUST); 401/403 carry `WWW-Authenticate: Bearer …` with `resource_metadata`.
+- HTTP layer: 401 for missing/invalid/expired tokens (spec MUST), 403 `insufficient_scope` for valid tokens without the scope (spec SHOULD), 400 for malformed requests (spec error table); 401/403 carry `WWW-Authenticate: Bearer …` with `resource_metadata` (the spec's examples; the SDK's `bearerAuthChallengeResponse` builds it).
 - Tool layer: a tool failure is a successful JSON-RPC result with `isError: true` and a stable code plus a safe message (`NOT_FOUND`, `APPROVAL_REQUIRED`, `DESTINATION_NOT_ALLOWED`, `UPSTREAM_UNAVAILABLE`, `RATE_LIMITED`). Never return `error.message` from an upstream, a stack trace, SQL, a connection string or an internal hostname: validation and driver errors echo submitted values.
 - Missing and forbidden answer identically where existence is itself sensitive (cross-tenant ids).
 - Log the error *type* and correlation id server-side; the client gets the code.
@@ -112,9 +112,9 @@ Tested: the owner resolves its token; another principal presenting the same toke
 
 ## 6. Checklist
 
-- [ ] HTTP transport: Protected Resource Metadata served; 401 challenge carries `resource_metadata`; tokens validated for `alg`, `typ`, `iss`, `aud` = this server, `exp`
+- [ ] HTTP transport: Protected Resource Metadata served; 401 challenge carries `resource_metadata`; tokens validated for `alg`, `typ`, `iss`, `aud` = this server, `exp`; the verifier reports the token's own `aud` as `AuthInfo.resource`
 - [ ] No token passthrough; upstream calls use the server's own scoped credential
-- [ ] Origin validated (403 on a bad Origin); local servers bind `127.0.0.1`; remote binds list `allowedHosts` and `allowedOrigins`
+- [ ] Origin validated (403 on a bad Origin); local servers bind `127.0.0.1`; remote binds list `allowedHosts` and `allowedOrigins`; request body capped by the framework (Fastify route `bodyLimit`, Express `jsonLimit`): the SDK's own limit skips pre-parsed bodies
 - [ ] Per-tool scopes via `scopeChallenge`; tool allowlist per principal; tenant and subject only from the verified token
 - [ ] Destructive tools need a server-verified approval bound to the exact call; annotations are hints only
 - [ ] Every URL-fetching path uses the SSRF guard (library IP classification, resolve-then-pin, per-hop redirect checks, caps)

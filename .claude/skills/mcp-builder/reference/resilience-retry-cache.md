@@ -1,6 +1,6 @@
 # Resilience: Rate Limiting, Retry Rules, Caching, Loop Guard
 
-Small guards that sit next to the policies in [resilience-core.md](resilience-core.md): a token bucket for an upstream's quota, a read-through TTL cache, and a per-caller loop detector. Verified 2026-11-23 with `lru-cache@11.5.3`, `@opentelemetry/api@1.10.0`, Node 24.13.1, TypeScript 5.9.3 strict + ESLint `strictTypeChecked`. 6 tests; 3 planted defects (caching a failure, unsorted fingerprint keys, a detector not scoped per caller) each made a test fail.
+Small guards that sit next to the policies in [resilience-core.md](resilience-core.md): a token bucket for an upstream's quota, a tenant-keyed read-through TTL cache with request coalescing, an optional Redis cache shared across replicas, and a per-caller loop detector. Verified 2026-11-23 against `lru-cache@11.5.3`, `ioredis@6.1.0`, `zod@4.6.7`, `@opentelemetry/api@1.10.0`, `@modelcontextprotocol/server@2.4.0` on Node 26.13.1 + TypeScript 6.0.3 strict (`nodenext`): `tsc` exit 0, Vitest 15/15. Planted defects (caching a failure, no coalescing, a tenant-blind key, an unbranded string key, unsorted fingerprint keys, a detector not scoped per caller) each made a test or `tsc` fail.
 
 ## 1. Code
 
@@ -29,22 +29,35 @@ export function fingerprint(tool: string, args: unknown): string {
   return createHash("sha256").update(`${tool}\0${canonical(args)}`).digest("hex");
 }
 
-/** Read-through cache for successful upstream reads. Errors are never cached. */
+/** A cache key can only be built with a tenant, so a tenant-blind key does not type-check. */
+export type CacheKey = string & { readonly __brand: "CacheKey" };
+export function cacheKey(tenantId: string, resource: string, args: unknown): CacheKey {
+  if (tenantId === "") throw new Error("cacheKey: tenantId is required");
+  return `${tenantId}\0${resource}\0${fingerprint(resource, args)}` as CacheKey;
+}
+
+type Load<V> = (signal: AbortSignal) => Promise<V>;
+
+/** Read-through cache for successful upstream reads. Errors are never cached; concurrent misses share one load. */
 export class TtlCache<V extends string | number | boolean | object> {
-  readonly #cache: LRUCache<string, V>;
+  readonly #cache: LRUCache<CacheKey, V, Load<V>>;
   constructor(readonly name: string, max: number, ttlMs: number) {
-    this.#cache = new LRUCache<string, V>({ max, ttl: ttlMs });
+    this.#cache = new LRUCache<CacheKey, V, Load<V>>({
+      max,
+      ttl: ttlMs,
+      // One in-flight load per key: callers that miss while it runs await the same promise.
+      fetchMethod: (_key, _stale, { signal, context }) => context(signal),
+    });
   }
-  async getOrLoad(key: string, load: () => Promise<V>): Promise<{ value: V; hit: boolean }> {
-    const cached = this.#cache.get(key);
-    cacheLookups.add(1, { "app.cache.name": this.name, "app.cache.result": cached === undefined ? "miss" : "hit" });
-    if (cached !== undefined) return { value: cached, hit: true };
-    const value = await load(); // a rejection propagates and nothing is stored
-    this.#cache.set(key, value);
-    return { value, hit: false };
+  async getOrLoad(key: CacheKey, load: Load<V>): Promise<{ value: V; hit: boolean }> {
+    const hit = this.#cache.has(key); // false for an expired entry or a load still in flight
+    cacheLookups.add(1, { "app.cache.name": this.name, "app.cache.result": hit ? "hit" : "miss" });
+    // forceFetch rejects when the load rejects; the failed entry is removed, so the next call retries.
+    const value = await this.#cache.forceFetch(key, { context: load });
+    return { value, hit };
   }
-  /** Call after any write that changes what `key` would return. */
-  invalidate(key: string): void {
+  /** Call after any write that changes what `key` would return. Aborts an in-flight load for it. */
+  invalidate(key: CacheKey): void {
     this.#cache.delete(key);
   }
   get size(): number {
@@ -106,12 +119,56 @@ Retry rules, idempotency and backoff with jitter are in resilience-core.md §1, 
 
 Cache the upstream **response** for stable reads (profiles, catalogue entries, reference data), not the MCP tool result.
 
-- Bounded by entries (`max`) and age (`ttl`); choose TTL per resource type from how stale the data may be: seconds for prices or availability, minutes for profiles.
-- *Executed:* a failed load stores nothing (next call reaches the upstream again); a hit skips the loader; `invalidate` after a write forces a reload; an entry older than the TTL is reloaded.
-- Key on the inputs that determine the response, including the tenant/principal whenever the response is tenant-specific. A key without the tenant serves one tenant's data to another.
-- `app.cache.lookups` is a Counter with `result=hit|miss`; the hit ratio is computed in the backend. The previous version kept hit/miss totals as gauges; totals must be counters (observability-metrics.md §2).
-- Concurrent misses for the same key each call the upstream (no request coalescing). If that matters, share the in-flight promise per key, or use `lru-cache`'s `fetchMethod` (not executed here).
-- Multiple replicas each hold their own cache; use Redis when consistency across replicas or invalidation from another service matters.
+```typescript
+const customers = new TtlCache<Customer>("customers", 5_000, 60_000);
+const { value } = await customers.getOrLoad(
+  cacheKey(principal.tenantId, "customer", { id: args.customerId }),
+  (signal) => crm.getCustomer(args.customerId, { signal: AbortSignal.any([signal, ctx.mcpReq.signal]) }),
+);
+```
+
+- **Key design.** `cacheKey(tenant, resource, args)` = tenant + resource + SHA-256 of the canonical args, so the key holds no raw argument values and `{a, b}` equals `{b, a}`. Add every input that changes the response (locale, API version, the caller's role when the upstream filters by it).
+- **Tenant isolation.** The branded `CacheKey` type means a plain string such as `"customer:42"` does not compile, and an empty tenant throws. *Executed:* the same resource and args for `tenant-a` and `tenant-b` are separate entries; dropping the tenant from the key made that test fail; passing a plain string made `tsc` exit 2.
+- **Stampede.** `lru-cache` 11's `fetchMethod` + `forceFetch` share one in-flight load per key. *Executed:* 50 concurrent misses called the upstream once; 5 concurrent waiters on a failing load all rejected after one call and nothing was cached. Without the shared load the stampede test failed.
+- **Failures are not cached.** `forceFetch` rejects when the load rejects and removes the entry, so the next call reaches the upstream again. A cached error turns a 2-second blip into a TTL-long outage.
+- **Bounds and invalidation.** Bounded by entries (`max`) and age (`ttl`); choose TTL per resource type (seconds for prices or availability, minutes for profiles). `invalidate` after a write forces a reload and aborts the `signal` of a load still in flight for that key (*executed*).
+- **lru-cache 11 notes.** Named export `LRUCache`; the third type parameter is the `fetchMethod` context type; `has()` is false while a fetch is pending, which is why the in-flight case counts as a miss.
+- `app.cache.lookups` is a Counter with `result=hit|miss`; the hit ratio is computed in the backend. Totals are counters, never gauges (observability-metrics.md §2).
+
+### Shared cache across replicas (optional: ioredis 6)
+
+Each replica holds its own in-process cache. Add Redis only when replicas must agree, or another service invalidates entries. It is not part of a generic MCP scaffold.
+
+```typescript
+import { Redis } from "ioredis";
+import type { z } from "zod";
+
+/** ioredis 6 speaks RESP3 by default (Redis >= 6); protocol: 2 keeps the v5 wire format. */
+export function createRedis(url: string): Redis {
+  return new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 2, enableOfflineQueue: false });
+}
+
+/** Values are re-validated on read: the shared cache is outside this process's trust boundary. */
+export async function redisGetOrLoad<S extends z.ZodType>(
+  redis: Redis, key: CacheKey, schema: S, ttlMs: number, load: () => Promise<z.output<S>>,
+): Promise<z.output<S>> {
+  const redisKey = `cache:${key}`;
+  const raw = await redis.get(redisKey); // rejects fast while Redis is down; the caller decides to fail or bypass
+  if (raw !== null) {
+    const parsed = schema.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+    await redis.del(redisKey); // shape changed after a deploy: drop it and reload
+  }
+  const value = await load();
+  await redis.set(redisKey, JSON.stringify(value), "PX", ttlMs);
+  return value;
+}
+```
+
+- **ioredis 6.0.0 breaking changes** (CHANGELOG): Node >= 20; RESP3 is the default protocol (set `protocol: 2` for Redis < 6 or proxies that only speak RESP2); `replyMapping` defaults to `"legacy"`, so reply shapes match v5. *Executed:* `options.protocol` is 3 by default and 2 with the opt-out.
+- `enableOfflineQueue: false` fails a command at once while disconnected instead of buffering it. *Executed:* a read against an unreachable Redis rejected in < 500 ms. With `lazyConnect`, call `connect()` at startup so a bad URL fails the readiness probe.
+- This helper does not coalesce across replicas. Front it with the in-process `TtlCache` (per-replica coalescing), or use a short `SET NX PX` lock when a cold key must reach the upstream once cluster-wide.
+- `tsc` with `skipLibCheck: false` reports 2 errors inside ioredis 6.1.0's own `.d.ts` (it imports the untyped `redis-errors`); keep `skipLibCheck: true` or add a local declaration. Live Redis behaviour was not run (no server in the verification sandbox).
 
 ## 5. Tool-call loop guard
 

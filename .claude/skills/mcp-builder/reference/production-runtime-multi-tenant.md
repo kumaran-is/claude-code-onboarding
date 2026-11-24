@@ -1,6 +1,6 @@
 # Production Runtime — Multi-Tenant Support
 
-Tenant context, quotas and audit for SaaS MCP servers. The tenant is a property of the **verified access token**, never of a header, a tool argument or the model's text. Token validation and per-tool scopes: [security-core.md](security-core.md). Graceful shutdown and health checks: [production-runtime-shutdown-health.md](production-runtime-shutdown-health.md). Code is copied from a tested sandbox (MCP TypeScript SDK v2, Node 24; 31 tests passing with both a 2026-07-28 and a 2025-11-25 client, 14 planted-defect controls).
+Tenant context, quotas and audit for SaaS MCP servers. The tenant is a property of the **verified access token**, never of a header, a tool argument or the model's text. Token validation and per-tool scopes: [security-core.md](security-core.md). Graceful shutdown and health checks: [production-runtime-shutdown-health.md](production-runtime-shutdown-health.md). Code is copied from a tested sandbox (Verified 2026-11-23 against MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, `fastify` 2.0.1 / `express` 2.0.2 adapters), Node 26.13.1 and TypeScript 6.0.3: 114 tests passing with both a 2026-07-28 and a 2025-11-25 client, 20 planted-defect controls; a test-only run counter is omitted from the handler).
 
 ## 1. Where the principal comes from
 
@@ -18,6 +18,7 @@ server.registerTool(
   },
   ({ document_id }, ctx) => {
     const principal = principalFrom(ctx.http?.authInfo);
+    if (!permitted('get_document', principal)) return toolError('TOOL_NOT_ALLOWED', 'Tool not allowed for this caller');
     if (!allow(principal)) return toolError('RATE_LIMITED', 'Too many calls; retry after 60s');
     const doc = config.documents.get(principal.tenantId, document_id);
     // Missing and foreign documents answer identically (no existence oracle across tenants).

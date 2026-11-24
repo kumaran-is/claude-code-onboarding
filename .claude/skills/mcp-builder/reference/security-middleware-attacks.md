@@ -1,6 +1,6 @@
 # MCP Tool Execution Safety: Side Effects, Approvals, SSRF, Untrusted Output
 
-What a tool may do once the caller is authenticated ([security-core.md](security-core.md)). Requirement levels and reviewer severities: [`security-reviewer/reference/mcp-security.md`](../../security-reviewer/reference/mcp-security.md). Code here is copied from the same tested sandbox (MCP SDK v2, revision 2026-07-28; 31 tests passing with both a 2026-07-28 and a 2025-11-25 client, 14 planted-defect controls).
+What a tool may do once the caller is authenticated ([security-core.md](security-core.md)). Requirement levels and reviewer severities: [`security-reviewer/reference/mcp-security.md`](../../security-reviewer/reference/mcp-security.md). Code here is copied from the same tested sandbox (Verified 2026-11-23 against MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, `fastify` 2.0.1 / `express` 2.0.2 adapters), Node 26.13.1 and TypeScript 6.0.3: 114 tests passing with both a 2026-07-28 and a 2025-11-25 client, 20 planted-defect controls; a test-only run counter is omitted from the handlers).
 
 ## 1. Classify every tool before writing it
 
@@ -13,7 +13,7 @@ What a tool may do once the caller is authenticated ([security-core.md](security
 
 Least privilege: one narrow tool per intent (`refund_order(order_id, amount ≤ captured)`), not `run_sql` or `http_request`. Allow/deny lists are per principal (security-core §4); a tool nobody needs is deleted, not hidden.
 
-**Annotations are hints, not enforcement.** `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` help a client render confirmations; the spec says clients MUST treat annotations as untrusted unless the server is trusted (Tools §Tool). A planted `destructiveHint: true` with no approval check deleted another tenant's document (negative control).
+**Annotations are hints, not enforcement.** `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` help a client render confirmations; the spec says clients MUST treat annotations as untrusted unless the server is trusted (Tools §Tool). With `destructiveHint: true` still set and the server's approval check removed, the tool deleted the document without any approval (planted defect).
 
 ## 2. Human approval for destructive operations
 
@@ -86,6 +86,7 @@ server.registerTool(
   },
   ({ document_id, approval_token }, ctx) => {
     const principal = principalFrom(ctx.http?.authInfo);
+    if (!permitted('delete_document', principal)) return toolError('TOOL_NOT_ALLOWED', 'Tool not allowed for this caller');
     if (!allow(principal)) return toolError('RATE_LIMITED', 'Too many calls; retry after 60s');
     const refusal = config.approvals.verify(
       approval_token,
@@ -253,7 +254,7 @@ export async function safeFetch(rawUrl: string, policy: SafeFetchPolicy = defaul
 - **Caps:** timeout, body size, hop count; no credentials in URLs; never forward the caller's token or cookies to the fetched URL.
 - **Defense in depth:** an egress proxy that blocks private ranges (the spec names Smokescreen as an example) and network policy on the workload, so a bug in the guard is not the last line.
 
-Tests: blocked — `127.0.0.1`, `169.254.169.254`, `localhost`, `[::ffff:127.0.0.1]`, `2130706433` (decimal), redirect-to-private, `user:pass@` URLs; allowed — the stand-in public host. The sandbox lets one loopback port stand in for a public host; everything else uses the production rule.
+Tests (through a `fetch_url` tool, real client): blocked — `127.0.0.1`, `169.254.169.254`, `localhost`, `[::ffff:127.0.0.1]`, `2130706433` (decimal), `10.0.0.5`, `user:pass@` URLs, and a public host that redirects to `169.254.169.254` or to `localhost` (`DESTINATION_NOT_ALLOWED`); allowed — the stand-in public host. The sandbox lets one loopback port stand in for a public host; everything else uses the production rule. Planted defects that each failed the suite: classifier allowing every range, redirects not re-validated, pinned `lookup` removed (the `localhost` redirect then reached the socket).
 
 Object-storage keys and file paths the model supplies need their own allowlist: a list of permitted prefixes checked after normalising the path (no `..`, no leading `/`), with an **empty list denying everything**. That default is the opposite of the optional host allowlist above, so name the two settings differently and test the empty case (RECOMMENDED PRACTICE; SOURCE-PROVEN in a production MCP gateway).
 

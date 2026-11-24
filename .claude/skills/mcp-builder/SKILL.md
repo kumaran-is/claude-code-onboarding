@@ -92,7 +92,7 @@ For each tool, define:
 | [Agent Design Patterns — Domain](reference/agent-design-patterns-domain.md) | Phase 2 — domain presets (payment, healthcare, e-commerce), tool consolidation |
 | [Error Taxonomy](reference/error-taxonomy.md) | Phase 1 — error codes, recovery hints, no-fake-empty-data |
 | [Branded Types & Audit](reference/error-branded-types-audit.md) | Phase 2 — type-safe IDs, Zod integration, audit logging |
-| [TypeScript Setup](reference/node-mcp-setup.md) | Phase 2 — project structure, package config, build |
+| [TypeScript Setup](reference/node-mcp-setup.md) | Phase 2 — project structure, package config, build; registering a server in Claude Code (`claude mcp add`, `.mcp.json`) |
 | [Scaffold templates — core](assets/scaffold-templates-core.md), [HTTP + ops](assets/scaffold-templates-http-ops.md) | New TypeScript server: `/scaffold-mcp-server` writes these verified templates (config, tool registry, stdio, tests, CI; Streamable HTTP on Fastify, bearer auth, Docker, OpenTelemetry) |
 | [TypeScript Patterns](reference/node-mcp-patterns.md) | Phase 2 — tool naming, Zod schemas, tool structure |
 | [TypeScript Patterns Advanced](reference/node-mcp-patterns-advanced.md) | Phase 2 — response formats, pagination, error handling, utilities |

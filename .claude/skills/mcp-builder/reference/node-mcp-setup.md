@@ -230,3 +230,55 @@ npx @modelcontextprotocol/inspector@2.16.0 node dist/stdio.js      # web UI
 ```
 
 The Inspector CLI exits non-zero when a call returns `isError: true` (verified: exit 5), so it can gate a smoke step in CI. Full testing guidance: [node-mcp-advanced.md](node-mcp-advanced.md#testing-and-conformance).
+
+---
+
+## Register in Claude Code
+
+Options go before the server name; for stdio, everything after `--` is the server command, passed untouched. `--scope project` (`-s project`) writes the shared `.mcp.json`; the default `local` scope keeps the entry private to you.
+
+```bash
+# stdio: your build, or a published package pinned to an exact version
+claude mcp add --scope project --transport stdio orders -- node dist/stdio.js
+claude mcp add --scope project --env API_KEY='${ORDERS_API_KEY}' --transport stdio orders-pkg \
+  -- npx -y @scope/orders-mcp@1.4.2
+
+# remote Streamable HTTP
+claude mcp add --scope project --transport http orders-remote https://mcp.example.com/mcp
+
+claude mcp list            # every server with its health status
+claude mcp get orders      # one server's config
+```
+
+Keep at least one option (here `--transport`) between `--env` and the name: otherwise the CLI reads the name as another `KEY=value` pair and rejects it. Inside a session, `/mcp` shows status and runs authentication.
+
+The same entries written directly in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "orders-pkg": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@scope/orders-mcp@1.4.2"],
+      "env": { "API_KEY": "${ORDERS_API_KEY}" }
+    },
+    "orders-remote": {
+      "type": "http",
+      "url": "${ORDERS_MCP_URL:-https://mcp.example.com}/mcp",
+      "headers": { "Authorization": "Bearer ${ORDERS_TOKEN}" }
+    }
+  }
+}
+```
+
+- `${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and `headers`. Secrets always come from the environment, never literal values. An unset variable with no default is left unexpanded and `claude mcp list` warns.
+- An entry with a `url` but no `type` is read as stdio, which is a configuration error: always set `type`.
+- Pin exact package versions (`@1.4.2`), never `@latest`: an unpinned package can change between sessions.
+
+After adding a server:
+
+1. Run the scan-before-trust check in `.claude/rules/skill-triggers.md` §P0 and add the server to its trust table.
+2. Add the server to the MCP lookup order in the `SKILL.md` of the skill that should use it (and to `CLAUDE.md` if it is cross-cutting), so Claude knows when to query it.
+
+Verified 2026-11-24 against the Claude Code MCP docs (https://code.claude.com/docs/en/mcp).

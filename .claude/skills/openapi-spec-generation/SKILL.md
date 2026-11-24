@@ -43,7 +43,32 @@ Generate, validate, and maintain OpenAPI 3.1 specifications for RESTful APIs. Su
 |-------|---------|
 | FastAPI | `uv run python scripts/dump_openapi.py openapi.json` (builds the app from `create_app()`; `reference/code-first-patterns.md`) |
 | Spring Boot | `curl http://localhost:8080/v3/api-docs > openapi.json` |
-| tsoa | `npx tsoa spec` |
+| NestJS (`@nestjs/swagger`) | `nest build && node dist/emit-openapi.js` (script below) |
+| Fastify + zod | `node dist/emit-openapi.js` (`reference/code-first-patterns.md`) |
+
+NestJS: build the document with `DocumentBuilder` + `SwaggerModule.createDocument` and write it at build time, without `listen()`. Apply the same global prefix and versioning as `main.ts`, or the paths differ. Decorator patterns: `nestjs-api` skill.
+
+```typescript
+// src/emit-openapi.ts
+import { writeFileSync } from 'node:fs';
+import { Logger } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
+async function emit(): Promise<void> {
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { logger: false });
+  const config = new DocumentBuilder().setTitle('Orders API').setVersion('1').addBearerAuth().build();
+  writeFileSync('openapi.json', JSON.stringify(SwaggerModule.createDocument(app, config), null, 2));
+  await app.close();
+}
+
+emit().catch((error: unknown) => {
+  new Logger('EmitOpenApi').error('openapi emit failed', error instanceof Error ? error.stack : String(error));
+  process.exit(1);
+});
+```
 
 ## Process Steps
 
@@ -62,7 +87,7 @@ Generate, validate, and maintain OpenAPI 3.1 specifications for RESTful APIs. Su
 **Code-first** -- Read `reference/code-first-patterns.md` for annotated examples in:
 - Java/Spring Boot (springdoc-openapi) -- annotations, config bean, DTOs
 - Python/FastAPI -- Pydantic models, type hints, endpoint decorators
-- TypeScript/tsoa -- decorators, interfaces, route controllers
+- TypeScript/Fastify + zod -- zod route schemas, `@fastify/swagger` (NestJS: `@nestjs/swagger`, script above)
 
 ### Step 3: Add a Complete Example (if needed)
 
@@ -97,7 +122,7 @@ Read `reference/sdk-and-cicd.md` for:
 | File | Content | Size |
 |------|---------|------|
 | `reference/openapi-skeleton-template.md` | Minimal starter skeleton, structure overview, customization checklist | ~5KB |
-| `reference/code-first-patterns.md` | Java/Spring, Python/FastAPI, TypeScript/tsoa annotated examples | ~10KB |
+| `reference/code-first-patterns.md` | Java/Spring, Python/FastAPI, TypeScript/Fastify + zod annotated examples | ~10KB |
 | `reference/validation-and-linting.md` | Spectral rules, Redocly config, validation commands, common mistakes and best practices | ~5KB |
 | `reference/sdk-and-cicd.md` | SDK generation commands, GitHub Actions workflows | ~5KB |
 | `reference/complete-api-example.md` | Full User Management API with all OpenAPI features | ~10KB |

@@ -74,7 +74,7 @@ await session.send_realtime_input(
 )
 ```
 
-**Fix:** Validate audio format at the point it enters the pipeline. Convert client audio before passing to the transcriber if needed (use `pydub`).
+**Fix:** Validate audio format at the point it enters the pipeline. Convert client audio before passing to the transcriber if needed: WAV through stdlib `wave`, other formats through the ffmpeg CLI. Not pydub: 0.25.1 imports `audioop`, removed in Python 3.13, so it fails to import on 3.14.
 
 ---
 

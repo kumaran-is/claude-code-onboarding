@@ -232,7 +232,7 @@ HTTP stack.
 
 #### TypeScript / NestJS (HttpService / fetch)
 
-Matches tsoa/NestJS TypeScript conventions from `code-first-patterns.md`.
+Matches the NestJS conventions of the `nestjs-api` skill.
 
 ```typescript
 // Types — match interfaces from code-first-patterns.md
@@ -377,7 +377,7 @@ if (!response.ok) {
 **Symptoms:** Code examples don't compile, parameters are wrong, endpoints return different fields.
 
 **Solution:**
-- Generate specs from code annotations (`/v3/api-docs` for Spring, `/openapi.json` for FastAPI, `npx tsoa spec` for NestJS)
+- Generate specs from code annotations (`/v3/api-docs` for Spring, `/openapi.json` for FastAPI, an emit script with `@nestjs/swagger` `SwaggerModule.createDocument` for NestJS: `openapi-spec-generation` SKILL.md)
 - Add `npx @redocly/cli lint docs/api/openapi.yaml` to CI — fails build on spec drift
 - Every PR that changes a controller must update the spec
 

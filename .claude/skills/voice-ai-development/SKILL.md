@@ -32,6 +32,8 @@ Before using a model id, confirm it on the provider's models page and probe it o
 
 Keep the provider choice in one server module; clients speak your protocol, never a provider's. Provider selection by measurement: `reference/provider-comparison.md`.
 
+Agent framework: Google ADK when you want its session and memory services and deploy on Google Cloud (`reference/voice-adk-integration.md`); LangGraph for fine-grained state control or existing LangChain tools (`reference/voice-langgraph-integration.md`). Unsure → LangGraph (simpler to debug).
+
 ## 2. Session lifecycle (any provider)
 
 | Rule | Detail |
@@ -96,6 +98,13 @@ Reject by `Content-Length` before buffering, then enforce the exact byte cap whi
 | detect expiry from exception text | `go_away` + `session_resumption` handle; `context_window_compression` for long sessions |
 
 Limits from the provider docs (2026-11-22): audio-only sessions 15 min without compression, audio + video 2 min, connections ~10 min, resumption tokens valid 2 h. Code: `reference/gemini-live-api.md`.
+
+## 9. Deploy (Cloud Run)
+
+- Require authentication on the service: no `--allow-unauthenticated` for a paid voice session unless your proxy authenticates every connection. Use the service's own service account (keyless, section 7).
+- Session-local state (in-memory sessions or pipelines) needs sticky routing (`--session-affinity`, best effort) or a persistent session service: `InMemorySessionService` is single-instance only.
+- Cloud Run sends SIGTERM 10 s before SIGKILL: close upstream Live sessions and drain tasks within that window.
+- Gate: an authenticated WebSocket round-trip works against the deployed URL and an unauthenticated one is refused. Deploy guides: `adk-deploy-guide` (ADK), `gcp-cloud-run` (LangGraph/FastAPI).
 
 ## Reference files
 

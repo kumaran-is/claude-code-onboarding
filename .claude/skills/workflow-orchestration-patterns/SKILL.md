@@ -21,10 +21,10 @@ last-reviewed: "2026-11-23"
 ## Quick Scaffold
 
 ```bash
-# Start Temporal server locally (Docker)
-docker run -d --name temporal \
-  -p 7233:7233 -p 8080:8080 \
-  temporalio/auto-setup:1.24
+# Start a local dev server (Temporal CLI): gRPC 7233, Web UI 8233; dev only, never production.
+# Add --db-filename temporal.db to keep workflows across restarts (default: in-memory).
+# The temporalio/auto-setup image is no longer maintained: do not use it.
+temporal server start-dev
 
 # Java 21 / Spring Boot — add to pom.xml
 # io.temporal:temporal-sdk:1.25.0
@@ -37,9 +37,23 @@ uv add "temporalio==1.36.1"   # executed: reference/implementation-playbook.md (
 npm install @temporalio/client @temporalio/worker @temporalio/workflow @temporalio/activity
 ```
 
+## Do you need Temporal?
+
+```
+Multi-step AND touches external systems?
+  NO  → direct API call
+  YES → must survive crashes and resume from the last step?
+          NO  → simple background job queue (BullMQ, Celery, Spring @Async)
+          YES → Temporal
+```
+
+**Use Temporal for:** processes that run seconds to days across services; steps that need saga compensation or resume after failure (refund when payment succeeds but inventory fails); human approval with a timeout; large fan-out/fan-in.
+
+**Do not use Temporal for:** single-step CRUD; stateless request/response (plain REST); fire-and-forget background jobs (BullMQ / Celery / Spring @Async); scheduled DAG data pipelines (Airflow-class tools); event streaming (Kafka, Pub/Sub); LLM agent graphs (`agentic-ai-dev`).
+
 ## Process
 
-1. **Deploy Temporal** — local Docker or Temporal Cloud (cloud.temporal.io)
+1. **Deploy Temporal** — local `temporal server start-dev`, self-hosted (`temporalio/server` image) or Temporal Cloud (cloud.temporal.io)
 2. **Define Activities** — external interactions (API calls, DB writes, emails) — must be idempotent
 3. **Define Workflow** — orchestration logic only — must be deterministic (no I/O, no `Date.now()`, no random)
 4. **Configure Retry Policies** — initial interval, backoff coefficient, max attempts, non-retryable errors
@@ -115,7 +129,7 @@ Before generating code, consult these sources for current SDK APIs:
 
 ```bash
 # View Temporal Web UI (workflows, history, task queues)
-open http://localhost:8080
+open http://localhost:8233
 
 # Java — run worker
 mvn spring-boot:run

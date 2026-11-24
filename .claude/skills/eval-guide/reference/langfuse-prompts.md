@@ -1,6 +1,6 @@
 # Prompt Registry, Lifecycle and Prompt Regression
 
-> Provider-neutral contract first; Langfuse is one optional backend. Langfuse SDK calls were checked against the installed langfuse 5.2.0 (Python 3.14.10) with no Langfuse server: `get_prompt(name, label=, fallback=, max_retries=, fetch_timeout_seconds=, cache_ttl_seconds=)` signature introspected; executed, the fallback path returned a `TextPromptClient` with `is_fallback=True`, `version=0`, `labels=['production']`; without `fallback=` an unreachable server raised `httpx.ConnectError` (the adapter below must let it propagate to the registry). Server-side label moves and prompt linking were not exercised. The registry class below was executed with a fake client (4 tests: TTL rollback, fail-closed raise, degraded tiers, placeholder refusal) and passes `mypy --strict`.
+> Provider-neutral contract first; Langfuse is one optional backend. Langfuse SDK calls were checked against the installed langfuse 5.2.0 (Python 3.14.10) with no Langfuse server: `get_prompt(name, label=, fallback=, max_retries=, fetch_timeout_seconds=, cache_ttl_seconds=)` signature introspected; executed, the fallback path returned a `TextPromptClient` with `is_fallback=True`, `version=0`, `labels=['production']`; without `fallback=` an unreachable server raised `httpx.ConnectError` (the adapter below must let it propagate to the registry). Server-side label moves and prompt linking were not exercised. The registry runtime (one implementation, below) runs in this repo with 35 tests and per-control negative controls; its Langfuse adapter is tested with a fake client only. Also read in the 5.2.0 source: `create_prompt(*, name, prompt, labels=[], tags=None, type='text'|'chat', config=None, commit_message=None)`; `update_prompt(*, name, version: int, new_labels=[])` moves labels and invalidates the SDK cache for that name, and the `latest` label is reserved and managed by Langfuse; prompt clients expose `.version` and `.config`.
 > Release mechanics (eval-gated promotion, canary, rollback, provider migration): `deployment-ci-cd/reference/llmops-release-and-rollout.md`. Trace attributes: `deployment-ci-cd/reference/ai-observability.md`.
 
 ## Install (Langfuse backend, optional)
@@ -12,130 +12,61 @@ langfuse = "==5.2.0"   # Python >=3.11; v2-era `langfuse.decorators` / `.trace()
 
 ## Naming
 
-`<audience>.<domain>.<task>.<prompt_type>`, for example `user.onboarding.profile_collection.system`, `support.answer.system`, `support.classify.system`, `search.ranking.system`, `notification.user.status_update.system`.
+`{domain}.{feature}.{task}.{type}` (prompt-engineering standard §7): four lowercase snake_case segments, type ∈ `system|user|tool|judge|examples|correction`, for example `support.triage.classification.system`, `hr.policy_qa.rag_answer.system`. The path mirrors the name: `prompts/<domain>/<feature>/<task>.<type>.yaml`. Validator: `prompt-engineering-patterns/scripts/validate_prompts.py` (it owns the prompt-card schema and the `prompt_drift.py` release gate). The file backend below rejects any other name at load, so CI fails on a misnamed prompt.
 
 ## Registry contract (required pattern)
 
 Agent code never calls the backend SDK directly. The registry returns a **versioned prompt object** (name, label, version, content hash, tier), never a bare string, so every model-call span and eval row can name the exact version. "Fail closed" means **raise**; degraded tiers are explicit, logged and alerted.
 
-```python
-# <package>/prompts/registry.py
-from __future__ import annotations
-
-import hashlib
-import logging
-import time
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
-
-logger = logging.getLogger("prompts")
-
-
-@dataclass(frozen=True)
-class ResolvedPrompt:
-    name: str
-    label: str
-    version: str           # registry version, or "bundled:<sha12>" for the emergency pack
-    text: str
-    content_sha256: str
-    tier: str              # "live" | "last_known_good" | "bundled"
-
-
-class PromptUnavailableError(RuntimeError):
-    pass
-
-
-class RegistryClient(Protocol):
-    def fetch(self, name: str, label: str) -> tuple[str, str]:  # (version, text)
-        ...
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-class PromptRegistry:
-    def __init__(self, client: RegistryClient, bundled: dict[str, str], *, ttl_seconds: float = 60.0,
-                 allow_degraded: bool, on_degraded: Callable[[str, str], None] = lambda name, tier: None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
-        for name, text in bundled.items():
-            if not text.strip() or "TODO" in text or "PLACEHOLDER" in text.upper():
-                raise ValueError(f"bundled prompt {name!r} is a placeholder; ship a reviewed prompt")
-        self._client, self._bundled, self._ttl = client, bundled, ttl_seconds
-        self._allow_degraded, self._on_degraded, self._clock = allow_degraded, on_degraded, clock
-        self._cache: dict[tuple[str, str], tuple[float, ResolvedPrompt]] = {}
-
-    def get(self, name: str, label: str = "production") -> ResolvedPrompt:
-        key = (name, label)
-        cached = self._cache.get(key)
-        if cached and self._clock() - cached[0] < self._ttl:
-            return cached[1]                                   # TTL bounds rollback propagation
-        try:
-            version, text = self._client.fetch(name, label)
-        except Exception as exc:
-            logger.warning("prompt_fetch_failed", extra={"prompt": name, "label": label,
-                                                          "error_type": type(exc).__name__})
-            return self._degraded(name, label, cached[1] if cached else None, exc)
-        prompt = ResolvedPrompt(name, label, version, text, _sha(text), "live")
-        self._cache[key] = (self._clock(), prompt)
-        return prompt
-
-    def _degraded(self, name: str, label: str, stale: ResolvedPrompt | None,
-                  exc: Exception) -> ResolvedPrompt:
-        if not self._allow_degraded:
-            raise PromptUnavailableError(name) from exc
-        if stale is not None:
-            self._on_degraded(name, "last_known_good")
-            return ResolvedPrompt(stale.name, label, stale.version, stale.text,
-                                  stale.content_sha256, "last_known_good")
-        if name in self._bundled:
-            text = self._bundled[name]
-            self._on_degraded(name, "bundled")
-            return ResolvedPrompt(name, label, f"bundled:{_sha(text)[:12]}", text, _sha(text), "bundled")
-        raise PromptUnavailableError(name) from exc
-```
+The one implementation is `prompt-engineering-patterns/assets/prompts-scaffold/promptops/prompt_registry.py` (stdlib; copy it next to your `prompts/` tree): `PromptRuntime` (label from configuration, TTL cache, last-known-good and hash-verified emergency tiers, `allow_degraded=False` strict mode, model binding, safe rendering, input budget), `FileRegistry` (Git prompt tree for CI and local dev), `LangfuseRegistry` (optional), `build_emergency_pack`, and eval-gated `promote` / `rollback`. Tests: `test_prompt_registry.py` next to it (`uv run --script`, CI job `promptops_runtime`). Normative rules: `prompt-engineering-patterns/reference/promptops-lifecycle.md`.
 
 Rules:
-- **TTL is the rollback latency.** Moving a label back reaches running instances within `ttl_seconds`; a cache without TTL means a rollback never applies until restart. State the TTL in the runbook.
-- **One cache.** With the Langfuse adapter below, disable the SDK cache (`cache_ttl_seconds=0`) because the registry owns caching; or drop the registry cache and rely on the SDK's (default TTL 60 s, background refetch). Never stack two.
-- `allow_degraded=False` for consequential prompts in production: the caller turns `PromptUnavailableError` into the structured fallback / safe state. `on_degraded` increments a metric per tier and alerts.
+- **TTL is the rollback latency.** `PromptRuntime(ttl_seconds=...)`: a label move reaches running instances within the TTL (default 0, fetch on every call). State the TTL in the runbook; a cache without TTL means a rollback never applies until restart.
+- **One cache.** The Langfuse adapter disables the SDK cache (`cache_ttl_seconds=0`) because the runtime owns caching; if you rely on the SDK cache instead (default TTL 60 s, background refetch), keep `ttl_seconds=0`. Never stack two.
+- **The label comes from configuration** (`PROMPT_LABEL`), never from the call site; anything but `development`, `staging` or `production` (including `latest` and empty) is refused before any fetch.
+- **The card travels with the text.** The prompt card is stored as the Langfuse version `config`, with `content_hash` written by the sync job, defined by `validate_prompts.content_hash(card)` (sha256 over template, model, output_schema, variables, tools, examples, languages), so a model change also changes the hash. A version without `content_hash`, or whose served text no longer matches it (a registry-UI edit that kept the old config), is refused (`PromptIntegrityError`). Drift detection compares this hash.
+- **Fail mode.** Last-known-good (Degraded) and the emergency pack (Emergency) are served on outage; a prompt absent from registry, cache and pack raises. `allow_degraded=False` is deliberately **stricter**: once the TTL has expired a failed fetch raises (use `ttl_seconds=0` for prompts that must never be served past a rollback) and the caller turns `PromptUnavailableError` into the structured fallback / safe state. Use it for consequential prompts in production; `on_degraded` increments a metric per tier and alerts.
+- **Seed only on change.** The sync job publishes a new registry version only when the card's `content_hash` differs from the latest one (Langfuse numbers versions server-side; `FileRegistry.publish` is idempotent on equal content and refuses a reused version number with other content).
 - Log `error_type`, never `str(exc)` (request-derived content can leak); see `deployment-ci-cd/reference/python-observability.md` §2.
-- The bundled pack is the reviewed prompt set frozen at build time; placeholder text is refused at load.
-- Record `prompt.name`, `prompt.label`, `prompt.version`, `prompt.content_sha256`, `prompt.tier` on the span of every model call and on every eval row.
+- **Emergency pack:** built from the versions at the target label (never branch content), each entry carries a SHA-256 checksum and its own prompt name; a corrupted or edited entry, a misfiled entry or a pack built for another label is refused at use. The checksum is not a signature: anyone who can rewrite the pack can recompute it, so sign the pack or ship it inside the signed build artifact.
+- Record the prompt name, label, version, content hash and tier on the span of every model call (`RenderedPrompt.span_attributes()`: `app.prompt.name`, `app.prompt.label`, `app.prompt.version`, `app.prompt.sha256`, `app.prompt.tier`; the model as `gen_ai.request.model` / `gen_ai.response.model`, `deployment-ci-cd/reference/ai-observability.md` §2 and §6) and on every eval row (`prompt_name`, `prompt_version`, `model_name` in `../assets/schemas/eval_result.schema.json`). These are the PromptOps correlation fields `prompt_name`, `prompt_version`, `prompt_label`, `model_name` under OTel naming rules (custom attributes in your own namespace).
 
 ### Langfuse adapter
 
-```python
-from langfuse import get_client
+`LangfuseRegistry` in the runtime calls `get_prompt(name, label=label, cache_ttl_seconds=0, fetch_timeout_seconds=5)` with no SDK `fallback=` (the runtime decides the tier): `NotFoundError` fails closed as `PromptNotFoundError`, any other error (an unreachable server raised `httpx.ConnectError`, executed) becomes `RegistryUnavailableError`. `publish` calls `create_prompt(name=, prompt=, type="text", labels=[], config=card, commit_message=)` and `move_label` calls `update_prompt(name=, version=, new_labels=[label])` after the label check. Not executed against a live Langfuse server.
 
-class LangfuseRegistryClient:
-    def __init__(self) -> None:
-        self._lf = get_client()                     # reads LANGFUSE_PUBLIC_KEY / _SECRET_KEY / _BASE_URL
-
-    def fetch(self, name: str, label: str) -> tuple[str, str]:
-        # registry owns the cache (TTL 0 here) and the fallback tier (no SDK fallback=):
-        # an unreachable server raises (httpx.ConnectError, executed) and the registry decides
-        p = self._lf.get_prompt(name, label=label, cache_ttl_seconds=0, fetch_timeout_seconds=5)
-        return str(p.version), p.prompt              # template text; render with your own variables
-```
-
-If Langfuse is also your tracer, you may link the SDK prompt object to the generation (`start_as_current_observation(as_type="generation", prompt=prompt)`); keep the span attributes above either way. The SDK's own `fallback=` / `is_fallback` is an alternative to the bundled tier; if used, `is_fallback=True` must emit the same degraded metric.
+If Langfuse is also your tracer, you may link the SDK prompt object to the generation (`start_as_current_observation(as_type="generation", prompt=prompt)`); keep the span attributes above either way. `prompt.compile()` substitutes `{{var}}` slots, leaves unknown slots in place and escapes nothing, so it is not a safe renderer: use `PromptRuntime.render` (rules: `prompt-engineering-patterns/reference/prompt-templates.md` §2). To list versions and labels: `api.prompts.list(name=, label=, tag=, page=, limit=, from_updated_at=, to_updated_at=)` (returns `versions`, `labels`, `last_config`). With `cache_ttl_seconds=0` there is no SDK-level stale tier (the SDK otherwise returns an expired cached prompt when a refetch fails). The SDK's own `fallback=` / `is_fallback` is an alternative to the emergency tier; if used, `is_fallback=True` must emit the same degraded metric.
 
 ## Lifecycle and promotion
 
 ```
-prompts/<domain>/<task>.system.yaml   Git: source of truth, PR-reviewed
+prompts/<domain>/<feature>/<task>.<type>.yaml   Git: source of truth, PR-reviewed
         ↓ seed job (writes content hash into registry metadata)
 Registry version N                    label: development
         ↓ eval on version N passes (held-out set, deterministic gates)
 label: staging → staging eval + human approval → label: production
 ```
 
-- Promote a label only after the eval ran on **that exact version** and only while the registry is healthy. Fetch by label, never `latest` in production.
-- **Rollback = move the label to N-1.** Never delete versions.
+- Promote a label only after the eval ran on **that exact version** and only while the registry is healthy. Fetch by label, never `latest` in production. `production` additionally needs a recorded human approval.
+- **Rollback = move the label to N-1**, no deploy. Never delete versions. Rehearse it before launch.
 - **Prompt + tools move together:** a prompt that names tools is bumped in the same change as the tool set, and a CI check asserts the tool names in the prompt equal the registered tools.
-- **Drift check** (pre-release, nightly in staging): Git hash vs registry `content_hash` metadata vs what the production label serves.
+- **Drift check:** Git hash vs registry `content_hash` metadata vs what the production label serves. Any mismatch **blocks the release**; run it nightly in staging and weekly in production with an alert. For prompt cards the CLI gate is `prompt-engineering-patterns` `prompt_drift.py --mode prerelease`; the runtime test `test_static_drift_detected_against_runtime_hash` proves the runtime hash is the one it compares.
+- **CI never needs a registry container:** R1 runs on the file backend (`PROMPT_BACKEND=file`); `registry` is for dev-with-registry, staging and production.
+
+### File backend, drift check, promotion guard
+
+CI uses `FileRegistry` (no registry container): a misnamed or schema-invalid card is caught by `validate_prompts.py`, a missing prompt raises `PromptNotFoundError`, and a reused version number with other content raises `PromptIntegrityError`. Drift is the `prompt_drift.py --mode prerelease` gate over the same content hash. `promote()` refuses a label move while the registry is unhealthy or any instance serves a degraded tier, without a passing eval for that exact (version, model), and for `production` without a recorded approval; `rollback()` moves the label to the most recent previously approved version. Adapt the in-memory `EvalLedger` to your eval-result store and the registry audit log.
+
+### Outage policy
+
+| Mode | Trigger | Behaviour | Alert |
+|---|---|---|---|
+| Normal | registry healthy | fetch by `production` label; cache last-known-good (TTL) | none |
+| Degraded | registry down, cache hit | serve the cached version (`tier=last_known_good`); emit the degraded metric | low severity |
+| Emergency | registry down, cache miss | serve the hash-verified emergency pack built from the target label (`tier=emergency`); consequential prompts with `allow_degraded=False` raise instead (stricter than the outage tiers) | higher severity |
+| Promotion freeze | any of the above, or any instance reporting degraded / emergency | `promote()` refuses every label move until the registry is healthy and no instance reports a degraded tier | with the mode's alert |
+
+A missing prompt raises in every mode: never fall back to a hardcoded string in application code.
 - **Provenance:** frameworks append schema and context to the system prompt, so hash equality with the rendered prompt never holds. Prove provenance by containment of the stored prompt text in the rendered system prompt plus a stable recorded delta.
 
 ## Prompt regression test
@@ -160,6 +91,7 @@ label: staging → staging eval + human approval → label: production
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_BASE_URL=http://localhost:3000   # LANGFUSE_HOST is the deprecated alias
+PROMPT_LABEL=production                   # per environment: development | staging | production; never latest
 PROMPT_ALLOW_DEGRADED=false               # per prompt class; false for consequential prompts in prod
 PROMPT_CACHE_TTL_SECONDS=60
 ```

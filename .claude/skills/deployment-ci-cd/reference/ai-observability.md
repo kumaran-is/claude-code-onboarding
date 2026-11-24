@@ -79,7 +79,7 @@ async def traced_chat(*, provider: str, model: str, prompt: ServedPrompt, sent_s
     return result
 ```
 
-`ServedPrompt` is the frozen record the prompt registry returns (name, label, version, content_hash, text; registry contract in `.claude/skills/eval-guide/reference/langfuse-prompts.md`). `ModelResult` is your gateway's normalized response. For streaming, wrap the chunk iterator in the same `ai_span` and record `ttft` on the first chunk; the span ends on every exit path. Executed with an in-memory exporter: a consumer task cancelled mid-stream ends the span with `error.type=CancelledError` and status ERROR (a deadline looks the same inside the span, so keep cancellations out of the provider error-rate SLO or alert on them separately); a generator closed by its consumer (`aclose()`, `break`, the sse-starlette / Starlette close paths) raises `GeneratorExit` inside it, which `ai_span` records as `app.stream.closed=true` with no `error.type` and no ERROR status, so normal client closes do not inflate the error rate.
+`ServedPrompt` is the frozen record the prompt registry returns (name, label, version, content_hash, text; `ResolvedPrompt` with `text_sha256` (template text only), `tier` and `card` in the registry contract, where the card `content_hash` is the drift key; registry contract in `.claude/skills/eval-guide/reference/langfuse-prompts.md`). `ModelResult` is your gateway's normalized response. For streaming, wrap the chunk iterator in the same `ai_span` and record `ttft` on the first chunk; the span ends on every exit path. Executed with an in-memory exporter: a consumer task cancelled mid-stream ends the span with `error.type=CancelledError` and status ERROR (a deadline looks the same inside the span, so keep cancellations out of the provider error-rate SLO or alert on them separately); a generator closed by its consumer (`aclose()`, `break`, the sse-starlette / Starlette close paths) raises `GeneratorExit` inside it, which `ai_span` records as `app.stream.closed=true` with no `error.type` and no ERROR status, so normal client closes do not inflate the error rate.
 
 Why `record_exception=False`: the SDK default records the exception MESSAGE as a span event, and `set_status(ERROR, description=str(exc))` puts it in the status. Executed: with the default, a fake email inside the exception was exported; with the helper it was not (positive control: the email was in the exception), and reverting `record_exception=False` made the test fail.
 
@@ -125,7 +125,7 @@ Prompts, retrieved chunks, tool arguments and model output contain user data. Pr
 
 ## 6. Prompt provenance
 
-Record on every model-call span: registry prompt name, label, version, `content_hash`, plus the SHA-256 of the system text actually sent and an `app.prompt.intact` containment check (section 2). A mismatch means a framework processor or a code path changed the prompt: log a warning event (`prompt_integrity_mismatch`, name and version only) and alert on its rate; never block the request on it. With the model id and flag states on the same span, an incident can be attributed to an exact prompt and model version.
+Record on every model-call span: registry prompt name, label, version, `content_hash`, the tier served (`app.prompt.tier`: live, last_known_good, bundled), plus the SHA-256 of the system text actually sent and an `app.prompt.intact` containment check (section 2). A mismatch means a framework processor or a code path changed the prompt: log a warning event (`prompt_integrity_mismatch`, name and version only) and alert on its rate; never block the request on it. With the model id and flag states on the same span, an incident can be attributed to an exact prompt and model version.
 
 ## 7. Langfuse (optional extension)
 
@@ -203,6 +203,43 @@ Every alert has a named owner, a runbook link, a dedup key and a threshold tuned
 | Eval score trend | scheduled eval on a frozen set drops | compare by prompt version and model id |
 
 Drift = these signals moving with no deploy. Compare by `app.prompt.version`, `gen_ai.response.model` (providers update models behind aliases: pin versions) and index version. Burn-rate alert mechanics for Prometheus: `.claude/skills/adk-observability-guide/reference/slo-alerting.md`.
+
+### 9.1 Standard alert metrics, dashboards and SLO budgets (AI evaluation standard §11)
+
+Thresholds are the standard's **proposed defaults (ADAPT)**: ratify them per feature and record the owner, like eval thresholds. Name the series with your metrics conventions; the logical metric is what must exist.
+
+| Logical metric (§11.1) | Instrument here | Proposed alert |
+|---|---|---|
+| `workflow_success_rate` | `workflow_runs_total{feature,outcome}` ratio | < 0.95 for 5 min |
+| `tool_error_rate` | `app.ai.tool_calls{tool,outcome}` ratio | > 0.05 for 5 min |
+| `fallback_rate` | `app.ai.fallbacks` / requests | > 0.15 for 15 min |
+| `human_override_rate` | overrides / reviewed decisions per feature | > 0.10 for 1 h |
+| `rag_no_answer_rate` | `app.ai.abstains{reason="no_context"}` / RAG requests | > 0.20 for 1 h |
+| `hallucination_flag_rate` | per-request flag from the post-model callback / sampled judge | > 0.01 for 15 min |
+| `injection_attempt_rate` | detector hits per request | > 5x baseline |
+| `isolation_violation_total` | counter, **initialised to 0 for every feature at start-up** so an absent series is not read as "no violations" | **any non-zero: page now** |
+| `request_duration_seconds` P95 | `gen_ai.client.operation.duration` / HTTP duration | > 1.5x baseline for 5 min |
+| `request_cost_dollars` P95 | `app.llm.cost_usd` per request | > `<target>` for 1 h |
+| `escalation_correctness_rate` | correct escalations / escalations (labelled sample) | < 0.95 for 1 h |
+
+Executed (prometheus-client 0.26.0): a pre-initialised `isolation_violation` counter renders `isolation_violation_total{feature="triage"} 0.0` before any event, and no label key carries a tenant or user id. Tool metrics from the tool server (`tool_calls_total`, `tool_auth_denials_total`, `audit_writes_total`, ...): `eval-guide/reference/mcp-eval-patterns.md`.
+
+**Dashboards (§11.2):** feature SLO overview; cost per workflow; latency per feature and per tool; tool health; RAG health (no-answer, groundedness, citation failures); security (injection attempts, auth denials, isolation); prompt versions live in production (from `app.prompt.version` on spans).
+
+| SLO (§11.3) | Target | Budget |
+|---|---|---|
+| Workflow success | ≥ 95% | 5% / 30 days |
+| P95 latency | < 1.5x baseline | per feature |
+| P95 cost | < `<$ target>` | 5% over / month |
+| Hallucination flag rate | < 1% | 1% / month |
+| Isolation violations | **0** | **0** |
+| Fallback rate | < 15% | per feature |
+
+Production eval sampling (§5.5): traces sampled (e.g. 10% at high volume), ops metrics at 100%, managed eval on ~1% of traffic, prompt/model attributes on every request. Cost levers (§14): lower the eval sample (1% to 0.5%), drop a separate trace store if the cloud trace UI suffices, estimate managed-eval cost in a staging load test rather than committing a figure up front.
+
+### 9.2 Arize Phoenix (optional trace store)
+
+Phoenix is one option for trace replay and experiments, never a second TracerProvider. `phoenix.otel.register(*, endpoint=, project_name=, batch=, set_global_tracer_provider=, headers=, protocol=, auto_instrument=, api_key=)` returns a tracer provider (`arize-phoenix-otel` 0.17.3, Python < 3.16; signature introspected, no Phoenix server was run). To keep one trace per request, either let it build the app provider once at start-up (`set_global_tracer_provider=True`) or skip it and add an OTLP exporter pointing at the Phoenix collector to your existing provider. `auto_instrument` is False by default; enabling it adds OpenInference instrumentors whose content-capture defaults must be checked against section 5 before production.
 
 ## 10. Incident replay
 

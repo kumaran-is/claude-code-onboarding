@@ -124,6 +124,25 @@ Both camelCase and snake_case field names are accepted (Pydantic aliases).
 
 ---
 
+## Multiple runs (`multi_run_config`)
+
+`num_samples` repeats the **judge**; `multi_run_config` repeats the **agent** (each run in a fresh session) and decides the case across runs. Fields read from google-adk 2.15.0 `evaluation/eval_config.py` (`extra="forbid"`: a misspelled key is rejected, not silently ignored): `num_runs`, `max_crashed_runs` (default 0: any crashed run fails the case), `cross_run_scoring` (`"mean_over_invocations"` default, `"mean_of_runs"`, `"min_over_runs"`, or `{"method": "pass_rate", "threshold": x}`), `cross_run_scoring_by_metric`, `cross_run_criteria` (`pass_rate`, `pass_at_k` = capability, `pass_hat_k` = reliability: all k runs pass; without a threshold the value is informational), `custom_methods`.
+
+```json
+{
+  "criteria": {"tool_trajectory_avg_score": 1.0},
+  "multi_run_config": {
+    "num_runs": 3,
+    "cross_run_scoring": "min_over_runs",
+    "cross_run_criteria": [{"method": "pass_hat_k", "k": 3, "threshold": 1.0}]
+  }
+}
+```
+
+Executed with a scripted model whose second run of three used a wrong tool argument: this config failed the case (`adk eval` exit 1); `{"cross_run_scoring": {"method": "pass_rate", "threshold": 0.6}}` passed the same runs (exit 0). Gate critical and safety cases with `pass_hat_k` (any miss in any trial is a miss, `eval-guide` "Judge variance and trials"); use `pass_rate` or `pass_at_k` only for non-critical quality, and never raise `num_runs` until a case goes green.
+
+---
+
 ## Custom Metrics
 
 Register a custom metric function in `eval_config.json`:

@@ -42,14 +42,14 @@ A practical guide to choosing between exact and approximate nearest-neighbor sea
 | Index | Strength | Weakness |
 |-------|---------|---------|
 | **HNSW** | Excellent recall/speed tradeoff for large datasets; scales very far with proper infrastructure | Higher memory footprint (stores graph links), slower build time |
-| **IVFFlat** | Lower memory, faster to build | Lower recall than HNSW at same speed |
+| **IVFFlat** | Lower memory, faster to build | Lower recall than HNSW at same speed; needs training/re-clustering (`lists` rebuild) as data shifts — use for very large, memory-bound, mostly static corpora |
 | **Flat** | Exact (technically not ANN) — brute force | Slow at scale |
 
 **When to use ANN:** Production retrieval on any non-trivial dataset (> ~50k vectors).
 
 ### A third axis: Quantization
 
-Beyond choosing an index type, **vector quantization** (PQ — Product Quantization, SQ — Scalar Quantization) compresses the vectors themselves to trade accuracy for memory and speed. It composes with HNSW/IVFFlat — e.g. HNSW+PQ is a common large-scale config. Worth considering when memory becomes the bottleneck before latency does.
+Beyond choosing an index type, **vector quantization** (PQ — Product Quantization, SQ — Scalar Quantization) compresses the vectors themselves to trade accuracy for memory and speed. It composes with HNSW/IVFFlat — e.g. HNSW+PQ is a common large-scale config. Worth considering when memory becomes the bottleneck before latency does; rerank the candidates with full-precision vectors to recover recall.
 
 ---
 
@@ -62,7 +62,7 @@ ANN doesn't mean "bad recall" — **well-tuned HNSW can often reach 95–99% rec
 - **HNSW `M`** (build-time) — higher = better recall, more memory
 - **IVFFlat `probes`** (query-time, `ivfflat.probes`) — higher = better recall, slower queries; start near `sqrt(lists)`
 
-**The golden workflow:** Measure recall of your ANN config against KNN ground truth on a sample, then tune until ANN-vs-exact overlap@k is acceptable for your use case. (This index-quality measure — the share of the exact top-k that ANN also returns — is distinct from retrieval Recall@K against labeled relevant chunks; metric formulas live in the `llm-evaluation` skill.)
+**The golden workflow:** Measure recall of your ANN config against KNN ground truth on a sample, then tune until ANN-vs-exact overlap@k meets the ratified floor (ADAPT default **≥ 0.95 of exact**). If exact KNN also misses the right chunk, the problem is chunking or embeddings, not the index. (This index-quality measure — the share of the exact top-k that ANN also returns — is distinct from retrieval Recall@K against labeled relevant chunks; metric formulas live in the `llm-evaluation` skill.)
 
 Set query-time knobs with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified on PG16 and again on PostgreSQL 18.7 + pgvector 0.8.7: `SET LOCAL hnsw.ef_search = 200` reverts to 40 after commit; a session `SET` stays 200).
 

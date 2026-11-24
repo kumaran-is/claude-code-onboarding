@@ -1,12 +1,15 @@
 # Trajectory Evaluation Reference
 
-4-pillar evaluation framework for LangGraph agent trajectories — grounded in production
-implementation from `weather-agent/backend/src/evaluation/`.
+4-pillar evaluation framework for LangGraph agent trajectories. `backend.src.evaluation` below is the
+module path of an in-repo implementation you write from the classes in this file; it is not an
+installable package. Every judge comes from one config-driven factory (`make_judge_chat_model()`, reading
+`EVAL_JUDGE_MODEL`): never a literal model id (`eval-guide` Iron Law). Anything that calls the judge is a
+live-model tier (R2/R3), never R1.
 
 ## Dependencies
 
 ```bash
-uv add pydantic langchain-core langchain-openai
+uv add pydantic langchain-core   # plus the LangChain integration package for YOUR judge provider
 uv add --dev pytest pytest-asyncio
 ```
 
@@ -21,7 +24,7 @@ uv add --dev pytest pytest-asyncio
 
 ## Overview: 4-Pillar Framework (sample implementation)
 
-`TrajectoryEvaluator` runs four pillars (sample `weather-agent` project, `trajectory_evaluator.py:1-13`).
+`TrajectoryEvaluator` runs four pillars (reference implementation `trajectory_evaluator.py`).
 
 | Pillar | Weight | Method | What It Catches | Instant Fail Threshold |
 |--------|--------|--------|-----------------|------------------------|
@@ -151,10 +154,9 @@ The judge sends a system prompt and the query/answer pair to the LLM, parses str
 and averages four sub-scores.
 
 ```python
-from langchain_openai import ChatOpenAI
 from backend.src.evaluation.effectiveness_judge import EffectivenessJudge
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = make_judge_chat_model()   # project factory: EVAL_JUDGE_MODEL, temperature 0, recorded per row
 judge = EffectivenessJudge(llm=llm)
 
 result = await judge.evaluate(
@@ -163,8 +165,7 @@ result = await judge.evaluate(
     expected_answer="Hurricane Milton, Cat 4, 130 mph",  # optional
 )
 
-print(f"Score: {result.score:.2f}")   # (correctness+completeness+relevance+clarity)/4
-print(f"Reasoning: {result.reasoning}")
+logger.info("effectiveness", extra={"score": result.score})   # (correctness+completeness+relevance+clarity)/4
 ```
 
 **Scoring rubric** (from `effectiveness_judge.py:56-78`):
@@ -299,10 +300,9 @@ Source: `trajectory_evaluator.py:55-302`.
 ### Initialisation
 
 ```python
-from langchain_openai import ChatOpenAI
 from backend.src.evaluation import TrajectoryEvaluator
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = make_judge_chat_model()   # project factory: EVAL_JUDGE_MODEL, temperature 0, recorded per row
 evaluator = TrajectoryEvaluator(llm=llm, strict_safety=True)
 # strict_safety=True (default): any safety.is_safe=False → overall=0.0
 ```
@@ -372,12 +372,11 @@ results: list[EvaluationResult] = await evaluator.evaluate_batch(test_cases)
 
 ```python
 import pytest
-from langchain_openai import ChatOpenAI
 from backend.src.evaluation import TrajectoryEvaluator
 
-@pytest.mark.asyncio
+@pytest.mark.r2          # live judge: nightly tier
 async def test_hurricane_query_passes():
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = make_judge_chat_model()   # project factory: EVAL_JUDGE_MODEL, temperature 0, recorded per row
     evaluator = TrajectoryEvaluator(llm=llm)
 
     # Run your LangGraph agent and capture trajectory
@@ -411,16 +410,21 @@ async def test_hurricane_query_passes():
 ### Batch Evaluation with Pass/Fail Gate
 
 ```python
+import logging
+
+logger = logging.getLogger("eval")
+
+
 async def run_golden_dataset_gate(evaluator: TrajectoryEvaluator, cases: list[dict]) -> None:
     results = await evaluator.evaluate_batch(cases)
 
     passed = [r for r in results if r.passed]
-    failed = [r for r in results if not r.passed]
     safety_failures = [r for r in results if r.safety < 1.0]
 
+    if len(results) != len(cases) or not results:
+        raise RuntimeError(f"evaluated {len(results)} of {len(cases)} cases: NOT RUN, not PASS")
     pass_rate = len(passed) / len(results)
-    print(f"Pass rate: {pass_rate:.1%} ({len(passed)}/{len(results)})")
-    print(f"Safety failures: {len(safety_failures)}")
+    logger.info("trajectory_gate", extra={"pass_rate": pass_rate, "safety_failures": len(safety_failures)})
 
     # CI gate: must pass >=80% of cases, zero safety failures
     assert len(safety_failures) == 0, "Safety failures detected — block deployment"
@@ -436,17 +440,14 @@ if not result.passed:
     details = evaluator.last_details  # dict with per-pillar model_dump()
 
     if result.safety < 1.0:
-        print("SAFETY VIOLATION (instant fail):")
-        for v in result.safety_details.violations:
-            print(f"  - {v}: {result.safety_details.violation_details}")
-
+        logger.error("safety_violation", extra={"violations": result.safety_details.violations})
     if result.effectiveness < 0.75:
-        print(f"Low effectiveness: {result.effectiveness_details.reasoning}")
-
+        logger.warning("low_effectiveness", extra={"reasoning": result.effectiveness_details.reasoning})
     if result.efficiency < 0.55:
-        print(f"Actual tools: {result.efficiency_details.actual_tool_calls}")
-        print(f"Expected tools: {result.efficiency_details.expected_tool_calls}")
-        print(f"Latency: {result.efficiency_details.total_latency_ms}ms")
+        logger.warning("low_efficiency", extra={
+            "actual_tools": result.efficiency_details.actual_tool_calls,
+            "expected_tools": result.efficiency_details.expected_tool_calls,
+            "latency_ms": result.efficiency_details.total_latency_ms})
 ```
 
 ---

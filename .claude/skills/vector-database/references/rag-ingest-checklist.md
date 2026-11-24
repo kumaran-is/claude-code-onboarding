@@ -10,6 +10,43 @@ Load this file BEFORE writing any agent or worker that ingests text into a Weavi
 
 ## Checklist (copy into your ingest PR)
 
+### S. Source register entry (ADAPT; the canonical source register)
+No content enters an index without a source register entry. Keep it as a reviewed config file next to the pipeline (one entry per corpus/source):
+
+```yaml
+source_id: <stable id>
+owner: <named accountable person>
+approved_use: [<capability ids allowed to retrieve it>]
+data_classification: <public | internal | confidential | restricted>
+acl_source: <source-system ACL | org membership | role map>
+acl_sync_sla: 15m            # ADAPT default ≤ 15 min; ratify
+isolation_boundary: <tenant | org | business unit | user>
+pii_policy: [<PII classes allowed after sanitization>]
+retention: <duration>; legal_hold: <rule>
+deletion_sla: 24h            # ADAPT default ≤ 24 h; ratify
+trust_level: <trusted-internal | partner | user-generated | external-web>
+refresh_mode: <event-driven | scheduled | manual>
+embedding_profile: {model: <id>, version: <v>, dimensions: <n>, chunking_version: <v>}
+```
+
+- [ ] The ingest job refuses a `source_id` without a register entry, and stamps `trust_level`, `data_classification` and `embedding_profile` from it (never from the document).
+- [ ] `user-generated` / `external-web` sources pass the poisoning controls in §P before entering a shared corpus.
+
+### I. Ingestion stages (in order; each is a checklist item)
+
+| # | Stage | Requirement |
+|---|---|---|
+| 1 | Fetch | Connector authenticates as a least-privilege service identity; records the source version / etag |
+| 2 | Parse | Layout-aware: headings, lists and tables extracted separately, page numbers retained; OCR only for image-only content, with confidence recorded (`rag-architect/references/advanced-chunking-guide.md` §3) |
+| 3 | Clean | Dehyphenate, normalize whitespace and encoding, strip boilerplate (headers, footers, navigation), fix OCR artifacts |
+| 4 | Sanitize | Remove secrets; redact PII beyond `pii_policy`; flag detectable instruction-like text (§P) |
+| 5 | Chunk | Per `rag-architect/references/advanced-chunking-guide.md` §0; chunking strategy versioned |
+| 6 | Summarize (optional) | One summary chunk per long document, marked `chunk_type=summary` |
+| 7 | Enrich | Attach the chunk envelope (§B) |
+| 8 | Embed | Through the shared embedding helper only (G13); model/version stamped (§A) |
+| 9 | Write | Idempotent (§B) |
+| 10 | Emit event | Invalidate caches, schedule eval refresh, update freshness metrics |
+
 ### A0. Validate before parsing
 - [ ] Source location is allowlisted (bucket/prefix re-validated server-side, not trusted from the message).
 - [ ] File type checked by magic bytes, not extension; size and page caps (`MAX_BYTES`, `MAX_PAGES`) enforced; encrypted files and archive bombs rejected.
@@ -33,7 +70,18 @@ Load this file BEFORE writing any agent or worker that ingests text into a Weavi
 - [ ] pgvector: dimension ≤ 2000 for an HNSW/IVFFlat index; `embedding_model` set by the writer, no column `DEFAULT`.
 
 ### B. Persistence
-- [ ] Store only the redacted text next to the vector; attach redaction counts (not values) as metadata.
+- [ ] **Redact at the storage boundary, not only in logs:** the persisted chunk text and its vector are both produced from already-redacted text; there is no "raw text plus a flag" row to leak. Redaction is one-way and recorded as counts per class (`pii_redactions: {email: 2}`), never values; each redaction pattern has a paired test (a positive that must be redacted and a near-miss negative that must survive).
+- [ ] Secrets (credentials, keys, tokens, access codes) are removed before embedding, through the same shared redaction service used for logs and model egress. A secret found after indexing is an incident: purge chunk, vector and caches, then rotate the secret.
+- [ ] The chunk envelope is schema-validated at write time; required fields: `chunk_id`, `source_id`, `scope_id` (the isolation key), `acl` (principals/roles), `data_classification`, `trust_level`, `doc_version`, `is_current`, `source_updated_at`, `language`, `chunking_version`, `embedding_model`, `embedding_version`, `ingested_at`, `content_hash`; optional `parent_id`, `effective_from`, `superseded_at`, `chunk_type`, `section_path`, `page`, `pii_redactions`. A write missing a required field fails.
+- [ ] Idempotency: re-running ingestion on the same source never duplicates chunks. One mechanism per corpus:
+
+  | Mechanism | How | Choose when |
+  |---|---|---|
+  | Version-supersede | Mark the prior generation `is_current=false, superseded_at=now`, then write the new generation | Documents are versioned; history must stay queryable; store lacks unique constraints |
+  | Content-hash upsert | Unique key on `(scope_id, source_id, chunk_hash)` | Store enforces uniqueness cheaply; history not needed |
+
+  A failed ingest retries the **whole** sequence and converges. The swap between generations is atomic or filtered, so two "current" generations never answer the same query.
+- [ ] Ingestion emits an event on success (cache invalidation via `index_version`, eval refresh, freshness metric).
 - [ ] Batch both embedding calls and store writes. Weaviate: read `collection.batch.failed_objects` after EACH `with batch` block; pgvector: one transaction per batch.
 
 ### C. Failure handling
@@ -49,6 +97,16 @@ Load this file BEFORE writing any agent or worker that ingests text into a Weavi
 ### E. Tenant and permission scope
 - [ ] Upstream fetches (object store, connectors) run under the same tenant scope as the write; the vector store does not enforce your ACLs by itself.
 - [ ] ACL labels (role/group ids) stored per chunk so retrieval can filter in the same call; an ACL change is a metadata update plus cache invalidation, not a re-embed.
+- [ ] ACLs are copied from the source of record and re-synced within `acl_sync_sla`; a test revokes a grant at the source and asserts the chunk stops being retrieved within the SLA.
+- [ ] Derived artifacts (summaries, compiled profiles, cached answers) inherit the **most restrictive** ACL of their inputs.
+- [ ] Role visibility within a scope (internal notes vs customer-visible text) is a chunk attribute, filtered like any other ACL. Filter values at query time come from the server-side auth context, never from client input or model output (`rag-security-reviewer` §2).
+
+### P. Poisoning and injection controls at ingestion
+- [ ] Instruction-like text ("ignore previous instructions…") is detected and flagged at ingestion; flagged chunks are reviewed or quarantined, never silently dropped.
+- [ ] Untrusted contributors cannot write into a shared corpus without review; `trust_level` is stored per chunk and usable as a retrieval filter or ranking signal.
+- [ ] Monitor new chunks that become nearest neighbours of many high-value queries, and chunks with abnormal retrieval frequency; cap one source's share of the final context.
+- [ ] Vectors are treated as sensitive as their source text (same access control, encryption and residency).
+- [ ] Red-team coverage for indirect injection and poisoning exists for every corpus below `trusted-internal` (procedures: `eval-guide/reference/red-teaming.md`, query-time controls: `rag-security-reviewer`).
 
 ### F. Tests
 - [ ] Oversized input rejected before any paid call.

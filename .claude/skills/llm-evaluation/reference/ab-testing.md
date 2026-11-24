@@ -121,6 +121,11 @@ def online_ab(control: list[float], treatment: list[float], alpha: float = 0.05)
 5. Judge-scored metrics: score both variants with the same median-of-3 trials (`eval-guide/SKILL.md`); position-randomize pairwise judges.
 6. Online A/B: randomize by user or session (not request), fix duration and metrics in advance, correct for multiple metrics (e.g. Holm), and check sample-ratio mismatch before reading results.
 
+7. **Judge / evaluator models are a pinned, versioned registry class** (model-selection-routing standard §4.2). For high-stakes gates the judge is, where avoidable, never the same model instance whose output it grades, and it is calibrated against human labels before its scores gate anything.
+8. **Candidate model gates** (standard §7.2; the numbers are ADAPT defaults): the capability's ratified thresholds are met with no slice regressing more than 2 pts against the incumbent; schema pass rate ≥ 99% where code consumes the output; zero cross-scope leaks in tool and retrieval scenarios; every production input language evaluated or routed away; p95 latency and cost within the capability SLO; tested at production temperature and parameters with repeated runs.
+9. **Router evaluation** (standard §7.3): compare the router-selected tier with the cheapest passing tier, on the golden set and in shadow, and count correct / over-route / under-route. Weight under-routing above over-routing; any safety under-routing blocks go-live.
+10. **Cheapest-passing-tier labels** (standard §7.1) record their source (`deterministic_verifier`, `human_reviewer` or `approved_model_evaluator`) plus the evaluation-policy, routing-policy and dataset versions and the pass/fail criteria. Model-judge labels are supporting evidence, never ground truth; prefer deterministic verifiers for objective tasks and human labels for subjective or high-impact ones.
+
 Release mechanics (shadow/dual-run, canary, rollback): `deployment-ci-cd/reference/llmops-release-and-rollout.md`.
 
 ---

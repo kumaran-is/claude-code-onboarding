@@ -38,6 +38,21 @@ Choose model before writing any schema. Dimension determines index shape. Model 
 - Reduced (Matryoshka) dimensions: one fixed dim per index; L2-normalize truncated vectors if you use inner product; measure recall against full dims before adopting.
 - Use the model's query/document asymmetry (task type, `input_type`, BGE/E5 prefixes) and record it per vector. One embedding chokepoint owns model, dims, task type, a `len(vector) == DIMS` assertion and bounded retry of transient errors.
 
+**Selection criteria** (public leaderboards are a shortlist, not a decision):
+
+| Criterion | Question |
+|---|---|
+| Retrieval quality | Recall@k / nDCG on **your** golden set, per language and content type |
+| Language coverage | Every language the corpus and the users use |
+| Dimensions and storage | Vector size × chunk count × replicas; supports dimension truncation? |
+| Query/document asymmetry | Separate query vs document modes? Use them consistently |
+| Max input length | Longer than your largest chunk, with margin |
+| Data egress and residency | Approved provider and region for the corpus classification (G9, G20) |
+| Cost and throughput | Re-index cost for the full corpus, not only per-query cost |
+| Lifecycle | Provider deprecation policy; self-hosted option |
+
+One model + version + dimension per corpus, from configuration, **identical in every environment** (dev never silently uses a different model than production); vectors from different models or dimensions are never compared in one search.
+
 ---
 
 ## pgvector
@@ -56,6 +71,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Column: dimension must match model exactly
 ALTER TABLE documents ADD COLUMN embedding vector(1536);
 ALTER TABLE documents ADD COLUMN embedding_model varchar(100);   -- set by the writer; no DEFAULT
+ALTER TABLE documents ADD COLUMN is_current boolean NOT NULL DEFAULT true;  -- false once superseded (versioned tables: superseded_at IS NULL)
 ALTER TABLE documents ADD CONSTRAINT documents_embedding_model_stamped
     CHECK (embedding IS NULL OR embedding_model IS NOT NULL);
 ```

@@ -16,8 +16,8 @@ last-reviewed: "2026-11-23"
 
 ## Iron Law
 
-**UNIT TESTS USE A SCRIPTED FAKE MODEL; `adk eval` IS A LIVE-MODEL TIER, AND EVERY THRESHOLD IS READ ON ITS CRITERION'S OWN SCALE AND DIRECTION.**
-`adk eval` calls the real agent model (and a judge for LLM-judged criteria): it is non-deterministic and costs money, so it runs in the nightly/pre-release tiers (`eval-guide/reference/ci-tiers.md`), not as a unit test. PR-time tests drive the agent with a scripted model (`eval-guide/reference/pytest-harness.md`). Every criterion is a minimum score (higher = better); `hallucinations_v1` is the share of supported sentences, so its gate is e.g. `≥ 0.9`, never `0` or `≤ 0.05`.
+**UNIT TESTS USE A SCRIPTED FAKE MODEL; `adk eval` AGAINST THE REAL MODEL IS A LIVE-MODEL TIER, AND EVERY THRESHOLD IS READ ON ITS CRITERION'S OWN SCALE AND DIRECTION.**
+`adk eval` on the production agent calls the real model (and a judge for LLM-judged criteria): it is non-deterministic and costs money, so it runs in the nightly/pre-release tiers (`eval-guide/reference/ci-tiers.md`), not as a unit test. PR-time tests drive the agent with a scripted model (`eval-guide/reference/pytest-harness.md`); the same evalset can run in R1 through `adk eval` or `AgentEvaluator` when the agent's model is a scripted `BaseLlm` and only deterministic criteria are configured (section "Offline evalset smoke"). Every criterion is a minimum score (higher = better); `hallucinations_v1` is the share of supported sentences, so its gate is e.g. `≥ 0.9`, never `0` or `≤ 0.05`.
 
 ## Reference Files
 
@@ -82,6 +82,47 @@ adk eval_set add_eval_case <agent_path> <eval_set_id> --scenarios_file <path> --
 **CLI options** (`adk eval --help`, google-adk 2.15.0): `--config_file_path`, `--print_detailed_results`, `--eval_storage_uri`, `--num_runs`, `--parallelism`, `--log_level`. Since 2.13 `adk eval` exits 1 when any case fails or no results were produced (1.29 exited 0), so a CI step can gate on its exit code. `adk eval_set` also has `generate_eval_cases`.
 
 ---
+
+## Offline evalset smoke (R1, scripted model)
+
+Executed on google-adk 2.15.0, Python 3.14.10, no credentials (MOCKED model): the fixture below with `{"criteria": {"tool_trajectory_avg_score": 1.0, "response_match_score": 0.8}}` passed (`adk eval` exit 0, both scores 1.0); making the model call `lookup_order` with the wrong id failed it (exit 1). `AgentEvaluator.evaluate(agent_module="order_app", eval_dataset_file_path_or_dir="evals/orders.test.json", num_runs=1)` passed in pytest and raised `AssertionError` for the wrong id. This proves the evalset, criteria and tool wiring, never model quality.
+
+```python
+# order_app/agent.py  (order_app/__init__.py: from . import agent)
+from collections.abc import AsyncGenerator
+
+from google.adk.agents import Agent
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types
+
+
+def lookup_order(order_id: str) -> dict[str, str]:
+    """Look up an order's shipping status."""
+    return {"order_id": order_id, "status": "shipped"}
+
+
+class ScriptedLlm(BaseLlm):
+    """Turn 1 calls lookup_order; after the tool result, answers. No provider call."""
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        last = llm_request.contents[-1]
+        if any(p.function_response for p in (last.parts or [])):
+            yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="Order o-1 has shipped.")]))
+            return
+        call = types.FunctionCall(name="lookup_order", args={"order_id": "o-1"})
+        yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
+
+
+root_agent = Agent(name="order_agent", model=ScriptedLlm(model="scripted"),
+                   instruction="Answer order questions using lookup_order.", tools=[lookup_order])
+```
+
+- Every run also reports four **informational** efficiency metrics, always on and never pass/fail: `tool_call_count_v1`, `inference_call_count_v1`, `token_usage_v1`, `invocation_duration_v1` (lower is better). Use them for the tool-call-efficiency and cost/latency dimensions, but gate in your own code: they cannot fail a case.
+- Trials: `multi_run_config` in the eval config runs each case N times in fresh sessions (`criteria-guide.md` "Multiple runs").
 
 ## Key Patterns
 

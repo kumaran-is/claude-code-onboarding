@@ -39,6 +39,18 @@ Do not hardcode model ids in code or in this skill — the lineup changes faster
 2. Run the eval suite on both ids; compare cost, latency and failure rates, not only quality.
 3. Roll out gradually with a rollback (`deployment-ci-cd/reference/llmops-release-and-rollout.md`).
 
+### Model selection rows (canonical: `agentic-ai-dev/reference/agentic-llm-routing.md`)
+
+| Rule | Gemini specifics |
+|---|---|
+| Registry, not a string | Each Gemini config is an approved-model registry entry (`config_id`, tier FAST/STANDARD/STRONG, exact id, `thinking_level`, region, data terms); settings hold the `config_id` |
+| No aliases in production | `gemini-*-latest` ids and auto-updating aliases are rejected by the registry; `-preview` / experimental ids only inside an approved, evaluated experiment |
+| Developer API vs Vertex AI are different configs | Different endpoints, regions, data terms and quotas: separate registry entries, each with its own evals. Failover from one to the other must be approved for the request's data class |
+| Validate limits, not advertised ones | Probe with `client.models.get(model=...)` (returns `types.Model` with `input_token_limit`, `output_token_limit`, `supported_actions`, `thinking`; read in google-genai 3.6.1 source) and record the validated context and output limits in the registry |
+| Thinking level is part of the pinned config | `thinking_level` sits next to the model id in the registry entry; changing it is a config change that runs the eval gate |
+| Embeddings | `embed_content` model and `output_dimensionality` are pinned per corpus; never routed or failed over (re-index migration: `vector-database`) |
+| Failover triggers | 5xx / timeout only. A quota 429, `SAFETY`/`RECITATION`/`MAX_TOKENS` finish or 400 is not a failover trigger (see "Error Handling") |
+
 ## SDKs
 
 - **Python**: `google-genai` — `uv add "google-genai==3.6.1"` for direct Gemini code and LangChain (`langchain-google-genai==4.5.2` requires `google-genai>=3.3`).

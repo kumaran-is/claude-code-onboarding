@@ -23,6 +23,18 @@ indexes are immutable in production.
         Entity matching, rule lookup              QA agents, FAQ search
 ```
 
+## Step 0 — use the platform you already run (collocated vs dedicated)
+
+Ask first **where the data naturally lives**. Before the tier rule below:
+
+- If the service has no dedicated vector/search engine yet, start **collocated** (pgvector in the system-of-record PostgreSQL). Adding a dedicated store (or a managed retrieval service) needs an architecture review (ADR) showing the existing platform cannot meet a measured need: corpus size, native hybrid search, physical multi-tenancy, or content that lives outside the relational store (guardrail G13).
+- Require a cost estimate at current and 10× volume, including **idle cost**: some managed vector services bill a minimum footprint at zero traffic.
+- Check these criteria for the candidate store: filtered-ANN recall under selective filters, native hybrid search, multi-tenancy limits, hard-delete latency and tombstone compaction, read-after-write consistency, index types (HNSW, IVF, flat, quantization), backup/restore, encryption at rest, private networking, region pinning.
+- A managed retrieval service is acceptable for a small team doing standard document Q&A only after its ACL and deletion semantics are checked against the chunk envelope and ACL sync rules (`rag-ingest-checklist.md` §B, §E) and the deletion propagation path (`rag-architect/references/versioning-and-freshness.md` §8); it trades control over chunking, ranking and metadata for less to operate.
+- **Do not dual-write the same content to two stores as two sources of truth**; they drift. When both relational and semantic filtering are needed, use two-stage retrieval (filter in one, rank in the other).
+
+The tier rule below applies when both tiers are already on the platform (as in this toolkit's reference stack).
+
 ## The decision rule (binary, mandatory)
 
 Answer this question before adding ANY vector data:
@@ -118,7 +130,7 @@ When you encounter a vector data type NOT in this list:
 
 ## Hard rules (violation = STOP and revert)
 
-- **NEVER** add vector data to pgvector if the answer to the JOIN/PostGIS/aggregate question is "no" AND the corpus is unstructured text — that data belongs in Tier 2.
+- **NEVER** add vector data to pgvector if the answer to the JOIN/PostGIS/aggregate question is "no" AND the corpus is unstructured text AND a Tier 2 store already runs on the platform — that data belongs in Tier 2. Without a Tier 2 store, Step 0 applies.
 - **NEVER** add vector data to Weaviate if it needs `JOIN`, PostGIS, or multi-table aggregate filters at query time — that data belongs in Tier 1. Denormalisation is not the fix; denormalisation creates 2-database consistency bugs that surface as silent retrieval misses.
 - **NEVER** sync Postgres rows to Weaviate to "have both" — dual-writes drift in production. If you genuinely need both, use two-stage retrieval (Tier 1 candidate → Tier 2 rerank), not synchronisation.
 - **NEVER** put a new vector column or collection in a service WITHOUT stating the tier decision in the PR description (dispatch `pgvector-schema-reviewer` or `weaviate-schema-reviewer` to enforce).

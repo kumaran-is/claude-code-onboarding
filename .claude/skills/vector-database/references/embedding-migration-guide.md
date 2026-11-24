@@ -25,6 +25,12 @@ Before starting any migration:
 - [ ] Confirm index type for new dimension (HNSW for >100K rows)
 - [ ] Schedule during low-traffic window (re-embedding can take hours)
 
+Re-index rules (blue/green; mandatory):
+- Re-embed when the model or version changes, the chunking strategy changes, cleaning/OCR/sanitization logic changes chunk text, or the source is amended.
+- Model, version and dimension come from configuration and are **identical in every environment**; every chunk stamps `embedding_model`, `embedding_version`, `embedding_dimensions`, `embedding_mode`, `embedded_at`; every query filters on the active model.
+- Never re-embed in place during serving. Use a shadow column or index, dual-write new ingestions during the switch window, flip the active profile atomically in config, keep the old index for the rollback window.
+- Gate per **slice** (query type, language, tenant), not only the aggregate: no slice may regress beyond the PR thresholds (ADAPT defaults: Recall@10 −3 pts, high-stakes faithfulness −2 pts, cited-claim ratio −2 pts, any isolation leak blocks). Budget the full-corpus re-embed cost and wall-clock time before approving the change.
+
 ---
 
 ## Migration Plan (pgvector)

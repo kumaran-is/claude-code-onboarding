@@ -1,6 +1,6 @@
 # Python Service Observability (logs, traces, metrics, probes)
 
-Non-AI FastAPI services. Snippets were executed with Python 3.14, structlog 26.1, opentelemetry-sdk 1.45.2 and instrumentation 0.66b2, SQLAlchemy 2.0.58 (2.1.9 where stated), FastAPI 0.165 and httpx 0.28 (nothing here needs more than FastAPI 0.135). For ADK agent tracing use `adk-observability-guide`.
+Non-AI FastAPI services and workers. Snippets were executed with Python 3.14.10, structlog 26.1.0, opentelemetry-api/sdk/exporter-otlp 1.45.2 with the matching instrumentation 0.66b2 (the stable 1.x core and the 0.x contrib packages are released together: pin them as a pair), SQLAlchemy 2.1.9 (section 3 explains the one flag it needs), FastAPI 0.165.0 (native telemetry, section 3.2), httpx 0.28.1 for outbound clients (httpx2 2.16.2 for test clients) and an OpenTelemetry Collector 0.165.0. For ADK agent tracing use `adk-observability-guide`; for LLM spans and Langfuse use `ai-observability.md`.
 
 ## 1. Structured JSON logs
 
@@ -170,23 +170,129 @@ Limit: it tracks names bound by `except ... as name` (`msg = str(exc); logger.er
 
 ## 3. Tracing: wire explicitly, then PROVE spans exist
 
-```python
-# anchored: probes and metrics produce no spans
-EXCLUDED = r"^[a-z]+://[^/]+/(health|metrics)$"
+### 3.1 SDK bootstrap and shutdown
 
-# section 4; inside create_app(), after the app is built
-app = App(lifespan=lifespan)
-# None = global provider
-FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, excluded_urls=EXCLUDED)
-# async engines: pass .sync_engine
-SQLAlchemyInstrumentor().instrument(engine=async_engine.sync_engine)
-HTTPXClientInstrumentor().instrument()
+```python
+# my_service/telemetry.py
+from dataclasses import dataclass
+
+from opentelemetry import _logs, trace
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+
+@dataclass(frozen=True, slots=True)
+class Telemetry:
+    tracer_provider: TracerProvider
+    logger_provider: LoggerProvider
+
+    def shutdown(self) -> None:
+        """Flush, then close. Called from the lifespan exit (uvicorn runs it on SIGTERM)."""
+        self.tracer_provider.force_flush(timeout_millis=5_000)
+        self.logger_provider.force_flush(timeout_millis=5_000)
+        self.tracer_provider.shutdown()
+        self.logger_provider.shutdown()
+
+
+def init_telemetry(*, service_name: str, service_version: str, environment: str,
+                   sample_ratio: float = 1.0) -> Telemetry:
+    """Endpoint from OTEL_EXPORTER_OTLP_ENDPOINT; OTEL_SDK_DISABLED=true makes every tracer a no-op."""
+    resource = Resource.create({"service.name": service_name, "service.version": service_version,
+                                "deployment.environment.name": environment})
+    tracer_provider = TracerProvider(
+        resource=resource, sampler=ParentBased(root=TraceIdRatioBased(sample_ratio)))
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(timeout=5)))
+    trace.set_tracer_provider(tracer_provider)
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(timeout=5)))
+    _logs.set_logger_provider(logger_provider)
+    return Telemetry(tracer_provider, logger_provider)
 ```
 
-- Instrument the app INSTANCE at construction, and give `create_app()` a `tracer_provider` parameter so the test below can inspect the REAL stack. Global instrumentors only affect objects created after the call.
-- Exclude probes and metrics with an anchored regex (executed: with `excluded_urls` set, `/health` produced no span and `/n` did).
-- Propagate W3C trace context across async boundaries: `opentelemetry.propagate.inject(carrier)` into message attributes on publish, `extract(carrier)` on consume. HTTP clients get it from the httpx instrumentor. Set explicit timeouts on outbound clients; retry only idempotent calls.
-- Version coupling is the trap. The instrumentation packages declare the framework versions they support. Executed: with SQLAlchemy 2.1.9 and instrumentation 0.66b2, `instrument()` logged `SQLAlchemyInstrumentor only instruments "sqlalchemy >= 1.0.0, < 2.1.0" ... nothing can be instrumented` and emitted NO database span, while the HTTP span still appeared and every functional test stayed green. With SQLAlchemy 2.0.58 the database span appeared. Pin the framework and the instrumentors together in the lock and test for spans. Template pairing: `sqlalchemy==2.0.x` (2.0.58 was the latest 2.0 patch when validated) with a one-line comment in `pyproject.toml` that DB-span instrumentation currently supports `< 2.1`; move to 2.1 only when the instrumentation release you pin supports it, and let this test say so:
+- `ParentBased(root=TraceIdRatioBased(r))` samples new traces at rate `r` and always follows the caller's decision, so one request is never half-traced. Sample with `r < 1.0` only where volume demands it, and say so next to the error-rate alerts.
+- Shutdown flush is not optional. Executed against a real Collector with uvicorn `--factory`: 2 requests then SIGTERM produced 12 spans (native FastAPI server spans; 16 with `opentelemetry-instrumentation-fastapi`, which adds two `http send` spans per request) and 8 log records in the Collector, exit 0 for the check; with `OTEL_SDK_DISABLED=true`, 0 spans and 0 logs. With `telemetry.shutdown()` removed from the lifespan exit, the same run produced **0** spans. The batch processor buffers for about 5 s, and uvicorn 0.54 re-raises SIGTERM after its graceful shutdown (the process ends by signal, exit code -15 / 143), so `atexit` hooks do not run (same for `uvicorn` CLI, `python -m uvicorn`, `uv run` and `uvicorn.run()`; under `docker --init`/tini the exit is 143 too; only uvicorn as PID 1 in a container exits 0 with `atexit` running, because PID 1 has no default SIGTERM action). Flush in the lifespan `finally`, never in `atexit` or after `uvicorn.run()`; a clean stop is the shutdown log line plus exit 0 or 143. Workers call the same `shutdown()` from their SIGTERM handler after the last message is acked.
+- Control: the same run with `OTEL_SDK_DISABLED=true` produced 0 spans and 0 log records (exit 0). Use it in tests and local runs, never to silence a broken exporter.
+- Logs to OTLP are optional: stdout JSON (section 1) stays the primary log path. If you also ship logs over OTLP, use `LoggingInstrumentor().instrument(tracer_provider=...)` from `opentelemetry-instrumentation-logging` 0.66b2: it attaches that package's handler to the root logger, and every record carried `traceId` (8 of 8 in the run above). The `opentelemetry.sdk._logs.LoggingHandler` is deprecated (its constructor emits a `DeprecationWarning` that points at the instrumentation package), and `opentelemetry.sdk._logs` is still an underscore (pre-stable) module: pin it.
+
+### 3.2 Instrument the app instance
+
+```python
+PROBE_PATHS = frozenset({"/health", "/metrics"})
+
+
+def is_probe(scope: MutableMapping[str, Any]) -> bool:      # probes and metrics produce no spans
+    return scope.get("path") in PROBE_PATHS
+
+
+# section 4 App; inside create_app(). FastAPI >= 0.142 native telemetry, no instrumentation-fastapi
+app = App(
+    lifespan=lifespan,
+    telemetry={
+        "tracer_provider": tracer_provider,   # explicit: tests pass an in-memory provider
+        "logs": False,                        # exception text stays in the redacted structlog path
+        "operation_spans": False,             # 1 span per request instead of 4
+        "exclude": is_probe,
+    },
+)
+# async engines: pass .sync_engine; skip_dep_check: see "SQLAlchemy 2.1" below
+SQLAlchemyInstrumentor().instrument(
+    engine=async_engine.sync_engine, tracer_provider=tracer_provider, skip_dep_check=True
+)
+HTTPXClientInstrumentor().instrument(tracer_provider=tracer_provider)
+```
+
+- **Native FastAPI telemetry vs `opentelemetry-instrumentation-fastapi` (executed, FastAPI 0.165.0, instrumentation 0.66b2).** FastAPI 0.142+ ships `FastAPI(telemetry=...)` (the `fastapi/telemetry` package is absent from the 0.141.0 wheel and present in 0.142.0), on by default whenever a real tracer provider exists; it emits one SERVER span named `GET /items/{item_id}` with `http.route`, continues an inbound `traceparent`, and marks a 500 as ERROR. Toolkit default (every toolkit FastAPI service is on 0.165): native, configured as above, and do NOT install `opentelemetry-instrumentation-fastapi`. Using both never double-counts (native detects the instrumentation's middleware and steps back, 1 SERVER span), but the result depends on order: `instrument_app()` called after the first request is silently ignored and native keeps tracing, with neither side's exclusions in effect. Native defaults to watch: `exclude` is unset (probes traced), `operation_spans=True` adds 3 INTERNAL spans per request (`fastapi.dependencies`, `fastapi.endpoint`, `fastapi.serialization`), and `logs=True` writes an `http.server.request.exception` log record whose `exception.message` carried a planted card number. The instrumentation put the same text on a span `exception` event, so neither is PII-safe by default. Native shuts down only exporters it auto-configured (`FASTAPI_OTEL_AUTO_CONFIGURE=true`), never your providers: keep `Telemetry.shutdown()`. Note for older user projects only (FastAPI < 0.142, no native telemetry): use `FastAPIInstrumentor.instrument_app(app, tracer_provider=..., excluded_urls=r"^[a-z]+://[^/]+/(health|metrics)$", exclude_spans=["send", "receive"])` and the section 4 `__call__` wrapper rule.
+- Instrument the app INSTANCE at construction, and give `create_app()` a `tracer_provider` parameter so the test below can inspect the REAL stack. Global instrumentors only affect objects created after the call. A client built on a custom transport is traced by wrapping that transport: `httpx.AsyncClient(transport=AsyncOpenTelemetryTransport(inner, tracer_provider=...))`.
+- Exclude probes and metrics (executed: with `exclude` set, `/health` produced no span and `/orders/7` did; with it removed the probe assertion failed).
+- `httpx2` clients are NOT traced by `opentelemetry-instrumentation-httpx` 0.66b2 (executed against a local server: an `httpx` 0.28.1 call gave a CLIENT span and sent `traceparent`; an `httpx2` 2.16.2 call gave neither, so the downstream trace breaks). Keep outbound clients on `httpx` until an instrumentation for httpx2 is released; the `opentelemetry-instrumentation-httpx2` name on PyPI is an empty 0.0.0 placeholder.
+- Module-level `tracer = trace.get_tracer(__name__)` resolves through the GLOBAL provider, which can be set once per process (a second `set_tracer_provider` is ignored with a warning log). Tests set one session-wide provider with an in-memory exporter and clear it per test. A per-test provider passed only to `create_app()` traced the HTTP and DB spans but recorded no producer or consumer span (executed: the assertion failed).
+- Set explicit timeouts on outbound clients; retry only idempotent calls.
+
+**SQLAlchemy 2.1 and the instrumentation version range (the trap).** Instrumentation packages declare the framework range they support. `opentelemetry-instrumentation-sqlalchemy` 0.66b2 (the latest on 2026-11-23) declares `sqlalchemy >= 1.0.0, < 2.1.0`. Executed with SQLAlchemy 2.1.9 and an async engine: the default `instrument()` logged `... falls outside of that range, so nothing can be instrumented` and emitted ZERO database spans, while the HTTP span still appeared and every functional test stayed green. With `skip_dep_check=True` (a `BaseInstrumentor.instrument()` keyword) the same engine emitted `connect` and `SELECT` spans with `db.system`. So SQLAlchemy 2.1 is OUTSIDE the instrumentation's declared support. The toolkit accepts that because 2.1.9 is its SQLAlchemy pin and is what a resolver picks for `google-adk[db]` 2.15.0 (which allows `sqlalchemy[asyncio]>=2,<3`), and because the span test below proves the result on every run. Rules: pass the flag per engine (`instrument(engine=...)`), never in a global `instrument()`; never install `opentelemetry-instrumentation-sqlalchemy[instruments]` (executed with uv 0.13.9: next to `sqlalchemy==2.1.9` the resolve fails, "requirements are unsatisfiable"; alone the extra silently resolves SQLAlchemy down to 2.0.58). Pick one option, write it in `pyproject.toml` next to the pins, and keep the DB-span test below as the guard:
+
+| Option | When | Cost |
+|---|---|---|
+| SQLAlchemy 2.1.x + `skip_dep_check=True` (template default) | services on the toolkit's 2.1 pin | runs outside the instrumentation's declared range; the span test is the only proof, so it must run in CI on the shipped lock |
+| SQLAlchemy 2.0.x (latest 2.0 patch) without the flag | the service must stay inside every declared support range | loses 2.1 features; move to 2.1 once an instrumentation release declares it |
+
+Remove the flag as soon as a release declares `< 2.2` (or wider): the test keeps passing either way, so check the range with `python -c "from opentelemetry.instrumentation.sqlalchemy.package import _instruments; print(_instruments)"` on every instrumentation bump.
+
+### 3.3 Context across a message boundary
+
+HTTP clients carry W3C trace context through the httpx instrumentation. Messages (Pub/Sub attributes, queue headers) need it explicitly: inject on publish, extract on consume, and make the consumer span a child of the extracted context.
+
+```python
+from opentelemetry import propagate, trace
+from opentelemetry.trace import SpanKind
+
+tracer = trace.get_tracer(__name__)
+# Publisher / ReceivedMessage stand for your client's types; the propagation calls are the point
+
+
+async def publish(publisher: Publisher, topic: str, data: bytes) -> None:
+    with tracer.start_as_current_span(f"{topic} publish", kind=SpanKind.PRODUCER) as span:
+        span.set_attribute("messaging.destination.name", topic)
+        attributes: dict[str, str] = {}
+        propagate.inject(attributes)            # writes `traceparent` (and `tracestate`)
+        await publisher.publish(topic, data, attributes)
+
+
+async def handle(message: ReceivedMessage) -> None:
+    parent = propagate.extract(dict(message.attributes))
+    with tracer.start_as_current_span(f"{message.topic} process", context=parent,
+                                      kind=SpanKind.CONSUMER):
+        await process(message.data)             # ack only after this returns
+```
+
+Executed: the consumer span had the producer's `trace_id` and its parent `span_id` (unit test), and in the Collector run both requests produced one trace each containing the HTTP server span, the `orders publish` span and the `orders process` span. A task started with `asyncio.create_task` inherits the current context (contextvars copy), so in-process handoffs need no propagation. Delivery semantics (ack, retry, DLQ) are in `python-dev/reference/pubsub-firestore-patterns.md`.
+
+### 3.4 Span tests (the real factory, the shipped lock)
 
 ```python
 @pytest.fixture
@@ -209,22 +315,22 @@ async def test_real_app_emits_http_span_and_500_carries_request_id(
     async def boom() -> None:
         raise RuntimeError("test")
 
-    try:
-        transport = ASGITransport(app=app, raise_app_exceptions=False)
-        async with AsyncClient(transport=transport, base_url="http://t") as c:
-            resp = await c.get("/boom")
-        assert resp.status_code == 500 and resp.headers["x-request-id"]
-        assert trace.SpanKind.SERVER in {s.kind for s in exp.get_finished_spans()}, (
-            "no HTTP server span"
-        )
-    finally:
-        FastAPIInstrumentor.uninstrument_app(app)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)    # httpx2
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        resp = await c.get("/boom")
+    assert resp.status_code == 500 and resp.headers["x-request-id"]
+    server = [s for s in exp.get_finished_spans() if s.kind is trace.SpanKind.SERVER]
+    assert [(s.name, s.instrumentation_scope.name) for s in server] == [("GET /boom", "fastapi")], (
+        "exactly one native server span"
+    )
 
 
 async def test_db_span_is_emitted(exporter: tuple[InMemorySpanExporter, TracerProvider]) -> None:
     exp, provider = exporter
     engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine, tracer_provider=provider)
+    SQLAlchemyInstrumentor().instrument(
+        engine=engine.sync_engine, tracer_provider=provider, skip_dep_check=True
+    )
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
@@ -236,7 +342,7 @@ async def test_db_span_is_emitted(exporter: tuple[InMemorySpanExporter, TracerPr
         await engine.dispose()
 ```
 
-`test_settings` is the fixture of `python-testing-patterns/reference/postgres-integration-testing.md` section 4. Executed (SQLAlchemy 2.0.58, FastAPI 0.165, real `create_app()`): both tests pass; the DB-span test goes red on 2.1.9 (`no DB span`); the HTTP test goes red when the app class overrides `build_middleware_stack` (`no HTTP server span`, instrumentation skipped) and when `X-Request-ID` is not wired at all (`KeyError`); `mypy --strict` clean. Engine-scoped `instrument(engine=...)` needs no `uninstrument()` in teardown (calling it after a no-op instrument only logs a warning). Span names with SQLAlchemy 2.0.58: `connect`, `SELECT`, `GET /n http send` (x2), `GET /n`. The attribute key (`db.system` vs `db.system.name`) depends on the semantic-convention version; the test accepts both. Run this test in the same environment/image that ships: a test against a different lock than the image proves nothing.
+`test_settings` is the fixture of `python-testing-patterns/reference/postgres-integration-testing.md` section 4. Executed (SQLAlchemy 2.1.9, asyncpg 0.32.0, PostgreSQL 16, instrumentation 0.66b2): with `skip_dep_check=True` the engine emitted `connect` and `SELECT` spans with `db.system=postgresql`; without it, zero spans (`no DB span`). The same pair on aiosqlite gave the same result. HTTP test, executed with native telemetry and the section 4 `App` wrapper: 500 with `X-Request-ID`, one ERROR server span `GET /boom`. Example E's equivalent assertion went red with `exclude` removed (probe traced), with `tracing: False` (no SERVER span) and with `instrument_app()` added on top (the instrumentation silently took over and traced the probe). Earlier run with the instrumentation (SQLAlchemy 2.0.58): red when the app class overrides `build_middleware_stack` (instrumentation skipped) and when `X-Request-ID` is not wired (`KeyError`). Engine-scoped `instrument(engine=...)` needs no `uninstrument()` in teardown (calling it after a no-op instrument only logs a warning). Span names: `connect`, `SELECT` (PostgreSQL; `SELECT <db>` on SQLite), `GET /n` (native; the instrumentation adds `GET /n http send` x2). The attribute key (`db.system` vs `db.system.name`) depends on the semantic-convention version; the test accepts both. Run this test in the same environment/image that ships: a test against a different lock than the image proves nothing.
 
 ## 4. Join the id namespaces (canonical request-id middleware)
 
@@ -326,7 +432,9 @@ gcloud run deploy "$SERVICE" --image "$IMAGE" \
 - [ ] Web framework pinned `==`; lock fresh (`uv lock --check`); image installs `--locked`; base image by digest
 - [ ] JSON logs in deployed envs; every entrypoint configures them (test); `severity`, `event`, `timestamp`, ids present
 - [ ] No stringified exceptions in logs (AST gate green, known-bad control fails)
-- [ ] Span test proves an HTTP span AND a DB span in the shipped environment
+- [ ] Span test proves an HTTP span AND a DB span in the shipped environment; instrumentation version range checked on every bump (`skip_dep_check` only with that test)
+- [ ] `Telemetry.shutdown()` runs on SIGTERM (lifespan exit / worker signal handler); a no-flush control shows it matters
+- [ ] Message hops inject/extract W3C context; consumer span is a child of the producer span (test)
 - [ ] `request_id` validated, echoed on every response (including the 500), bound to logs; contextvars cleared; catch-all handler logs `request.state.request_id`
 - [ ] Liveness is process-only; readiness/startup cover dependencies; probe flags verified against the CLI help
 - [ ] Alert event names emitted and tested; metrics labels bounded; service is scraped

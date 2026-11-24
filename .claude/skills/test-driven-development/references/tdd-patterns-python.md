@@ -1,6 +1,6 @@
 # TDD Patterns — Python 3.14 / FastAPI
 
-## Test Structure (pytest + httpx)
+## Test Structure (pytest + httpx2)
 
 ```python
 # tests/unit/test_user_service.py
@@ -34,24 +34,20 @@ class TestUserService:
             await user_service.create_user(new_user_dto())
 ```
 
-## Integration Test (httpx AsyncClient)
+## Integration Test (httpx2 AsyncClient)
+
+Test clients use `httpx2` (Starlette 1.10 deprecates `httpx` for its `TestClient`); outbound service clients stay on `httpx` 0.28.1. `ASGITransport` does not run the app's lifespan, so the fixture wraps it in `app.router.lifespan_context(app)`. With `asyncio_mode = "auto"` no marker is needed.
 
 ```python
 # tests/integration/test_users_api.py
-import pytest
-from httpx import AsyncClient, ASGITransport
-from app.main import app
+from httpx2 import AsyncClient
 
 
-@pytest.mark.anyio
-async def test_post_users_valid_request_returns_201():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/users",
-            json={"email": "test@example.com", "name": "Test User"},
-        )
+async def test_post_users_valid_request_returns_201(client: AsyncClient) -> None:
+    response = await client.post(
+        "/users",
+        json={"email": "test@example.com", "name": "Test User"},
+    )
 
     assert response.status_code == 201
     data = response.json()
@@ -63,30 +59,35 @@ async def test_post_users_valid_request_returns_201():
 
 ```python
 # tests/conftest.py
+from collections.abc import AsyncIterator
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx2 import ASGITransport, AsyncClient
+
 from app.main import app
 
 
 @pytest.fixture
-async def client():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
-        yield ac
+async def client() -> AsyncIterator[AsyncClient]:
+    async with app.router.lifespan_context(app):          # runs startup/shutdown
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
+    app.dependency_overrides.clear()
 ```
 
 ## pyproject.toml Configuration
 
 ```toml
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
+[tool.pytest]                       # pytest 9 native table
 testpaths = ["tests"]
-
-[tool.pytest.ini_options.markers]
-unit = "Unit tests"
-integration = "Integration tests"
+strict = true                       # unregistered marker, unknown config key, xpass -> failure
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+markers = ["unit: unit tests", "integration: integration tests"]
 ```
+
+`markers` is a LIST of `"name: description"` strings. A `[tool.pytest.ini_options.markers]` sub-table registers nothing: executed with `--strict-markers`, collection failed with exit 2.
 
 ## Mocking Rules
 

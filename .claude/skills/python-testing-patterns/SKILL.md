@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: testing
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -39,22 +39,26 @@ Load `test-driven-development` skill first for the Red-Green-Refactor process. T
 |------|---------|
 | Multiple inputs | `@pytest.mark.parametrize` |
 | Async test | `asyncio_mode = "auto"` (or `@pytest.mark.asyncio` in strict mode) + `AsyncMock` |
-| HTTP endpoint test | `httpx.AsyncClient` + `ASGITransport` + `LifespanManager` (ASGITransport does not run lifespan) + clear `dependency_overrides` |
+| HTTP endpoint test | `httpx2.AsyncClient` + `httpx2.ASGITransport` inside `app.router.lifespan_context(app)` (ASGITransport does not run lifespan) + clear `dependency_overrides`; Starlette 1.10 deprecates `httpx` for its `TestClient`; outbound service clients stay on `httpx` 0.28.1 |
 | DB session in test | real PostgreSQL, outer transaction + `join_transaction_mode="create_savepoint"` ([reference](reference/postgres-integration-testing.md)) |
 | Commit boundary / race | two real connections + `asyncio.Barrier` + remove-the-guard control (not the savepoint fixture) |
 | Missing infra | skip locally, FAIL in CI (`REQUIRE_DB_TESTS=1`); assert executed count > 0 |
 | Slow/integration gate | `@pytest.mark.slow` + `-m "not slow"` in CI |
 | Coverage gate | `pytest --cov=src --cov-fail-under=80` |
+| Parallel / hangs | `pytest -n auto` (pytest-xdist 3.8; per-worker DB names) + `timeout = "30"` (pytest-timeout, string value) |
+| Config | pytest 9 `[tool.pytest]` + `strict = true`; never both `[tool.pytest]` and `[tool.pytest.ini_options]` |
 | Property-based | `@given(st.text())` from Hypothesis |
 
 ## Reference File
 
 Load `resources/implementation-playbook.md` for:
-- 10 fundamental patterns (fixtures, parametrize, mocking, async, monkeypatch, tmp_path, Hypothesis)
-- 10 advanced patterns (DB fixtures, test markers, coverage config, CI workflow, test organization)
-- Full conftest.py templates
-- GitHub Actions workflow for Python tests
-- pytest.ini / pyproject.toml configuration
+- 5 fundamental patterns (basic tests, fixtures, parametrize, mocking, exceptions)
+- Test organization and naming, best-practices summary
+
+Load `reference/pytest-advanced-and-config.md` for:
+- 5 advanced patterns (async, monkeypatch, tmp_path, conftest fixtures, Hypothesis)
+- Test markers, coverage, the real-PostgreSQL session fixture, CI pointers
+- `pyproject.toml` configuration: pytest 9 native `[tool.pytest]`, coverage, ruff, mypy, vulture (and the stub-package trap)
 
 Load `reference/postgres-integration-testing.md` for any test that touches the database: async pytest config and loop scopes, skip-vs-fail fixture, SAVEPOINT session, ASGI client with lifespan, race tests, singleton restore, deterministic clocks/ids, the executed-count gate, flaky-test policy. Load `reference/mock-patterns.md` for autospec, async mocks and fidelity traps. CI gates, pins and dependency audit: `../deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
@@ -70,7 +74,8 @@ Load `reference/postgres-integration-testing.md` for any test that touches the d
 - [ ] Executed count > 0: an all-skipped run exits 0 (`reference/postgres-integration-testing.md` §9)
 - [ ] `pytest --cov=src --cov-report=term-missing` — coverage visible; floor is a diagnostic: measure hand-written code only, ratchet up only, never pad assertion-free tests; keep `--cov` out of `addopts`
 - [ ] No `print()` in test files — use `capfd` fixture or logging
-- [ ] One asyncio mode (`auto` or strict); both `asyncio_default_fixture_loop_scope` and `asyncio_default_test_loop_scope` set explicitly
+- [ ] One asyncio mode (`auto` or strict); both `asyncio_default_fixture_loop_scope` and `asyncio_default_test_loop_scope` set explicitly; no `event_loop` fixture (removed in pytest-asyncio 1.0: `fixture 'event_loop' not found`), use `asyncio.get_running_loop()` inside the test
+- [ ] `ruff check`, `ruff format --check`, `mypy --strict` each read by their own exit code; no `types-*` stub shadowing a package that ships `py.typed`
 - [ ] ORM/SQL behaviour tested on real PostgreSQL; SQLite only for pure-logic tests
 - [ ] Infra-dependent tests probe the ACTUAL dependency and skip with an actionable message; CI sets `REQUIRE_<X>=1` so absence FAILS
 - [ ] External services mocked/blocked — no real network in unit tests; no `sleep`, no wall clock, no unseeded ids, explicit `ORDER BY`

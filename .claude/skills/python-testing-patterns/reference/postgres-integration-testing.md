@@ -1,6 +1,6 @@
 # PostgreSQL Integration Testing (async SQLAlchemy + FastAPI)
 
-Rules and fixtures for tests that touch the database. Every snippet here was executed with Python 3.14, pytest 9.2, pytest-asyncio 1.5, SQLAlchemy 2.0.58/2.1.9, asyncpg 0.32, httpx 0.28, asgi-lifespan 2.1 against PostgreSQL 16. The route examples use FastAPI features present in 0.135; nothing here needs a newer FastAPI.
+Rules and fixtures for tests that touch the database. Every snippet here was executed with Python 3.14, pytest 9.2, pytest-asyncio 1.5, SQLAlchemy 2.0.58/2.1.9, asyncpg 0.32, httpx 0.28, asgi-lifespan 2.1 against PostgreSQL 16. The section 4 client pattern (httpx2 2.16.2 + `app.router.lifespan_context`) was re-executed on FastAPI 0.165.0 / Starlette 1.10.0 with a lifespan and dependency-override app (not against PostgreSQL). The route examples use FastAPI features present in 0.135; nothing here needs a newer FastAPI.
 
 ## 1. Rules
 
@@ -16,13 +16,14 @@ Rules and fixtures for tests that touch the database. Every snippet here was exe
 ## 2. pytest configuration and the skip-vs-fail fixture
 
 ```toml
-[tool.pytest.ini_options]
+[tool.pytest]                                 # pytest 9 native TOML table (never alongside [tool.pytest.ini_options])
 asyncio_mode = "auto"                        # no @pytest.mark.asyncio / pytest_asyncio.fixture needed for plain coroutines
 asyncio_default_fixture_loop_scope = "session"   # set EXPLICITLY: unset emits PytestDeprecationWarning
 asyncio_default_test_loop_scope = "session"      # tests share the loop of session-scoped fixtures (engine)
-timeout = 30                                 # pytest-timeout: per-test cap; override per test, never raise the floor
+timeout = "30"                               # pytest-timeout ini is string-typed: `timeout = 30` fails startup under [tool.pytest]
 testpaths = ["tests"]
-addopts = ["--strict-markers", "-ra"]        # -ra prints skip reasons; keep --cov OUT of addopts (run it in the gate)
+strict = true                                # strict markers, config, xfail and parametrize ids
+addopts = ["-ra"]                            # -ra prints skip reasons; keep --cov OUT of addopts (run it in the gate)
 markers = ["integration: needs a real PostgreSQL"]
 ```
 
@@ -121,11 +122,12 @@ Also verify at the end of a CI run that the tables are empty (or the schema drop
 
 ## 4. HTTP client: dependency override AND lifespan
 
-`httpx.ASGITransport` does NOT run ASGI lifespan. State created in `lifespan` (pools, redis, health checker) is missing in a bare `AsyncClient`. Wrap with `asgi_lifespan.LifespanManager` (or use `with TestClient(app)`, which does run it). Executed: with `LifespanManager` the lifespan body ran (engine built on `app.state`, route served, engine disposed: 0 checked-out connections afterwards). Build the app per test with `create_app(test_settings)` (`sqlalchemy-async-sessions-and-transactions.md` section 2): no module-level app or engine to reset.
+`ASGITransport` does NOT run ASGI lifespan. State created in `lifespan` (pools, redis, health checker) is missing in a bare `AsyncClient`. Wrap the client in `app.router.lifespan_context(app)`, which runs startup and shutdown with no extra dependency (`asgi_lifespan.LifespanManager` did the same with `httpx` and is no longer needed). Test clients use `httpx2`: Starlette 1.10 deprecates `httpx` for its `TestClient`. Executed: a bare `httpx2.ASGITransport` saw no lifespan (`app.state` empty); inside `lifespan_context` startup and shutdown both ran and the dependency override applied; earlier, with `LifespanManager` against PostgreSQL, the engine was built on `app.state` and disposed with 0 checked-out connections.
+
+Streaming endpoints: Starlette 1.10's `TestClient` ends an unfinished streamed response by cancelling the app call (a cancel scope), not by sending `http.disconnect` as a real server does. Prove stream cancellation and disconnect handling against a real uvicorn. Build the app per test with `create_app(test_settings)` (`sqlalchemy-async-sessions-and-transactions.md` section 2): no module-level app or engine to reset.
 
 ```python
-from asgi_lifespan import LifespanManager
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from app.core.config import Settings
 
@@ -149,7 +151,7 @@ async def client(session: AsyncSession, test_settings: Settings) -> AsyncIterato
 
     app.dependency_overrides[get_session] = override_db
     try:
-        async with LifespanManager(app):
+        async with app.router.lifespan_context(app):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
                 yield c
     finally:

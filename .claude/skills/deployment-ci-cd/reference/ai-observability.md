@@ -2,7 +2,7 @@
 
 Extends `python-observability.md`; it does not replace it. Use the SAME TracerProvider (section 3 there), the same request-id middleware (section 4) and the same `log_exception` helper (section 2). AI spans are children of the HTTP request span, so one trace shows request → agent → model → tool → retrieval. Framework specifics: ADK in `.claude/skills/adk-observability-guide/`, LangSmith/LangGraph in `.claude/skills/agentic-ai-dev/reference/agentic-observability.md`; both must follow the content-capture and redaction rules below.
 
-Section 2 executed with Python 3.14 and opentelemetry-sdk 1.45.2 (scripted fake model, `InMemorySpanExporter`, `InMemoryMetricReader`; 5 tests pass; `ruff` and `mypy --strict` clean on the full module, of which the snippet is an excerpt: imports and dataclasses omitted). No live provider was called.
+Section 2 executed with Python 3.14 and opentelemetry-sdk 1.45.2; section 7 with langfuse 5.2.0 on Python 3.14.10 (scripted fake model, `InMemorySpanExporter`, `InMemoryMetricReader`; 5 tests pass; `ruff` and `mypy --strict` clean on the full module, of which the snippet is an excerpt: imports and dataclasses omitted). No live provider was called.
 
 ## 1. Span model (OpenTelemetry GenAI semantic conventions)
 
@@ -114,11 +114,11 @@ Prompts, retrieved chunks, tool arguments and model output contain user data. Pr
 | Tool | Default | Production setting |
 |---|---|---|
 | OTel GenAI instrumentations | varies by library | `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT` |
-| Google ADK | content capture on unless disabled (check your pinned version) | `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` + the OTel variable above + `ADK_TELEMETRY_IGNORE_RUN_CONFIG=1` (all three; `adk-observability-guide`) |
-| Langfuse `@observe` | `capture_input`/`capture_output` True (`LANGFUSE_OBSERVE_DECORATOR_IO_CAPTURE_ENABLED` unset) | set that variable to `false`, or pass a `mask=` function to `Langfuse(...)` |
+| Google ADK 2.15 | no content: the default GenAI semconv 1.44 schema reads `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (default `NO_CONTENT`); `SPAN_ONLY`, or the legacy `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` schema (where `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS` defaults to true), puts prompt text in spans | leave the OTel variable at `NO_CONTENT`, do not opt into the legacy schema, keep `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` + `ADK_TELEMETRY_IGNORE_RUN_CONFIG=1` as belt and braces (`adk-observability-guide`) |
+| Langfuse `@observe` | `capture_input`/`capture_output` True (`LANGFUSE_OBSERVE_DECORATOR_IO_CAPTURE_ENABLED` unset) | set that variable to `false`, or pass a recursive `mask=` function to `Langfuse(...)` (section 7) |
 | LangSmith | traces inputs and outputs | `LANGSMITH_HIDE_INPUTS=true`, `LANGSMITH_HIDE_OUTPUTS=true`, or a `create_anonymizer(...)` client |
 
-- Langfuse `@observe` records `status_message=str(e)` when the wrapped function raises (verified on Context7, langfuse-python v4): do not decorate functions whose exceptions carry request data, or catch and re-raise a sanitized error inside them.
+- Langfuse `@observe` records `status_message=str(e) or type(e).__name__` when the wrapped function raises (read in the langfuse 5.2.0 source, `_client/observe.py`): do not decorate functions whose exceptions carry request data, or catch and re-raise a sanitized error inside them.
 - Redaction in a tracing callback must fail CLOSED: if the masker raises, drop the content field, never export the raw value.
 - When content capture is required (debugging, eval sampling), make it a sampled, time-boxed, environment-scoped decision with its own retention.
 - The trace store is sensitive production data: organization isolation, role-based access, retention TTL, access audit, deletion/legal hold, no global cross-organization browsing. Deletion requests must reach traces, exported datasets and eval copies.
@@ -129,12 +129,53 @@ Record on every model-call span: registry prompt name, label, version, `content_
 
 ## 7. Langfuse (optional extension)
 
-Langfuse is optional; OTel plus your existing backend is enough. If you use it:
+Langfuse is optional; OTel plus your existing backend is enough. If you use it, pin `langfuse==5.2.0` (Python >= 3.11). Checked by introspecting the installed 5.2.0 package and by running it against a local OpenTelemetry Collector with no Langfuse server: SDK and export path only, no server-side behaviour was exercised.
 
-- Use the current OTel-based Python SDK (v3 and later; the current major at time of writing is v4): `from langfuse import get_client, observe`, `@observe(as_type="generation")`, `start_as_current_observation(...)`. Pin an exact version; do not copy v2 examples (`langfuse.decorators`, `langfuse_context`).
-- Configure `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` (`LANGFUSE_HOST` is a deprecated alias) from a secret manager.
-- Missing keys do NOT fail: the client becomes a NoOp tracer with a logged warning. In environments that require tracing, check at startup that the keys are present and fail the deploy otherwise.
-- The default export filter sends GenAI/Langfuse spans; HTTP and DB spans still go to your OTLP backend. Give Langfuse the app `tracer_provider` (constructor argument) so both views share trace ids.
+```python
+from langfuse import Langfuse, get_client, observe, propagate_attributes
+
+langfuse = Langfuse(                     # once at startup; elsewhere get_client()
+    tracer_provider=tracer_provider,     # the app provider: one trace id across HTTP, DB and LLM spans
+    environment=settings.environment, release=settings.release,
+    mask=redact_nested,                  # input/output/metadata pass through it before export
+)
+
+
+@observe(as_type="retriever")
+def retrieve(query: str) -> list[Chunk]: ...
+
+
+@observe()
+def answer(query: str) -> str:
+    chunks = retrieve(query)
+    with langfuse.start_as_current_observation(
+        name="llm-call", as_type="generation", model=model_id, input=messages
+    ) as generation:
+        result = call_model(messages)
+        generation.update(output=result.text,
+                          usage_details={"input": result.input_tokens, "output": result.output_tokens})
+    return result.text
+
+
+with propagate_attributes(user_id=hashed_user_id, session_id=session_id, tags=["support"]):
+    answer(query)
+```
+
+| Removed or renamed (v2 to v4 era) | Current 5.2.0 API |
+|---|---|
+| `from langfuse.decorators import observe, langfuse_context` | `from langfuse import observe, get_client` (`langfuse.decorators` no longer exists: `ModuleNotFoundError`) |
+| `langfuse.trace(...)`, `.span(...)`, `.generation(...)`, `.score(...)` on the client | `start_as_current_observation(name=..., as_type=...)` / `start_observation(...)`; `as_type` is one of span, generation, embedding, agent, tool, chain, retriever, evaluator, guardrail |
+| `start_as_current_span` / `start_as_current_generation` (v3) | `start_as_current_observation(as_type="span" / "generation")` |
+| `update_current_trace(user_id=..., session_id=..., tags=...)` | `propagate_attributes(user_id=..., session_id=..., tags=..., metadata=..., version=...)` context manager |
+| `langfuse.score(...)` | `create_score(name=, value=, trace_id=, observation_id=, data_type=)`, `score_current_trace(...)`, `score_current_span(...)` |
+| `host=` / `LANGFUSE_HOST` | `base_url=` / `LANGFUSE_BASE_URL` (`host` and `LANGFUSE_HOST` still read, documented as deprecated) |
+
+- Masking: the `mask` callable is called with `data=` holding the structured value. `@observe` input arrives as `{"args": [...], "kwargs": {...}}`. Executed: a mask that only handled `str` exported a planted email unchanged; a recursive one (walk dicts and lists, redact strings) removed it. When the mask raises, 5.2.0 logs `Masking error` and exports a fallback mask value (fails closed).
+- Missing `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` does NOT raise: the client logs an authentication error and uses a NoOp tracer. In environments that require tracing, check the keys at startup and fail the deploy.
+- Default export filter (`is_default_export_span`): Langfuse SDK spans, spans with any `gen_ai.*` attribute and known LLM instrumentation scopes. HTTP and DB spans still go to your OTLP backend only. Override with `should_export_span=`.
+- Scores are sent over the Langfuse API, not OTLP: with no server, `score_current_trace` logged `Failed to send 1 scores ... dropped` and did not raise. Do not use Langfuse scores as the only record of a CI eval result; the eval runner writes its own result rows (`eval-guide/reference/pytest-harness.md`).
+- Call `langfuse.flush()` (or `shutdown()`) in the same SIGTERM/lifespan path as `Telemetry.shutdown()` (`python-observability.md` section 3.1).
+- Prompt management (`get_prompt(name, label=..., fallback=...)`, versions and labels): `.claude/skills/eval-guide/reference/langfuse-prompts.md`.
 
 ## 8. Contract tests (run them in CI)
 
@@ -170,6 +211,7 @@ From a trace id: read prompt name/version/hash, model ids, flag states, retrieva
 ## 11. Checklist
 
 - [ ] AI spans share the app TracerProvider; one trace per request across agent, model, tool, retrieval, rerank (test)
+- [ ] Langfuse (if used): 5.x API only (no `langfuse.decorators`, `.trace()`, `update_current_trace`); recursive mask tested with a planted value; flushed on shutdown
 - [ ] Current semconv names (`gen_ai.provider.name`, `input_tokens`/`output_tokens`); semconv version pinned; custom attributes under `app.*`
 - [ ] No exception text in spans, logs or Langfuse status (test with a positive control)
 - [ ] Content capture OFF in production for every tracer in use (OTel, ADK three variables, Langfuse, LangSmith); trace store access-controlled with retention

@@ -98,7 +98,7 @@ async def test_create_order_returns_201(client: AsyncClient):
     assert "id" in response.json()
 ```
 **Command**: `/scaffold-python-api` sets up pytest + AsyncClient fixture
-**Agent**: `python-dev` skill covers pytest patterns
+**Agent**: `python-reviewer` after implementation; `python-testing-patterns` skill covers fixtures, pytest 9 `[tool.pytest]` config and pytest-asyncio 1.x loop scopes (`asyncio_mode = "auto"` runs this `async def` test without a decorator)
 
 #### Flutter / Dart
 ```dart

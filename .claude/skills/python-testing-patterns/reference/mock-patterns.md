@@ -139,7 +139,7 @@ be used in 'await' expression`.
 **`pytest-asyncio` config** (required in `pyproject.toml`; with `auto` drop the `@pytest.mark.asyncio`
 decorators above, with the default `strict` keep them and use `@pytest_asyncio.fixture` for async fixtures):
 ```toml
-[tool.pytest.ini_options]
+[tool.pytest]               # pytest 9 native table; `[tool.pytest.ini_options]` is the legacy form
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"   # set explicitly; unset emits a deprecation warning
 asyncio_default_test_loop_scope = "session"      # same scope as session-scoped async fixtures (engine)

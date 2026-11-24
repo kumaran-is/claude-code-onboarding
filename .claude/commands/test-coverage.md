@@ -22,16 +22,19 @@ awk -F',' 'NR>1 {missed=$4+$6; total=missed+$5+$7; pct=(total>0)?int((total-miss
 ```
 No `jacoco-maven-plugin` in `pom.xml` → BLOCKED (say so), never 0%.
 
-### Python / FastAPI (Python 3.14)
+### Python / FastAPI (Python 3.14, pytest 9.2 + pytest-cov 7.1)
 Detected by: `pyproject.toml` or `requirements.txt` containing `fastapi`
 
 ```bash
 # Capture pytest's OWN exit code: a --cov-fail-under failure is invisible behind `| grep`
 uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q > /tmp/cov.log 2>&1; echo "COVERAGE EXIT:$?"
 tail -40 /tmp/cov.log
-# Files below threshold (reads the saved log; the awk output is display only):
-awk '/^TOTAL/{next} /[0-9]+%/{if(int($4)<80) print $4" "$1}' /tmp/cov.log | sort -n
+# Files below threshold (reads the saved log; display only). Finds the Cover column by its % sign:
+# with `branch = true` the 4th column is BrPart, not Cover
+awk '/^TOTAL/{next} /^[^ ]+\.py /{for(i=2;i<=NF;i++) if($i ~ /^[0-9]+%$/){if(int($i)<80) print $i" "$1; break}}' /tmp/cov.log | sort -n
 ```
+
+Executed (pytest 9.2.0, pytest-cov 7.1.0, branch coverage on): `--cov-fail-under=95` at 84 % total → `COVERAGE EXIT:1`; the awk above listed the one file at 54 %; the previous `$4` version printed every file as `0` and matched pytest's `[100%]` progress line.
 
 A coverage percentage is a diagnostic, not a proof of quality: measure hand-written code only (exclude generated code and migrations in `[tool.coverage.run] omit`), ratchet floors up and never down, never pad with assertion-free tests, and keep `--cov` out of pytest `addopts` (it slows every run and interferes with debuggers; run it here). Zero executed tests is FAIL (all-skipped exits 0). For the riskiest modules prefer mutation testing on the PR diff over a higher percentage.
 

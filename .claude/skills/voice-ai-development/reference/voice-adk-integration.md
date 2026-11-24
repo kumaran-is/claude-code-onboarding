@@ -1,8 +1,8 @@
 # Google ADK + Voice (optional extension)
 
-> Framework: `google-adk` 1.29.0 (toolkit pin). ADK agent patterns in general: `google-adk` skill. Model ids and voices come from settings (`AGENT_MODEL`, `LIVE_MODEL`, `TTS_MODEL_FAST`, `LIVE_VOICE`), never literals.
-> Executed: section 2 (`voice_turn`) with a scripted `BaseLlm` subclass and fake STT/TTS (1 test passes; no provider call). Signatures of `Runner`, `run_async`, `run_live`, `LiveRequestQueue`, `InMemorySessionService.create_session` read from the installed 1.29.0 package.
-
+> Framework: `google-adk` 2.15.0. ADK agent patterns in general: `google-adk` skill. Model ids and voices come from settings (`AGENT_MODEL`, `LIVE_MODEL`, `TTS_MODEL_FAST`, `LIVE_VOICE`), never literals.
+> Executed on google-adk 2.15.0 (Python 3.14.10, DeprecationWarning raised as an error): section 2 (`voice_turn`) with a scripted `BaseLlm` subclass and fake STT/TTS, 1 test passes, no provider call; control: putting the audio hex into the prompt fails the "model saw text only" assertion. Signatures of `Runner`, `run_async`, `run_live`, `LiveRequestQueue`, `InMemorySessionService.create_session` read from the installed 2.15.0 package.
+> Dependency boundary: google-adk 2.15.0 requires `google-genai>=2.34,<3` (it resolved 2.34.0), so an ADK voice service does not run on google-genai 3.6.1. Pin what the ADK release allows and keep the Live API helpers to the signatures shared by both lines (`gemini-live-api.md`).
 ---
 
 ## 1. Design correction (read first)
@@ -111,7 +111,7 @@ For a streaming turn over WebSocket, use the admission and caps pattern in `stre
 
 ## 5. Native ADK live streaming (speech-to-speech)
 
-ADK 1.29.0 exposes a bidirectional live runner: `Runner.run_live(*, user_id, session_id, live_request_queue, run_config)` with `LiveRequestQueue` (`send_realtime`, `send_content`, `send_activity_start`, `send_activity_end`, `close`) and `RunConfig` fields including `response_modalities`, `speech_config`, `input_audio_transcription`, `output_audio_transcription`, `session_resumption`, `context_window_compression`. Use it when a live speech-to-speech session is required (`../SKILL.md` architecture choice). It was not executed here: follow the `google-adk` skill and the ADK streaming docs for the current usage, and still put the WebSocket admission and caps in front of it.
+ADK 2.15.0 exposes a bidirectional live runner: `Runner.run_live(*, user_id, session_id, live_request_queue, run_config, session=None)` with `LiveRequestQueue` (`send_realtime`, `send_content`, `send_activity_start`, `send_activity_end`, `send_audio_stream_end`, `close`) and `RunConfig` fields including `response_modalities`, `speech_config`, `input_audio_transcription`, `output_audio_transcription`, `session_resumption`, `context_window_compression`. Use it when a live speech-to-speech session is required (`../SKILL.md` architecture choice). It was not executed here: follow the `google-adk` skill and the ADK streaming docs for the current usage, and still put the WebSocket admission and caps in front of it.
 
 ---
 

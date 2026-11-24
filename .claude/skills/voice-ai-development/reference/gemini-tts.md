@@ -1,6 +1,6 @@
 # Gemini TTS — Text-to-Speech Models
 
-> OPTIONAL provider extension. Model ids and voice names come from settings (`TTS_MODEL_QUALITY`, `TTS_MODEL_FAST`, `TTS_VOICE`), never literals in code: pick them from the provider's models page and prebuilt-voice list, probe each id on every backend you deploy to (`gemini-api-dev`). SDK: `google-genai` — NEVER `google-generativeai` (deprecated). Signatures checked against `google-genai` 3.6.1; the snippets below were not executed against the live API.
+> OPTIONAL provider extension. Model ids and voice names come from settings (`TTS_MODEL_QUALITY`, `TTS_MODEL_FAST`, `TTS_VOICE`), never literals in code: pick them from the provider's models page and prebuilt-voice list, probe each id on every backend you deploy to (`gemini-api-dev`). SDK: `google-genai` — NEVER `google-generativeai` (deprecated). Signatures checked against `google-genai` 3.6.1; the snippets below were not executed against the live API, except section 5 (`save_as_wav`, `save_as_mp3`), which was executed on Python 3.14.10 with ffmpeg 8.1.1: WAV header round-trip, MP3 encode, empty input rejected, missing ffmpeg raises `FileNotFoundError` (4 tests).
 >
 > Logging in these snippets uses stdlib `logging` with an `error_type` field; in a service use the toolkit's structlog `log_exception` (`deployment-ci-cd/reference/python-observability.md` section 2). Never log the text being synthesized, audio, file names or exception messages.
 
@@ -33,11 +33,10 @@ Which provider model fills each tier is a configuration decision recorded with a
 import logging
 import wave
 import io
-from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 def synthesize_speech(
@@ -117,11 +116,10 @@ def synthesize_speech(
 
 ```python
 import logging
-from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 def synthesize_dialogue(
@@ -215,11 +213,10 @@ def synthesize_dialogue(
 
 ```python
 import logging
-from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 def synthesize_multilingual(
@@ -280,9 +277,9 @@ def synthesize_multilingual(
 ## 5. Save Audio to File (WAV / MP3)
 
 ```python
-import wave
-import io
 import logging
+import subprocess
+import wave
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -323,33 +320,29 @@ def save_as_wav(audio_bytes: bytes, output_path: str | Path) -> Path:
     return output_path
 
 
-def save_as_mp3(audio_bytes: bytes, output_path: str | Path) -> Path:
+def save_as_mp3(audio_bytes: bytes, output_path: str | Path, *, timeout_s: float = 60.0) -> Path:
     """
-    Convert and save raw PCM bytes as MP3 using pydub.
+    Encode raw PCM (s16le, 24 kHz, mono) to MP3 with the ffmpeg CLI.
 
-    Requires: uv add pydub && brew install ffmpeg (macOS) or apt install ffmpeg (Linux)
+    Not pydub: pydub 0.25.1 imports the stdlib `audioop` module, which Python 3.13 removed,
+    so `import pydub` fails on 3.14. Requires an ffmpeg binary in the image (apt/brew).
     """
-    try:
-        from pydub import AudioSegment
-    except ImportError as exc:
-        logger.error("pydub not installed — run: uv add pydub", extra={"error_type": type(exc).__name__})
-        raise ImportError("pydub required for MP3 export. Run: uv add pydub") from exc
-
+    if not audio_bytes:
+        raise ValueError("audio_bytes must not be empty")
     output_path = Path(output_path)
-
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "s16le", "-ar", str(SAMPLE_RATE), "-ac", str(CHANNELS), "-i", "pipe:0",
+        "-codec:a", "libmp3lame", "-q:a", "4", str(output_path),
+    ]
     try:
-        audio_segment = AudioSegment(
-            data=audio_bytes,
-            sample_width=SAMPLE_WIDTH,
-            frame_rate=SAMPLE_RATE,
-            channels=CHANNELS,
-        )
-        audio_segment.export(str(output_path), format="mp3")
-    except Exception as exc:
-        logger.error("Failed to save MP3 file", extra={"error_type": type(exc).__name__})
+        # argv list, no shell; bounded runtime; stderr captured, never logged verbatim
+        subprocess.run(cmd, input=audio_bytes, check=True, capture_output=True, timeout=timeout_s)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        logger.error("Failed to encode MP3", extra={"error_type": type(exc).__name__})
         raise
 
-    logger.info("MP3 file saved")
+    logger.info("MP3 file saved", extra={"bytes": output_path.stat().st_size})
     return output_path
 ```
 
@@ -445,12 +438,11 @@ For long texts, stream chunks as they arrive rather than waiting for full synthe
 
 ```python
 import logging
-from google import genai
 from google.genai import types
 from typing import AsyncIterator
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 async def stream_tts(
@@ -507,7 +499,7 @@ async def stream_tts(
 | `ClientError`, `exc.code in (401, 403)` | Credentials / permission | No retry; alert |
 | Response with no audio part / a block reason | Content policy block | Log the block reason enum (never content), surface to the user |
 | `RuntimeError: empty audio` | API returned no audio bytes | Content likely blocked — surface to user |
-| `ImportError: pydub` | MP3 export without pydub installed | Install pydub + ffmpeg, or export as WAV |
+| `FileNotFoundError` from `save_as_mp3` | No ffmpeg binary in the image | Install ffmpeg in the image, or export as WAV |
 
 ```python
 import asyncio

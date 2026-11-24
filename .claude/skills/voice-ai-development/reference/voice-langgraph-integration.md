@@ -1,6 +1,6 @@
 # LangGraph + Gemini Voice Agent
 
-> Framework: LangGraph v1.0.7 + LangChain v1.2.8 + FastAPI 0.135.2
+> Framework: LangGraph 1.2.24 + langchain-core 1.8.4 + langchain-google-genai 4.5.2 (requires google-genai >= 3.3, so not in the same project as google-adk 2.15) + FastAPI 0.165.0. Graph assembly (section 5) and the `ChatGoogleGenerativeAI` constructor were re-run on these versions with stub nodes (Python 3.14.10; the only DeprecationWarning came from langsmith internals); the LLM call itself was not executed.
 > Optional voice extension. Model ids and voices come from settings (`LIVE_MODEL`, `AGENT_MODEL`, `TTS_MODEL_FAST`, `LIVE_VOICE`), never literals. Executed: `voice_input_node` and its test (section 8) against a real `google-genai` 3.6.1 `AsyncSession` on a scripted websocket. Other snippets: illustrative.
 > Logging: stdlib `logging` with `error_type` only; in a service use `log_exception` (`deployment-ci-cd/reference/python-observability.md` §2). Never log transcripts, response text or audio.
 > Python: 3.14 + asyncio
@@ -53,13 +53,12 @@ class VoiceAgentState(TypedDict):
 ## 2. Voice Input Node — Transcription via Live API
 
 ```python
-import asyncio
 import logging
-from google import genai
+
 from google.genai import types
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 async def voice_input_node(state: VoiceAgentState) -> VoiceAgentState:
@@ -145,7 +144,7 @@ def build_llm(model: str) -> ChatGoogleGenerativeAI:   # model = settings.AGENT_
     )
 
 
-_llm = build_llm()
+_llm = build_llm(settings.AGENT_MODEL)  # model id from settings, never a literal
 
 SYSTEM_PROMPT = (
     "You are a helpful voice assistant. "
@@ -210,13 +209,12 @@ async def llm_response_node(state: VoiceAgentState) -> VoiceAgentState:
 ## 4. Voice Output Node — TTS Synthesis
 
 ```python
-import asyncio
 import logging
-from google import genai
+
 from google.genai import types
 
 logger = logging.getLogger(__name__)
-client = genai.Client()
+client = make_genai_client(settings)  # gemini-provider-setup.md: auth matrix, no ambient key
 
 
 async def voice_output_node(state: VoiceAgentState) -> VoiceAgentState:
@@ -244,29 +242,22 @@ async def voice_output_node(state: VoiceAgentState) -> VoiceAgentState:
     audio_chunks: list[bytes] = []
 
     try:
-        # Run blocking TTS in executor to avoid blocking the event loop
-        def _synthesize() -> bytes:
-            _client = genai.Client()
-            response = _client.models.generate_content(
-                model=settings.TTS_MODEL_FAST,
-                contents=response_text,
-                config=types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=types.SpeechConfig(
-                        voice_config=types.VoiceConfig(
-                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                voice_name=settings.LIVE_VOICE
-                            )
-                        )
-                    ),
+        # async client: no worker thread, cancellable with the node (never a new Client per call)
+        response = await client.aio.models.generate_content(
+            model=settings.TTS_MODEL_FAST,
+            contents=response_text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=settings.LIVE_VOICE)
+                    )
                 ),
-            )
-            data = response.candidates[0].content.parts[0].inline_data.data
-            if not data:
-                raise RuntimeError("TTS returned empty audio — content may be blocked")
-            return data
-
-        audio_bytes = await asyncio.get_event_loop().run_in_executor(None, _synthesize)
+            ),
+        )
+        audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+        if not audio_bytes:
+            raise RuntimeError("TTS returned empty audio; content may be blocked")
 
     except Exception as exc:
         logger.error(

@@ -12,13 +12,19 @@ Build a production-ready real-time conversational voice AI engine using Gemini L
 
 **Goal:** Working Python project with all dependencies installed.
 
+Pick ONE agent option before installing: google-adk 2.15.0 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`, so the ADK and LangGraph sets below cannot share one project. Both sets locked on Python 3.14.10 with uv 0.13.9 (2026-11-23); exact pins, lockfile, `uv sync --locked` in CI.
+
 ```bash
-uv init voice-engine && cd voice-engine
-uv add "google-genai>=1.0.0" "fastapi>=0.128.0" "uvicorn[standard]" \
-  "websockets>=13.0" pydantic pydantic-settings structlog \
-  "langgraph>=1.0.7" "langchain-core>=1.2.8" \
-  "google-adk>=1.0.0" pydub numpy aiolimiter
-uv add --dev pytest pytest-asyncio httpx ruff mypy
+uv init voice-engine --python 3.14 && cd voice-engine
+COMMON='fastapi==0.165.0 uvicorn[standard]==0.54.0 pydantic==2.14.4 pydantic-settings==2.16.3 structlog==26.1.0 numpy==2.5.5 aiolimiter==1.3.0'
+
+# Option A: LangGraph agent
+uv add $COMMON google-genai==3.6.1 websockets==17.4 langgraph==1.2.24 langchain-core==1.8.4
+# Option B: ADK agent (resolves google-genai 2.34.0)
+uv add $COMMON google-adk==2.15.0 websockets==15.0.1
+
+uv add --dev pytest==9.2.0 pytest-asyncio==1.5.0 httpx==0.28.1 ruff==0.17.6 mypy==2.4.1
+# MP3 export: ffmpeg binary in the image. Not pydub: it imports audioop, removed in Python 3.13.
 ```
 
 **Create `.env`:**
@@ -34,7 +40,7 @@ TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 
 **Create `src/config.py`** — pydantic-settings, load from `.env`, fail fast on missing vars.
 
-**Verification gate:** `python -c "from google import genai; print('SDK OK')"` succeeds.
+**Verification gate:** `uv sync --locked` exits 0 and `src/config.py` fails fast when `LIVE_MODEL` is missing (test it).
 
 **Common mistake:** Installing `google-generativeai` instead of `google-genai`. See `reference/common-pitfalls.md` §1.
 
@@ -71,7 +77,7 @@ TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 - Concurrent sender + receiver tasks via `asyncio.create_task()`
 - Reconnect on session timeout (see `reference/gemini-provider-setup.md` § Session limits and reconnect, `reference/gemini-live-api.md` §5)
 
-**Reference:** `reference/worker-pipeline.md` § GeminiTranscriberWorker, `reference/gemini-live-api.md` §2–§3
+**Reference:** `reference/worker-pipeline-gemini.md` § GeminiTranscriberWorker, `reference/gemini-live-api.md` §2–§3
 
 **Unit test:** Mock the Gemini Live session. Send a fake audio chunk. Verify a `Transcription` appears in the output queue.
 
@@ -91,7 +97,7 @@ TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 - Output: 24kHz mono 16-bit PCM, chunked at 4096 bytes (~85ms per chunk)
 - `get_message_up_to(seconds)` function built from character-to-time mapping — required for interrupt partial message tracking
 
-**Reference:** `reference/worker-pipeline.md` § GeminiSynthesizerWorker, `reference/gemini-tts.md` §2
+**Reference:** `reference/worker-pipeline-gemini.md` § GeminiSynthesizerWorker, `reference/gemini-tts.md` §2
 
 **Unit test:** Mock `client.aio.models.generate_content`. Verify `SynthesisResult` contains a valid `chunk_generator` and `get_message_up_to`.
 
@@ -109,7 +115,7 @@ TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 
 **Pattern:** `StateGraph` with a single `agent_node`. Always includes `iteration_count` in state (Iron Law from `agentic-ai-dev`). Full response buffered before enqueuing (prevents audio jumping).
 
-**Reference:** `reference/worker-pipeline.md` § LangGraphAgentWorker
+**Reference:** `reference/worker-pipeline-gemini.md` § LangGraphAgentWorker
 
 **Use when:** LangGraph is already in your stack; you need custom graph logic (tools, multi-step reasoning, HITL checkpoints).
 
@@ -117,9 +123,9 @@ TTS_ALLOWED_VOICES=["<voice-a>","<voice-b>"]
 
 **File:** `src/workers/adk_agent.py`
 
-**Pattern:** `SequentialAgent` wrapping an `LlmAgent`. `InMemorySessionService` for conversation state. `Runner.run_async()` for streaming events.
+**Pattern:** one `LlmAgent` behind a `Runner` (no `SequentialAgent`: deprecated in ADK 2.x in favour of `Workflow`). Create the session once (`get_session` returns `None` when missing; it does not raise). `InMemorySessionService` is single-instance; use a persistent session service when you scale out. Only text reaches the agent (`reference/voice-adk-integration.md` section 1).
 
-**Reference:** `reference/worker-pipeline.md` § ADKAgentWorker
+**Reference:** `reference/worker-pipeline-gemini.md` § ADKAgentWorker
 
 **Use when:** Google ADK is already in your stack; you want ADK's built-in session and memory management.
 
@@ -147,7 +153,7 @@ synthesizer.output_queue → synthesis_queue → _output_loop → WebSocket send
 
 **Critical:** Use `asynccontextmanager` lifespan — NEVER `@app.on_event`.
 
-**Reference:** `reference/worker-pipeline.md` § FastAPI WebSocket Server, § StreamingConversation Orchestrator
+**Reference:** `reference/worker-pipeline-gemini.md` § FastAPI WebSocket Server, `reference/worker-pipeline.md` § StreamingConversation Orchestrator
 
 **Integration test:** Connect a test WebSocket client. Send synthetic PCM silence. Verify pipeline starts without errors. Verify `terminate()` cleans up all workers and tasks.
 

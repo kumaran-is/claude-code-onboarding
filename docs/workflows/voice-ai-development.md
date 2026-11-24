@@ -1,59 +1,48 @@
 # Voice AI Development Workflow
 
-Phases for building Gemini voice features — real-time Live API and TTS synthesis — with LangGraph and Google ADK.
+Phases for building Gemini voice features — real-time Live API and TTS synthesis — with LangGraph and Google ADK. Voice is an optional extension: ship and evaluate the text path first.
 
 **Skill:** `voice-ai-development`
-**Models:** `gemini-live-2.5-flash-native-audio` (Live), `gemini-2.5-pro-tts-preview` / `gemini-2.5-flash-tts-preview` (TTS)
-**SDK:** `google-genai` (NEVER `google-generativeai` — deprecated)
+**Models:** model ids and voice names come from settings (`LIVE_MODEL`, `TTS_MODEL_FAST`, `TTS_MODEL_QUALITY`, `LIVE_VOICE`), never literals in code or requests. Pick them from the provider's models page and probe each id on every backend you deploy to (`gemini-api-dev` skill).
+**SDK:** `google-genai` (NEVER `google-generativeai` — deprecated). google-adk 2.15.0 requires `google-genai>=2.34,<3`: an ADK service runs google-genai 2.x; a Live/TTS-only service can pin 3.6.1.
 
 ---
 
 ## Phase 0: Decide Modality and Framework
 
-Before writing a line of code, answer these two questions:
+Before writing a line of code, answer these two questions (skill `SKILL.md` section 1):
 
 **Modality:**
 | Need | Choose |
 |------|--------|
-| Real-time voice (<600ms, barge-in) | Gemini Live API (WebSocket) |
+| Real-time voice (barge-in, low latency) | Gemini Live API session behind your WebSocket proxy |
 | Batch/one-shot speech synthesis | Gemini TTS models |
-| Both (voice assistant) | Live API for input, TTS for output |
+| Both (voice assistant) | Live API (or batch STT) for input, TTS for output |
 
 **Framework:**
 | Need | Choose |
 |------|--------|
-| Session memory + Google Cloud deploy | Google ADK |
-| Fine-grained state control, LangChain tools | LangGraph |
+| Session memory + Google Cloud deploy | Google ADK (`voice-adk-integration.md`) |
+| Fine-grained state control, LangChain tools | LangGraph (`voice-langgraph-integration.md`) |
 | Unsure | Start with LangGraph (simpler to debug) |
-
-Load the skill: `voice-ai-development`
-Load the decision guide: `reference/voice-adk-integration.md` section 8 (ADK vs LangGraph).
 
 ---
 
 ## Phase 1: Environment Setup
 
 ```bash
-# Install SDK
-uv add google-genai
+# Exact pins + lockfile; versions you verified on PyPI (never unpinned or >= ranges)
+uv add "google-genai==3.6.1"                       # Live/TTS-only service
+uv add "langgraph==<verified>" "langchain-google-genai==<verified>"   # LangGraph pipeline
+uv add "google-adk==2.15.0"                        # ADK pipeline (pulls google-genai 2.x)
+# MP3 export: ffmpeg binary in the image (brew/apt). Not pydub: it fails to import on Python 3.14.
 
-# For LangGraph pipeline
-uv add langgraph langchain-google-genai
-
-# For ADK pipeline
-uv add google-adk
-
-# For audio file I/O (optional — WAV/MP3 export)
-uv add pydub  # requires ffmpeg: brew install ffmpeg
-
-# Set API key (get from https://aistudio.google.com)
-export GOOGLE_API_KEY=your_key_here
-
-# Verify
-python -c "import google.genai; print('SDK OK:', google.genai.__version__)"
+# Local development only: developer key in an uncommitted .env (deployed environments are keyless)
+# .env: ENVIRONMENT=local, GEMINI_API_KEY=..., LIVE_MODEL=..., LIVE_VOICE=..., TTS_MODEL_FAST=..., TTS_MODEL_QUALITY=...
+uv run python -c "from importlib.metadata import version; import sys; sys.stdout.write(version('google-genai') + '\n')"
 ```
 
-**Gate:** `GOOGLE_API_KEY` is set and SDK imports without error.
+**Gate:** settings load (`gemini-provider-setup.md`: missing `LIVE_MODEL` fails at startup) and the SDK imports.
 
 ---
 
@@ -62,24 +51,15 @@ python -c "import google.genai; print('SDK OK:', google.genai.__version__)"
 Reference: `.claude/skills/voice-ai-development/reference/gemini-live-api.md`
 
 Steps:
-1. Copy WebSocket connection setup (section 1)
-2. Implement bidirectional audio streaming (section 2)
-3. Add barge-in handling if needed (section 3)
-4. Wrap in FastAPI WebSocket endpoint (section 5)
+1. Build the session config (section 3: `LiveConnectConfig`, input transcription, `session_resumption`, `context_window_compression`)
+2. Send audio with `send_realtime_input(audio=types.Blob(...))`; end the user turn with `audio_stream_end=True` (section 3)
+3. Relay model output across turns with `while True:` around `session.receive()`; handle `interrupted` (barge-in) and `go_away` (section 4)
+4. Reconnect with the resumption handle (section 5)
+5. Put your WebSocket proxy in front: auth and subprotocol BEFORE `accept()`, caps, bounded queue, audio as binary frames, control as text frames (section 6; `streaming-protocols/reference/server-stream-lifecycle.md` section 3)
 
-**Validation:**
-```bash
-# Start server
-uvicorn main:app --reload --port 8000
+**Validation:** the executed tests in `gemini-live-api.md` (real `AsyncSession` on a scripted websocket), plus a manual smoke test against your proxy with an authenticated client: binary PCM in, `{"type":"end_turn"}` as a text frame, binary PCM 24 kHz back. Never an in-band audio sentinel.
 
-# Test WebSocket (requires wscat: npm install -g wscat)
-wscat -c ws://localhost:8000/ws/voice
-# Send: raw PCM bytes
-# Send: END (0x454e44) to trigger response
-# Expect: PCM audio bytes back
-```
-
-**Gate:** WebSocket connects, sends audio, receives audio bytes (not silence, not empty).
+**Gate:** unauthenticated connection refused before `accept()`; audio round-trip works; `go_away` reconnect resumes the session.
 
 ---
 
@@ -88,24 +68,23 @@ wscat -c ws://localhost:8000/ws/voice
 Reference: `.claude/skills/voice-ai-development/reference/gemini-tts.md`
 
 Steps:
-1. Choose model (`gemini-2.5-pro-tts-preview` or `gemini-2.5-flash-tts-preview`) — see section 1 decision guide
+1. Choose the model setting (`TTS_MODEL_FAST` vs `TTS_MODEL_QUALITY`) — section 1
 2. Implement single-speaker synthesis (section 2)
 3. Add multi-speaker support if needed (section 3)
 4. Add language switching if needed (section 4)
-5. Wrap in FastAPI endpoint (section 6)
+5. Export WAV/MP3 (section 5, executed) and wrap in a FastAPI endpoint (section 6)
 
 **Validation:**
 ```bash
+# The server picks the model from settings; the client sends text and an allow-listed voice only
 curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello, this is a test.", "model": "gemini-2.5-flash-tts-preview", "voice": "Aoede"}' \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"text": "Hello, this is a test.", "tier": "fast", "voice": "<voice from TTS_ALLOWED_VOICES>"}' \
   --output test.wav
-
-# Verify WAV is playable
-file test.wav   # should be RIFF (little-endian) data, WAVE audio
+file test.wav   # RIFF (little-endian) data, WAVE audio
 ```
 
-**Gate:** WAV file is non-empty and plays correctly in a media player.
+**Gate:** WAV file is non-empty and plays; a voice outside `TTS_ALLOWED_VOICES` is rejected with 422.
 
 ---
 
@@ -114,86 +93,49 @@ file test.wav   # should be RIFF (little-endian) data, WAVE audio
 Reference: `.claude/skills/voice-ai-development/reference/voice-langgraph-integration.md`
 
 Steps:
-1. Define `VoiceAgentState` TypedDict (section 1)
-2. Implement `voice_input_node` — transcription (section 2)
-3. Implement `llm_response_node` — agent logic (section 3)
-4. Implement `voice_output_node` — TTS synthesis (section 4)
-5. Assemble graph: `voice_input -> llm_response -> voice_output -> END` (section 5)
-6. Add FastAPI WebSocket endpoint (section 6)
+1. Define `VoiceAgentState` (section 1)
+2. Implement `voice_input_node` — transcription via the Live API (section 2, executed)
+3. Implement `llm_response_node` — agent logic, text only (section 3)
+4. Implement `voice_output_node` — async TTS client, no worker thread (section 4)
+5. Assemble the graph `voice_input -> llm_response -> voice_output -> END` (section 5) and the endpoint (section 6)
 
-**Validation:**
-```python
-import asyncio
-from voice_graph import voice_agent, VoiceAgentState
+**Validation:** the executed graph test in section 8 (real `AsyncSession` on a scripted websocket; patch the module's client object). Assert on the returned state, never print it.
 
-fake_audio = b"\x00\x01" * 8000  # 16KB of fake PCM
-
-async def test():
-    state = VoiceAgentState(
-        audio_input=fake_audio,
-        transcript="",
-        response_text="",
-        audio_output=b"",
-        error=None,
-        session_id="test",
-        turn_count=0,
-    )
-    result = await voice_agent.ainvoke(state)
-    print("Transcript:", result["transcript"])
-    print("Response:", result["response_text"])
-    print("Audio bytes:", len(result["audio_output"]))
-    assert result["audio_output"], "No audio output"
-
-asyncio.run(test())
-```
-
-**Gate:** All three nodes execute, state flows end-to-end, audio_output is non-empty.
+**Gate:** all three nodes execute, state flows end to end, `audio_output` is non-empty, and an empty transcript ends the turn with a fixed error code.
 
 ---
 
 ## Phase 5: ADK Voice Pipeline (if using ADK)
 
-Reference: `.claude/skills/voice-ai-development/reference/voice-adk-integration.md`
+Reference: `.claude/skills/voice-ai-development/reference/voice-adk-integration.md` (google-adk 2.15.0)
 
 Steps:
-1. Implement FunctionTools: `transcribe_audio`, `synthesize_audio` (section 1)
-2. Configure three LlmAgents: TranscriptionAgent, ResponseAgent, SynthesisAgent (section 2)
-3. Assemble SequentialAgent pipeline (section 3)
-4. Set up ADK Runner + InMemorySessionService (section 4)
-5. Add FastAPI endpoints (section 4)
+1. Read section 1 first: STT and TTS are deterministic code around the agent; only text reaches the model, never audio or hex
+2. One `LlmAgent` behind a `Runner` (section 2, executed). No `SequentialAgent`: ADK 2.x deprecates it in favour of `Workflow`
+3. `user_id` from the authenticated principal; one session per conversation (`create_session` once)
+4. HTTP endpoint with a capped body (section 3) or the WebSocket admission pattern (section 4); `run_live` for speech-to-speech (section 5)
 
-**Validation:**
-```bash
-# Test HTTP turn endpoint
-curl -X POST http://localhost:8000/adk/voice/turn \
-  -H "Content-Type: application/json" \
-  -d "{\"audio_hex\": \"$(python -c 'print(b\"\\x00\\x01\"*8000, end=\"\")' | xxd -p | tr -d '\n')\"}"
-```
+**Validation:** the section 2 test (scripted `BaseLlm`, fake STT/TTS; the model saw only the transcript) and the section 6 endpoint tests: missing auth → 401 before any provider call, body over the cap → 413, header-only audio → 422 `AUDIO_EMPTY`.
 
-**Gate:** Response JSON contains `transcript`, `response_text`, and `audio_hex` (non-empty).
+**Gate:** tests pass on the pinned ADK version with `DeprecationWarning` raised as an error.
 
 ---
 
 ## Phase 6: Testing
 
-Reference: `voice-langgraph-integration.md` section 8 (LangGraph tests), `voice-adk-integration.md` section 7 (ADK error table)
-
 Mandatory tests:
-- [ ] Happy path: audio in -> transcript -> response -> audio out
-- [ ] Empty audio input raises `ValueError` (not silently returns empty)
-- [ ] Barge-in: interrupt signal discards buffered audio
-- [ ] Rate limit: exponential backoff fires on 429 (mock `ResourceExhausted`)
-- [ ] WebSocket disconnect: session cleans up without hanging
+- [ ] Happy path: audio in -> transcript -> response -> audio out (scripted provider, no live call)
+- [ ] Empty or header-only audio → fixed client code (`AUDIO_EMPTY` / `AUDIO_INVALID`), never a silent empty reply
+- [ ] Barge-in: `interrupted` drops unplayed audio and cancels in-flight generation (`interrupt-handling.md`)
+- [ ] Quota: `google.genai.errors.APIError` with `code == 429` → bounded backoff, then `RATE_LIMITED`
+- [ ] Disconnect: upstream session closed in `finally`, tasks cancelled and drained
+- [ ] Logs carry codes, sizes and ids only — no transcript, reply text or audio
 
 ```bash
-# Run tests
-pytest tests/test_voice_agent.py -v
-
-# Test coverage for voice module
-pytest tests/test_voice_agent.py --cov=voice --cov-report=term-missing
+uv run pytest tests/test_voice_agent.py -q   # report the command's own exit code
 ```
 
-**Gate:** All tests pass. No test uses `google-generativeai` import.
+Mocked/scripted provider tests are not live validation: a gated live tier replays hash-pinned audio fixtures (`eval-guide`).
 
 ---
 
@@ -201,47 +143,31 @@ pytest tests/test_voice_agent.py --cov=voice --cov-report=term-missing
 
 Dispatch reviewers after implementation:
 ```
-security-reviewer  — API key handling, no keys in code, audio data sanitization
-code-reviewer      — WebSocket lifecycle, error paths, no silent failures
+ai-security-reviewer — session admission, caps, prompt/tool safety, voice privacy
+security-reviewer    — auth before accept, secrets, input validation
+code-reviewer        — WebSocket lifecycle, error paths, no silent failures
+adk-reviewer / agentic-ai-reviewer — the agent part
 ```
 
 Security checklist:
-- [ ] `GOOGLE_API_KEY` read from env var only — never hardcoded, never logged
-- [ ] Audio bytes are not logged (can contain PII)
-- [ ] WebSocket connections have a timeout (no unbounded open connections)
+- [ ] Deployed environments are keyless (workload identity); a developer key exists only in a local `.env`; browsers get ephemeral tokens or go through your proxy
+- [ ] Authentication and subprotocol checked BEFORE `accept()`; frame/byte/time/idle caps; bounded queues
+- [ ] Audio, transcripts and replies are never logged (PII); log byte counts and codes
 - [ ] Content policy blocks surface as explicit errors — not silent empty audio
-- [ ] FastAPI endpoints validate input before passing to API
+- [ ] Model id never accepted from the client; voices from the configured allow-list
 
 ---
 
 ## Phase 8: Deploy
 
-Reference: `adk-deploy-guide` skill (for ADK), `gcp-cloud-run` skill (for LangGraph/FastAPI)
+Reference: `adk-deploy-guide` skill (ADK), `gcp-cloud-run` skill (LangGraph/FastAPI)
 
-For ADK:
-- Use `adk deploy` to Agent Engine for managed session handling
-- Or deploy as Cloud Run service with `InMemorySessionService` for stateless single-instance
+- Cloud Run with the service's own service account and the Vertex AI endpoint (`genai.Client(vertexai=True)`): no provider API key in the service, no `--set-env-vars` holding a secret
+- Require authentication on the service (no `--allow-unauthenticated` for a paid voice session unless your proxy authenticates every connection)
+- Session-local state (in-memory sessions or pipelines) needs sticky routing or a persistent session service; `InMemorySessionService` is single-instance only
+- Cloud Run sends SIGTERM 10 s before SIGKILL: close upstream Live sessions and drain tasks within that window
 
-For LangGraph:
-- Deploy as standard FastAPI service on Cloud Run
-- WebSocket support: set `--concurrency` to 1 per instance if using session-local state
-
-```bash
-# LangGraph — Cloud Run deploy
-gcloud run deploy voice-ai-service \
-  --source . \
-  --port 8000 \
-  --set-env-vars GOOGLE_API_KEY=projects/PROJECT/secrets/GOOGLE_API_KEY/versions/latest \
-  --allow-unauthenticated
-
-# ADK — Agent Engine deploy (requires adk-deploy-guide skill)
-adk deploy agent-engine \
-  --project PROJECT_ID \
-  --region us-central1 \
-  --agent voice_pipeline
-```
-
-**Gate:** Health check endpoint responds 200. WebSocket connection test succeeds against deployed URL.
+**Gate:** health endpoint responds 200; an authenticated WebSocket round-trip works against the deployed URL; an unauthenticated one is refused.
 
 ---
 
@@ -249,10 +175,12 @@ adk deploy agent-engine \
 
 | Pitfall | Symptom | Fix |
 |---------|---------|-----|
-| Using `google-generativeai` SDK | `ModuleNotFoundError` or deprecated API errors | Replace with `google-genai` |
-| Polling instead of WebSocket | High latency, missed barge-in | Use WebSocket — see `gemini-live-api.md` section 5 |
-| Sending text to Live API | Empty audio response | Live API expects `AudioChunk` or text with `end_of_turn=True` |
-| Blocking event loop with sync TTS | FastAPI hangs under load | Wrap sync calls in `run_in_executor` |
-| Empty audio on content block | Silent failure, no user feedback | Check `inline_data.data` is non-empty, raise if not |
-| No barge-in handling | Robot continues after user speaks | Check `server_content.interrupted` flag |
-| Logging audio bytes | PII leak in logs | Never log raw audio — log only byte count |
+| `google-generativeai` SDK | different API surface, deprecated | `google-genai` only |
+| `session.send(input=..., end_of_turn=True)` | deprecated call | `send_client_content(...)` / `send_realtime_input(audio=...)` |
+| In-band `END` audio sentinel | control mixed with audio | text control frame; `audio_stream_end=True` upstream |
+| One `async for` over `receive()` | second turn never read | `while True:` around it |
+| Blocking the event loop with sync TTS | endpoint stalls under load | `client.aio.models.generate_content` (or `asyncio.to_thread` for a sync SDK call) |
+| Empty audio on content block | silent failure | check the audio part is non-empty; raise a fixed code |
+| ADK + google-genai 3.x in one project | resolver failure | google-adk 2.15.0 requires `google-genai<3` |
+| pydub for MP3 | `ModuleNotFoundError: audioop` on 3.13+ | ffmpeg CLI (`gemini-tts.md` section 5) |
+| Logging audio bytes | PII leak | log byte counts only |

@@ -96,7 +96,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 
 ## AI Engineering Standards → Existing Commands
 
-The AI engineering domains (map: [`docs/standards/README.md`](../standards/README.md)) propose commands that map onto existing commands, skills and agents; no separate command files exist. Coverage of every requirement: [`docs/audits/ai-engineering-standards-coverage.md`](../audits/ai-engineering-standards-coverage.md). Deterministic gate for all of them: `python3 .claude/scripts/check-ai-assets.py --root .`
+The AI engineering domains (map: [domain map](../audits/ai-engineering-standards-coverage.md#domain-map)) propose commands that map onto existing commands, skills and agents; no separate command files exist. Coverage of every requirement: [`docs/audits/ai-engineering-standards-coverage.md`](../audits/ai-engineering-standards-coverage.md). Deterministic gate for all of them: `python3 .claude/scripts/check-ai-assets.py --root .`
 
 | Proposed | Use | What runs |
 |----------|-----|-----------|

@@ -31,7 +31,7 @@ You are a senior security architect specializing in threat modeling, security ar
 ## Target Systems
 
 Analyze architectures built with the project tech stack:
-- Java 21 / Spring Boot 3.5.x (WebFlux / Reactive)
+- Java 25 / Spring Boot 4.2 (MVC default, WebFlux when justified)
 - Node.js 24.14.x / NestJS 11.x with Prisma ORM
 - Python 3.14 / FastAPI with SQLAlchemy async
 - Angular 22.3.x SPA frontend; React 19.3 SPA or Next.js 16.4 / React Router 8 full-stack (optional)

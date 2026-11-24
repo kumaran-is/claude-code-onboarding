@@ -20,7 +20,7 @@ Generates codemaps for detected services:
 
 | Codemap File | Detected By | Stack |
 |---|---|---|
-| `docs/CODEMAPS/spring-api.md` | `pom.xml` with `spring-boot` | Java 21 / Spring Boot 3.5.x / WebFlux / R2DBC |
+| `docs/CODEMAPS/spring-api.md` | `pom.xml` with `spring-boot` | Java 25 / Spring Boot 4.2 (MVC + JPA/JDBC default; WebFlux + R2DBC when justified) |
 | `docs/CODEMAPS/nestjs-api.md` | `package.json` with `@nestjs/core` | NestJS 11.2.x / Fastify / Prisma / TypeScript 5.9.x |
 | `docs/CODEMAPS/mcp-server.md` | `package.json` with `@modelcontextprotocol/server` | Node 26 LTS / TypeScript 6.0.3 / MCP SDK v2 / Fastify 5 (HTTP) |
 | `docs/CODEMAPS/angular-spa.md` | `angular.json` | Angular 22.3.x / daisyUI 5.8.2 / Tailwind CSS 4.3.5 |

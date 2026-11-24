@@ -34,7 +34,7 @@ tasks, and improves developer workflow efficiency across the team's tech stack.
 
 Verify prerequisites are installed at correct versions:
 
-- Java 21 (`java -version`)
+- Java 25 (`java -version`)
 - Node.js 24.14.x for NestJS; Node.js 26 LTS (26.13.1) for Angular 22, React and TypeScript MCP servers (`node -v`)
 - Flutter 3.50.x (`flutter --version`)
 - Python 3.14 (`python3 --version`)
@@ -108,7 +108,7 @@ After analysis, report:
 DX AUDIT — [Project Name]
 
 ENVIRONMENT:
-✅ Java 21.0.3
+✅ Java 25.0.5.1
 ❌ Node.js 22.1.0 (required: 24.14.x) — run: nvm install 24.14
 ✅ Flutter 3.50.1
 

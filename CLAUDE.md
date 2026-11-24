@@ -9,7 +9,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 **Operational philosophy:** You are the hands; the human is the architect. Move fast, but never faster than the human can verify. Your code will be watched like a hawk—write accordingly.
 
 ## Tech Stack
-- **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux / Reactive), REST APIs
+- **Backend (Java)**: Java 25 LTS, Spring Boot 4.2.x (Spring Framework 7.1): Spring MVC + virtual threads by default, WebFlux + R2DBC for non-blocking workloads; REST APIs
 - **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
 - **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.x), TypeScript 6.0.3, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, protocol 2026-07-28), Fastify 5.12.8, Zod 4.6.7, OpenTelemetry JS SDK 3.x: see `/scaffold-mcp-server`
 - **Backend (Python)**: Python 3.14 (verified on 3.14.10; 3.15 deferred: grpcio/numpy/zstandard lack cp315 wheels), FastAPI (verified on 0.165.x across backend and agentic references; uv 0.13.9, PyJWT, `limits` rate limiting), Pydantic v2, SQLAlchemy async
@@ -49,7 +49,7 @@ Each technology has a skill (patterns, templates, MCP sources), usually a builde
 
 | Stack | Skill | Reviewer | Scaffold |
 |---|---|---|---|
-| Java / Spring Boot WebFlux | `java-spring-api` | `spring-reactive-reviewer` | `/scaffold-spring-api` |
+| Java / Spring Boot (MVC, WebFlux) | `java-spring-api` | `spring-boot-reviewer` | `/scaffold-spring-api` |
 | NestJS | `nestjs-api` | `nestjs-reviewer` | `/scaffold-nestjs-api` |
 | MCP server (TypeScript) | `mcp-builder` | `code-reviewer` | `/scaffold-mcp-server` |
 | Python / FastAPI | `python-dev` | `python-reviewer` | `/scaffold-python-api` |

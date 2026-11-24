@@ -26,7 +26,7 @@ REFACTOR → Clean up — same behavior, better structure (tests still pass)
 
 ## Stack-Specific Test Runners
 
-### Spring Boot (Java 21 / JUnit 5 / WebFlux)
+### Spring Boot (Java 25 / JUnit 6 / MVC default, WebFlux when justified)
 ```bash
 # Run single test
 ./mvnw test -Dtest=UserServiceTest -q
@@ -39,11 +39,11 @@ REFACTOR → Clean up — same behavior, better structure (tests still pass)
 ```
 
 ```java
-// WebFlux reactive test pattern (NOT MockMvc)
+// WebFlux slice test (MVC services: @WebMvcTest + MockMvc)
 @WebFluxTest(UserController.class)
 class UserControllerTest {
     @Autowired WebTestClient webTestClient;
-    @MockBean UserService userService;
+    @MockitoBean UserService userService;
 
     @Test
     void createUser_returnsCreated() {

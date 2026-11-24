@@ -73,7 +73,7 @@
 | Domain | Reviewer Agent |
 |--------|----------------|
 | General | `code-reviewer` |
-| Java / Spring | `spring-reactive-reviewer` |
+| Java / Spring | `spring-boot-reviewer` |
 | NestJS | `nestjs-reviewer` |
 | Python / FastAPI; background workers | `python-reviewer`; `python-worker-reviewer` |
 | Agentic AI | `agentic-ai-reviewer` |

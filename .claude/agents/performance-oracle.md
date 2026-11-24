@@ -1,6 +1,6 @@
 ---
 name: performance-oracle
-description: Quantified performance review specialist. Flags performance issues with measured or estimated impact — never vague warnings. Covers all stacks in this workspace (Java/Spring WebFlux, NestJS/Fastify, plain Node.js services and MCP servers, Python/FastAPI, Angular, Flutter and PostgreSQL). Use after implementing features with database access, list rendering, reactive chains, or async operations. Every finding includes file:line, measured or estimated impact, and a concrete fix.
+description: Quantified performance review specialist. Flags performance issues with measured or estimated impact — never vague warnings. Covers all stacks in this workspace (Java/Spring Boot MVC and WebFlux, NestJS/Fastify, plain Node.js services and MCP servers, Python/FastAPI, Angular, Flutter and PostgreSQL). Use after implementing features with database access, list rendering, reactive chains, or async operations. Every finding includes file:line, measured or estimated impact, and a concrete fix.
 model: sonnet
 permissionMode: default
 tools: Read, Grep, Glob, Bash

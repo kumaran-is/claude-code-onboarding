@@ -5,7 +5,7 @@
 Read this before writing or running a Maestro flow, choosing between `integration_test` and Maestro, setting up
 an emulator/simulator for E2E, or testing deep links and push notifications on a simulator. Unit/widget/golden traps are in
 [flutter-testing-traps.md](flutter-testing-traps.md). Maestro behaviours below were checked against docs.maestro.dev and
-Maestro CLI 2.11.0 (`maestro test --help`) — re-check after upgrades with the Maestro MCP `cheat_sheet` tool.
+Maestro CLI 2.12.1 is current (checked 2026-11-24); the flows here were verified on 2.11.0 (`maestro test --help`). 2.12.0 has one breaking change: a scroll `speed` outside 0–100 now fails instead of falling back to the default. Re-check after upgrades with the Maestro MCP `cheat_sheet` tool.
 Run on Flutter 3.50.1 (2026-11-23): a debug build with `appId: ${APP_ID}`, `-e APP_ID=<id>` and
 `--format junit --output report.xml` passed on an iPhone 17 simulator (iOS 26.4) and an Android 36.1 emulator
 (Google Play image, arm64) and exited 1 on a deliberately wrong `assertVisible`; tested on both platforms.

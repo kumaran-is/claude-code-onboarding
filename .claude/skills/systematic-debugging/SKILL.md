@@ -77,6 +77,7 @@ You MUST complete each phase before proceeding to the next.
    - Git diff, recent commits
    - New dependencies, config changes
    - Environmental differences
+   - **Is this failure mine?** Run the same failing command on the base branch before changing anything: `git worktree add "$TMPDIR/base" origin/develop`, run it there, then `git worktree remove "$TMPDIR/base"`. Fails on base too → pre-existing: report it with the base result and do not "fix" it inside this task (`first-principles.md` scope rules). Passes on base → your branch caused it: bisect your own commits (`git bisect run <cmd>`). For CI checks, `iterate-pr` covers the same question.
 
 4. **Gather Evidence in Multi-Component Systems**
 

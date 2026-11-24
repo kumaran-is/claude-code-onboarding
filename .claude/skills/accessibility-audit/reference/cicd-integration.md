@@ -77,7 +77,7 @@ Add these steps to your existing Flutter GitHub Actions workflow:
         run: flutter test test/accessibility/ --reporter=expanded
 
       - name: Run integration accessibility tests (Android emulator)
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 33
           script: |
@@ -119,7 +119,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: '22'
+          node-version: '26'  # Angular 22 / React 19 web stack: Node 26 LTS
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -162,7 +162,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.1'
           channel: 'stable'

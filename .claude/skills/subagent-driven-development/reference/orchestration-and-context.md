@@ -118,6 +118,8 @@ The Agent tool accepts a `model` parameter. Use it:
 
 **Rule:** Do not run agents in background just to appear fast. If you need the result to decide your next step, run in foreground.
 
+**No completion notice?** Before re-dispatching a background agent that seems to have finished silently, read its output file or transcript (the path the dispatch returned). A second dispatch repeats the work and, with the enforcement kit on, counts as another review round.
+
 ### Context Window Management
 
 The context window is finite. Protect it:

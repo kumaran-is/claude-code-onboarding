@@ -142,7 +142,7 @@ what turns them into a gate; it stops on an unreadable lockfile first because th
   `maestro test -e APP_ID=<id> --format junit --output report.xml .maestro/`, uploading the report and `~/.maestro/tests`
   on failure. Android on `ubuntu-latest` (KVM) can use `ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0`
   with `api-level`, `arch: x86_64` and the flow command in `script:`; install the CLI pinned
-  (`MAESTRO_VERSION=2.11.0` for the `get.maestro.mobile.dev` installer). Start it **advisory** (warning + summary, not
+  (`MAESTRO_VERSION=2.12.1` for the `get.maestro.mobile.dev` installer). Start it **advisory** (warning + summary, not
   blocking) until the flows are stable, as `flutter-e2e-maestro.md` §1 recommends; a missing device reports BLOCKED, not PASS.
 - **GenUI apps:** `a2ui_flutter` 0.5.0 / `a2ui_core` 0.9.0 need Flutter ≥ 3.47.0 / Dart ≥ 3.13.0, which the 3.50.1 pin
   satisfies; the older-SDK path (`a2ui_flutter` 0.4.0 / `a2ui_core` 0.8.0) is only for apps still below 3.47.

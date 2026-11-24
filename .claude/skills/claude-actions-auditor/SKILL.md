@@ -177,7 +177,7 @@ Miss pattern: the prompt field looks like plain text with no `${{ }}` — the in
 env:
   ISSUE_BODY: ${{ github.event.issue.body }}   # attacker-controlled
 steps:
-  - uses: anthropics/claude-code-action@v1
+  - uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
     with:
       prompt: "Review this issue: $ISSUE_BODY"  # looks clean, but receives attacker input
 ```
@@ -207,10 +207,10 @@ Look for: `on: pull_request_target` AND a checkout step with `ref: ${{ github.ev
 # Vulnerable — Vector D
 on: pull_request_target
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     with:
       ref: ${{ github.event.pull_request.head.sha }}  # attacker's branch
-  - uses: anthropics/claude-code-action@v1
+  - uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
 ```
 
 ### Vector E — Error Log Injection
@@ -224,7 +224,7 @@ Look for: a `run:` step after the Claude step that uses `${{ steps.<claude-step>
 
 ```yaml
 # Vulnerable — Vector G
-- uses: anthropics/claude-code-action@v1
+- uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
   id: claude
 - run: eval "${{ steps.claude.outputs.response }}"  # AI output executed as shell
 ```

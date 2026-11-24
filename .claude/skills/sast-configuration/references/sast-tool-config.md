@@ -42,17 +42,13 @@ on:
 jobs:
   semgrep:
     runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.186.0  # native Semgrep; the semgrep-action wrapper is deprecated and archived
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            .semgrep.yml
-            p/security-audit
-            p/owasp-top-ten
-        env:
-          SEMGREP_RULES: .semgrep.yml
+        run: semgrep scan --config .semgrep.yml --config p/security-audit --config p/owasp-top-ten --error
+        # With a Semgrep AppSec Platform token, `semgrep ci` (env SEMGREP_APP_TOKEN) replaces the line above.
 ```
 
 ## Bandit Configuration

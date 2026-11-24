@@ -591,7 +591,7 @@ variable "service_accounts" {
 ```yaml
 # In .github/workflows/*.yml
 - name: Authenticate to GCP via Workload Identity
-  uses: google-github-actions/auth@v2
+  uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
   with:
     workload_identity_provider: ${{ vars.WIF_PROVIDER }}   # output.provider_name
     service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}

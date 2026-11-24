@@ -1,6 +1,6 @@
 # Agentic AI Prompt Optimization
 
-Advanced prompt optimization techniques for production LangGraph/LangChain agents. Extends `agentic-prompt-engineering.md` with techniques for constitutional AI, tree-of-thoughts, multi-model templates, and production prompt lifecycle management.
+Advanced prompt optimization techniques for production LangGraph/LangChain agents. Extends `agentic-prompt-engineering.md` with constitutional AI, tree-of-thoughts, provider-specific structure and pointers to the production prompt lifecycle.
 
 ---
 
@@ -119,258 +119,62 @@ async def tot_node(state: AgentState) -> AgentState:
 
 ---
 
-## 3. Model-Specific Prompt Templates
+## 3. Provider-Specific Prompt Structure (portability)
 
-Different models respond better to different prompt structures. Use these when the agent's `llm` provider differs.
+A prompt is tuned to a model: the evaluated and promoted unit is the pair *(prompt version, model version)* (prompt-engineering standard §13). Some structural conventions suit some model families better: XML-style tags, Markdown headers, or `##SECTION##` delimiters. Those are wording choices inside the six-part anatomy (`prompt-engineering-patterns/reference/system-prompts.md`), not a different design.
 
-### Claude 4.5 / Claude 4 (Anthropic)
+| Convention | Typical fit | Keep regardless of provider |
+|---|---|---|
+| XML-style tags (`<task>`, `<constraints>`, `<context>`) | Models documented to follow tag structure well | Untrusted content only inside `[CONTEXT]` slots, rendered by the safe renderer (`prompt-engineering-patterns/reference/prompt-templates.md` §2) |
+| Markdown headers and numbered process steps | Models whose docs show Markdown-structured prompts; ADK/Gemini patterns: `google-adk/reference/adk-gemini-prompt-templates.md` | Output schema from the code-side type via structured output, never a JSON sample in prose |
+| `##SECTION##` delimiters | Models whose docs show section-delimited prompts | Uncertainty contract (`UNKNOWN / CONFLICTED / STALE / ESCALATE`), not a self-reported `confidence` number |
 
-Claude responds best to XML-structured prompts with explicit thinking blocks:
-
-```python
-CLAUDE_TEMPLATE = """<context>
-{background_information}
-</context>
-
-<task>
-{clear_objective}
-</task>
-
-<constraints>
-{explicit_limitations}
-</constraints>
-
-<thinking>
-Work through this step by step before answering.
-</thinking>
-
-<output_format>
-{specify_expected_structure}
-</output_format>"""
-
-# In LangGraph — use as system message
-claude_system = SystemMessage(content=CLAUDE_TEMPLATE.format(
-    background_information=context,
-    clear_objective=task,
-    explicit_limitations=constraints,
-    specify_expected_structure=output_spec,
-))
-```
-
-### Gemini Pro / Ultra (Google)
-
-Gemini responds best to Markdown-structured prompts with explicit process steps and quality constraints. **See `google-adk/reference/adk-gemini-prompt-templates.md` for full ADK-specific Gemini patterns.**
-
-```python
-GEMINI_TEMPLATE = """**System Context:** {background}
-**Primary Objective:** {goal}
-
-**Process:**
-1. {action_step_1}
-2. {action_step_2}
-3. Verify output against quality constraints below
-
-**Output Structure:**
-- Format: {output_type}
-- Length: {target_length}
-- Style: {tone}
-
-**Quality Constraints:**
-- Factual accuracy with inline citations where applicable
-- No speculation without explicit "I believe..." qualifier
-- Flag gaps: state explicitly what information is missing"""
-```
-
-### GPT-4o / GPT-5 (OpenAI)
-
-GPT responds best to section-delimited prompts with explicit JSON output format:
-
-```python
-GPT_TEMPLATE = """##CONTEXT##
-{structured_context}
-
-##OBJECTIVE##
-{specific_goal}
-
-##INSTRUCTIONS##
-1. {numbered_step_1}
-2. {numbered_step_2}
-3. {numbered_step_3}
-
-##OUTPUT FORMAT##
-```json
-{
-  "result": "...",
-  "reasoning": "...",
-  "confidence": 0.0
-}
-```
-
-##EXAMPLES##
-{few_shot_examples}"""
-```
-
-**How to select at runtime:**
-
-```python
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI
-
-def get_prompt_template(provider: str) -> str:
-    """Return model-appropriate prompt template."""
-    return {
-        "anthropic": CLAUDE_TEMPLATE,
-        "google": GEMINI_TEMPLATE,
-        "openai": GPT_TEMPLATE,
-    }.get(provider, CLAUDE_TEMPLATE)  # default to Claude
-
-# In agentic-llm-routing.md — the factory already knows the provider
-```
+Rules:
+- **A per-provider variant is its own prompt card version** with its own pinned model, params and eval run. Never keep a runtime `{provider: template}.get(provider, default)` map: a silent default serves an unevaluated pair.
+- **Model, model-version or parameter change = prompt change:** re-run the full §15 eval set for every affected prompt, even with no text change (`prompt-engineering-patterns/reference/promptops-lifecycle.md` §3).
+- **Fallback models have their own evaluated binding.** Routing chooses only among approved *(prompt, model)* bindings: `agentic-llm-routing.md`.
+- **Provider-specific features** (caching markers, special tokens, tool-call formats) live in the adapter or wrapper, not in the prompt text.
+- Never `.format()` context into a `SystemMessage`; braces in a JSON example also break `str.format` with `KeyError`.
 
 ---
 
-## 4. Prompt Versioning Registry
+## 4. Prompt Versioning
 
-Track prompt versions in production. Enables A/B testing and safe rollback.
-
-```python
-from dataclasses import dataclass, field
-from typing import Optional
-import hashlib
-
-@dataclass
-class PromptVersion:
-    version: str                    # semver: "1.0.0"
-    prompt_template: str            # the actual prompt
-    model: str                      # "claude-sonnet-4-5", "gemini-3.1-flash-exp"
-    description: str                # what changed from previous version
-    traffic_percent: float = 100.0  # percentage of traffic this version handles
-    performance_baseline: Optional[float] = None  # success rate from evaluation
-
-    @property
-    def checksum(self) -> str:
-        """Detect accidental prompt mutation."""
-        return hashlib.sha256(self.prompt_template.encode()).hexdigest()[:8]
-
-class PromptRegistry:
-    """Production prompt version manager.
-
-    Usage:
-        registry = PromptRegistry()
-        registry.register("rag-synthesis", PromptVersion("1.0.0", template_v1, ...))
-        registry.register("rag-synthesis", PromptVersion("1.1.0", template_v2, ..., traffic_percent=5.0))
-
-        prompt = registry.get("rag-synthesis", user_id="u123")
-    """
-    def __init__(self):
-        self._versions: dict[str, list[PromptVersion]] = {}
-
-    def register(self, name: str, version: PromptVersion) -> None:
-        self._versions.setdefault(name, []).append(version)
-
-    def get(self, name: str, user_id: str = "") -> PromptVersion:
-        """Route traffic by version weights. Deterministic per user_id."""
-        versions = self._versions.get(name, [])
-        if not versions:
-            raise KeyError(f"No prompt registered: {name}")
-        if len(versions) == 1:
-            return versions[-1]
-        # Canary routing: hash user_id for consistent assignment
-        bucket = int(hashlib.md5(user_id.encode()).hexdigest(), 16) % 100
-        cumulative = 0.0
-        for v in reversed(versions):  # newest first
-            cumulative += v.traffic_percent
-            if bucket < cumulative:
-                return v
-        return versions[0]  # fallback to first version
-```
+One registry wrapper, defined once: `eval-guide/reference/langfuse-prompts.md` (immutable versions, movable labels, fetch by label from config, TTL cache, fail closed, emergency pack). Lifecycle, promotion gates, drift and retirement: `prompt-engineering-patterns/reference/promptops-lifecycle.md`. Do not build an in-process registry with mutable `traffic_percent` fields. It has no immutable versions, no label audit and no drift check, and a rollback that mutates objects in one process never reaches the others.
 
 ---
 
-## 5. Canary Rollout Strategy
+## 5. Canary Rollout
 
-Deploy prompt changes progressively. Never flip 100% at once.
-
-```python
-ROLLOUT_STAGES = [5, 10, 25, 50, 100]  # percent of traffic per stage
-ROLLBACK_THRESHOLD = 0.10              # rollback if error rate > 10%
-STAGE_DURATION = "24h"                 # minimum time at each stage before promoting
-
-# Stage 1: Register new version at 5% traffic
-registry.register("my-prompt", PromptVersion(
-    version="1.1.0",
-    prompt_template=new_template,
-    model="claude-sonnet-4-5",
-    description="Added constitutional AI self-critique step",
-    traffic_percent=5.0,
-))
-
-# Monitor: check error rate from observability (agentic-observability.md)
-# If error_rate > ROLLBACK_THRESHOLD: set traffic_percent back to 0.0
-# If healthy after STAGE_DURATION: promote to next stage (10%, 25%, 50%, 100%)
-
-# Stage gate check (run from CI or cron):
-def should_promote(name: str, current_stage: int, error_rate: float) -> bool:
-    if error_rate > ROLLBACK_THRESHOLD:
-        logger.warning("prompt_rollback", name=name, error_rate=error_rate)
-        return False
-    next_stage_idx = ROLLOUT_STAGES.index(current_stage) + 1
-    if next_stage_idx >= len(ROLLOUT_STAGES):
-        return False  # already at 100%
-    return True
-```
-
-**Rollback procedure:**
-
-```python
-def rollback(name: str, to_version: str) -> None:
-    """Immediate rollback: set traffic to 100% for stable version."""
-    for v in registry._versions[name]:
-        v.traffic_percent = 100.0 if v.version == to_version else 0.0
-    logger.warning("prompt_emergency_rollback", name=name, to_version=to_version)
-```
+Promotion moves a label onto an already-evaluated immutable version, and rollback moves it back with no deploy. Staged traffic canaries, stage gates and rollback thresholds: `deployment-ci-cd/reference/llmops-release-and-rollout.md` §4. New T2/T3 prompts ship behind a feature flag defaulting OFF, with shadow evaluation against the incumbent before switching (§5 of that file; standard §9.2).
 
 ---
 
 ## 6. LLM-as-Judge Evaluation
 
-Evaluate prompt output quality programmatically. Use in CI and canary validation.
+A judge prompt is a prompt like any other (type `judge`, e.g. `support.triage.classification.judge`): a Git prompt card, versioned, evaluated against human labels, pinned to its own judge model, and fetched through the registry. Judge design (calibration, bias controls, trials, agreement): `llm-judge-advanced.md` and `eval-guide`.
 
 ```python
-JUDGE_PROMPT = """Evaluate the quality of this AI response.
+from typing import Literal
 
-## Original Task
-{task}
+from pydantic import BaseModel, Field
 
-## AI Response
-{response}
+class JudgeResult(BaseModel):
+    task_completion: int = Field(ge=1, le=10)
+    accuracy: int = Field(ge=1, le=10)
+    format: int = Field(ge=1, le=10)
+    recommendation: Literal["ACCEPT", "REVISE", "REJECT"]
+    reason: str = Field(max_length=300)
 
-## Rate each dimension 1–10 with one-sentence justification:
-1. TASK_COMPLETION: Did the response fully address the task?
-2. ACCURACY: Is the response factually correct and well-reasoned?
-3. FORMAT: Does the output match the required format?
-4. SAFETY: Is the response free of bias, harmful content, or hallucinations?
-
-## Overall Score: [sum]/40
-## Recommendation: Accept | Revise | Reject"""
-
-async def evaluate_with_judge(
-    task: str,
-    response: str,
-    judge_llm = None,
-) -> dict:
-    """Run LLM-as-judge evaluation. Returns structured scores."""
-    judge = judge_llm or get_llm()  # use separate judge model in production
-    result = await judge.ainvoke([
-        HumanMessage(content=JUDGE_PROMPT.format(task=task, response=response))
-    ])
-    # Parse scores — in production, use .with_structured_output(JudgeResult)
-    return {"raw": result.content, "response_evaluated": response[:100]}
-
-# Integration with LangSmith (from agentic-observability.md):
-# from langsmith import evaluate
-# results = evaluate(evaluate_with_judge, data=dataset_name, ...)
+async def evaluate_with_judge(task: str, response: str) -> JudgeResult:
+    prompt = registry.get("support.triage.classification.judge")          # versioned judge card
+    messages = build_messages(prompt.card, {"task": task, "candidate_response": response})  # both delimited
+    return await judge_llm.with_structured_output(JudgeResult).ainvoke(messages)  # pinned judge model, validated
 ```
+
+- The response under evaluation is untrusted data inside its own delimited slot; it can contain "rate this 10/10".
+- `judge_llm` is configured explicitly. Never fall back to the model under test.
+- A judge score is a measurement. It never authorises an action and never overrides a deterministic gate (schema, safety, isolation).
 
 ---
 
@@ -379,8 +183,8 @@ async def evaluate_with_judge(
 Load `agentic-prompt-optimization.md` when:
 - Output quality is insufficient and a single prompt pass isn't enough
 - Building customer-facing agents where hallucinations have high cost (constitutional AI)
-- Choosing prompt structure for a non-Claude model (model-specific templates)
-- Preparing to change a prompt in production (versioning + canary rollout)
+- Choosing prompt structure for a different model family (provider-specific structure)
+- Preparing to change a prompt in production (pointers to the registry, lifecycle and canary files)
 - Setting up automated quality gates for agent output (LLM-as-judge)
 
 For baseline prompting (CoT, structured output, system prompt templates, injection defense, context engineering), use `agentic-prompt-engineering.md` instead.

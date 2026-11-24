@@ -170,12 +170,14 @@ Store one row per pending approval next to the checkpoint:
 | `action`, `args_hash` | what was proposed; resume only if unchanged |
 | `required_authority` | role/permission the approver must hold |
 | `owner_queue`, `due_at` | who must act and by when |
+| `exception_type` | why a human is needed (approval, low confidence, budget exhausted, safety); drives priority |
 | `status` | `PENDING` / `APPROVED` / `REJECTED` / `EXPIRED` / `SUPERSEDED` |
 | `requested_by`, `decided_by`, `decided_at` | audit trail (ids only) |
 
 - A sweep job marks overdue rows `EXPIRED` and resumes the thread with a rejection, so the run reaches a typed terminal state instead of waiting forever.
 - A later human change to the same record marks pending AI approvals `SUPERSEDED` (version check before write).
 - Notifications (queue, email, chat) carry ids and a link, never the record content.
+- The queue is an operating mode, not an error sink (guardrails G5): it has a named owner, SLA, capacity, priority classes with safety first, overflow and load-shedding rules, and enough context on the record that the reviewer decides without re-running the AI flow. Owner, SLA and capacity are organisational decisions recorded in the Decision Record.
 
 ## Streaming Mode Selection Guide
 

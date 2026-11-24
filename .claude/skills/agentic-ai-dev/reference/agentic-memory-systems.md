@@ -1,6 +1,6 @@
 # Agentic AI Memory Systems
 
-Canonical home for agent memory **implementation** (LangGraph / LangChain v1). Principles (memory is a liability; authority order canonical state > source documents > verified outcomes > derived memory > model inference; derived memory never authorizes) live in `ai-playbook/playbook.md` §2.6. Context-window trimming for a single call is also here; caching is in `agentic-caching-patterns.md`.
+Canonical home for agent memory **implementation** (LangGraph / LangChain v1). Principles (memory is a liability; authority order canonical state > source documents > verified outcomes > derived memory > model inference; derived memory never authorizes) live in `ai-playbook/playbook.md` §2.6. Normative rules (six memory types, MemoryItem contract, write policy, freshness/conflict states, erasure propagation, memory evals) live in `agent-memory-lifecycle.md`; this file is its LangGraph adapter. Framework-neutral lifecycle and the record validator: `agent-memory-lifecycle.md`. Context-window trimming for a single call is also here; caching is in `agentic-caching-patterns.md`.
 
 Executed on langchain 1.2.8 / langgraph 1.0.7 / langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16 (no live model), with checkpointer lifecycle, Store namespace isolation and erasure re-run on langchain 1.5.2 / langgraph 1.2.24 against PostgreSQL 18.7: checkpointer lifecycle, Store namespaces, cross-user isolation, fail-closed recall, write quarantine, erasure, `trim_messages` behaviour.
 
@@ -91,6 +91,9 @@ async def remember(store: BaseStore, scope: MemoryScope, c: MemoryCandidate, ttl
         "source_event_ids": list(c.source_event_ids), "author_role": c.author_role,
         "status": "CURRENT", "valid_until": (now + timedelta(days=ttl_days)).isoformat(),
         "written_at": now.isoformat(),
+        "provenance_quality": "USER_STATED" if c.author_role == "user" else "RECORDED_LIVE",
+        "schema_version": 1, "expires_at": (now + timedelta(days=ttl_days)).isoformat(),
+        # org_id is in the namespace; add source_versions / canonical_version / compiler or prompt version when a compiler writes the item
     })
     return "stored"
 
@@ -156,6 +159,7 @@ candidate (user turn / tool result / summary)
 | Extraction prompt or model upgrade | Mark items written by the old version for rebuild (store the version on each item) |
 | Erasure request | Delete by principal across checkpoints, store namespaces, vector memories, summaries, caches and eval copies; verify with a recall test |
 | Memory unavailable / stale | Fall back to canonical data; never present memory as complete or authoritative |
+| Memory conflicts with canonical state | Canonical current state wins; flag the conflict (guardrails G16; contract test `test_canonical_state_beats_stale_memory`) |
 
 ## Layer 3: Episodic Memory
 
@@ -259,3 +263,6 @@ async def memory_retrieval_node(state: AgentState, runtime: Runtime[RequestCtx])
 4. Erasure removes every surface for the principal.
 5. Trimming never orphans a `ToolMessage`.
 6. Degraded memory is flagged, not silently empty.
+7. Canonical precedence: memory says X, the canonical record says Y → the answer uses Y and the item becomes CONFLICTED with an owned review-queue entry (`agent-memory-lifecycle.md` §1, §6).
+8. Source deletion propagates via lineage (`source_event_ids`) to items, the vector projection and cached answers; a plant → erase → probe test asserts no item, snippet or count remains (`agent-memory-lifecycle.md` §7).
+9. Pause / consent off: no memory writes and no recall for that principal; the feature still answers (`agent-memory-lifecycle.md` §10).

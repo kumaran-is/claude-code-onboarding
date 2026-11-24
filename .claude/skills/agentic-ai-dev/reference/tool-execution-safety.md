@@ -16,6 +16,7 @@ Validation: every Python block below was executed on Python 3.14 with langchain 
 | Authority tier | One of the tiers in §2, recorded next to the tool |
 | Degradation mode | One line: what the agent does when this tool is unavailable (`# Fallback: answer INSUFFICIENT_EVIDENCE`) |
 | Timeout | Per-call timeout inside the run deadline |
+| Schema version | Explicit `major.minor` on the tool contract (guardrails G3). Boundary order: tool exists → version supported (same major, minor ≤ pinned) → payload valid → authorized; failures return `SCHEMA_VERSION_MISMATCH` / `SCHEMA_VALIDATION_FAILED` and nothing executes. Minor = additive only; enum changes and new required fields need compatibility review |
 | Real backend | No stub tools returning synthetic, hash-derived or random data in shipped code: remove the tool instead |
 
 ```python
@@ -185,7 +186,8 @@ Executed against PostgreSQL 16: same key + same payload returned the stored resu
 
 - Key source: `sha256(org_id + action + client_request_id)` or a server-minted id stored in the run state before the call — never generated fresh inside the retried code.
 - `effect()` above runs inside the DB transaction: fine for a local write. For an external call (payments, email), do not hold the transaction open across the network: pass the key to the provider's own idempotency mechanism and use the outbox pattern (`python-dev/reference/reliability-idempotency-retries-outbox.md` §1, §4, §6).
-- Keep keys for the replay window (retries + resume + approval delay), then expire.
+- Keep keys for the replay window (retries + resume + approval delay), then expire. An expired key never re-executes blindly: re-check canonical state (record version) first, and reject with a typed status if it changed.
+- Guardrails G4 writes the key as `SHA256(org_id + entity_id + action_name + payload_hash)`. Persist that value for audit, but look duplicates up by the payload-independent scope (`org_id`, entity or channel, action, client request id) as in `run_once` above: a key that already contains the payload hash cannot detect "same request, changed payload", because the changed payload produces a new key. Executed in the guardrail contract suite (`ai-launch-check/assets/guardrail_contract_tests.py`).
 - A human change to the same record invalidates pending AI intents (version/etag check before the write).
 
 ## 7. Approval gates

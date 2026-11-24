@@ -171,6 +171,8 @@ Category:"""
 
 ## Prompt Injection Defense
 
+A prompt-level defense is a mitigation, not a control (prompt-engineering standard §3.3): code authorises every tool call (G2), filters data before it reaches the context (G9) and validates output (G3). The prompt only lowers how often those controls fire. Trust levels, the six-part anatomy and the full injection-resistant pattern table (least-privilege tools, quarantined summarisation, classifiers for T1+): `prompt-engineering-patterns/SKILL.md`. Both techniques below assume the `{user_input}` value is rendered by the safe renderer (`prompt-engineering-patterns/reference/prompt-templates.md` §2), which neutralises a closing tag inside the value. A plain `.format()` lets `</user_message>` end the block early.
+
 ### Input Sandwich Technique
 
 Place user input between system instructions, not at the end.
@@ -293,9 +295,11 @@ def estimate_tokens(text: str) -> int:
 |------|----------|
 | Structured output | Use `.with_structured_output()` with Pydantic models |
 | System prompts | Keep instructions clear, numbered, with examples |
-| User input | NEVER place in system prompt; use delimiters |
+| User input | NEVER place in system prompt; use named delimiters, escaped by the renderer |
+| Prompt location | Prompt cards in `prompts/` fetched through the registry wrapper; inline constants here are illustrations |
+| Uncertainty | State the contract: `UNKNOWN / CONFLICTED / STALE / ESCALATE` status values |
 | Temperature | `0` for structured output, factual; `0.7` for creative |
-| Few-shot | 3-5 examples covering edge cases |
+| Few-shot | 3-5 synthetic/sanitized examples incl. an edge and an escalate case; never reused as eval cases |
 | Token budget | Always track and respect context window limits |
 | CoT | Use for complex reasoning; skip for simple classification |
 

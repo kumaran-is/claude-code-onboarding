@@ -339,41 +339,28 @@ Is there an objective ground truth or clear criteria?
 
 ## Section 8: ADK Integration
 
-Same pairwise_with_swap logic adapted for Google ADK's `SequentialAgent`:
+Run the two judge passes as ADK agents if your stack is ADK-first, but keep the **swap remap and the agreement check in Python** (`pairwise_with_swap` above): the consistency decision is deterministic and never delegated to a third LLM agent.
 
 ```python
-from google.adk.agents import LlmAgent, SequentialAgent
-from google.adk.runners import InMemoryRunner
+import os
 
-# ADK SequentialAgent: [pass1_agent -> pass2_agent -> consistency_checker]
-pass1_agent = LlmAgent(
-    name="pass1_judge",
-    model="gemini-3.1-flash",
-    instruction="""You are a pairwise evaluator. ...(same criteria as above)...
-Output format: JSON with winner ("A"/"B"/"tie"), confidence (0-1), reasoning.""",
-    output_key="pass1_result",
-)
+from google.adk.agents import LlmAgent
+from pydantic import BaseModel
 
-pass2_agent = LlmAgent(
-    name="pass2_judge",  # evaluates with SWAPPED positions
-    model="gemini-3.1-flash",
-    instruction="""...same but note: Response A here was Response B in pass 1...""",
-    output_key="pass2_result",
-)
 
-consistency_checker = LlmAgent(
-    name="consistency_checker",
-    model="gemini-3.1-flash",
-    instruction="""Read pass1_result and pass2_result from session state.
-Remap pass2 winner (A->B, B->A, tie->tie).
-If mapped winners agree: final_winner = that winner, confidence = average.
-If they disagree: final_winner = "tie", confidence = 0.5.
-Output: JSON with final_winner, confidence, consistent (bool).""",
-    output_key="final_verdict",
-)
+class PairwiseVerdict(BaseModel):
+    winner: str          # "A" | "B" | "tie"
+    confidence: float
+    reasoning: str
 
-pairwise_pipeline = SequentialAgent(
-    name="pairwise_judge_pipeline",
-    sub_agents=[pass1_agent, pass2_agent, consistency_checker],
-)
+
+def make_pairwise_judge(name: str) -> LlmAgent:
+    return LlmAgent(
+        name=name,
+        model=os.environ["EVAL_JUDGE_MODEL"],   # config-driven, recorded per result row; never a literal id
+        instruction="You are a pairwise evaluator. ...(criteria as in Section 2)...",
+        output_schema=PairwiseVerdict,
+    )
 ```
+
+Call the judge once with (A, B) and once with (B, A) as two separate runs, remap the second winner (A↔B, tie stays tie) and compute agreement in code; disagreement is a tie with confidence 0.5, as in `pairwise_with_swap`. Do not chain the passes with `SequentialAgent`: it is deprecated in google-adk 2.x in favour of `Workflow` (`google-adk/SKILL.md`), and an LLM "consistency checker" would turn a deterministic rule into a sampled one. Treat each pass as a judge trial (`eval-guide` "Judge variance and trials"): a failed or unparseable pass is UNSCORED, never a tie.

@@ -16,7 +16,7 @@ Feature code never instantiates provider SDKs. One module owns:
 | Failover policy | Same tier, approved equivalents, availability errors only |
 | Token/cost metering (incl. reasoning and cached tokens) | Budgets and dashboards are only as good as this |
 | Content-capture policy | What prompt/response text may reach traces and logs |
-| Provider allowlist per data class/region | Authorization to read data is not authorization to send it to a provider |
+| Provider allowlist per data class/region | Authorization to read data is not authorization to send it to a provider (egress check before any call: `agentic-llm-routing.md` §3) |
 
 ## 2. Model ids and lifecycle
 
@@ -27,6 +27,7 @@ class ModelSettings(BaseSettings):
     embedding_model: str
 ```
 
+- No floating aliases (`latest`, `default`, auto-upgrade ids) in production unless the alias behaviour is controlled and evaluated (guardrails G11); routing chooses only among approved configurations from a registry, and an unlisted id is rejected, not passed through (G20).
 - No model id literal in code, test assertions (compare with `settings.chat_model`) or CI YAML; one env/config matrix per environment.
 - Before changing a model id: (1) send a probe call to **each environment's real endpoint** next to a model known to work (hosted-API and cloud-platform catalogues and parameter support differ); (2) change config only; (3) run the eval gate; (4) record date and reason. Promotion/rollback: `llmops-release-and-rollout.md`.
 - Keep no price tables in code. Prices change: link the provider pricing page with a "checked on" date, or load prices from config keyed by exact model id; an unknown id logs `cost_unknown_model` and reports cost as unknown, never another model's price.
@@ -121,13 +122,14 @@ Executed: 503 → 429(short) → OK succeeded in 3 sends; `QuotaExhaustedError` 
 | Never on | Refusal/safety, 400, auth, context overflow, schema errors, quota exhaustion | An exception |
 | Side effects | Reuse idempotency keys and already-created entity ids; never replay a successful mutation | Same |
 
-Never fall back silently to a weaker, unevaluated model. Log which model answered (trace attribute + metric). A "cheap first, escalate" cascade is valid only when an objective verifier exists, and not for safety-critical or irreversible capabilities.
+Never fall back silently to a weaker, unevaluated model. If no approved same-tier equivalent answers, the documented conservative fallback is a higher approved tier or the non-AI path, with the degradation visible; never a lower tier (failover order: `agentic-llm-routing.md` §12). For safety-capable paths the fallback config must have passed the same safety gate as the primary; if it has not, degrade to the deterministic/manual flow and say so to the user (guardrails G6). Log which model answered (trace attribute + metric). A "cheap first, escalate" cascade is valid only when an objective verifier exists, and not for safety-critical or irreversible capabilities.
 
 ## 7. Routing between models
 
 - Deterministic policy first (safety phrases, authority questions, obvious routes); an LLM classifier only for ambiguous cases.
 - The classifier gets a minimal sanitized feature set (capability, modality, size bucket, flags), not the raw user message; it has its own short deadline, structured output, and a conservative deterministic fallback route with a `reason_code` when it times out or returns an invalid label.
 - Images/documents: use at least the standard tier until capability-specific evals show a cheaper tier is enough.
+- Tier names (FAST / STANDARD / STRONG), the approved-model registry, the policy gate, the decision record with closed reason codes, and LiteLLM Router settings: `agentic-llm-routing.md` (selection rule, floors, cascades, upgrades and routing telemetry in its §11–§19).
 
 ## 8. Caching and cache-key scoping
 

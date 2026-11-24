@@ -18,4 +18,4 @@ Add a complete feature across the stack:
 5. **Flutter mobile** — model, Riverpod provider, screen, widget tests with `flutter test`; device UI/E2E with Maestro only (missing device → BLOCKED).
 6. **Verify** — `/verify full` for every touched stack; report PASS / FAIL / BLOCKED / NOT RUN per check with its own exit code, then `/review-code`. Do not report the feature done on a FAIL or BLOCKED.
 
-Tool routing: `.claude/rules/testing-tool-selection.md`. Use instead when: `/new-project` — no project exists yet; `/scaffold-genui-feature` — the feature is an agent-rendered (A2UI) surface; `/aidlc` — multi-stage work that needs approval gates.
+Tool routing: `.claude/rules/testing-tool-selection.md`. Use instead when: `/new-project` — no project exists yet; `/scaffold-genui-feature` — the feature is an agent-rendered (A2UI) surface.

@@ -25,4 +25,4 @@ Review and validate a plan before implementation using a structured multi-phase 
 6. Verify the Production Readiness Gate before final approval
 7. Summarize all decisions and next steps
 
-Use instead when: `/brainstorm` — no plan yet, generate ≥3 options; `/exploration` — adversarially stress-test ONE proposed solution; `/aidlc` — run the full adaptive inception → construction → operations lifecycle with an audit log; `/design-architecture` — the plan needs an ADR and contracts first.
+Use instead when: `/brainstorm` — no plan yet, generate ≥3 options; `/exploration` — adversarially stress-test ONE proposed solution; `/design-architecture` — the plan needs an ADR and contracts first.

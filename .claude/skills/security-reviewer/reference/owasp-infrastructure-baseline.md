@@ -4,7 +4,6 @@
 > access logging, IAM, and system-level hardening. For application-layer checks see
 > `security-review-checklist.md`.
 >
-> **Inspired by:** AWS AIDLC security-baseline.md (SECURITY-01 through SECURITY-15)
 > **OWASP mapping:** 2021 edition (A01–A10)
 
 ## How to Use

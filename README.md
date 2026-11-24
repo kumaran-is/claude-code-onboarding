@@ -143,9 +143,7 @@ Clone it, install Claude Code, and start building.
     - [Phase 3: Feature Development](#phase-3-feature-development)
     - [Phase 4: Review \& Enforce Quality](#phase-4-review--enforce-quality)
     - [Phase 5: Evolve Your Setup](#phase-5-evolve-your-setup)
-  - [17a. AI-DLC — Full Development Lifecycle Workflow *(Optional)*](#17a-ai-dlc--full-development-lifecycle-workflow-optional)
-    - [How It Works](#how-it-works)
-    - [How It Fits With This Kit](#how-it-fits-with-this-kit)
+  - [17a. Optional Integration: AWS AI-DLC](#17a-optional-integration-aws-ai-dlc)
   - [18. Security Considerations](#18-security-considerations)
     - [What Goes to Anthropic's API](#what-goes-to-anthropics-api)
     - [MCP Server Credentials](#mcp-server-credentials)
@@ -2977,35 +2975,11 @@ Over time, customize everything based on what you learn.
 
 The setup is a living product. Treat it like code: version-controlled, PR-reviewed, continuously improved.
 
-## 17a. AI-DLC — Full Development Lifecycle Workflow *(Optional)*
+## 17a. Optional Integration: AWS AI-DLC
 
-> **Credit:** Adapted from [awslabs/aidlc-workflows](https://github.com/awslabs/aidlc-workflows) by AWS Labs — an open-source AI-assisted development methodology originally built for Amazon Q Developer, Cursor, Cline, and Kiro IDE.
+This toolkit supplies engineering standards: the skills, agents, rules, hooks and review gates that define how code is designed, written, tested, secured and shipped. [AWS AI-DLC](https://github.com/awslabs/aidlc-workflows) (AI-Driven Development Life Cycle) is a separate open-source project from AWS Labs that provides adaptive workflow steering rules for AI coding agents. Teams can use it for optional lifecycle orchestration across cross-functional builder PODs.
 
-For non-trivial features, `/aidlc` gives Claude a structured, approval-gated development lifecycle instead of jumping straight to code.
-
-```
-> /aidlc
-```
-
-### How It Works
-
-AI-DLC runs three phases — Inception (plan), Construction (build), Operations (future):
-
-**Inception** gathers requirements, writes user stories, and plans which stages to run. **Construction** works through each unit of work: functional design → NFR requirements → infrastructure design → code generation. Every phase ends with an explicit approval gate — Claude won't advance until you confirm.
-
-The workflow is **adaptive**: a simple bug fix skips most stages and goes straight to code. A new multi-service feature runs the full lifecycle. Claude proposes the execution plan at the Workflow Planning gate and you can override any stage.
-
-An append-only `aidlc-docs/audit.md` logs every interaction verbatim with ISO timestamps. `aidlc-docs/aidlc-state.md` tracks stage progress so sessions resume exactly where they left off.
-
-### How It Fits With This Kit
-
-`/aidlc` doesn't replace skills, agents, or rules — it **orchestrates on top of them**. CLAUDE.md project constraints always win. During Construction, the same stack agents and skills this kit ships with are activated per stage — `architect` for design, `security-reviewer` for NFR, the appropriate stack agent (`flutter-mobile`, `nestjs-api`, etc.) for code generation.
-
-Two opt-in extensions ship in `.aidlc-rule-details/extensions/`:
-- **security/baseline** — enforces security constraints at every construction stage
-- **testing/property-based** — adds property-based testing patterns to code generation
-
-Full reference: `docs/workflows/aidlc.md`
+The two can be used together, but this repository does not install, embed or depend on AI-DLC. Install and version it from the official repository, and keep this toolkit's `CLAUDE.md` and `.claude/rules/` as the authority on engineering standards.
 
 ## 18. Security Considerations
 

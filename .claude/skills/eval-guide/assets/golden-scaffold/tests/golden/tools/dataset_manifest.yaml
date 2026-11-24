@@ -1,0 +1,18 @@
+dataset_name: support-tools
+version: 1.0.0
+owner: support-ai-team
+feature: cross-cutting
+dataset_type: tool_contract
+source: expert_authored
+schema_version: "1.0"
+minimum_required_cases: 5
+tags: [tool]
+splits: [ci, nightly, release]
+files:
+  - path: contract_cases.jsonl
+    sha256: "f8f6432e56211099c1ae985ac4b76237b247790323374fca107bebb6029c7ba2"
+    cases: 5
+    case_schema: tool
+review:
+  requires_pr_review: true
+  approvers: [support-ai-team, ai-security-reviewers]

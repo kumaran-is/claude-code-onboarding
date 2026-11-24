@@ -1,0 +1,43 @@
+# R1 path routing (ADAPT paths). A PR touching several paths runs the union of the matched suites.
+schema_version: "1.0"
+always: [critical-security-isolation-compliance, output-schema-validation]
+rules:
+  - name: feature-code
+    paths: ["src/ai/support-answer/**"]
+    suites: [support-answer-critical, cross-cutting-isolation, injection-smoke, support-answer-regressions]
+  - name: tool-server
+    paths: ["src/tools/**"]
+    suites: [tool-contract-auth-security-full]
+  - name: auth-and-scoping
+    paths: ["src/auth/**", "src/**/scoping*.py"]
+    suites: [isolation-full, tool-redteam-full]
+    never_sampled: true
+  - name: prompts                   # owning feature from validate_prompts.py classify; judged part runs in R2
+    paths: ["prompts/**"]
+    suites: [prompt-redteam, prompt-security-cases, prompt-leak-cases, owning-feature-golden, judge-cases-owning-feature]
+  - name: compliance-prompts
+    paths: ["prompts/compliance/**"]
+    suites: [prompt-redteam, judge-cases-owning-feature, compliance-full]
+  - name: retrieval-config          # security playbook 7.3
+    paths: ["src/rag/config/**", "src/rag/ingestion/**", "src/rag/chunking/**"]
+    suites: [rag-leakage-smoke, rag-poisoning-smoke]
+  - name: memory                    # agent memory standard 10
+    paths: ["src/memory/**", "src/**/memory_*.py"]
+    suites: [memory-persistent-injection, cross-cutting-isolation]
+  - name: output-renderers          # security playbook 7.3
+    paths: ["src/renderers/**", "src/ui-schemas/**"]
+    suites: [output-encoding-fuzz, output-schema-validation]
+  - name: model-or-provider-change  # security playbook 7.3: treated as a release
+    paths: ["config/models/**"]
+    suites: [r2-suite-before-merge]
+    never_sampled: true
+  - name: security-golden
+    paths: ["tests/golden/security/**"]
+    suites: [redteam-smoke]
+  - name: data-model
+    paths: ["migrations/**", "src/models/**"]
+    suites: [redteam-full-data-model, db-isolation]
+  - name: generated-ui
+    paths: ["src/genui/**", "prompts/genui/**"]
+    suites: [output-fuzz, output-schema-validation]
+never_on_pr: [full-redteam-corpus, full-scenario-scans, large-rag-leakage-set, full-multi-agent-suite, paid-managed-eval, full-multi-turn-flows]

@@ -1,0 +1,18 @@
+dataset_name: support-regressions
+version: 1.0.0
+owner: support-ai-team
+feature: support-answer
+dataset_type: production_regressions
+source: incident_regression
+schema_version: "1.0"
+minimum_required_cases: 1
+tags: [regression]
+splits: [ci, nightly, release]
+files:
+  - path: INC-2026-001.yaml
+    sha256: "a22508c436bb52e9ba1d5f409fde4b9c73fcf8a56f75b2c0546661520cd4517e"
+    cases: 1
+    case_schema: regression
+review:
+  requires_pr_review: true
+  approvers: [support-ai-team, ai-security-reviewers]

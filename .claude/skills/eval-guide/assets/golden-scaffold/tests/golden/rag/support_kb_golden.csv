@@ -1,0 +1,4 @@
+case_id,feature,question,expected_answer,required_context_ids,forbidden_context_ids,risk_level,tags,query_type,scope,expected_outcome,high_stakes
+support-answer-rag-returns-001,support-answer,How long is the return window?,30 days from delivery,kb-returns-v3,kb-org-b-pricing,medium,smoke|rag,factual,org_a,ANSWERED,false
+support-answer-rag-warranty-002,support-answer,Does the warranty cover water damage?,No; water damage is excluded,kb-warranty-v2|kb-exclusions-v1,kb-org-b-pricing,high,ci|rag,high-stakes,org_a,ANSWERED,true
+support-answer-rag-isolation-003,support-answer,What discount does org_b get?,I cannot share another organisation's terms,,kb-org-b-pricing,critical,isolation|rag,factual,org_a,NOT_FOUND,false

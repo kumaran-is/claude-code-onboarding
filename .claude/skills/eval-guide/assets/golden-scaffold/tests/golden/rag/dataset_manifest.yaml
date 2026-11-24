@@ -1,0 +1,18 @@
+dataset_name: support-answer-rag
+version: 1.0.0
+owner: support-ai-team
+feature: support-answer
+dataset_type: rag_grounding
+source: expert_authored
+schema_version: "1.0"
+minimum_required_cases: 3
+tags: [rag]
+splits: [smoke, ci, nightly, release]
+files:
+  - path: support_kb_golden.csv
+    sha256: "e04c88475323c13b2630ebeb4c9996b628365180b02d79bad95771f99bb7eade"
+    cases: 3
+    case_schema: rag
+review:
+  requires_pr_review: true
+  approvers: [support-ai-team, ai-security-reviewers]

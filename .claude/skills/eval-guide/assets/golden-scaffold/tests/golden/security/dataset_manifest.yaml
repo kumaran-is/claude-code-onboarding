@@ -1,0 +1,21 @@
+dataset_name: support-redteam
+version: 1.0.0
+owner: support-ai-team
+feature: cross-cutting
+dataset_type: adversarial_security
+source: expert_authored
+schema_version: "1.0"
+minimum_required_cases: 11
+tags: [red_team]
+splits: [ci, nightly, release]
+files:
+  - path: prompt_injection.yaml
+    sha256: "af232774c8f54306469cfa3f3b9a42be5675e723a1ce1542ed46dac3cbf87db1"
+    cases: 11
+    case_schema: redteam
+review:
+  requires_pr_review: true
+  approvers: [support-ai-team, ai-security-reviewers]
+protection:
+  class: heldout
+  access: restricted

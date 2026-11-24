@@ -1,0 +1,18 @@
+dataset_name: support-answer-golden
+version: 1.0.0
+owner: support-ai-team
+feature: support-answer
+dataset_type: happy_path_trajectory
+source: expert_authored
+schema_version: "1.0"
+minimum_required_cases: 5
+tags: [trajectory, multi_turn]
+splits: [smoke, ci, nightly, release]
+files:
+  - path: golden.jsonl
+    sha256: "65d8c761c77eaa7a62424964556b1c6906b9ebfaff746d21caefd71fdaf2793f"
+    cases: 5
+    case_schema: trajectory
+review:
+  requires_pr_review: true
+  approvers: [support-ai-team, ai-security-reviewers]

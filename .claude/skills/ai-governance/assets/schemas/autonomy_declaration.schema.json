@@ -1,0 +1,466 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI autonomy declaration and promotion evidence",
+  "description": "Declared autonomy level, quantitative promotion evidence and monitored demotion triggers. Source: ai-governance skill, governance sections 6.2, 6.3, 6.4. Boundary B (template) / C (risk-owner and executive approval). Structural and consistency validation only: a valid record proves neither that a control works nor that anyone adopted or approved it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "schema_version",
+    "record_status",
+    "system_id",
+    "declared_on",
+    "declared_level",
+    "risk_tier",
+    "kill_switch_ref",
+    "human_takeover_ref",
+    "demotion_triggers_monitored",
+    "approvals"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "record_type": {
+      "const": "autonomy_declaration"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_status": {
+      "enum": [
+        "draft",
+        "final",
+        "example"
+      ],
+      "description": "'example' records are rejected unless --allow-examples is passed."
+    },
+    "system_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "declared_on": {
+      "$ref": "#/$defs/date"
+    },
+    "declared_level": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "description": "Autonomy level (governance section 6.2; ai-governance reference/risk-autonomy-oversight.md section 2). Independent of the risk tier."
+    },
+    "previous_level": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "description": "Autonomy level (governance section 6.2; ai-governance reference/risk-autonomy-oversight.md section 2). Independent of the risk tier."
+    },
+    "risk_tier": {
+      "enum": [
+        "Low",
+        "Medium",
+        "High",
+        "Critical"
+      ],
+      "description": "Governance risk tier (governance section 6.1; ai-governance reference/risk-autonomy-oversight.md section 1). Not the engineering tier T0-T3 and not the autonomy level A0-A4."
+    },
+    "kill_switch_ref": {
+      "$ref": "#/$defs/ref"
+    },
+    "human_takeover_ref": {
+      "$ref": "#/$defs/ref"
+    },
+    "quantitative_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_size",
+        "window_days",
+        "success_metric",
+        "success_rate",
+        "confidence_interval",
+        "unauthorized_actions_observed",
+        "unresolved_critical_incidents",
+        "thresholds_source",
+        "evidence_refs"
+      ],
+      "properties": {
+        "sample_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "window_days": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "success_metric": {
+          "enum": [
+            "recommendation_correctness",
+            "correct_proposals",
+            "task_success"
+          ]
+        },
+        "success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_interval": {
+          "type": "object",
+          "required": [
+            "level",
+            "lower",
+            "upper",
+            "method"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 0.999
+            },
+            "lower": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "upper": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "method": {
+              "type": "string",
+              "minLength": 3
+            }
+          }
+        },
+        "unauthorized_actions_observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_critical_incidents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "thresholds_source": {
+          "enum": [
+            "illustrative-default-ADAPT",
+            "risk-owner-approved"
+          ]
+        },
+        "threshold_approved_by": {
+          "$ref": "#/$defs/person"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "additional_criteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zero_unauthorized_actions",
+        "no_unresolved_critical_incidents",
+        "red_team_passed",
+        "tool_authorization_verified",
+        "failure_injection_passed",
+        "recovery_success_threshold_defined",
+        "audit_evidence_reliable",
+        "human_takeover_capability",
+        "business_value_evidence",
+        "sample_size_statistically_justified"
+      ],
+      "properties": {
+        "zero_unauthorized_actions": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "no_unresolved_critical_incidents": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "red_team_passed": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "tool_authorization_verified": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "failure_injection_passed": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "recovery_success_threshold_defined": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "audit_evidence_reliable": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "human_takeover_capability": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "business_value_evidence": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        },
+        "sample_size_statistically_justified": {
+          "type": "object",
+          "required": [
+            "status",
+            "evidence_ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "met",
+                "not_met"
+              ]
+            },
+            "evidence_ref": {
+              "$ref": "#/$defs/ref"
+            }
+          }
+        }
+      }
+    },
+    "demotion_triggers_monitored": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "unauthorized_agent_action",
+          "critical_authorization_bypass",
+          "cross_tenant_data_exposure",
+          "severe_customer_or_financial_harm",
+          "critical_memory_compromise",
+          "significant_uncontained_drift",
+          "missing_audit_evidence",
+          "recovery_control_failure",
+          "unapproved_model_or_tool_change",
+          "kill_switch_or_approval_boundary_failure"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "approvals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "approval_role",
+          "approver",
+          "date"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "approval_role": {
+            "enum": [
+              "owner",
+              "risk_owner",
+              "independent_risk",
+              "independent_assurance",
+              "executive_risk"
+            ]
+          },
+          "approver": {
+            "$ref": "#/$defs/person"
+          },
+          "date": {
+            "$ref": "#/$defs/date"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "person": {
+      "type": "object",
+      "description": "A named individual and their governance role. Placeholders are rejected by the validator.",
+      "required": [
+        "name",
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "role": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "datetime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Evidence location: repo path, URL or record id."
+    }
+  }
+}

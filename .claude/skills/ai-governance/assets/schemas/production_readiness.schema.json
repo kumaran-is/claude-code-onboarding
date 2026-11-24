@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI production readiness checklist",
+  "description": "Mandatory production readiness checklist with evidence per item. A READY verdict is a self-assessment, not an approval. Source: ai-governance skill, governance section 19. Boundary B (template) / C-D (sign-off). Structural and consistency validation only: a valid record proves neither that a control works nor that anyone adopted or approved it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "schema_version",
+    "record_status",
+    "system_id",
+    "assessed_on",
+    "assessed_by",
+    "risk_tier",
+    "autonomy_level",
+    "sections",
+    "verdict",
+    "next_review"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "record_type": {
+      "const": "production_readiness"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_status": {
+      "enum": [
+        "draft",
+        "final",
+        "example"
+      ],
+      "description": "'example' records are rejected unless --allow-examples is passed."
+    },
+    "system_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "assessed_on": {
+      "$ref": "#/$defs/date"
+    },
+    "assessed_by": {
+      "$ref": "#/$defs/person"
+    },
+    "risk_tier": {
+      "enum": [
+        "Low",
+        "Medium",
+        "High",
+        "Critical"
+      ],
+      "description": "Governance risk tier (governance section 6.1; ai-governance reference/risk-autonomy-oversight.md section 1). Not the engineering tier T0-T3 and not the autonomy level A0-A4."
+    },
+    "autonomy_level": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "description": "Autonomy level (governance section 6.2; ai-governance reference/risk-autonomy-oversight.md section 2). Independent of the risk tier."
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy_accountability",
+        "security_data",
+        "model_evaluation",
+        "agentic_ai",
+        "production_operations",
+        "governance_compliance"
+      ],
+      "properties": {
+        "strategy_accountability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "business_owner_assigned",
+            "technical_owner_assigned",
+            "risk_classification_approved",
+            "business_value_baseline_established",
+            "control_owners_named"
+          ],
+          "properties": {
+            "business_owner_assigned": {
+              "$ref": "#/$defs/item"
+            },
+            "technical_owner_assigned": {
+              "$ref": "#/$defs/item"
+            },
+            "risk_classification_approved": {
+              "$ref": "#/$defs/item"
+            },
+            "business_value_baseline_established": {
+              "$ref": "#/$defs/item"
+            },
+            "control_owners_named": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        },
+        "security_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "approved_model_provider",
+            "gateway_enforcement_validated",
+            "tool_authorization_tested",
+            "tenant_isolation_verified",
+            "data_privacy_assessment_completed",
+            "memory_data_lineage_documented",
+            "deletion_tests_passed"
+          ],
+          "properties": {
+            "approved_model_provider": {
+              "$ref": "#/$defs/item"
+            },
+            "gateway_enforcement_validated": {
+              "$ref": "#/$defs/item"
+            },
+            "tool_authorization_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "tenant_isolation_verified": {
+              "$ref": "#/$defs/item"
+            },
+            "data_privacy_assessment_completed": {
+              "$ref": "#/$defs/item"
+            },
+            "memory_data_lineage_documented": {
+              "$ref": "#/$defs/item"
+            },
+            "deletion_tests_passed": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        },
+        "model_evaluation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model_prompt_versions_recorded",
+            "ai_bom_completed",
+            "artifact_integrity_verified",
+            "golden_dataset_evaluated",
+            "protected_canary_evaluated",
+            "safety_tests_passed",
+            "cicd_release_gates_passed",
+            "known_bad_release_exercise_passed"
+          ],
+          "properties": {
+            "model_prompt_versions_recorded": {
+              "$ref": "#/$defs/item"
+            },
+            "ai_bom_completed": {
+              "$ref": "#/$defs/item"
+            },
+            "artifact_integrity_verified": {
+              "$ref": "#/$defs/item"
+            },
+            "golden_dataset_evaluated": {
+              "$ref": "#/$defs/item"
+            },
+            "protected_canary_evaluated": {
+              "$ref": "#/$defs/item"
+            },
+            "safety_tests_passed": {
+              "$ref": "#/$defs/item"
+            },
+            "cicd_release_gates_passed": {
+              "$ref": "#/$defs/item"
+            },
+            "known_bad_release_exercise_passed": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        },
+        "agentic_ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "autonomy_level_approved",
+            "quantitative_gates_satisfied",
+            "state_changing_actions_scoped",
+            "human_approval_tested",
+            "idempotency_implemented",
+            "recovery_compensation_tested",
+            "kill_switch_tested",
+            "cross_agent_trust_validated"
+          ],
+          "properties": {
+            "autonomy_level_approved": {
+              "$ref": "#/$defs/item"
+            },
+            "quantitative_gates_satisfied": {
+              "$ref": "#/$defs/item"
+            },
+            "state_changing_actions_scoped": {
+              "$ref": "#/$defs/item"
+            },
+            "human_approval_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "idempotency_implemented": {
+              "$ref": "#/$defs/item"
+            },
+            "recovery_compensation_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "kill_switch_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "cross_agent_trust_validated": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        },
+        "production_operations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "slos_established",
+            "policy_latency_measured",
+            "observability_enabled",
+            "budget_rate_controls_active",
+            "incident_runbooks_tested",
+            "provider_fallback_assessed",
+            "required_approvals_recorded"
+          ],
+          "properties": {
+            "slos_established": {
+              "$ref": "#/$defs/item"
+            },
+            "policy_latency_measured": {
+              "$ref": "#/$defs/item"
+            },
+            "observability_enabled": {
+              "$ref": "#/$defs/item"
+            },
+            "budget_rate_controls_active": {
+              "$ref": "#/$defs/item"
+            },
+            "incident_runbooks_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "provider_fallback_assessed": {
+              "$ref": "#/$defs/item"
+            },
+            "required_approvals_recorded": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        },
+        "governance_compliance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "regulatory_obligations_mapped",
+            "vendor_review_completed",
+            "evidence_repository_populated",
+            "control_effectiveness_tested",
+            "exceptions_time_bound",
+            "next_review_scheduled"
+          ],
+          "properties": {
+            "regulatory_obligations_mapped": {
+              "$ref": "#/$defs/item"
+            },
+            "vendor_review_completed": {
+              "$ref": "#/$defs/item"
+            },
+            "evidence_repository_populated": {
+              "$ref": "#/$defs/item"
+            },
+            "control_effectiveness_tested": {
+              "$ref": "#/$defs/item"
+            },
+            "exceptions_time_bound": {
+              "$ref": "#/$defs/item"
+            },
+            "next_review_scheduled": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "READY",
+        "NOT_READY"
+      ]
+    },
+    "next_review": {
+      "$ref": "#/$defs/date"
+    }
+  },
+  "$defs": {
+    "person": {
+      "type": "object",
+      "description": "A named individual and their governance role. Placeholders are rejected by the validator.",
+      "required": [
+        "name",
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "role": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "datetime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Evidence location: repo path, URL or record id."
+    },
+    "item": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "done",
+            "not_done",
+            "not_applicable"
+          ]
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "justification": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    }
+  }
+}

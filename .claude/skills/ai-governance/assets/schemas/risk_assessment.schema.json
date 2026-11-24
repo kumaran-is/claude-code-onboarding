@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI system risk assessment",
+  "description": "Risk classification and minimum control posture for one AI system. Source: ai-governance skill, governance sections 2.1, 2.4, 2.5, 6.1, 8.1. Boundary B (template) / C (risk-owner approval). Structural and consistency validation only: a valid record proves neither that a control works nor that anyone adopted or approved it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "schema_version",
+    "record_status",
+    "system_id",
+    "system_name",
+    "assessed_on",
+    "next_reassessment",
+    "owners",
+    "use_case",
+    "risk_tier",
+    "autonomy_level",
+    "factors",
+    "threat_model_ref",
+    "minimum_controls",
+    "independent_review",
+    "approval_status"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "record_type": {
+      "const": "risk_assessment"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_status": {
+      "enum": [
+        "draft",
+        "final",
+        "example"
+      ],
+      "description": "'example' records are rejected unless --allow-examples is passed."
+    },
+    "system_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "system_name": {
+      "type": "string",
+      "minLength": 3
+    },
+    "assessed_on": {
+      "$ref": "#/$defs/date"
+    },
+    "next_reassessment": {
+      "$ref": "#/$defs/date"
+    },
+    "owners": {
+      "type": "object",
+      "required": [
+        "business_owner",
+        "technical_owner",
+        "risk_owner"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "business_owner": {
+          "$ref": "#/$defs/person"
+        },
+        "technical_owner": {
+          "$ref": "#/$defs/person"
+        },
+        "risk_owner": {
+          "$ref": "#/$defs/person"
+        }
+      }
+    },
+    "use_case": {
+      "type": "object",
+      "required": [
+        "problem",
+        "why_ai_over_deterministic",
+        "value_metric",
+        "value_baseline"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "problem": {
+          "type": "string",
+          "minLength": 3
+        },
+        "why_ai_over_deterministic": {
+          "type": "string",
+          "minLength": 3
+        },
+        "value_metric": {
+          "type": "string",
+          "minLength": 3
+        },
+        "value_baseline": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "risk_tier": {
+      "enum": [
+        "Low",
+        "Medium",
+        "High",
+        "Critical"
+      ],
+      "description": "Governance risk tier (governance section 6.1; ai-governance reference/risk-autonomy-oversight.md section 1). Not the engineering tier T0-T3 and not the autonomy level A0-A4."
+    },
+    "autonomy_level": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4"
+      ],
+      "description": "Autonomy level (governance section 6.2; ai-governance reference/risk-autonomy-oversight.md section 2). Independent of the risk tier."
+    },
+    "engineering_risk_tier": {
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "description": "Engineering risk tier from the guardrails standard section 3. Recorded for cross-reference only."
+    },
+    "factors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data_sensitivity",
+        "customer_impact",
+        "likelihood",
+        "severity",
+        "reversibility",
+        "tenancy",
+        "state_changing",
+        "durable_memory",
+        "fine_tuning"
+      ],
+      "properties": {
+        "data_sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "customer_impact": {
+          "enum": [
+            "none",
+            "indirect",
+            "direct"
+          ]
+        },
+        "likelihood": {
+          "enum": [
+            "rare",
+            "unlikely",
+            "possible",
+            "likely",
+            "almost_certain"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "negligible",
+            "minor",
+            "moderate",
+            "major",
+            "severe"
+          ]
+        },
+        "reversibility": {
+          "enum": [
+            "reversible",
+            "compensatable",
+            "irreversible"
+          ]
+        },
+        "tenancy": {
+          "enum": [
+            "single_tenant",
+            "multi_tenant",
+            "cross_product"
+          ]
+        },
+        "state_changing": {
+          "type": "boolean"
+        },
+        "durable_memory": {
+          "type": "boolean"
+        },
+        "fine_tuning": {
+          "type": "boolean"
+        }
+      }
+    },
+    "threat_model_ref": {
+      "$ref": "#/$defs/ref"
+    },
+    "minimum_controls": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3
+      },
+      "minItems": 1
+    },
+    "tenant_isolation_validation_ref": {
+      "$ref": "#/$defs/ref"
+    },
+    "lineage_manifest_ref": {
+      "$ref": "#/$defs/ref"
+    },
+    "independent_review": {
+      "type": "object",
+      "required": [
+        "required"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "reviewer": {
+          "$ref": "#/$defs/person"
+        },
+        "completed_on": {
+          "$ref": "#/$defs/date"
+        },
+        "report_ref": {
+          "$ref": "#/$defs/ref"
+        }
+      }
+    },
+    "risk_acceptance": {
+      "$ref": "#/$defs/exception"
+    },
+    "approval_status": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "approved_by": {
+      "$ref": "#/$defs/person"
+    }
+  },
+  "$defs": {
+    "person": {
+      "type": "object",
+      "description": "A named individual and their governance role. Placeholders are rejected by the validator.",
+      "required": [
+        "name",
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "role": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "datetime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Evidence location: repo path, URL or record id."
+    },
+    "exception": {
+      "type": "object",
+      "description": "Authorized, time-bound risk acceptance or waiver.",
+      "required": [
+        "waiver_id",
+        "approved_by",
+        "expires",
+        "risk_accepted"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "waiver_id": {
+          "type": "string",
+          "minLength": 3
+        },
+        "approved_by": {
+          "$ref": "#/$defs/person"
+        },
+        "expires": {
+          "$ref": "#/$defs/date"
+        },
+        "risk_accepted": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    }
+  }
+}

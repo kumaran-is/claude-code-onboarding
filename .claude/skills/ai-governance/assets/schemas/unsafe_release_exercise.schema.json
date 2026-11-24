@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Forced unsafe release exercise",
+  "description": "One forced unsafe release exercise (ai-governance governance section 10.5, reference/supply-chain-eval-and-release.md section 6): exactly one entry per seeded scenario, each pointing to its control_evidence record. The validator rejects a missing or duplicated scenario, and, when run over the exercise together with its evidence files, rejects an exercise whose evidence is absent, mismatched, not executed, failed or (for verdict passed) mocked. Boundary A (completeness and consistency) / C (declaring the control plane operational is an organisational decision). A valid record does not prove the production controls work.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "schema_version",
+    "record_status",
+    "exercise_id",
+    "system_id",
+    "executed_on",
+    "executed_by",
+    "scenarios",
+    "verdict"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "record_type": {
+      "const": "unsafe_release_exercise"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_status": {
+      "enum": [
+        "draft",
+        "final",
+        "example"
+      ],
+      "description": "'example' records are rejected unless --allow-examples is passed."
+    },
+    "exercise_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "system_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "executed_on": {
+      "$ref": "#/$defs/date"
+    },
+    "executed_by": {
+      "type": "string",
+      "minLength": 3
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "description": "Exactly one entry for each of the 8 section 10.5 scenarios.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "evidence_id"
+        ],
+        "properties": {
+          "scenario": {
+            "enum": [
+              "known_bad_model_output",
+              "unauthorized_tool_access",
+              "cross_tenant_retrieval",
+              "stale_human_approval",
+              "prohibited_sensitive_data_transfer",
+              "duplicate_financial_mutation",
+              "prompt_injection_in_retrieved_content",
+              "invalid_artifact_manifest"
+            ]
+          },
+          "evidence_id": {
+            "type": "string",
+            "minLength": 3,
+            "description": "evidence_id of the control_evidence record (method seeded_unsafe_scenario) for this scenario."
+          }
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "passed",
+        "failed"
+      ],
+      "description": "passed only when every scenario's evidence was executed, not mocked, result pass and observed blocked, quarantined or contained."
+    },
+    "notes": {
+      "type": "string",
+      "minLength": 3
+    }
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    }
+  }
+}

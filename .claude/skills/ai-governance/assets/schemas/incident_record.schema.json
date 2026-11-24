@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI incident record",
+  "description": "AI-specific incident classification, severity factors, containment, recovery verification and closure evidence. Source: ai-governance skill, governance sections 13.1, 13.2, 13.3 and .claude/skills/ai-incident-response/reference/runbook-playbooks.md sections 2, 7, 11, 12. Boundary B (template) / C (incident process, severity policy). Structural and consistency validation only: a valid record proves neither that a control works nor that anyone adopted or approved it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_type",
+    "schema_version",
+    "record_status",
+    "incident_id",
+    "category",
+    "severity",
+    "status",
+    "detected_at",
+    "severity_factors",
+    "affected",
+    "policy_decision",
+    "data_scope",
+    "tenant_scope",
+    "action_history",
+    "customer_impact",
+    "containment_actions"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "record_type": {
+      "const": "incident_record"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "record_status": {
+      "enum": [
+        "draft",
+        "final",
+        "example"
+      ],
+      "description": "'example' records are rejected unless --allow-examples is passed."
+    },
+    "incident_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "category": {
+      "enum": [
+        "AI-SEC",
+        "AI-DATA",
+        "AI-TENANT",
+        "AI-MEM",
+        "AI-ACTION",
+        "AI-EVAL",
+        "AI-PROVIDER",
+        "AI-COST",
+        "AI-OVERSIGHT",
+        "AI-SUPPLY"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "S0",
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "description": "Mapped by the organisation's severity policy from severity_factors. S0 is the most severe. Crosswalk to security_severity: reference/supply-chain-eval-and-release.md section 7.1."
+    },
+    "security_severity": {
+      "enum": [
+        "SEV-1",
+        "SEV-2",
+        "SEV-3",
+        "SEV-4"
+      ],
+      "description": "Optional red-team playbook severity (.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md (SEC section 8.2)). When present it must equal the crosswalk of severity (S0=SEV-1, S1=SEV-2, S2=SEV-3, S3=SEV-4)."
+    },
+    "status": {
+      "enum": [
+        "open",
+        "contained",
+        "resolved",
+        "closed"
+      ]
+    },
+    "detected_at": {
+      "$ref": "#/$defs/datetime"
+    },
+    "contained_at": {
+      "$ref": "#/$defs/datetime"
+    },
+    "severity_factors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actual_impact",
+        "potential_impact",
+        "blocked_by_deterministic_control",
+        "data_sensitivity",
+        "customer_exposure",
+        "financial_impact",
+        "regulatory_consequence",
+        "duration_minutes",
+        "recoverability",
+        "control_failure",
+        "repeated_blocked_attempts"
+      ],
+      "properties": {
+        "actual_impact": {
+          "type": "string",
+          "minLength": 3
+        },
+        "potential_impact": {
+          "type": "string",
+          "minLength": 3
+        },
+        "blocked_by_deterministic_control": {
+          "type": "boolean"
+        },
+        "data_sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "customer_exposure": {
+          "enum": [
+            "none",
+            "internal_only",
+            "limited",
+            "broad"
+          ]
+        },
+        "financial_impact": {
+          "type": "string",
+          "minLength": 3
+        },
+        "regulatory_consequence": {
+          "type": "boolean"
+        },
+        "duration_minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recoverability": {
+          "enum": [
+            "reversible",
+            "compensatable",
+            "irreversible"
+          ]
+        },
+        "control_failure": {
+          "type": "boolean"
+        },
+        "repeated_blocked_attempts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "affected": {
+      "type": "object",
+      "required": [
+        "system_id",
+        "model_or_agent",
+        "model_versions",
+        "tool_versions",
+        "prompt_versions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "system_id": {
+          "type": "string",
+          "minLength": 3
+        },
+        "model_or_agent": {
+          "type": "string",
+          "minLength": 3
+        },
+        "model_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3
+          },
+          "minItems": 1
+        },
+        "tool_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        },
+        "prompt_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        }
+      }
+    },
+    "policy_decision": {
+      "type": "string",
+      "minLength": 3
+    },
+    "data_scope": {
+      "type": "string",
+      "minLength": 3
+    },
+    "tenant_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "action_history": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "customer_impact": {
+      "type": "string",
+      "minLength": 3
+    },
+    "containment_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "recovery_outcome": {
+      "type": "string",
+      "minLength": 3
+    },
+    "root_cause": {
+      "type": "string",
+      "minLength": 3
+    },
+    "corrective_actions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "preventive_test_cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "incident_types": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "I1",
+          "I2",
+          "I3",
+          "I4",
+          "I5",
+          "I6",
+          "I7",
+          "I8",
+          "I9",
+          "I10",
+          "I11"
+        ]
+      },
+      "description": "Runbook incident types and playbooks I1-I11 (.claude/skills/ai-incident-response/reference/runbook-playbooks.md (IR section 2), section 8). One incident may span several: run every matching playbook and take the highest severity. Required once resolved or closed."
+    },
+    "containment_levers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/lever_pull"
+      },
+      "description": "Every containment-ladder lever pulled (runbook section 7): who, when, rung, scope, reason. Required (at least one) once resolved or closed; at closure each lever is restored or deliberately left in place with an owner and review date (section 12)."
+    },
+    "recovery_verification": {
+      "$ref": "#/$defs/recovery_verification"
+    },
+    "regression_case": {
+      "$ref": "#/$defs/regression_case"
+    },
+    "postmortem_ref": {
+      "$ref": "#/$defs/ref"
+    }
+  },
+  "$defs": {
+    "person": {
+      "type": "object",
+      "description": "A named individual and their governance role. Placeholders are rejected by the validator.",
+      "required": [
+        "name",
+        "role"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 2
+        },
+        "role": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "datetime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "ref": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Evidence location: repo path, URL or record id."
+    },
+    "verification_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result"
+      ],
+      "description": "pass needs evidence; not_applicable needs reason; fail blocks resolved/closed.",
+      "properties": {
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_applicable"
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/ref"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "recovery_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fix_merged_via_pipeline",
+        "r1_gates_green",
+        "r2_suite_green",
+        "regression_fail_before_pass_after",
+        "canaries_clean",
+        "online_eval_within_tolerance",
+        "metrics_at_baseline",
+        "progressive_reenable",
+        "owner_and_engaged_approvals",
+        "degraded_messaging_removed"
+      ],
+      "description": "Runbook section 11 checklist: every applicable check must pass before a containment rung is lowered and before the incident is resolved.",
+      "properties": {
+        "fix_merged_via_pipeline": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "r1_gates_green": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "r2_suite_green": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "regression_fail_before_pass_after": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "canaries_clean": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "online_eval_within_tolerance": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "metrics_at_baseline": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "progressive_reenable": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "owner_and_engaged_approvals": {
+          "$ref": "#/$defs/verification_check"
+        },
+        "degraded_messaging_removed": {
+          "$ref": "#/$defs/verification_check"
+        }
+      }
+    },
+    "lever_pull": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lever",
+        "scope",
+        "pulled_at",
+        "pulled_by",
+        "reason"
+      ],
+      "properties": {
+        "lever": {
+          "enum": [
+            "capability_flag",
+            "prompt_label_rollback",
+            "model_pin",
+            "tool_disable",
+            "platform_kill_switch",
+            "supplementary"
+          ],
+          "description": "Rungs 1-5 of the containment ladder in order, or a supplementary lever (rate limit, budget cut, corpus quarantine, cache purge, credential rotation, approved fallback)."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 3
+        },
+        "pulled_at": {
+          "$ref": "#/$defs/datetime"
+        },
+        "pulled_by": {
+          "$ref": "#/$defs/person"
+        },
+        "authorized_by": {
+          "$ref": "#/$defs/person",
+          "description": "Incident commander or documented delegate; required for tool_disable and platform_kill_switch (runbook section 5)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 3
+        },
+        "restored_at": {
+          "$ref": "#/$defs/datetime"
+        },
+        "left_in_place": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "owner",
+            "review_date"
+          ],
+          "properties": {
+            "owner": {
+              "$ref": "#/$defs/person"
+            },
+            "review_date": {
+              "$ref": "#/$defs/date"
+            }
+          }
+        }
+      }
+    },
+    "regression_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "description": "Closure evidence (runbook section 12; eval-guide regression_case.schema.json; regression forever GD021). regression_file: the production_regressions/INC-YYYY-NNN.yaml that failed before and passes after the fix. monitored_detector: only when the case cannot be reproduced deterministically, with a reason and owner sign-off.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "regression_file",
+            "monitored_detector"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "regression_incident_id": {
+          "type": "string",
+          "pattern": "^INC-[0-9]{4}-[0-9]{3,}$"
+        },
+        "pre_fix_run_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "post_fix_run_id": {
+          "$ref": "#/$defs/ref"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 3
+        },
+        "signed_off_by": {
+          "$ref": "#/$defs/person"
+        }
+      }
+    }
+  }
+}

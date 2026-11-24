@@ -1,0 +1,2 @@
+# Allowed `domain` segments for prompt names (PRM section 7, reference/promptops-lifecycle.md section 13; ADAPT: publish your own list).
+allowed_domains: [support, finance, hr, search, it]

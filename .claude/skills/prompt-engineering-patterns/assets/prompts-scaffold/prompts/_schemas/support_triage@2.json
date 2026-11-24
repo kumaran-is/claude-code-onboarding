@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "support_triage v2 (exported from the code-side type; do not hand-edit)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "category", "priority", "reason"],
+  "properties": {
+    "status": {"enum": ["OK", "UNKNOWN", "CONFLICTED", "ESCALATE", "REFUSED"]},
+    "category": {"enum": ["billing", "access", "bug", "other", "none"]},
+    "priority": {"enum": ["LOW", "MEDIUM", "HIGH", "none"]},
+    "reason": {"type": "string", "maxLength": 300}
+  }
+}

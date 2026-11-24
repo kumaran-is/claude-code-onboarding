@@ -95,13 +95,16 @@ class DynamicFewShotSelector:
         results = self.store.similarity_search(query, k=self.k)
         return [doc.metadata for doc in results]
 
-    def build_prompt(self, query: str, task_instruction: str) -> str:
+    def build_prompt(self, query: str, task_instruction: str) -> tuple[str, list[str]]:
         examples = self.select(query)
         example_block = "\n\n".join(
             f"Input: {ex['input']}\nOutput: {ex['output']}"
             for ex in examples
         )
-        return f"{task_instruction}\n\nExamples:\n{example_block}\n\nInput: {query}\nOutput:"
+        # the query is untrusted: render it inside a delimited slot with the section 11 renderer
+        # (prompt-templates.md section 2), never in an f-string; return the ids so the caller logs them
+        template = f"{task_instruction}\n\nExamples:\n{example_block}\n\n<user_input>\n{{{{query}}}}\n</user_input>"
+        return template, [ex["id"] for ex in examples]
 
 
 # Usage in LangGraph node
@@ -112,13 +115,17 @@ selector = DynamicFewShotSelector(
 )
 
 def dynamic_few_shot_node(state: AgentState) -> AgentState:
-    prompt = selector.build_prompt(
+    template, example_ids = selector.build_prompt(
         query=state["input"],
         task_instruction="Convert natural language to SQL. Think through the table and filter logic."
     )
+    prompt = render(template, QUERY_SPECS, {"query": state["input"]}, frozenset({"user_input"}))
+    logger.info("few_shot_selected", extra={"example_ids": example_ids})
     response = llm.invoke(prompt)
     return {"sql": response.content}
 ```
+
+The example bank behind a dynamic selector is a governed corpus (G15): same review rules as inline examples, versioned with the prompt, and the selection is logged so an output can be traced to the examples that steered it.
 
 ---
 
@@ -180,6 +187,26 @@ EDGE_CASE_EXAMPLES = [
 |---------|--------|-----|
 | Too many examples (>5 for simple tasks) | Token waste, dilutes attention | Use 2-3 high-quality examples |
 | Inconsistent example format | Model copies inconsistency | Enforce identical structure |
-| Examples don't cover the actual input distribution | Poor generalization | Sample examples from real data |
+| Examples don't cover the actual input distribution | Poor generalization | Write synthetic or sanitized examples that mirror the real distribution; never copy production data |
 | Examples too similar to each other | Poor coverage | Ensure diversity (use clustering) |
 | Forgetting edge cases | Failures on boundary inputs | Always include 1 edge case |
+
+---
+
+## Governance (PRM §5)
+
+Examples are the strongest steering signal in a prompt and the easiest place to leak data or encode bias.
+
+| Rule | Requirement | Enforced by |
+|---|---|---|
+| Source | Synthetic or sanitized (eval strategy §7.11); never raw production data or real PII | `validate_prompts.py`: `PC_EXAMPLE_PII` (BLOCK), `PC_EXAMPLE_PROVENANCE` (REVIEW) |
+| Location | In Git with the prompt (inline `examples:` in the card or `examples/`), versioned with it | Card schema |
+| Coverage | At least one edge case and one uncertain/escalate example | `PC_EXAMPLE_COVERAGE` (REVIEW) |
+| Balance | Label distribution does not bias output toward one class unless intended and documented | Review (§19 checklist) |
+| Consistency | Every example validates against the current output schema | `PC_EXAMPLE_SCHEMA` (BLOCK) with the exported schema in `prompts/_schemas/` |
+| Separation | Examples are never eval cases; overlap overstates quality | `PC_EXAMPLE_EVAL_OVERLAP` (BLOCK, `--golden-root`) |
+| Fairness | No association of protected attributes or proxies with outcomes (G19) | Review + bias evals (§15 "few-shot examples changed") |
+| Review | Adding, changing or removing an example is a prompt change | `validate_prompts.py classify` -> `few_shot_examples` |
+| Dynamic selection | Example store is a governed corpus (G15); selection logged | Code review |
+| Languages | Examples cover each supported language, or the card documents why not (§12) | `PC_EXAMPLE_LANGUAGES` (ADVISORY) |
+

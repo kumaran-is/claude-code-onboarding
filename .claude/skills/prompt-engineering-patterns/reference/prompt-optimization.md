@@ -111,7 +111,7 @@ Output: Issues (severity, line, description), Fixes (code diff)"""
 
 ## Prompt Versioning
 
-Treat prompts as code: version, changelog, eval before promotion, rollback. The canonical registry pattern (versions, labels, promotion gate, rollback) is `eval-guide/reference/langfuse-prompts.md`; release and rollout rules are in `deployment-ci-cd/reference/llmops-release-and-rollout.md`. Do not build a second file-based registry. Log the prompt version id with every model call so traces and evals can be joined.
+Treat prompts as code: version, changelog, eval before promotion, rollback. Lifecycle (Git → registry → runtime, labels, promotion, drift, retirement): `promptops-lifecycle.md`. The runtime wrapper: `../assets/prompts-scaffold/promptops/prompt_registry.py` (Langfuse usage: `eval-guide/reference/langfuse-prompts.md`). Release and rollout: `deployment-ci-cd/reference/llmops-release-and-rollout.md`. Do not build another registry wrapper. Every model call records `prompt_name`, `prompt_version`, `prompt_label` and `prompt_content_hash` so traces and evals can be joined (`promptops-lifecycle.md` §5).
 
 ## Production Metrics to Track
 
@@ -158,22 +158,58 @@ Before optimizing a prompt, identify the failure pattern:
 
 ---
 
-## Pre-Production Prompt Audit Checklist
+## Length and Cost Budgets (PRM §14, ADAPT values)
 
-Before using a prompt in production, verify all items:
+| Budget | Where it is set | Enforcement |
+|---|---|---|
+| Static prompt size (role + task + constraints + examples) | `token_budget.static_max` on the card | `validate_prompts.py` `PC_BUDGET_STATIC` (BLOCK). Uses a chars/4 approximation: swap in the pinned model's tokenizer for exact counts |
+| Max rendered input | `token_budget.input_max` | Renderer rejects or truncates per variable `max_chars`; `PC_BUDGET_INPUT` (REVIEW) when the worst case exceeds it |
+| Max output | `model.params.max_output_tokens` ≤ `token_budget.output_max` | `PC_BUDGET_OUTPUT` (BLOCK) |
+| Retrieved context | `<k>` chunks / `<n>` tokens | Retrieval layer (`rag-architect`) |
+| Cost per call (p95) | `<$>` | Dashboard + alert (`deployment-ci-cd/reference/ai-observability.md`) |
+
+A static-size increase above `<x>%` needs an eval showing the quality gain pays for the cost. Measure the provider cache hit rate (`cached_tokens` on the span) rather than assuming the cache works.
+
+---
+
+## Prompt Review Checklist (PRM §19, PR gate for `prompts/**`)
+
+The prompt owner (or backup) approves; T2/T3 safety-relevant changes also need an independent reviewer. Items marked `[auto]` are checked by `scripts/validate_prompts.py`. Every other item is reviewer judgement.
 
 ```
-□ Role/persona explicitly defined (who the LLM IS in this interaction)
-□ Output format explicitly specified (JSON schema / markdown structure / plain prose)
-□ Length constraint present for responses that should be concise
-□ Hallucination guard present for factual tasks ("say I don't know if unsure")
-□ Edge cases tested: empty input, ambiguous data, out-of-domain question
-□ Tested on 5+ varied real inputs (not just happy path)
-□ Temperature set appropriately: 0.0-0.3 for factual/structured, 0.7 for creative
-□ Negative instructions paired with positive alternatives ("don't be verbose" → "respond in 3 bullets")
-□ User input uses delimiters (```, <tags>, ---) to separate from instructions
-□ Prompt versioned in source control with change log entry
+Structure
+□ [auto] Name follows {domain}.{feature}.{task}.{type}; path mirrors the name
+□ [auto] Six-part anatomy in order; one task per prompt (one task: reviewer)
+□ [auto] Uncertainty contract stated (UNKNOWN / CONFLICTED / STALE / ESCALATE)
+□ [auto] Prompt card complete: owner, risk tier, model pin, schema, variables, languages, eval sets, budget
+
+Security
+□ [auto] Every untrusted slot delimited and labelled; [auto] escaping is the renderer's job (prompt-templates.md §2)
+□ [auto] Constraints say untrusted content is data; critical rules restated after long context (restating: reviewer)
+□ [auto] No secrets in text or examples; no internal access details or other-scope data
+□ No security, authorization or business rule enforced only by the prompt
+□ Tool list is least-privilege for this task
+
+Output
+□ Output schema referenced from the single code-side definition; version bumped if changed
+□ Code validates the output; failure path is defined
+
+Examples
+□ [auto] Examples synthetic or sanitized; validate against current schema; not overlapping eval sets (overlap needs --golden-root)
+□ [auto] Includes edge and escalation examples; no biased associations (bias: reviewer)
+
+Data
+□ Variables minimized; PII classes declared; egress classes respected
+
+Quality and release
+□ Required evals for this change type ran (`validate_prompts.py classify`); results and eval_run_id linked
+□ No regression on critical / safety / isolation cases vs baseline
+□ [auto] Token budget respected; cost/latency impact stated
+□ [auto, on diff] Changelog entry added
+□ Model change? Full re-eval done and fallback binding re-evaluated
+□ Rollback target (previous version) identified
 ```
 
-**LangGraph:** Put this checklist in a PR description whenever `SystemMessage` content changes.
-**Google ADK:** Run this checklist whenever `LlmAgent(instruction=...)` is modified.
+Generation parameters are part of the model binding: set them on the card (`model.params`), and treat a change as a model change (full re-eval, `promptops-lifecycle.md` §6). Typical starting points: temperature 0–0.3 for extraction and classification, higher only for open-ended text, then confirm with evals.
+
+**LangGraph and Google ADK:** paste this checklist into the PR description whenever a prompt card, `SystemMessage` content or `LlmAgent(static_instruction=..., instruction=...)` changes.

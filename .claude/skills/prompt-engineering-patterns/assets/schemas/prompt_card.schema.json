@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prompt_card.schema.json",
+  "title": "Prompt card (prompt file + metadata)",
+  "description": "One prompt file in Git: prompts/<domain>/<feature>/<task>.<type>.yaml. Required fields follow PRM section 8 (reference/promptops-lifecycle.md section 13); cross-field rules (path, variables, delimiters, secrets, budgets) are enforced by scripts/validate_prompts.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "owner", "backup_owner", "risk_tier", "purpose", "model", "output_schema",
+               "variables", "languages", "eval_sets", "thresholds_ref", "token_budget", "data_classes_allowed",
+               "changelog", "template"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "{domain}.{feature}.{task}.{type}: four lowercase snake_case segments.",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*\\.(system|user|tool|judge|examples|correction)$"
+    },
+    "description": {"type": "string", "minLength": 10},
+    "owner": {"type": "string", "minLength": 2, "description": "A named individual, not a role."},
+    "backup_owner": {"type": "string", "minLength": 2},
+    "risk_tier": {"enum": ["T0", "T1", "T2", "T3"], "description": "Engineering risk tier (guardrails section 3). Not an autonomy level."},
+    "purpose": {"type": "string", "minLength": 10},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "version", "params"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1, "not": {"pattern": "(?i)(^|[-_.:/])(latest|default|auto|stable)$"}},
+        "version": {"type": "string", "minLength": 1, "not": {"pattern": "(?i)^(latest|default|auto|stable|current|\\*)$"}},
+        "params": {
+          "type": "object",
+          "required": ["temperature", "max_output_tokens"],
+          "properties": {
+            "temperature": {"type": "number", "minimum": 0},
+            "max_output_tokens": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "output_schema": {
+      "type": "string",
+      "description": "<schema_name>@<schema_version>; the code-side type is the single definition.",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]*@[0-9]+(\\.[0-9]+){0,2}$"
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "trust", "pii"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "trust": {"enum": ["trusted", "untrusted"]},
+          "type": {"enum": ["string", "integer", "number", "boolean", "string_list"], "default": "string"},
+          "max_chars": {"type": "integer", "minimum": 1},
+          "on_overflow": {"enum": ["reject", "truncate"], "default": "reject"},
+          "pii": {"enum": ["none", "allowed_minimized", "tokenized"]},
+          "source": {"enum": ["user", "retrieval", "tool", "sub_agent", "canonical_state", "config"]}
+        },
+        "if": {"properties": {"trust": {"const": "untrusted"}}},
+        "then": {"required": ["max_chars"]}
+      }
+    },
+    "tools": {
+      "type": "array",
+      "description": "Tool names this prompt may describe or call; least privilege for the task.",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "languages": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"}, "uniqueItems": true},
+    "eval_sets": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[A-Za-z0-9_./-]+@[0-9]+(\\.[0-9]+){0,2}$"}},
+    "thresholds_ref": {"type": "string", "minLength": 1},
+    "token_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_max", "output_max"],
+      "properties": {
+        "static_max": {"type": "integer", "minimum": 1, "description": "Role + task + constraints + examples, before variables (ADAPT)."},
+        "input_max": {"type": "integer", "minimum": 1},
+        "output_max": {"type": "integer", "minimum": 1}
+      }
+    },
+    "data_classes_allowed": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "input", "output"],
+        "properties": {
+          "kind": {"enum": ["happy", "edge", "escalate", "uncertain", "refuse"]},
+          "language": {"type": "string"},
+          "input": {"type": "string", "minLength": 1},
+          "output": {},
+          "provenance": {"enum": ["synthetic", "sanitized"]}
+        }
+      }
+    },
+    "feature_flag": {"type": "string", "description": "Flag gating a new T2/T3 prompt; defaults OFF."},
+    "deprecated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date"],
+      "properties": {"date": {"type": "string", "format": "date"}, "replaced_by": {"type": "string"}}
+    },
+    "changelog": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "date", "author", "change", "eval_run"],
+        "properties": {
+          "version": {"type": "integer", "minimum": 1},
+          "date": {"type": "string", "format": "date"},
+          "author": {"type": "string", "minLength": 2},
+          "change": {"type": "string", "minLength": 3},
+          "eval_run": {"type": "string", "minLength": 1},
+          "content_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "template": {"type": "string", "minLength": 20}
+  }
+}

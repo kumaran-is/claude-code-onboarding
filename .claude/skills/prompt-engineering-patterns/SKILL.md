@@ -1,20 +1,20 @@
 ---
 name: prompt-engineering-patterns
-description: "Advanced prompt engineering for production LLM applications with LangGraph and Google ADK. Covers few-shot learning, chain-of-thought, Tree-of-Thought, self-consistency, system prompt design, prompt optimization, and reusable templates. Use when designing agent system prompts, implementing structured reasoning, optimizing LLM outputs, or debugging inconsistent model responses."
+description: "Prompt engineering and PromptOps for production LLM applications (LangGraph, Google ADK, any stack): six-part prompt anatomy, untrusted-content delimiting, safe rendering, few-shot governance, prompt cards in Git with a validator, change-to-eval matrix, registry labels, drift detection, review checklist; plus few-shot, chain-of-thought and optimization techniques. Use when writing, reviewing, versioning, promoting or debugging prompts or agent instructions."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: prompt engineering, few-shot, chain of thought, tree of thought, self-consistency, system prompt design, prompt optimization, prompt template, CoT, ToT, LLM prompting, agent instruction, structured reasoning, prompt debugging, prompt versioning
-  related-skills: agentic-ai-dev, google-adk, agentic-ai-coding-standard, gemini-api-dev
+  triggers: prompt engineering, PromptOps, prompt card, prompt registry, prompt label, prompt drift, prompt review, prompt injection delimiting, few-shot, chain of thought, tree of thought, self-consistency, system prompt design, prompt optimization, prompt template, CoT, ToT, agent instruction, prompt versioning, prompt rollback
+  related-skills: agentic-ai-dev, google-adk, agentic-ai-coding-standard, gemini-api-dev, eval-guide, ai-playbook
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
 
-**NO SYSTEM PROMPT WITHOUT ROLE + TASK + OUTPUT FORMAT — vague system prompts produce inconsistent LLM outputs and degrade agent reliability in both LangGraph and ADK. Every agent instruction must state what the agent IS, what it DOES, and what format it RETURNS.**
+**NO PROMPT WITHOUT ROLE + TASK + UNCERTAINTY CONTRACT + OUTPUT SCHEMA, AND NO UNTRUSTED TEXT OUTSIDE A DELIMITED CONTEXT SLOT. Prompts guide; code enforces: authorization, isolation, limits and output validation are never left to prompt wording. A prompt change, a model change or an example change is a release: it needs the evals its change class requires before any label moves.**
 
 # Prompt Engineering Patterns — LangGraph + Google ADK
 
@@ -27,6 +27,7 @@ last-reviewed: "2026-03-15"
 - Need to explore multiple solution paths — apply Tree-of-Thought
 - Reducing prompt token cost while keeping quality — prompt optimization
 - Building reusable, testable prompt templates
+- Moving prompts into Git prompt cards, reviewing a prompt PR, promoting or rolling back a prompt, checking Git/registry/runtime drift
 
 ## Framework Decision Tree
 
@@ -78,6 +79,29 @@ Static, trusted policy first; variable, untrusted data last:
 
 **Caching.** Provider prompt caches match on an identical prefix. Keep the static block byte-identical (no timestamps, request ids or user names in it) and put per-request content after it; check the provider's minimum cacheable length and pricing on its docs page.
 
+## PromptOps in One Screen (PRM §1; requirement map: `reference/promptops-lifecycle.md` §13)
+
+| Principle | Rule | Where |
+|---|---|---|
+| P1/P2 Prompts are code; Git is the source of truth | One prompt card per file: `prompts/<domain>/<feature>/<task>.<type>.yaml`, named `{domain}.{feature}.{task}.{type}` | `reference/prompt-templates.md` §1, `assets/` |
+| P3 Prompts guide, code enforces | Authz, tenant isolation, limits, compliance filters, tool allowlists live in code | `reference/system-prompts.md` |
+| P4 Untrusted content is data | Named delimiters, escaped by the renderer, only in `[CONTEXT]`, never in the system message | `reference/prompt-templates.md` §2–§4 |
+| P5 Structured in, validated out | Provider structured output + code-side validation against one schema definition | `reference/prompt-library-structured-output.md` |
+| P6 Pinned, never `latest` | Fetch by label from config; pin provider, model, version on the card | `reference/promptops-lifecycle.md` §1 |
+| P7 No eval, no promotion | `validate_prompts.py classify` lists the §15 evals a diff needs | `reference/promptops-lifecycle.md` §3 |
+| P8 Fail closed, degrade visibly | Missing prompt raises; cached and emergency tiers are alerted | `assets/prompts-scaffold/promptops/prompt_registry.py` (runtime: label, model binding, safe render, eval-gated promotion) |
+| P9 Minimum data in context | Declared, typed, bounded variables; no secrets; PII minimised | `reference/prompt-templates.md` §2 |
+| P10 Every call attributable | `prompt_name`, `prompt_version`, `prompt_label`, `prompt_content_hash` on every span | `reference/promptops-lifecycle.md` §5 |
+
+```bash
+S=.claude/skills/prompt-engineering-patterns/scripts
+uv run --script $S/validate_prompts.py prompts --golden-root tests/golden --json prompt-report.json   # PR gate
+uv run --script $S/validate_prompts.py classify --base-root base/prompts prompts --json changes.json  # which evals
+uv run --script $S/prompt_drift.py --prompts-root prompts --registry snapshot.json --mode prerelease  # release gate
+```
+
+The scripts prove structure, delimiting and drift. They cannot prove behaviour: evals do (`eval-guide`).
+
 ## Quick Examples
 
 ### LangGraph — CoT Node
@@ -128,9 +152,10 @@ Output format: structured analysis with sections for Understanding, Options, Dec
 |------|---------|--------------|
 | `reference/chain-of-thought.md` | CoT, ToT, Self-Consistency patterns with LangGraph + ADK code | Complex reasoning, multi-step tasks |
 | `reference/few-shot-learning.md` | Example selection, dynamic retrieval, edge cases — LangGraph + ADK | Inconsistent output format, classification tasks |
-| `reference/prompt-optimization.md` | Optimization loop, token reduction, metrics (A/B statistics: `llm-evaluation`; versioning: `eval-guide`) | Reducing cost, improving consistency |
+| `reference/prompt-optimization.md` | Optimization loop, token reduction, length/cost budgets, the prompt PR review checklist (A/B statistics: `llm-evaluation`) | Reducing cost; reviewing a prompt PR |
 | `reference/system-prompts.md` | Role definition, constraints, output format — LangGraph + ADK | Designing new agent system prompts |
-| `reference/prompt-templates.md` | Reusable templates, variable interpolation, multi-turn — LangGraph + ADK | Building template systems |
+| `reference/prompt-templates.md` | Prompt cards, the §11 safe renderer, LangGraph and ADK wiring (`static_instruction` + `InstructionProvider`), per-thread history | Building or rendering any prompt |
+| `reference/promptops-lifecycle.md` | Git → registry → runtime, labels, promotion, rollback, retirement, change → eval matrix, security suite, drift, attribution, multilingual, portability, ownership, anti-patterns, adoption checklist, command map | Versioning, promoting, reviewing or auditing prompts |
 | `reference/prompt-template-library.md` | Index of the 15 copy-paste templates below | Finding a starting template fast |
 | `reference/prompt-library-structured-output.md` | Code review, classification, extraction, sentiment, schema-error explainer, injection detector — Pydantic schema + validation | Output that code consumes |
 | `reference/prompt-library-code-and-grounding.md` | SQL generation, RAG answer, test generation, error analysis — inputs delimited as data | Generating code or grounded answers |
@@ -141,4 +166,5 @@ Output format: structured analysis with sections for Understanding, Options, Dec
 After writing prompts or agent instructions, verify:
 - `agentic-ai-reviewer` — graph correctness, system prompt quality in LangGraph agents; `adk-reviewer` for ADK agents
 - `ai-security-reviewer` — prompt injection defense, trust levels, no sensitive data in prompts
-- Prompt changes are releases: run the eval suite before promoting (`eval-guide` skill)
+- `scripts/validate_prompts.py` on `prompts/` (exit 0), then the evals `classify` lists; the review checklist in `reference/prompt-optimization.md`
+- Prompt changes are releases: labels move only after those evals pass (`reference/promptops-lifecycle.md`)

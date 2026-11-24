@@ -1,6 +1,6 @@
 ---
 name: postgresql-database-reviewer
-description: PostgreSQL database specialist for query optimization, schema design, security, and performance. Use PROACTIVELY when writing SQL, creating migrations, designing schemas, or troubleshooting database performance. Examples:\n\n<example>\nContext: A new migration (Alembic, Flyway or Prisma) was written adding tables with foreign keys and indexes.\nUser: "Review this database migration before we run it on staging."\nAssistant: "I'll use the postgresql-database-reviewer agent to check index coverage, constraint correctness, query plan implications, and migration safety."\n</example>
+description: PostgreSQL database specialist for query optimization, schema design, security, and performance. Use PROACTIVELY when writing SQL, creating migrations, designing schemas, or troubleshooting database performance.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit
 model: opus
@@ -53,3 +53,11 @@ If a referenced file cannot be read, report the missing file and continue with a
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new migration (Alembic, Flyway or Prisma) was written adding tables with foreign keys and indexes.
+User: "Review this database migration before we run it on staging."
+Assistant: "I'll use the postgresql-database-reviewer agent to check index coverage, constraint correctness, query plan implications, and migration safety."
+</example>

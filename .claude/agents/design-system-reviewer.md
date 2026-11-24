@@ -1,6 +1,6 @@
 ---
 name: design-system-reviewer
-description: Specialist reviewer for changes that touch shared UI component libraries (Flutter or Angular). Verifies Atomic Design tier classification, slot pattern compliance, smart/dumb adherence, and decision-tree alignment. Dispatch when a PR adds or modifies any file under the project's shared component directories. Not for tokens/theming across all UI (ui-standards-expert) or WCAG checks (accessibility-auditor). Examples:\n\n<example>\nContext: A new shared Flutter component was added to the shared_ui package.\nUser: "I added a Snackbar component — review the design system compliance."\nAssistant: "I'll dispatch the design-system-reviewer to verify the // Tier: comment, classification correctness, slot pattern, and dumb-rule adherence."\n</example>\n\n<example>\nContext: A new Angular component was added to the shared-ui library.\nUser: "Review the new modal component I just added to shared-ui."\nAssistant: "I'll use design-system-reviewer to verify // Tier: comment placement, inject() count, and tier-vs-composition match."\n</example>
+description: Specialist reviewer for changes that touch shared UI component libraries (Flutter or Angular). Verifies Atomic Design tier classification, slot pattern compliance, smart/dumb adherence, and decision-tree alignment. Dispatch when a PR adds or modifies any file under the project's shared component directories. Not for tokens/theming across all UI (ui-standards-expert) or WCAG checks (accessibility-auditor).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: sonnet
@@ -112,3 +112,17 @@ Do not claim a test, eval or runtime check passed unless you executed it in this
 - **APPROVE** — zero HIGH, zero MEDIUM Gate-2/Gate-6 violations
 - **NEEDS_REVIEW** — only LOW or non-blocking MEDIUM findings; document exceptions in PR description
 - **BLOCK** — any HIGH, or MEDIUM mismatch where Atom-labeled-as-Organism (or vice versa)
+
+## Dispatch examples
+
+<example>
+Context: A new shared Flutter component was added to the shared_ui package.
+User: "I added a Snackbar component — review the design system compliance."
+Assistant: "I'll dispatch the design-system-reviewer to verify the // Tier: comment, classification correctness, slot pattern, and dumb-rule adherence."
+</example>
+
+<example>
+Context: A new Angular component was added to the shared-ui library.
+User: "Review the new modal component I just added to shared-ui."
+Assistant: "I'll use design-system-reviewer to verify // Tier: comment placement, inject() count, and tier-vs-composition match."
+</example>

@@ -1,6 +1,6 @@
 ---
 name: python-dev
-description: Expert Python 3.14 developer. Use for creating Python APIs (FastAPI/Flask), scripts, data processing, automation, testing, and package management. Examples:\n\n<example>\nContext: A new async endpoint is needed in the FastAPI service for PDF document processing.\nUser: "Build a FastAPI endpoint that extracts text from uploaded PDFs."\nAssistant: "I'll use the python-dev agent to implement the async endpoint with Pydantic validation, error handling, and pytest tests."\n</example>
+description: Expert Python 3.14 developer. Use for creating Python APIs (FastAPI/Flask), scripts, data processing, automation, testing, and package management.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -55,3 +55,11 @@ Verified stack (pin these unless the project's lockfile says otherwise): FastAPI
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy --strict src tests` and `uv run pytest --cov` each exit 0; report each command with its own exit code (`cmd; echo $?`, never through a pipe).
 - New endpoints have a happy-path test and the 401 / 403 / 404 (foreign object) / 422 cases; a key test is shown to fail when its safeguard is removed.
 - Review with `python-reviewer` (APIs) or `python-worker-reviewer` (background workers). LangChain/LangGraph code belongs to `agentic-ai-dev`.
+
+## Dispatch examples
+
+<example>
+Context: A new async endpoint is needed in the FastAPI service for PDF document processing.
+User: "Build a FastAPI endpoint that extracts text from uploaded PDFs."
+Assistant: "I'll use the python-dev agent to implement the async endpoint with Pydantic validation, error handling, and pytest tests."
+</example>

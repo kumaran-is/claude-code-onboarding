@@ -1,6 +1,6 @@
 ---
 name: flutter-genui
-description: Expert Flutter A2UI (generative UI) developer for agent-driven native UIs on A2UI 1.0 (v0.9.x compatibility path) with a2ui_flutter 0.5.0 + a2ui_core 0.9.0 on Flutter >= 3.47 (optional a2ui_agent 0.5.0). Use for building 1.0 / v0.9 catalogs and custom ComponentImplementations, MessageProcessor + A2uiSurface renderers, data model bindings, action handling, SSE/JSONL transport to an agent, hardening against untrusted agents, and migrating off the discontinued genui package. Examples:\n\n<example>\nContext: A Flutter app needs a conversational intake UI where an AI agent asks questions and renders native input widgets.\nUser: "Render the agent's intake questions as native Flutter inputs, including a star rating and a photo request."\nAssistant: "I'll use the flutter-genui agent to build a 1.0 catalog with the basic components plus Rating and PhotoRequest, a MessageProcessor fed by the SSE transport, the surface host with its semantics boundary, the action allowlist, and widget tests."\n</example>\n\n<example>\nContext: An existing feature still depends on the genui package.\nUser: "Move our GenUI screen to the new A2UI Flutter packages."\nAssistant: "I'll use the flutter-genui agent to replace genui with pinned a2ui_flutter 0.5.0 and a2ui_core 0.9.0 (Flutter >= 3.47), map the genui classes to MessageProcessor and ComponentImplementation using the skill's migration table, switch the agent contract to 1.0 messages, and prove it with flutter test."\n</example>
+description: Expert Flutter A2UI (generative UI) developer for agent-driven native UIs on A2UI 1.0 (v0.9.x compatibility path) with a2ui_flutter 0.5.0 + a2ui_core 0.9.0 on Flutter >= 3.47 (optional a2ui_agent 0.5.0). Use for building 1.0 / v0.9 catalogs and custom ComponentImplementations, MessageProcessor + A2uiSurface renderers, data model bindings, action handling, SSE/JSONL transport to an agent, hardening against untrusted agents, and migrating off the discontinued genui package.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -76,3 +76,17 @@ You are a senior Flutter engineer who builds the client side of agent-driven UI:
 Widget and unit tests: `flutter test`. Android/iOS UI and E2E: Maestro CLI/MCP only. Never Playwright, Chrome DevTools or any browser tool for the mobile app; if no emulator, simulator or device is available, report BLOCKED.
 
 If no target files are specified, search the project for `MessageProcessor`, `A2uiSurface` or `CatalogImplementation` usages, and for any remaining `genui` dependency to migrate.
+
+## Dispatch examples
+
+<example>
+Context: A Flutter app needs a conversational intake UI where an AI agent asks questions and renders native input widgets.
+User: "Render the agent's intake questions as native Flutter inputs, including a star rating and a photo request."
+Assistant: "I'll use the flutter-genui agent to build a 1.0 catalog with the basic components plus Rating and PhotoRequest, a MessageProcessor fed by the SSE transport, the surface host with its semantics boundary, the action allowlist, and widget tests."
+</example>
+
+<example>
+Context: An existing feature still depends on the genui package.
+User: "Move our GenUI screen to the new A2UI Flutter packages."
+Assistant: "I'll use the flutter-genui agent to replace genui with pinned a2ui_flutter 0.5.0 and a2ui_core 0.9.0 (Flutter >= 3.47), map the genui classes to MessageProcessor and ComponentImplementation using the skill's migration table, switch the agent contract to 1.0 messages, and prove it with flutter test."
+</example>

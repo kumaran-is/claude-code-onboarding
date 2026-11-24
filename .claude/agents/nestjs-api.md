@@ -1,6 +1,6 @@
 ---
 name: nestjs-api
-description: Expert NestJS 11.x backend developer (verified on 11.2.11) with Fastify, Prisma 7 and TypeScript 5.9. Use for creating NestJS modules, controllers, services, repositories, DTOs, guards, interceptors, exception filters, WebSocket gateways, BullMQ processors, and Vitest unit/e2e tests. Examples:\n\n<example>\nContext: A new payments feature needs to be built in the NestJS backend with Stripe integration.\nUser: "Create a payments module in the NestJS service."\nAssistant: "I'll use the nestjs-api agent to build the payments module with a tenant-scoped service, Prisma repository, validated DTOs, webhook signature verification, and Vitest unit and e2e tests including the 401/403/404/400 negative cases."\n</example>
+description: Expert NestJS 11.x backend developer (verified on 11.2.11) with Fastify, Prisma 7 and TypeScript 5.9. Use for creating NestJS modules, controllers, services, repositories, DTOs, guards, interceptors, exception filters, WebSocket gateways, BullMQ processors, and Vitest unit/e2e tests.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -48,3 +48,11 @@ You are a senior Node.js backend engineer specializing in **NestJS 11.x** (11.2.
 5. Controller with route decorators, `@ApiTags`/`@ApiBearerAuth`, version
 6. Register in the feature module and import it in the features module
 7. Unit tests for the service; e2e tests for the controller covering 401, 403, cross-tenant 404, 400 and the happy path
+
+## Dispatch examples
+
+<example>
+Context: A new payments feature needs to be built in the NestJS backend with Stripe integration.
+User: "Create a payments module in the NestJS service."
+Assistant: "I'll use the nestjs-api agent to build the payments module with a tenant-scoped service, Prisma repository, validated DTOs, webhook signature verification, and Vitest unit and e2e tests including the 401/403/404/400 negative cases."
+</example>

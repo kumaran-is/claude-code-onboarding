@@ -1,6 +1,6 @@
 ---
 name: nestjs-reviewer
-description: Read-only code reviewer for NestJS 11.x services (verified on 11.2.11) with Fastify, Prisma 7 and TypeScript 5.9. Reviews module/DI correctness, JWT verification and guard order, tenant isolation, DTO validation, rate limiting, WebSocket gateway auth, Prisma transactions and error mapping, BullMQ jobs, shutdown, and Vitest test coverage. Examples:\n\n<example>\nContext: A new NestJS JWT auth guard and token strategy were just implemented.\nUser: "Review the auth guard I just added to the NestJS service."\nAssistant: "I'll use the nestjs-reviewer agent to check algorithm pinning, issuer/audience checks, guard order, tenant scoping and the negative tests."\n</example>
+description: Read-only code reviewer for NestJS 11.x services (verified on 11.2.11) with Fastify, Prisma 7 and TypeScript 5.9. Reviews module/DI correctness, JWT verification and guard order, tenant isolation, DTO validation, rate limiting, WebSocket gateway auth, Prisma transactions and error mapping, BullMQ jobs, shutdown, and Vitest test coverage.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: opus
@@ -61,3 +61,11 @@ If a referenced file cannot be read, report the missing file and continue with a
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new NestJS JWT auth guard and token strategy were just implemented.
+User: "Review the auth guard I just added to the NestJS service."
+Assistant: "I'll use the nestjs-reviewer agent to check algorithm pinning, issuer/audience checks, guard order, tenant scoping and the negative tests."
+</example>

@@ -1,6 +1,6 @@
 ---
 name: pr-test-analyzer
-description: Analyzes test coverage quality for PR changes — focuses on behavioral coverage (critical paths, edge cases, error conditions), not line coverage metrics. Rates coverage gaps 1-10. Use before creating PRs to verify new code has adequate test coverage. Read-only. Writing the missing tests is tdd-guide or the stack implementer. Examples:\n\n<example>\nContext: A new payment processing service was implemented and needs test coverage review before PR.\nUser: "Check if the tests are thorough enough for this PR."\nAssistant: "I'll use the pr-test-analyzer agent to evaluate behavioral test coverage — checking critical paths, error conditions, and edge cases, not just line coverage numbers."\n</example>\n\n<example>\nContext: Developer wants to know what tests are missing before submitting for review.\nUser: "What tests am I missing for the user service changes?"\nAssistant: "I'll use the pr-test-analyzer agent to map the changed code paths against existing tests and identify behavioral gaps rated by criticality."\n</example>
+description: Analyzes test coverage quality for PR changes — focuses on behavioral coverage (critical paths, edge cases, error conditions), not line coverage metrics. Rates coverage gaps 1-10. Use before creating PRs to verify new code has adequate test coverage. Read-only. Writing the missing tests is tdd-guide or the stack implementer.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: sonnet
@@ -75,3 +75,17 @@ If scope not specified, default to `git diff --name-only HEAD~1`.
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new payment processing service was implemented and needs test coverage review before PR.
+User: "Check if the tests are thorough enough for this PR."
+Assistant: "I'll use the pr-test-analyzer agent to evaluate behavioral test coverage — checking critical paths, error conditions, and edge cases, not just line coverage numbers."
+</example>
+
+<example>
+Context: Developer wants to know what tests are missing before submitting for review.
+User: "What tests am I missing for the user service changes?"
+Assistant: "I'll use the pr-test-analyzer agent to map the changed code paths against existing tests and identify behavioral gaps rated by criticality."
+</example>

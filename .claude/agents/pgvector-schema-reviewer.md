@@ -1,6 +1,6 @@
 ---
 name: pgvector-schema-reviewer
-description: PostgreSQL + pgvector migration reviewer. Extends postgresql-database-reviewer with vector-specific checks. Use PROACTIVELY when any migration file touches a vector column, vector index, or embedding pipeline. Checks operator-index alignment, dimension vs model match, null guards, embedding_model metadata column, and migration reversibility. Examples:\n\n<example>\nContext: A new Flyway migration adds a vector(1536) column and HNSW index to the documents table.\nUser: "Review this pgvector migration before we run it on staging."\nAssistant: "I'll use the pgvector-schema-reviewer agent to verify operator-index alignment, dimension vs model match, null guard, metadata column presence, and rollback safety."\n</example>\n\n<example>\nContext: A migration switches from IVFFlat to HNSW for better recall.\nUser: "Check this index change migration."\nAssistant: "I'll use the pgvector-schema-reviewer agent to verify the ops class matches the query operator and the transition is safely reversible."\n</example>
+description: PostgreSQL + pgvector migration reviewer. Extends postgresql-database-reviewer with vector-specific checks. Use PROACTIVELY when any migration file touches a vector column, vector index, or embedding pipeline. Checks operator-index alignment, dimension vs model match, null guards, embedding_model metadata column, and migration reversibility.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit
 model: opus
@@ -105,3 +105,17 @@ Do not claim a test, eval or runtime check passed unless you executed it in this
 
 If no migration files found, report "No migration files found in [scope]" and list paths searched.
 If a referenced skill file cannot be read, report the missing file and continue with the vector-specific checklist above.
+
+## Dispatch examples
+
+<example>
+Context: A new Flyway migration adds a vector(1536) column and HNSW index to the documents table.
+User: "Review this pgvector migration before we run it on staging."
+Assistant: "I'll use the pgvector-schema-reviewer agent to verify operator-index alignment, dimension vs model match, null guard, metadata column presence, and rollback safety."
+</example>
+
+<example>
+Context: A migration switches from IVFFlat to HNSW for better recall.
+User: "Check this index change migration."
+Assistant: "I'll use the pgvector-schema-reviewer agent to verify the ops class matches the query operator and the transition is safely reversible."
+</example>

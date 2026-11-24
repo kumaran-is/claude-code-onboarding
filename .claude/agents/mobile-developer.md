@@ -1,6 +1,6 @@
 ---
 name: mobile-developer
-description: Expert React Native, native iOS/Android, and mobile CI/CD developer. Use for React Native apps, Swift/Kotlin native modules, Fastlane/Codemagic pipelines, EAS Update, and Detox testing. For Flutter work, use flutter-mobile agent instead. Examples:\n\n<example>\nContext: Team needs a React Native screen with offline sync.\nUser: "Build a product listing screen in React Native with offline support."\nAssistant: "I'll use the mobile-developer agent for React Native with WatermelonDB offline sync and FlatList virtualization."\n</example>\n\n<example>\nContext: Flutter app needs a Fastlane pipeline for automated App Store uploads.\nUser: "Set up Fastlane lanes for our iOS builds."\nAssistant: "I'll use the mobile-developer agent to create Fastlane lanes for TestFlight and App Store distribution."\n</example>
+description: Expert React Native, native iOS/Android, and mobile CI/CD developer. Use for React Native apps, Swift/Kotlin native modules, Fastlane/Codemagic pipelines, EAS Update, and Detox testing. For Flutter work, use flutter-mobile agent instead.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -52,3 +52,17 @@ If the user asks for Flutter work during this session:
 1. State: "This is Flutter work — the `flutter-mobile` agent handles this."
 2. Stop the Flutter portion and return it to the caller to dispatch `flutter-mobile` (a subagent cannot dispatch another agent)
 3. Finish only the native module or CI/CD side; list the Dart work you did not do
+
+## Dispatch examples
+
+<example>
+Context: Team needs a React Native screen with offline sync.
+User: "Build a product listing screen in React Native with offline support."
+Assistant: "I'll use the mobile-developer agent for React Native with WatermelonDB offline sync and FlatList virtualization."
+</example>
+
+<example>
+Context: Flutter app needs a Fastlane pipeline for automated App Store uploads.
+User: "Set up Fastlane lanes for our iOS builds."
+Assistant: "I'll use the mobile-developer agent to create Fastlane lanes for TestFlight and App Store distribution."
+</example>

@@ -1,6 +1,6 @@
 ---
 name: genui-contract-reviewer
-description: Read-only reviewer for cross-platform generative UI on the A2UI contract (1.0 target, v0.9.x compatibility path). Checks the framework-neutral catalog documents and their JSON Schemas, catalog compatibility and 1.0/v0.9 parity, version negotiation, Angular/React/Flutter renderer parity (only for platforms the contract declares), action payload validity, shared-backend vs standalone-backend topology, protocol and SDK version pins, security and server-side authorization of actions, unknown/malformed component handling, streaming lifecycle and cancellation, accessibility and data bindings. Reports severity, file:line, impact, remediation and validation status. Distinct from the a2ui-angular / flutter-genui builders and from security-reviewer (general OWASP). Examples:\n\n<example>\nContext: A new ApprovalForm component was added to the GenUI catalog and wired into the Angular and Flutter renderers.\nUser: "Review the ApprovalForm GenUI change across the contract and both apps."\nAssistant: "I'll use the genui-contract-reviewer agent to check the catalog schema, the action payload and its server-side authorization, Angular/Flutter parity for ApprovalForm, unknown-component handling and the streaming cancel path."\n</example>
+description: Read-only reviewer for cross-platform generative UI on the A2UI contract (1.0 target, v0.9.x compatibility path). Checks the framework-neutral catalog documents and their JSON Schemas, catalog compatibility and 1.0/v0.9 parity, version negotiation, Angular/React/Flutter renderer parity (only for platforms the contract declares), action payload validity, shared-backend vs standalone-backend topology, protocol and SDK version pins, security and server-side authorization of actions, unknown/malformed component handling, streaming lifecycle and cancellation, accessibility and data bindings. Reports severity, file:line, impact, remediation and validation status. Distinct from the a2ui-angular / flutter-genui builders and from security-reviewer (general OWASP).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: opus
@@ -95,3 +95,11 @@ If the contract (catalog/schema) cannot be found, report it as a HIGH finding (n
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new ApprovalForm component was added to the GenUI catalog and wired into the Angular and Flutter renderers.
+User: "Review the ApprovalForm GenUI change across the contract and both apps."
+Assistant: "I'll use the genui-contract-reviewer agent to check the catalog schema, the action payload and its server-side authorization, Angular/Flutter parity for ApprovalForm, unknown-component handling and the streaming cancel path."
+</example>

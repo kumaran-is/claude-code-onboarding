@@ -37,8 +37,11 @@ semgrep scan --config=p/java --metrics=off --error --json-output=/tmp/sast-semgr
 # eslint-plugin-security, report that check NOT RUN (do not add CLI plugin flags: flat config ignores them)
 (cd "$SCAN_PATH" && npx eslint . > /tmp/sast-eslint.log 2>&1); echo "ESLINT EXIT:$?"
 semgrep scan --config=p/typescript --metrics=off --error --json-output=/tmp/sast-semgrep-ts.json "$SCAN_PATH"; echo "SEMGREP TS EXIT:$?"
-# Python — bandit exits 1 on findings at or above -ll (medium)
-bandit -r "$SCAN_PATH" -ll -f json -o /tmp/sast-bandit.json; echo "BANDIT EXIT:$?"
+# Python — bandit exits 1 on findings at or above -ll (medium). Run it on the PROJECT's Python: an older interpreter
+# cannot parse 3.14 syntax (PEP 758 `except A, B:`), lists the file under `errors` and still exits 0 (checked, bandit 1.9.4 on 3.13)
+PYV=$(cat "$SCAN_PATH/.python-version" 2>/dev/null || echo 3.14)
+uvx --python "$PYV" --from bandit==1.9.4 bandit -r "$SCAN_PATH" -ll -x "$SCAN_PATH/.venv" -f json -o /tmp/sast-bandit.json; echo "BANDIT EXIT:$?"
+jq -e '.errors == []' /tmp/sast-bandit.json > /dev/null || { echo "bandit: BLOCKED (files not parsed)"; jq -r '.errors[] | "\(.filename): \(.reason)"' /tmp/sast-bandit.json; }
 semgrep scan --config=p/python --metrics=off --error --json-output=/tmp/sast-semgrep-py.json "$SCAN_PATH"; echo "SEMGREP PY EXIT:$?"
 # Dart / Flutter — analyzer findings (security rules come from the project's analysis_options.yaml)
 (cd "$SCAN_PATH" && flutter analyze > /tmp/sast-analyze.log 2>&1); echo "ANALYZE EXIT:$?"

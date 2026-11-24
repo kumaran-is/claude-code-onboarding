@@ -14,9 +14,11 @@
 # Skips tests, conftest.py, migrations and virtualenvs.
 #
 # Contract (.claude/rules/hook-and-gate-authoring.md): always exit 0; advisory delivered as
-# hookSpecificOutput.additionalContext; fails open without jq/python3 (noted once per day). A file
-# that python3 cannot parse is reported once per day with the interpreter version (an older python3
-# cannot parse 3.14-only syntax such as unparenthesised `except A, B:`).
+# hookSpecificOutput.additionalContext; fails open without jq/python3 (noted once per day).
+# Interpreter: the project's own `.venv/bin/python` (nearest pyproject.toml) when present, else python3,
+# so 3.14-only syntax (PEP 758 unparenthesised `except A, B:`) parses when the project targets 3.14.
+# It runs with -I -S (isolated, no site): a planted `ast.py` in the working directory cannot hijack it.
+# A file the interpreter cannot parse is reported once per day with the interpreter version.
 # Test: bash .claude/hooks/post-edit-python-log-pii-advisory.sh --selftest
 set -uo pipefail
 
@@ -76,6 +78,19 @@ skip_path() {
   return 1
 }
 
+pick_python() { # $1 file -> project .venv interpreter (nearest pyproject.toml), else python3
+  local d
+  d=$(cd "$(dirname "$1")" 2>/dev/null && pwd) || d=""
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    if [ -f "$d/pyproject.toml" ]; then
+      [ -x "$d/.venv/bin/python" ] && { printf '%s' "$d/.venv/bin/python"; return 0; }
+      break
+    fi
+    d=$(dirname "$d")
+  done
+  command -v python3 2>/dev/null
+}
+
 emit() { jq -n --arg m "$1" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'; }
 
 run_hook() {
@@ -85,16 +100,18 @@ run_hook() {
   file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || file=""
   [ -n "$file" ] && [ -f "$file" ] || return 0
   skip_path "$file" && return 0
-  if ! command -v python3 >/dev/null 2>&1; then
+  local py
+  py=$(pick_python "$file")
+  if [ -z "$py" ]; then
     msg=$(note_once nopython "log-PII advisory: python3 not found, edited Python files are NOT checked for exception text in log calls.")
     [ -n "$msg" ] && emit "$msg"
     return 0
   fi
-  result=$(python3 -c "$PY_CHECK" "$file" 2>/dev/null) || return 0
+  result=$("$py" -I -S -c "$PY_CHECK" "$file" 2>/dev/null) || return 0
   [ -n "$result" ] || return 0
   case "$result" in
     "PARSE_ERROR "*)
-      msg=$(note_once parse "log-PII advisory: python3 ${result#PARSE_ERROR } could not parse $file, so it was NOT checked for exception text in log calls (syntax error, or syntax newer than this interpreter).")
+      msg=$(note_once parse "log-PII advisory: Python ${result#PARSE_ERROR } ($py) could not parse $file, so it was NOT checked for exception text in log calls (syntax error, or syntax newer than this interpreter).")
       [ -n "$msg" ] && emit "$msg"
       return 0 ;;
   esac
@@ -155,6 +172,40 @@ PY
   printf 'def broken(:\n' > "$tmp/app/broken.py"
   out=$(run "$tmp/app/broken.py"); expect_has "unparseable file reported, not silently clean" "$out" "could not parse"
   out=$(run "$tmp/app/broken.py"); expect_silent "parse note throttled (once per day)" "$out"
+
+  # Interpreter isolation: a planted ast.py in the working directory must not replace the stdlib parser.
+  printf 'raise SystemExit(0)\n' > "$tmp/app/ast.py"
+  out=$(cd "$tmp/app" && run "$tmp/app/bad.py"); expect_has "planted ast.py in cwd cannot hijack the check (-I)" "$out" "7: exception 'exc'"
+  rm -f "$tmp/app/ast.py"
+
+  # Interpreter choice: the project's .venv python is used when present (fake venv python records the call).
+  mkdir -p "$tmp/proj/.venv/bin" "$tmp/proj/src"
+  printf '[project]\nname="x"\n' > "$tmp/proj/pyproject.toml"
+  printf '#!/bin/sh\necho used > "%s/venv-used"\nexec "%s" "$@"\n' "$tmp" "$(command -v python3)" > "$tmp/proj/.venv/bin/python"
+  chmod +x "$tmp/proj/.venv/bin/python"
+  cp "$tmp/app/bad.py" "$tmp/proj/src/bad.py"
+  out=$(run "$tmp/proj/src/bad.py")
+  if [ -f "$tmp/venv-used" ]; then echo "  ok   positive: project .venv interpreter selected"; else echo "  FAIL project .venv interpreter not used"; fail=1; fi
+  expect_has "finding via the project interpreter" "$out" "7: exception 'exc'"
+
+  # 3.14-only syntax (PEP 758): analysed on >= 3.14, reported as unparsed (never silently clean) on older.
+  cat > "$tmp/app/pep758.py" <<'PY'
+import logging
+logger = logging.getLogger(__name__)
+def call():
+    try:
+        pass
+    except ValueError, TypeError:
+        raise
+    except OSError as exc:
+        logger.error("io_failed", error=str(exc))
+PY
+  if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 14) else 1)'; then
+    out=$(run "$tmp/app/pep758.py"); expect_has "PEP 758 except syntax parsed on 3.14+" "$out" "9: exception 'exc'"
+  else
+    rm -f "$tmp"/claude-log-pii-advisory-parse-*
+    out=$(run "$tmp/app/pep758.py"); expect_has "PEP 758 syntax on python3 < 3.14 reported as unparsed" "$out" "could not parse"
+  fi
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"

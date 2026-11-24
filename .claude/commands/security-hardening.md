@@ -85,7 +85,7 @@ git grep -nE '-----BEGIN (RSA |EC )?PRIVATE KEY-----'
 ### Step 9 -- Security scan validation
 Run security scans on remediated code:
 - Execute `/audit-security` on the target path
-- Execute dependency audit (`npm audit` / `pip audit` / Maven dependency-check)
+- Execute dependency audit: `/security-dependencies` (npm audit / `pip-audit` on the exported `uv.lock` / Maven dependency-check; `pip audit` is not a command)
 - **Fail gate**: any remaining CRITICAL finding blocks completion
 
 ### Step 10 -- Compliance check

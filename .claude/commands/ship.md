@@ -61,8 +61,8 @@ Run every block of [`/verify`](verify.md) for the detected stacks with `MODE=pre
 ```bash
 # Java / Spring Boot — packaged artefact
 ./mvnw package -DskipTests -q > /tmp/mvn-pkg.log 2>&1; echo "PACKAGE EXIT:$?"; tail -10 /tmp/mvn-pkg.log
-# Python — static types (no --ignore-missing-imports default: it hides missing stubs; use per-package overrides)
-uv run mypy . > /tmp/mypy.log 2>&1; echo "MYPY EXIT:$?"; tail -10 /tmp/mypy.log
+# Python — the image the service ships in (mypy, lock, audit and the migration gate already ran in /verify pre-pr)
+[ -f Dockerfile ] && { docker build -t ship-check:local . > /tmp/docker-build.log 2>&1; echo "IMAGE BUILD EXIT:$?"; tail -5 /tmp/docker-build.log; }   # no docker = BLOCKED; remove the image after
 # Flutter — release build for each shipped platform (run LAST, after version bump and changelog are final)
 flutter build apk --release > /tmp/build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/build.log
 ```

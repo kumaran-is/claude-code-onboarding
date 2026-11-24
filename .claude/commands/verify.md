@@ -42,23 +42,33 @@ Detected by file presence in current directory tree:
 
 Each command's OWN exit code is captured (`cmd | tail; echo $?` reports `tail`'s status: `false | tail; echo $?` prints 0).
 
+Toolchain = the project's own: the interpreter from `.python-version` / `requires-python` and the versions in `uv.lock`. Check the lock and sync with `--locked` FIRST, then run every tool with `uv run --no-sync`. A plain `uv run` re-locks and re-syncs silently, so a drifted `pyproject.toml` passes; in a project with no `.venv` it also creates one and may download a Python. A project without `uv.lock` (bare `requirements.txt`) is **BLOCKED** for this block: say so rather than running tools from whatever is on `PATH`.
+
 ```bash
+# toolchain (every mode): record what ran, fail on a stale lock before anything can re-lock it
+uv --version; uv lock --check > /tmp/lock.log 2>&1; echo "LOCK EXIT:$?"; tail -3 /tmp/lock.log   # 1 = pyproject and uv.lock disagree
+uv sync --locked > /tmp/sync.log 2>&1; echo "SYNC EXIT:$?"; tail -3 /tmp/sync.log
+uv run --no-sync python -VV; echo "PYTHON EXIT:$?"
+
 # quick
-uv run ruff check . > /tmp/ruff.log 2>&1; echo "RUFF EXIT:$?"; tail -10 /tmp/ruff.log
-uv run ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
-uv lock --check; echo "LOCK EXIT:$?"          # exit 1 = pyproject and uv.lock disagree
+uv run --no-sync ruff check . > /tmp/ruff.log 2>&1; echo "RUFF EXIT:$?"; tail -10 /tmp/ruff.log
+uv run --no-sync ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
+uv run --no-sync mypy > /tmp/mypy.log 2>&1; echo "MYPY EXIT:$?"; tail -10 /tmp/mypy.log   # targets from [tool.mypy] files; exit 2 "Missing target" = BLOCKED (configure it)
 
 # full
-uv run pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -5 /tmp/pytest.log
-uv run python scripts/check_executed.py /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # all-skipped exits 0 in pytest: executed must be > 0
+uv run --no-sync pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -5 /tmp/pytest.log   # exit 5 (no tests collected) = FAIL
+uv run --no-sync python -c "import sys, xml.etree.ElementTree as E; s=[x for x in E.parse(sys.argv[1]).iter('testsuite')]; n=sum(int(x.get('tests',0))-int(x.get('skipped',0)) for x in s); print('EXECUTED', n); sys.exit(0 if n else 1)" /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # all-skipped exits 0 in pytest
 
 # pre-pr additions
-uv run bandit -r src/ -ll -q > /tmp/bandit.log 2>&1; echo "BANDIT EXIT:$?"; tail -10 /tmp/bandit.log
-uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /dev/null; echo "EXPORT EXIT:$?"
-uv run pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -15 /tmp/audit.log
+uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /tmp/export.log 2>&1; echo "EXPORT EXIT:$?"
+uv run --no-sync pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip > /tmp/audit.log 2>&1; echo "AUDIT EXIT:$?"; tail -15 /tmp/audit.log
+# migrations, when the project has Alembic: the round-trip gate in skills/python-dev/reference/alembic-migration-safety.md section 7, then drift
+uv run --no-sync alembic check > /tmp/alembic-check.log 2>&1; echo "ALEMBIC CHECK EXIT:$?"; tail -3 /tmp/alembic-check.log   # non-zero = models changed without a revision
 ```
 
-`pip-audit` has no severity column: gate on its exit code (0 = PASS, 1 = findings = FAIL unless every ID is listed with `--ignore-vuln <ID>` and a reason, 2 = tool/usage error = BLOCKED). `pip audit` is not a command. If `scripts/check_executed.py` does not exist, count executed tests from the junit file yourself (tests minus skipped). Details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
+`pip-audit` has no severity column: gate on its exit code (0 = PASS, 1 = findings = FAIL unless every ID is listed with `--ignore-vuln <ID>` and a reason, 2 = tool/usage error = BLOCKED). It audits the exported lock, not the interpreter it runs in. `pip audit` is not a command. A tool missing from the dev group (`Failed to spawn: mypy`) is BLOCKED, not PASS. Security lint is ruff's `S` rules in `ruff check`; Bandit/Semgrep live in `/security-sast`. Details: `skills/deployment-ci-cd/reference/python-ci-supply-chain.md`.
+
+Proven on 2026-11-23 with uv 0.13.9 and Python 3.14.10 on a `/scaffold-python-api` project (FastAPI 0.165.0, SQLAlchemy 2.1.9, PostgreSQL 18.7): clean → every line exit 0 (22 tests executed); `pyproject.toml` edited without `uv lock` → LOCK and SYNC exit 1 (a plain `uv run` would have re-locked it); a `str` passed to an `int` ORM column → MYPY exit 1; `print()` + an unused import → RUFF exit 1; an unformatted file → FORMAT exit 1; an auth bypass, a widened JWT algorithm list, a dropped owner filter, a 422 that echoes input → PYTEST exit 1; a model column with no revision → ALEMBIC CHECK exit 255.
 
 ### Node.js — NestJS, TypeScript Node services and MCP servers (`package.json` with `@nestjs/core`, `@modelcontextprotocol/*`, or a `tsconfig.json`)
 

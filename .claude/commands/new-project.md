@@ -27,7 +27,8 @@ Analyze `$ARGUMENTS` using this keyword matrix. Rows run from most to least spec
 | `adk`, `gemini agent`, `google adk` | Google ADK Agent | `/scaffold-google-adk` |
 | `rag pipeline`, `pgvector`, `weaviate`, `embeddings` | RAG pipeline | `/rag-design` (ADR) then `/scaffold-rag-pipeline` |
 | `agent`, `langchain`, `langgraph`, `ai agent` | Agentic AI | `/scaffold-agentic-ai` |
-| `python`, `fastapi`, `django`, `flask` | Python API | `/scaffold-python-api` |
+| `python api`, `fastapi`, `python` (HTTP service) | Python FastAPI API | `/scaffold-python-api` |
+| `django`, `flask`, `python cli`, `python script` | Other Python | No scaffold: load `python-dev` (+ `uv-package-manager`); never convert it to FastAPI |
 | `java`, `spring`, `spring boot` | Java Spring API | `/scaffold-spring-api` |
 | `angular`, `spa`, `web app`, `dashboard` | Angular SPA | `/scaffold-angular-app` |
 | `database`, `schema`, `postgres`, `sql` | Database Schema | `/design-database` |

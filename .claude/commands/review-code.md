@@ -33,7 +33,7 @@ Scan the file list for tech signals and build a dispatch list:
 
 > **Always add:** `security-reviewer` — runs on ALL scopes regardless of stack.
 
-> **Dependency manifest changed** (`pyproject.toml`, `uv.lock`, `package.json`/lockfile, `pom.xml`): also run the stack's dependency audit and report PASS | FAIL | BLOCKED | NOT RUN from the tool's OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`). Python: `pip-audit --strict` (no severity column, so never grep it for CRITICAL/HIGH; `pip audit` is not a command) — see `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`. A missing tool or failed scan is BLOCKED, never a green.
+> **Dependency manifest changed** (`pyproject.toml`, `uv.lock`, `package.json`/lockfile, `pom.xml`): also run the stack's dependency audit and report PASS | FAIL | BLOCKED | NOT RUN from the tool's OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`). Python: the `/verify` pre-pr EXPORT + AUDIT lines (`pip-audit` on the exported `uv.lock`, not on the interpreter it runs in; no severity column, so never grep it for CRITICAL/HIGH; `pip audit` is not a command) — see `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`. A missing tool or failed scan is BLOCKED, never a green.
 
 ### Step 3 — Dispatch in parallel
 Launch all identified agents simultaneously with the Agent tool (`run_in_background: true`).

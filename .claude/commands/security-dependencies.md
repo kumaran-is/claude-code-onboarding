@@ -38,8 +38,14 @@ if [ "$HAS_NPM" = true ]; then        # NestJS / Angular / React / Node; exit 1 
   else echo "npm: BLOCKED (npm not installed)"; fi
 fi
 if [ "$HAS_PIP" = true ]; then        # exit 1 = known vulnerabilities; --strict fails on unauditable deps
-  if command -v pip-audit >/dev/null; then pip-audit --strict --format=json --desc > /tmp/pip-audit.json 2>/tmp/pip-audit.err; echo "PIP-AUDIT EXIT:$?"
-  else echo "pip: BLOCKED (pip-audit not installed; uv tool install pip-audit)"; fi
+  # Audit the LOCKED set. Bare `pip-audit` audits the interpreter it runs in (a uv tool venv, the global one), not this project.
+  if [ -f uv.lock ]; then
+    if uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt > /tmp/uv-export.log 2>&1; then
+      uvx --from pip-audit==2.10.1 pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip --strict --format=json --desc > /tmp/pip-audit.json 2>/tmp/pip-audit.err; echo "PIP-AUDIT EXIT:$?"
+    else echo "pip: BLOCKED (uv export --locked failed: stale or missing lock, see /tmp/uv-export.log)"; fi
+  elif [ -f requirements.txt ]; then   # only meaningful if every line is pinned (==)
+    uvx --from pip-audit==2.10.1 pip-audit -r requirements.txt --strict --format=json --desc > /tmp/pip-audit.json 2>/tmp/pip-audit.err; echo "PIP-AUDIT EXIT:$?"
+  else echo "pip: BLOCKED (pyproject.toml without uv.lock: run uv lock first)"; fi
 fi
 if [ "$HAS_MAVEN" = true ]; then      # non-zero = CVSS >= 7 found, or plugin/NVD failure (read the log)
   if command -v mvn >/dev/null; then mvn -q org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=7 -Dformat=JSON > /tmp/mvn-dc.log 2>&1; echo "DEPCHECK EXIT:$?"
@@ -86,7 +92,7 @@ pkg:{ecosystem}/{package}@{version}
 
 Examples:
 - `pkg:npm/express@4.18.2`
-- `pkg:pypi/fastapi@0.135.2`
+- `pkg:pypi/fastapi@0.165.0`
 - `pkg:maven/org.springframework.boot/spring-boot-starter@3.5.0`
 - `pkg:pub/riverpod@3.0.0`
 

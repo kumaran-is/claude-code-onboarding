@@ -10,6 +10,8 @@
 #
 # Contract (see .claude/rules/hook-and-gate-authoring.md):
 #   - Always exit 0. Fails open when jq or ruff is missing (ruff-missing is noted once per project).
+#   - Uses ruff from PATH or the project's .venv/bin/ruff only. Never `uv run`: on a project without a
+#     .venv that creates one (and may download a Python) as a side effect of an edit.
 #   - NEVER passes --fix: an auto-fix pass can delete an import added in one edit before the edit that
 #     uses it lands (F401), and can strip quotes inside Literal[...] (UP037).
 #   - stderr of an exit-0 hook is not shown to the model; additionalContext JSON is.
@@ -24,7 +26,7 @@ note_missing() { # once per project
   marker="${TMPDIR:-/tmp}/claude-pylint-advisory-missing-$key"
   [ -e "$marker" ] && return 0
   : > "$marker" 2>/dev/null || true
-  printf '%s' "python lint advisory: ruff not found (not on PATH, no .venv/bin/ruff, no uv), so edited Python files are NOT being linted. Install ruff or run it manually before committing."
+  printf '%s' "python lint advisory: ruff not found (not on PATH, no .venv/bin/ruff), so edited Python files are NOT being linted. Run \`uv sync\` (ruff in the dev group) or run ruff manually before committing."
 }
 
 skip_path() { # echo 0 if the file should be skipped
@@ -54,7 +56,6 @@ lint_message() { # $1 absolute file; prints message (possibly empty)
 
   if command -v ruff >/dev/null 2>&1; then ruff_cmd=(ruff)
   elif [ -x "$root/.venv/bin/ruff" ]; then ruff_cmd=("$root/.venv/bin/ruff")
-  elif [ -f "$root/pyproject.toml" ] && command -v uv >/dev/null 2>&1; then ruff_cmd=(uv run --no-sync ruff)
   else
     note_missing
     return 0
@@ -156,8 +157,11 @@ selftest() {
   run "$proj/app/__init__.py" "$tmp/fa" p6 >/dev/null
   if grep -q -- '--extend-select F811,F841 ' "$tmp/argv.txt" 2>/dev/null; then echo "  ok   negative: F401 not forced on __init__.py"; else echo "  FAIL __init__ handling"; fail=1; fi
 
-  out=$(run "$proj/app/clean.py" "" p7)
+  # Fake uv that records any call: the hook must never fall back to `uv run` (it creates a .venv).
+  mkdir -p "$tmp/fu"; printf '#!/bin/sh\necho "$@" > "%s/uv-called"\nexit 0\n' "$tmp" > "$tmp/fu/uv"; chmod +x "$tmp/fu/uv"
+  out=$(run "$proj/app/clean.py" "$tmp/fu" p7)
   if printf '%s' "$out" | grep -q "ruff not found"; then echo "  ok   positive: missing ruff reported"; else echo "  FAIL missing ruff not reported (got: $out)"; fail=1; fi
+  if [ ! -e "$tmp/uv-called" ] && [ ! -d "$proj/.venv" ]; then echo "  ok   negative: uv never invoked, no .venv created"; else echo "  FAIL uv was invoked ($(cat "$tmp/uv-called" 2>/dev/null))"; fail=1; fi
   out=$(run "$proj/app/clean.py" "" p7)
   if [ -z "$out" ]; then echo "  ok   negative: missing-ruff note is throttled"; else echo "  FAIL not throttled (got: $out)"; fail=1; fi
 

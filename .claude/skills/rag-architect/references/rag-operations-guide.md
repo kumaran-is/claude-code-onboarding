@@ -13,9 +13,11 @@ Six cache layers, applied independently. Choose based on hit rate vs staleness t
 | Cache Layer | What Gets Cached | Key | TTL | Tenant-Scoped? | Risk if Wrong |
 |---|---|---|---|---|---|
 | **Chunk embedding** | Embeddings for stored chunks | `content_hash` + model + dims + task type + normalizer version | Until doc update | No — stored rows carry tenant; the vector itself is not scoped | Low — stale embedding = retrieval miss |
-| **Query embedding** | Embedding of the user query | `hash(norm(query), model, dims, task_type)` | 1–24h | Optional — the vector does not depend on the tenant; store the hash, not raw query text | Low |
+| **Query embedding** | Embedding of the user query | `hash(norm(query), model, dims, task_type)` | 1–24h (ADAPT default 24 h) | Optional — the vector does not depend on the tenant; store the hash, not raw query text | Low |
 | **Retrieval result** | Top-k chunk ids for a query | `hash(tenant, perm_fp, index_version, model, norm(query), filters)` | 5–15 min | **YES** | **Critical** — cross-tenant/cross-role leak |
 | **Exact-match answer** | Full pipeline result for identical queries | `hash(retrieval_key, prompt_version, generation_model)` | 15–60 min | **YES** (via retrieval key) | **Critical** |
+| **Rerank result** | Reranked chunk ids | retrieval key + reranker model/version | as retrieval | **YES** (via retrieval key) | **Critical** |
+| **Provider prompt-prefix** | Static system prompt + tool definitions | provider-managed | provider TTL | No — holds no retrieved data | Low; changes with the prompt version |
 | **Semantic answer** | Result for similar (not identical) queries | nearest neighbour on query embedding **within** the same tenant + `perm_fp` + `index_version` partition | 15–30 min | **YES** | **High** — similar wording ≠ same answer |
 
 `perm_fp` = hash of the sorted role and group ids that the retrieval filter used. `index_version` is bumped on every ingest, update or delete in the corpus, so old entries become unreachable (also the cheapest way to honour an erasure request across caches).
@@ -35,6 +37,8 @@ def answer_key(retr_key: str, prompt_ver: str, gen_model: str) -> str:
     return _h(retr_key, prompt_ver, gen_model)
 ```
 (`_h` = sha256 over NUL-joined parts; `norm` = NFKC + lowercase + collapsed whitespace. Verified: 5 pytest cases — tenant, permission and index-version changes miss; group order and whitespace do not; empty tenant fails closed.)
+
+**Which answers may be cached at all:** final-answer caches only for low-stakes, non-personal FAQ-style answers. A semantic (similarity-keyed) answer cache **must not** serve personalized, high-stakes or ACL-varying answers, even inside a tenant partition; use the exact-match key or no answer cache for those. Rerank-result keys add the reranker version to the retrieval key. Deletion and ACL revocation purge caches within the same SLA as the index (`deletion_sla`, `acl_sync_sla`; `versioning-and-freshness.md` §8). **Never** share a cache entry across scopes.
 
 Forgetting tenant or permissions in a retrieval/answer key is a **Sev-1 security incident**. Cache *errors* fail open (log with `log_exception`, treat as a miss); scope *ambiguity* fails closed (do not read or write the cache).
 
@@ -71,6 +75,21 @@ Typical cost breakdown for a production RAG query (varies by scale and model cho
 | **Embedding cache** | Embedding API calls | High for repeated queries | Staleness risk on model updates |
 | **Content-hash diff ingestion** | Ingestion cost | High for stable corpora | Implementation overhead |
 | **Over-retrieve then filter** | LLM cost | Medium | Retrieve 50–100; rerank to 5–10 instead of always sending 50 to LLM |
+
+### Cost Levers by Driver
+
+| Cost driver | Lever |
+|---|---|
+| Generation tokens | Fewer, better chunks (rerank harder); summarize history; smallest model that passes evals |
+| Reranking | Cap candidates; skip rerank when the top lexical hit is an exact identifier match |
+| Query fan-out | Multi-query / decomposition / HyDE only when triggered, within the fan-out budget |
+| Query embeddings | Cache by normalized query (§1) |
+| Ingestion embeddings | Content-hash to skip unchanged chunks; batch; re-embed only on real triggers |
+| Storage / memory | Smaller dimensions if evals allow; quantization; prune superseded versions past retention |
+| Idle infrastructure | Prefer collocated or serverless stores at low volume; review minimum-footprint pricing |
+| Judges | Sample production evals; run deterministic checks before LLM judges |
+
+Measure **cost per answered query by outcome** (and per tenant): a cheap pipeline that returns `NOT_FOUND` too often is not cheap.
 
 ---
 
@@ -143,6 +162,29 @@ Every request must produce one log line with:
   "cost_usd": 0.018
 }
 ```
+
+---
+
+### Trace — Required Fields per RAG Request (G8, PII minimized)
+
+The audit log line above is the minimum; the request trace records:
+
+```text
+trace_id, request_id, capability, scope_id (hashed), role
+original_query (redacted), rewritten_query, subqueries
+routing_decision, query_strategy
+filters_applied (names, not values), index + embedding_model + chunking_version
+candidate chunk_ids + retrieval scores, fusion method
+rerank model/version + scores, final context chunk_ids, context tokens, dropped chunk_ids
+generation model/version, prompt version, input/output tokens
+groundedness score, citation validity, answer outcome (status)
+latency per stage, cost per stage, cache hits per layer
+user feedback
+```
+
+Never log raw chunk text or raw queries containing PII in traces.
+
+**Required alerts:** sustained groundedness drop · recall drop on the production shadow eval · p95 latency over SLO per stage · cost per query over target · reranker/embedding error rate · freshness or deletion SLA breach · **any isolation violation pages immediately**. Dashboard and alert conventions: `deployment-ci-cd/reference/ai-observability.md`.
 
 ---
 
@@ -230,6 +272,24 @@ ranked = await reranker.rerank(query=query, documents=candidates, top_n=10)
 ## 6. Recommended Starting Defaults (§10)
 
 Concrete numbers to start with before golden-set tuning. These are starting points — measure and adjust.
+
+### Ratified Defaults Block (ADAPT — record the ratified value per corpus)
+
+```text
+Retrieval:      hybrid (BM25 + vector), RRF k=60, top 50–100 candidates
+Rerank:         40–60 in → 5–10 out
+ANN:            HNSW; recall ≥ 0.95 of exact KNN on a sample
+Exact search:   < ~50k vectors, golden-set ground truth, scoped high-stakes verification
+Chunking:       structure-aware; prose 500–800 tokens, ~10% overlap; tables whole or row groups
+Embeddings:     one pinned model/version/dimension per corpus, env-invariant, stamped per chunk
+Query:          always rewrite conversational queries; split multi-part; HyDE only as low-confidence fallback, never high-stakes
+Budgets:        ≤ 6 subqueries, ≤ 60 rerank candidates, ≤ 6 rerank calls, hard timeout per capability SLO
+Grounding:      ≥ 0.7 general, ≥ 0.85 high-stakes; citations required
+SLAs:           ACL sync ≤ 15 min, deletion ≤ 24 h, freshness per corpus
+Caching:        query-embedding 24 h; scope-keyed retrieval cache; no cross-scope entries
+```
+
+Ratification (who signs off, where the values are recorded) is organisation-owned: `rag-review` Adoption checklist.
 
 ### Retrieval Pipeline Defaults
 

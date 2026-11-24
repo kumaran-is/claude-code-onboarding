@@ -47,6 +47,7 @@ You need all three. Skipping retrieval evaluation is the most common mistake —
 | MRR | 1 / rank of first relevant | Q&A where first hit matters |
 | NDCG@K | Ranking quality with graded relevance | Search-style ordering |
 | Hit@K | Any relevant doc in top-K? (not "recall") | Coarse baseline |
+| ANN recall vs exact KNN | Overlap of the ANN top-K with an exact (brute-force) top-K for the same query embedding | Index quality (HNSW/IVF parameters); distinct from Recall@K, which is measured against labelled relevant chunks |
 
 **Context Precision vs Precision@K:** Precision@K asks "how many of the top-K are relevant?" — binary. Context Precision asks "are the relevant chunks ranked near position 1 or buried at position K?" A reranker can leave Precision@K unchanged while dramatically improving Context Precision. Add this metric as soon as you introduce a reranker — it's the clearest signal of whether the reranker is earning its keep.
 
@@ -86,6 +87,14 @@ Dimensions to slice by before touching the pipeline:
 | Abstention quality | Refusals when refusal was correct | |
 | False Abstention Rate | How often the system refused when retrieved context actually supported an answer | |
 | False Answer Rate | How often the system answered when it should have abstained (the dangerous failure) | |
+| Cited-claim ratio | Answer claims carrying a citation / all answer claims | |
+| Correct outcome rate | Expected `NOT_FOUND` / `CONFLICTED` / `STALE` / `HUMAN_REVIEW` outcomes returned as that status (response contract: `rag-architect/references/rag-response-contract.md` §3) | yes, expected outcome |
+
+**Routing (when a structured-vs-RAG router exists):** routing classification accuracy on labelled queries; a low score means the rules or classifier are wrong (`rag-architect/references/query-classification-taxonomy.md` §2).
+
+**Priority:** faithfulness and Recall@K first; add Context Precision (and nDCG@K) as soon as a reranker exists. Evaluate each layer separately: a good end-to-end score can hide a broken layer.
+
+**Isolation and operations (always on):** cross-scope leak count (retrieved or cited chunks outside the caller's scope; **must be 0**, a deterministic check on chunk ids, never a judge), latency p50/p95/p99 and cost per query. Report every retrieval, answer and ops metric **per tenant and per query-type slice** as well as in aggregate: an aggregate can look healthy while one tenant's document format collapses its recall.
 
 ## Citation quality is not citation presence
 
@@ -120,7 +129,14 @@ Build the golden set BEFORE building the system. Minimum viable golden set:
     - "the cost will be"
   expected_classification: policy_question
   expected_abstention: false
+  query_type: factual            # slice: factual | identifier | broad | multi-part | vague | temporal | comparison | high-stakes
+  scope: org_a                   # scope context the query runs under
+  expected_chunk_ids: [contractor-policy#c12]
+  expected_outcome: ANSWERED     # ANSWERED | PARTIAL | NOT_FOUND | CONFLICTED | STALE | HUMAN_REVIEW (rag-architect/references/rag-response-contract.md §3)
+  high_stakes: false             # must be true when query_type is high-stakes
 ```
+
+**One golden set per query-type slice** (versioned): factual, identifier, broad, multi-part, vague, temporal, comparison, high-stakes. Each entry holds the query, scope context, expected chunk ids, expected answer essentials, expected outcome and a high-stakes flag. ADAPT start: 30–50 per slice, 50–200 in total; grow it from production failures. The YAML above is the authoring view. In CI the cases live in a CSV checked by the closed `eval-guide/assets/schemas/rag_case.schema.json`: the 8 required columns first, in fixed order, then any of the optional `query_type`, `scope`, `expected_outcome`, `high_stakes` columns, spelled as above. Lowercase outcomes, an unknown column or a high-stakes slice without `high_stakes: true` fail validation (GD007). Example: `eval-guide/assets/golden-scaffold/tests/golden/rag/support_kb_golden.csv`; validate with `uv run --script .claude/skills/eval-guide/scripts/validate_golden.py tests/golden`. These are the same values, spelled the same way, as the response contract `status` (`rag-architect/references/rag-response-contract.md` §3), so compare them exactly.
 
 **Coverage targets:**
 - ~60% happy path (typical queries with clear answers)
@@ -174,6 +190,17 @@ def rag_ci_gate(change):
     if mcnemar_or_paired_test(flips).significant_regression: fail("paired regression")
     return PASS if run.complete else NOT_RUN            # missing judge scores are not passes
 ```
+
+**Where the gates apply (every number is an ADAPT default to ratify):**
+
+| Gate | Runs on | Blocks when |
+|---|---|---|
+| PR | chunking, embedding, retrieval config, reranker, prompt, generation model or routing changes | Recall@10 drops > 3 pts on any slice; faithfulness drops > 2 pts on the high-stakes slice; cited-claim ratio drops > 2 pts; any isolation leak |
+| Re-index / embedding-model change | shadow vs active index | any slice regresses beyond the PR thresholds |
+| Pre-launch | full suite + red team | below absolute floors, for example recall@20 ≥ 0.85 (factual), faithfulness ≥ 0.9 (≥ 0.95 high-stakes), cited-claim ratio ≥ 0.95 |
+| Production | 1–2% sampled shadow judging | sustained drop alerts; failures become golden cases |
+
+A slice drop counts as a regression only when the paired per-query test on that slice agrees (below); the isolation leak gate is absolute.
 
 On 50-200 queries an absolute delta of 0.02 is inside sampling noise (±0.05-0.10): use per-query flips with a paired test (`llm-evaluation/reference/ab-testing.md`) plus absolute floors. Deterministic retrieval metrics run on every PR touching the pipeline; judge metrics run in the nightly/pre-release tiers.
 

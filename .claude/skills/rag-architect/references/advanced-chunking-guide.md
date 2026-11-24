@@ -4,6 +4,34 @@ Reference for chunking strategies beyond the basic decision tree. Apply after co
 
 ---
 
+## 0. Chunking by Content Type (selection order and ADAPT sizes)
+
+**Selection order:** (1) document structure (headings, sections, clauses) → (2) domain units (a record, an event, a FAQ entry, a function) → (3) semantic boundaries (topic shift) → (4) recursive token splitting, as a fallback only.
+
+| Content | Strategy | Notes |
+|---|---|---|
+| Policies, manuals, contracts | Section/heading-aware | Preserve section titles in chunk text or metadata |
+| Knowledge base / Markdown | Header-aware | Prepend the breadcrumb (`H1 > H2 > H3`) |
+| Records with history | Parent = record; children = events/notes | Retrieve the child, expand to the parent |
+| Tables | Whole table, or row groups with the header repeated | **Never** split a table by token count (`table-chunking-strategy.md`) |
+| Forms / invoices | Field extraction + one summary chunk | Structured fields go to the system of record |
+| Scans / images | OCR + page/region metadata + summary chunk | Keep OCR confidence (§3) |
+| Conversations | Group by thread / topic / time window | Strip signatures and quoted replies |
+| Code / config | By file, class, function | Keep path and symbol name |
+
+| Content | Chunk size (ADAPT) | Overlap |
+|---|---:|---:|
+| General prose | 500–800 tokens | ~10% |
+| Short-form KB / procedures | 300–600 tokens | ~10% |
+| Event / record units | one unit | none |
+| Tables | full table or row group | header repeated |
+
+- Prose **should** use non-zero overlap (~10%): recall drops at hard boundaries without it. Above ~15% creates near-duplicates and inflates rerank cost. The cap against the reranker input still applies (`SKILL.md` canonical overlap and cap rule).
+- Store multiple representations when one is not enough (a table as Markdown plus a natural-language summary), linked by `parent_id`. An optional summary chunk per long document is marked `chunk_type=summary`.
+- **Selection criterion:** the strategy that wins on recall@k and faithfulness on your golden set (`rag-evaluator`), not a library default. The chunking strategy is versioned (`chunking_version` per chunk); a change triggers re-embedding (`vector-database/references/embedding-migration-guide.md`).
+
+---
+
 ## 1. Chunking Techniques Catalog
 
 ### 1.1 Document-Aware (Default)

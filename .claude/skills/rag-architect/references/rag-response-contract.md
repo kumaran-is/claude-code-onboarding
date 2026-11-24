@@ -38,19 +38,22 @@ Every field in the system belongs to exactly one tier:
 
 ## 3. Status Enum
 
-Seven values. Each has a precise meaning; avoid using one as a substitute for another.
+Ten values in two groups. The six **answer outcomes** are the G17 outcome enum (serialized exactly as spelled here, upper case, with no case-insensitive matching); the four **operational statuses** cover what the outcome enum leaves to the implementation. Each value has a precise meaning; do not use one as a substitute for another.
 
-| Status | Meaning | Notes |
-|---|---|---|
-| `answered` | Confident answer grounded in retrieved context | Normal success path |
-| `partial` | Some sub-questions answered; others lack evidence | Use when a multi-part query is partially satisfiable |
-| `abstained` | No sufficient evidence; system refuses to guess | See `abstention-decision-framework.md` for triggers |
-| `clarification_needed` | Query is ambiguous; cannot retrieve without disambiguation | Requires `clarification_reason` field explaining why |
-| `tool_error` | Retriever, reranker, or vector store failed | Surface to oncall; do not show internal error to user |
-| `policy_blocked` | Safety or compliance policy prevented the answer | Use `safety` block to explain what was withheld |
-| `no_retrieval` | Query bypassed retrieval (pure LLM fallback) | **Must be explicitly policy-governed.** Teams often add this as a silent fallback — it quietly bypasses RAG, erodes grounding, and hides retrieval failures. Treat `no_retrieval` as a production alert, not a convenience path. |
+| Status | Group | Meaning | Notes |
+|---|---|---|---|
+| `ANSWERED` | outcome | Grounded, cited, above the retrieval and grounding thresholds | Normal success path |
+| `PARTIAL` | outcome | Some sub-questions answered; others not found, or a fan-out budget was hit | Name the unanswered parts in `limitations` |
+| `NOT_FOUND` | outcome | No relevant authorized chunks | Abstention; triggers in `abstention-decision-framework.md` |
+| `CONFLICTED` | outcome | Retrieved sources disagree (for example two current versions) | Abstention; show both sources, never pick one silently |
+| `STALE` | outcome | Only superseded or past-freshness sources were found | Return the source date; never present the content as current |
+| `HUMAN_REVIEW` | outcome | High-stakes category with low retrieval or grounding confidence | Route to the review queue; the user sees a hand-off message |
+| `CLARIFICATION_NEEDED` | operational | Query is ambiguous; cannot retrieve without disambiguation | Requires `clarification_reason` |
+| `TOOL_ERROR` | operational | Retriever, reranker, or vector store failed | Surface to on-call; do not show internal errors to the user |
+| `POLICY_BLOCKED` | operational | Safety or compliance policy prevented the answer | Use the `safety` block to explain what was withheld |
+| `NO_RETRIEVAL` | operational | Query bypassed retrieval (pure LLM fallback) | **Must be explicitly policy-governed.** A silent fallback quietly bypasses RAG, erodes grounding and hides retrieval failures. Treat it as a production alert, not a convenience path. |
 
-**Stale retrieval is not a status.** Staleness is a quality issue surfaced via `warning_flags.stale_source` and a confidence band downgrade. The status remains `answered` or `partial`.
+**Stale versus the `stale_source` flag.** If *every* usable source is superseded or past the corpus freshness window, the status is `STALE`. If fresh sources answer the question and only some citations are old, the status stays `ANSWERED`/`PARTIAL` with `warning_flags.stale_source` and a confidence downgrade. `abstained` (a boolean in eval and LLM output schemas) is true for `NOT_FOUND`, `CONFLICTED`, `STALE` and `HUMAN_REVIEW`.
 
 ---
 
@@ -195,7 +198,7 @@ Required field on every response. A missing `safety` block is not the same as `s
 | `partial` | Some content masked; some withheld entirely |
 | `withheld` | Sensitive content removed; no inline placeholder |
 
-The frontend needs the mode to render appropriate indicators. `policy_blocked` status uses the `safety` block to explain what was withheld.
+The frontend needs the mode to render appropriate indicators. `POLICY_BLOCKED` status uses the `safety` block to explain what was withheld.
 
 ---
 
@@ -218,7 +221,7 @@ A canonical event model. SSE (browser) and NDJSON (backend-to-backend) are two e
 
 ```
 event: status
-data: {"status": "answered"}
+data: {"status": "ANSWERED"}
 
 event: answer_delta
 data: {"text": "According to the policy, the user is responsible "}
@@ -236,7 +239,7 @@ data: {"confidence_level": "high", "safety": {"contains_pii": false, "redaction_
 ### NDJSON (Backend-to-Backend)
 
 ```
-{"type":"status","status":"answered"}
+{"type":"status","status":"ANSWERED"}
 {"type":"answer_delta","text":"According to the policy, the user is responsible "}
 {"type":"citation","citation_id":"C1","title":"Company Policy Document","evidence_type":"direct"}
 {"type":"answer_span","start":0,"end":121,"citations":["C1"]}
@@ -292,24 +295,12 @@ Keep the core contract domain-agnostic. Push domain-specific fields into a names
 
 Offline citation metrics (`rag-evaluator`) do not stop a bad answer in production. Validate every answer before it ships. The general output-contract rule lives in `ai-playbook` (output contract section); this is the RAG-specific runtime check.
 
-1. **Membership (deterministic):** collect the chunk ids actually retrieved in THIS request; any cited id outside that set → return the `abstained`/fallback shape. Log the bad ids only, never chunk text.
+1. **Membership (deterministic):** collect the chunk ids actually retrieved in THIS request; any cited id outside that set → return the `NOT_FOUND` fallback shape (or `HUMAN_REVIEW` on a high-stakes path). Log the bad ids only, never chunk text.
 2. **Support (probabilistic):** per claim, check entailment of the claim by its cited chunk (NLI model, LLM judge, or a managed grounding API). Below threshold → abstain or escalate. The judge prompt treats the answer and the chunks as data, not instructions.
 3. **Checker unavailable:** degrade visibly — ship with `verified=false` (surface it as a warning flag), never pass silently.
 
-```python
-async def validate_answer(answer: Answer, chunks_by_id: Mapping[str, str],
-                          support_check: SupportCheck, threshold: float, abstain: Answer) -> Answer:
-    if answer.status == "abstained":
-        return answer
-    if not answer.citations:
-        return abstain                                   # ungrounded
-    retrieved = set(chunks_by_id)
-    if [c.chunk_id for c in answer.citations if c.chunk_id not in retrieved]:
-        return abstain                                   # cited something not retrieved
-    score = await support_check(answer.citations, chunks_by_id)
-    if score is None:
-        return replace(answer, verified=False)           # degrade visibly
-    return abstain if score < threshold else answer
-```
+Run a grounding classifier or judge on the final answer before returning it. Grounding thresholds are ADAPT defaults: **≥ 0.7 general, ≥ 0.85 high-stakes**; ratify them with evals. If the grounding service is unavailable, degrade to citation-validation-only and label the answer unverified (G6): never dead-end and never pass silently. An unsupported claim is stripped, regenerated with stricter instructions, or answered "cannot confirm from the available sources". On high-stakes answers also return the verbatim source excerpt so the user can verify.
 
-Unit-test the five paths with a scripted checker: ghost id → abstain; supported → ships verified; low support → abstain; checker returns `None` → ships `verified=False`; no citations → abstain. (Verified: 6 pytest cases pass, `ruff` and `mypy --strict` clean, against a scripted fake checker — no live model.)
+**Reference implementation (single source of truth):** `../scripts/response_contract.py` (stdlib only; this section no longer embeds a copy). It provides `decide_retrieval_outcome` (pre-generation abstentions: `NOT_FOUND` when no authorized chunk, `STALE` when every chunk is superseded or past freshness, `CONFLICTED` when one document has two current versions, `HUMAN_REVIEW` on a high-stakes question below the retrieval floor) and `validate_answer` (abstentions pass through; an uncited claim or a cited id outside the packed, authorized context → `NOT_FOUND`, or `HUMAN_REVIEW` when high-stakes; per-claim support at 0.7 / 0.85; unsupported claims are stripped and the answer becomes `PARTIAL` with "Cannot confirm from the available sources."; no supported claim → abstain; checker returns `None` → ships `verified=False`). `Answer` rejects any status not spelled exactly as in §3.
+
+Contract tests: `../scripts/test_response_contract.py` (stdlib `unittest`, scripted fake checker, no network; one test per outcome plus ghost id, uncited claim, strip, no support, checker down and exact spelling). Run `python3 .claude/skills/rag-architect/scripts/test_response_contract.py` from the repo root; CI runs it in the `ai-asset-gates` job of `.github/workflows/toolkit-lint.yml`.

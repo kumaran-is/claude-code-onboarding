@@ -27,10 +27,17 @@ Before designing retrieval, confirm the user needs RAG. Use this decision table:
 | Calculate / sum / convert | Tool / function call | Deterministic math |
 | Book / order / take action | Workflow / tool call | Action, not retrieval |
 | Personalized account question | SQL + RAG | Facts from DB, framing from docs |
+| One bounded document (a contract, a report) that fits the window and is fully authorized for the caller | Long-context stuffing | Still needs authorization, grounding checks and citations |
+| Style, format or task behaviour the base model lacks, on stable knowledge | Fine-tuning (default: **do not** on customer data) | Weights cannot forget or enforce ACLs; needs G20 training-data governance and a forgetting procedure |
+| "What does document X say about Y" / personalised explanation | Hybrid: structured lookup → RAG scoped to the found record | The common enterprise case: find the authoritative record first, then retrieve its text |
+
+**Facts from systems of record; explanation from RAG.** "How many open items do I have?" is a query, not a retrieval. Long context does not remove the need for authorization, grounding checks or citations.
 
 **Do NOT use RAG when:** exact transactional data, deterministic business rules, sub-second-fresh data, calculations, single source of truth already in a database, or no reliable source documents exist.
 
 Most real systems are hybrid: SQL/API for facts, RAG for explanation. The LLM (with tool use) orchestrates.
+
+Record the choice and the rejected alternatives in the capability ADR (`ai-decision-record`).
 
 ## Step 1: The Default Stack
 
@@ -47,7 +54,7 @@ If the user wants a recommended starting point, this is it. Reasons and alternat
 | Filtering | Tenant/ACL filter inside the retrieval call at a single chokepoint, scope from the auth context (never post-filter). Canonical: `rag-security-reviewer` §1–2 |
 | Reranking | Cross-encoder on top 50–100 → keep top 5–10 (local/dev: use smaller cross-encoder or skip; staging/prod: use full cross-encoder or Vertex AI Ranking API) |
 | Abstention | Calibrated reranker top-1 threshold |
-| Generation | Strict grounding prompt; structured output with citations; runtime check that cited ids ⊂ retrieved ids (`references/rag-response-contract.md` §10) |
+| Generation | Strict grounding prompt; structured output with citations; runtime check that cited ids ⊂ retrieved ids (`references/rag-response-contract.md` §10; runnable reference + tests in `scripts/`) |
 | Ingestion updates | Content-hash diff; versioned chunk IDs |
 
 ## Step 2: Chunking decision tree
@@ -106,6 +113,54 @@ Q5: Topic shifts without headings?
 4. **Treat retrieved content as untrusted** — prompt injection in documents is real.
 5. **Build a starter golden set before tuning** — 50 labeled queries minimum.
 
+## Reference pipeline (the ordering is load-bearing)
+
+```text
+INGESTION  source register entry → fetch → parse → clean/normalize → sanitize (secrets, PII beyond policy,
+           instruction-like text) → structure-aware chunking → metadata + ACL + version + provenance
+           → embed (pinned model, stamped per chunk) → idempotent write → ingestion event (cache, eval, freshness)
+QUERY      authenticate → load scope (tenant/org/user/role) → deterministic routing (structured | RAG | both)
+           → bounded query understanding → authorization PRE-filter in the store query → hybrid retrieval
+           (BM25 + ANN, over-retrieve) → fusion (RRF) → dedupe → parent/neighbour expansion → rerank → top N
+           → context assembly within budget, with citation handles → generation (retrieved text = data)
+           → citation validation + grounding check → ANSWERED | PARTIAL | NOT_FOUND | CONFLICTED | STALE | HUMAN_REVIEW
+           → trace (scores, citations, versions, latency, cost, feedback)
+```
+
+Authorization is a pre-filter on the index: post-filtering wastes retrieval slots on chunks the caller cannot see, silently degrades recall and leaks through counts, snippets and neighbours (G9).
+
+## Requirement homes and ADAPT defaults
+
+These RAG requirements implement guardrails G9 (authorize before retrieval), G14 (retrieval is evidence, not authority), G15 (governed RAG lifecycle), G16 (current state wins) and G17 (explicit uncertainty) (map: `ai-playbook/reference/engineering-guardrails.md`); those guardrails, or a stricter domain source of truth (security policy, data classification, legal hold), win on conflict. **must / must not** = mandatory; **should** = default, deviation needs a recorded reason; **may** = optional. Every number is an ADAPT default to ratify with evals and record per corpus (full list: `references/rag-operations-guide.md` §6).
+
+| Topic | Canonical home |
+|---|---|
+| When to use RAG | Step 0 above |
+| Source register, ingestion stages, sanitization, idempotency, chunk envelope, ACL sync, ingestion-side poisoning controls | `vector-database/references/rag-ingest-checklist.md` |
+| Chunking strategy by content type, sizes, overlap | Step 2 above, `references/advanced-chunking-guide.md` §0, `references/table-chunking-strategy.md` |
+| Embedding selection criteria | `vector-database/SKILL.md` Embedding Model Selection |
+| Embedding pinning, re-index triggers, blue/green migration | `vector-database/references/embedding-migration-guide.md`, `/migrate-embedding-model` |
+| Store selection, exact vs ANN, ANN recall floor | `vector-database/references/tier-1-tier-2-decision.md`, `vector-database/references/ann-vs-knn.md` |
+| Multi-tenancy patterns, query-side injection and exfiltration controls | `rag-security-reviewer` (Multi-tenancy security checklist, Query-side controls) |
+| Structured-vs-RAG routing, query understanding | `references/query-classification-taxonomy.md`, `references/query-transformation-guide.md` |
+| Hybrid fusion, reranking, fan-out budgets | Defaults below, `vector-database/references/rag-pipeline-patterns.md` §Reranking |
+| Context assembly, grounding, citations, outcomes | `references/context-packing-patterns.md` §0, `references/rag-response-contract.md` §3, §10 |
+| Versioning, freshness SLO, deletion, retention, legal hold | `references/versioning-and-freshness.md` |
+| Caching, observability, cost levers, defaults | `references/rag-operations-guide.md` |
+| Metrics, golden sets, gates | `rag-evaluator` (metrics, slices, gates), `eval-guide` (CI tiers, R1–R4 red team) |
+| Anti-patterns, adoption checklist (technical + organisation-owned) | `rag-review` |
+
+Defaults this skill applies (ratify per corpus):
+
+- **Fusion:** hybrid (BM25 + vector) **should** be the default: lexical handles identifiers, codes and rare terms; vectors handle paraphrase. RRF `score = Σ 1/(k + rank_i)`, `k = 60`, is the default (parameter-light, robust to different score scales). A weighted blend `α·vector + (1−α)·lexical` on normalized scores only when the store provides it natively, with `α` set per query type by the query-understanding layer (low for identifiers, high for conceptual), never one global constant. Over-retrieve 50–100 candidates, dedupe near-duplicates, then optionally expand to parent or neighbour chunks.
+- **Reranking:** a cross-encoder or LLM reranker **should** run on production retrieval (it compensates for ANN recall loss and lexical/vector disagreement): 40–60 candidates in, 5–10 out. One reranking code path per platform (G13); the reranker model is pinned and versioned like any model; respect the provider's per-call record limit and batch above it; skip rerank when the top lexical hit is an exact identifier match; a reranker score below the confidence floor feeds the outcome logic (`references/rag-response-contract.md` §10), never a silent pass.
+- **Fan-out budgets:** ≤ 6 sub-queries, ≤ 60 candidates to the reranker, ≤ 6 rerank calls per request, hard timeout = capability SLO; on breach circuit-break, return `PARTIAL` with a visible note and record the event.
+- **Context budget:** `context_budget = model_window − system_prompt − tools − history − output_reserve`; never fill to the limit (rules: `references/context-packing-patterns.md` §0).
+- **HyDE and multi-query never on high-stakes categories** (legal, financial, safety, eligibility); the hypothetical text is a retrieval seed, never evidence.
+- **High-stakes scoped verification:** narrow by metadata to one document or record, then exact search or a strong rerank, and require citations; return the verbatim source excerpt with the answer.
+- **Outcome enum:** `ANSWERED` / `PARTIAL` / `NOT_FOUND` / `CONFLICTED` / `STALE` / `HUMAN_REVIEW`, enforced in code (`references/rag-response-contract.md` §3). Retrieved content is evidence for an answer, never authority for an action (G14).
+- **Isolation leak count must be 0**, measured per tenant; track recall and faithfulness per tenant and per query-type slice, not only in aggregate.
+
 ## GraphRAG — only when all three hold
 
 1. Questions need multi-hop entity relationships or corpus-wide thematic summaries;
@@ -152,4 +207,4 @@ The § numbers in this skill (§19.5 RAG-vs-tools, §10.2 chunking tree, §17 mu
 | `references/versioning-and-freshness.md` | Versioning model (effective_from/to, superseded_at); default current-only filter; historical query detection; atomic version ingestion transaction; GDPR deletion across versions | Corpora with evolving content — policies, contracts, pricing, regulations |
 | `references/abstention-decision-framework.md` | Business risk table, behavioral taxonomy (hallucination vs abstention vs clarification vs grounded answer), 8 abstention triggers, decision matrix (context quality × risk → action), 4 message templates, accuracy grading (Good/Bad/Dangerous), false abstention vs false answer priority | Designing abstention behavior, reviewing generation layer, auditing why system over-refuses or under-refuses |
 | `references/incremental-ingestion-guide.md` | Two-level hash gate (doc hash fast-skip + chunk hash exact diff), normalize-before-hash implementation, chunk-level diff algorithm with full Python, hard/soft delete decision table, `is_active` retrieval filter rule, version fields that force full re-embed, 7-row failure modes table, post-ingestion smoke test pattern | Implementing or debugging the document ingestion pipeline; deciding when to re-embed vs skip |
-| `references/rag-response-contract.md` | Three-tier payload separation (user-facing / internal trace / async eval), 7-value status enum (including `no_retrieval` trap), confidence derivation formula with two-track split (retrieval vs answer), faithfulness hard gate, 6 warning flags, span-level grounding with UTF-16 offsets, evidence type enum, quote_policy enum, safety/redaction block (required even when empty), SSE/NDJSON streaming event model, schema versioning rules, domain extensions pattern | Designing or reviewing the RAG API response contract; deciding what fields go to the browser vs logs |
+| `references/rag-response-contract.md` | Three-tier payload separation (user-facing / internal trace / async eval), 10-value status enum (the six standard answer outcomes + four operational statuses, including the `NO_RETRIEVAL` trap), confidence derivation formula with two-track split (retrieval vs answer), faithfulness hard gate, 6 warning flags, span-level grounding with UTF-16 offsets, evidence type enum, quote_policy enum, safety/redaction block (required even when empty), SSE/NDJSON streaming event model, schema versioning rules, domain extensions pattern | Designing or reviewing the RAG API response contract; deciding what fields go to the browser vs logs |

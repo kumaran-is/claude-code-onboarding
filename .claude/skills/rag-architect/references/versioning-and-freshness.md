@@ -81,6 +81,22 @@ WHERE tenant_id = $1
 
 ---
 
+### Filter expressions and freshness SLO
+
+Versioned sources carry `doc_id` (stable), `doc_version` (monotonic), `effective_from`, `superseded_at`, `is_current`:
+
+```text
+default filter:     is_current AND (effective_from IS NULL OR effective_from <= now)
+historical filter:  effective_from <= :as_of AND (superseded_at IS NULL OR superseded_at > :as_of)
+```
+
+- The default filter also excludes future-dated versions (`effective_from > now`).
+- Historical retrieval is an explicit path chosen by routing (`query-classification-taxonomy.md` §2), never the default.
+- Supersession is atomic (§5) and invalidates caches keyed on the document (`rag-operations-guide.md` §1).
+- **Freshness SLO (ADAPT, per corpus):** each corpus declares `source change → retrievable` and is monitored for it (alert on breach, `rag-operations-guide.md` §3). Answers built only on chunks older than the freshness window return `STALE` or carry the source date (`rag-response-contract.md` §3).
+
+---
+
 ## 4. Historical Queries (§13.3)
 
 Detect when a user is asking about a past state, not the current state.
@@ -263,7 +279,14 @@ RETURNING deleted_chunk_count;
 External stores are not inside the database transaction. A worker (idempotent, retried with backoff, alert on age) for each outbox row:
 1. Deletes the chunk ids from every external index: vector store (Weaviate: `with_tenant(t).data.delete_many(where=Filter.by_property("doc_id").equal(d))`, guarded by `tenants.exists(t)`), BM25/FTS index, object store (original file and extracted text).
 2. Purges caches: bump the corpus `index_version` (retrieval/answer keys miss) and delete entries referencing the chunk ids (`rag-operations-guide.md` §1).
-3. Removes derived artifacts: summaries, extracted entities/graph nodes, eval fixtures and golden cases built from the document.
-4. Verifies zero remaining objects per store by count, then marks the row `done`. A non-zero count is an error to surface, not "acceptable stale data".
+3. Removes derived artifacts: summaries, compiled profiles, extracted entities/graph nodes, eval fixtures and golden cases built from the document, and trace samples where policy requires.
+4. Verifies zero remaining objects per store by count, **and** runs a probe query (as an authorized principal of that tenant) for a phrase unique to the document and asserts it is no longer retrieved; then marks the row `done`. A non-zero count or a probe hit is an error to surface, not "acceptable stale data".
 
-**Important:** Fine-tuned models trained on deleted content cannot be "un-trained". Deletion applies to retrieval only — disclose this limitation when accepting GDPR requests if any model fine-tuning has occurred.
+Deletion and retention rules:
+- Each source declares a `deletion_sla` (ADAPT default **≤ 24 h** from source delete to unretrievable, including caches); alert on outbox rows older than the SLA. An automated test covers the end-to-end path.
+- Tombstoned vectors are compacted within the store's documented window (Weaviate and HNSW indexes delete logically first; PostgreSQL needs `VACUUM` to reclaim index entries).
+- **Legal hold overrides deletion and is recorded.** Check a `legal_holds` record inside the step-1 transaction; a held document gets an audit row (`reason='legal_hold'`) and no delete, and the requester is told the hold applies.
+- Retention: the index never keeps content longer than the source policy; prune superseded versions past retention with the same propagation steps.
+- The deletion audit record itself is retained.
+
+**Important:** Fine-tuned models trained on deleted content cannot be "un-trained". Deletion applies to retrieval only: flag any model fine-tuned on the deleted data for retraining under guardrail G20, and disclose the limitation when accepting erasure requests. This is why fine-tuning on customer data is discouraged (`rag-architect/SKILL.md` Step 0).

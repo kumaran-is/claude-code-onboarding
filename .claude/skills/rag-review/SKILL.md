@@ -48,6 +48,9 @@ Cross-refs: `rag-architect/references/advanced-chunking-guide.md`, `rag-architec
 | 1.8 | High-stakes tables stored with multiple representations (plain text + Markdown + JSON) | 🟡 | `table-chunking-strategy.md §4` |
 | 1.9 | OCR quality gate applied before ingestion: per-character confidence threshold checked, garbled text rejected | 🟡 | `advanced-chunking-guide.md §6` |
 | 1.10 | Parent-child relationship stored when narrow questions need surrounding context | 🟡 | `advanced-chunking-guide.md §1.4` |
+| 1.12 | Every source has a register entry (owner, classification, ACL source, `acl_sync_sla`, `deletion_sla`, `trust_level`, embedding profile); ingest refuses unregistered sources | 🟠 | `vector-database/references/rag-ingest-checklist.md` §S |
+| 1.13 | Chunk envelope schema-validated at write time (`scope_id`, `acl`, `data_classification`, `trust_level`, `doc_version`, `is_current`, `language`, versions, `content_hash`); secrets removed before embedding | 🔴 | `rag-ingest-checklist.md` §I, §B |
+| 1.14 | `user-generated` / `external-web` content cannot enter a shared corpus without review; instruction-like text flagged at ingestion; per-source context share capped | 🔴 | `rag-ingest-checklist.md` §P |
 
 ---
 
@@ -65,6 +68,7 @@ Cross-refs: `rag-architect/references/versioning-and-freshness.md`, `rag-archite
 | 2.6 | Versioning metadata: `effective_from`, `effective_to`, `superseded_at` — default retrieval filter `superseded_at IS NULL` | 🟠 | `versioning-and-freshness.md §2–3` |
 | 2.7 | New document version supersession runs in a single atomic transaction (marks old superseded + inserts new together) | 🔴 | `versioning-and-freshness.md §5` |
 | 2.8 | Historical query detection implemented — temporal keywords trigger `effective_from`/`effective_to` filter instead of current-only filter | 🟡 | `versioning-and-freshness.md §4` |
+| 2.10 | Deletion meets the source `deletion_sla` and ends with a probe query that no longer retrieves the content; legal hold overrides deletion and is recorded; ACL revocation stops retrieval within `acl_sync_sla` (tested) | 🔴 | `versioning-and-freshness.md §8`, `rag-ingest-checklist.md` §E |
 | 2.9 | Erasure/RTBF: tenant-scoped hard delete of all versions (vector + FTS + metadata + object store + caches + derived artifacts) plus a tombstone; supersession is never erasure; audit row keeps ids/counts only | 🔴 | `versioning-and-freshness.md §8` |
 
 ---
@@ -85,6 +89,7 @@ Cross-refs: `vector-database` skill, `vector-database/references/embedding-migra
 | 3.6 | Null guard: `WHERE embedding IS NOT NULL` (or equivalent) in retrieval query | 🟠 | `rag-implementation-reviewer` agent checklist |
 | 3.7 | Batch embedding — NOT one API call per chunk in a loop | 🟡 | `rag-implementation-reviewer` agent checklist |
 | 3.8 | Embedding model upgrade plan documented (dual-write or shadow index strategy before cutover) | 🟡 | `vector-database/references/embedding-migration-guide.md` |
+| 3.11 | Vector store and embedding model chosen against recorded criteria (not a public leaderboard alone); one corpus is never dual-written to two stores as two sources of truth | 🟡 | `vector-database/references/tier-1-tier-2-decision.md` Step 0, `vector-database/SKILL.md` Embedding Model Selection |
 
 ---
 
@@ -121,6 +126,9 @@ Cross-refs: `rag-architect/SKILL.md` (Default Stack), `rag-architect/references/
 | 5.9 | Weaviate `hybrid()` on self-provided vectors passes `vector=`; golden paraphrase case with zero keyword overlap hits | 🔴 | `weaviate-schema-reviewer` agent |
 | 5.10 | Every derived query (rewrite, expansion, HyDE, sub-query, hop) uses the same scoped retrieval entry; fan-out capped in code; one deadline | 🔴 | `query-transformation-guide.md §5` |
 | 5.11 | Keyword fallback on embed failure is logged and flagged to the generator — never silent | 🟠 | `rag-implementation-reviewer` agent checklist |
+| 5.12 | Fan-out budgets enforced in code (defaults ≤ 6 sub-queries, ≤ 60 rerank candidates, ≤ 6 rerank calls, hard timeout); breach returns `PARTIAL` with a visible note | 🟠 | `rag-architect/SKILL.md` Requirement homes and ADAPT defaults |
+| 5.13 | Semantic (similarity-keyed) answer cache not used for personalized, high-stakes or ACL-varying answers; caches purged on delete and ACL change within SLA | 🔴 | `rag-operations-guide.md §1` |
+| 5.14 | Cross-scope negative tests cover results, snippets, counts/facets, nearest neighbours, rerank inputs and caches | 🔴 | `rag-security-reviewer` Multi-tenancy security checklist |
 | 5.8 | MMR or diversity filter applied during context packing to prevent near-duplicate chunks in final context | 🟡 | `context-packing-patterns.md §1` |
 
 ---
@@ -136,8 +144,8 @@ Cross-refs: `rag-architect/references/context-packing-patterns.md`, `rag-archite
 | 6.3 | Per-claim citations — every factual sentence in the answer carries a `[chunk_id]` reference | 🟠 | `context-packing-patterns.md §3` |
 | 6.3a | Runtime citation validation: cited ids ⊂ retrieved ids else abstain; support check below threshold → abstain; checker unavailable → `verified=false` | 🔴 | `rag-response-contract.md §10` |
 | 6.4 | `schema_version` emitted on every response | 🟠 | `rag-response-contract.md §8` |
-| 6.5 | `status` field is a value from the closed 7-value enum (`answered`/`partial`/`abstained`/`clarification_needed`/`tool_error`/`policy_blocked`/`no_retrieval`) | 🔴 | `rag-response-contract.md §3` |
-| 6.6 | `no_retrieval` status is explicitly policy-governed — NOT used as a silent fallback that bypasses RAG | 🔴 | `rag-response-contract.md §3` |
+| 6.5 | `status` field is a value from the closed 10-value enum: the six answer outcomes (`ANSWERED`/`PARTIAL`/`NOT_FOUND`/`CONFLICTED`/`STALE`/`HUMAN_REVIEW`) plus `CLARIFICATION_NEEDED`/`TOOL_ERROR`/`POLICY_BLOCKED`/`NO_RETRIEVAL`; conflicting sources return `CONFLICTED`, never a silently chosen side | 🔴 | `rag-response-contract.md §3` |
+| 6.6 | `NO_RETRIEVAL` status is explicitly policy-governed — NOT used as a silent fallback that bypasses RAG | 🔴 | `rag-response-contract.md §3` |
 | 6.7 | `confidence_level` is a band (`high`/`medium`/`low`) — NEVER raw float exposed to UI | 🟠 | `rag-response-contract.md §4` |
 | 6.8 | Confidence derived from evidence signals (retrieval score, rerank score, citation coverage, freshness), NOT from LLM self-report | 🟠 | `rag-response-contract.md §4` |
 | 6.9 | Faithfulness gate implemented: if faithfulness < threshold (~0.7), band clamped to `low` regardless of weighted score | 🟠 | `rag-response-contract.md §4` |
@@ -150,6 +158,7 @@ Cross-refs: `rag-architect/references/context-packing-patterns.md`, `rag-archite
 | 6.16 | Refusal text uses one of the 4 named templates (missing context / weak context / conflicting context / high-risk) — NOT free LLM improvisation | 🟡 | `abstention-decision-framework.md §6` |
 | 6.17 | `clarification_reason` field REQUIRED when `status = clarification_needed` | 🟠 | `rag-response-contract.md §3` |
 | 6.18 | Streaming uses 6-event model (`status`/`answer_delta`/`citation`/`warning_flag`/`answer_span`/`done`); `answer_span` emitted only after generation is complete, NOT mid-stream | 🟠 | `rag-response-contract.md §7` |
+| 6.19 | Context budget computed per model (`model_window − system_prompt − tools − history − output_reserve`), never filled to the limit; whole-chunk truncation with dropped chunks recorded; canonical facts in a separate labelled block; no other user's history re-injected | 🟠 | `context-packing-patterns.md §0` |
 
 ---
 
@@ -185,9 +194,65 @@ Cross-refs: `rag-evaluator/SKILL.md`, `rag-architect/references/rag-operations-g
 | 8.8 | Async eval pattern: sample 1–10% of production traffic via trace store — NOT inline in sync response path | 🟡 | `rag-response-contract.md §1` |
 | 8.9 | Corpus hygiene checks run after bulk ingestion: near-duplicate detection (`content_hash` dedup), stale/superseded doc sweep, authority tagging for canonical versions | 🟡 | `rag-operations-guide.md §9` |
 | 8.10 | Post-ingestion smoke test runs after every ingestion that changed ≥ 1 chunk; ingestion trace logged | 🟡 | `incremental-ingestion-guide.md §7` |
+| 8.12 | Recall, faithfulness and isolation-leak count reported per tenant and per query-type slice; the PR gate blocks on any isolation leak | 🔴 | `rag-evaluator/SKILL.md` |
+| 8.13 | Trace records the required fields (routing decision, filter names not values, index + embedding model + chunking version, candidate and final chunk ids with scores, rerank model, groundedness, citation validity, outcome, per-stage latency and cost); an isolation violation pages immediately | 🟠 | `rag-operations-guide.md` §3 Trace |
 | 8.11 | p95 latency target defined and monitored per stage: query embedding ≤ 50ms, ANN retrieval ≤ 200ms, reranker ≤ 250ms, LLM first token ≤ 500ms, total ≤ 2s | 🟡 | `rag-operations-guide.md §4` |
 
 ---
+
+## Anti-patterns (each one found is a finding)
+
+| Anti-pattern | Stage check |
+|---|---|
+| Post-filtering retrieval results by ACL instead of pre-filtering the index | 5.3, 7.1 |
+| Taking the tenant/scope filter from client input or model output | 7.1 |
+| Using RAG for facts that live in a system of record | 4.2 |
+| Fine-tuning on customer data that may need to be deleted or access-controlled | 4.2 (`rag-architect` Step 0) |
+| Splitting tables or clauses by raw token count | 1.2, 1.7 |
+| Mixing vectors from different embedding models or dimensions in one search | 3.2 |
+| Re-embedding in place during serving; switching embedding models without a shadow index and eval gate | 3.8 |
+| Dual-writing the same content to two stores as two sources of truth | 3.11 |
+| Pure-vector retrieval for identifier-heavy queries; one global hybrid weight for every query type | 5.1, 5.2 |
+| Choosing an embedding model or vector store from a public leaderboard alone | 3.11 |
+| HyDE or multi-query on high-stakes questions; unbounded query fan-out | 4.6, 5.10, 5.12 |
+| Stuffing the context window to the limit "for safety" | 6.19 |
+| Trusting a prompt instruction as the only grounding control; no citation validation | 6.3a, 6.14 |
+| Forcing an answer when evidence is missing or conflicting instead of `NOT_FOUND` / `CONFLICTED` | 6.5, 6.15 |
+| Cache keys without scope and ACL; semantic answer caches on personalized answers | 5.7, 5.13 |
+| Deleting the source but not chunks, vectors, derived summaries, caches and eval copies | 2.9, 7.5 |
+| Letting user-generated or external content into a shared corpus without review | 1.14 |
+| Reporting one aggregate metric and missing per-slice and per-tenant regressions | 8.12 |
+| Logging raw chunk text or raw queries containing PII in traces | 8.13 |
+
+## Adoption checklist
+
+**Technical (evidence = file:line, test output or eval report; an item with no evidence is a finding, not a pass):**
+
+- [ ] Source register filled for every corpus (1.12); ingestion sanitizes at the storage boundary, secrets never embedded, idempotency mechanism chosen and tested (1.13, 2.3)
+- [ ] Chunking strategy chosen per content type, versioned, validated on the golden set (1.2–1.5)
+- [ ] Embedding model/version/dimension pinned, env-invariant, stamped per chunk; queries filter on it (3.1–3.2); blue/green re-index runbook written and full re-embed cost estimated (3.8)
+- [ ] Chunk envelope enforced at write time, schema-validated (1.13)
+- [ ] Vector store choice recorded against the selection criteria; ANN recall measured against exact KNN (3.4–3.5, 3.11)
+- [ ] Multi-tenancy pattern chosen; cross-scope negatives cover results, snippets, counts, neighbours, rerank inputs and caches (5.3, 5.14)
+- [ ] Authorization pre-filter applied from server-side context on every retrieval (7.1)
+- [ ] Hybrid retrieval + fusion + reranker in place; fan-out budgets enforced (5.1–5.5, 5.12)
+- [ ] Context budget computed per model; retrieved text delimited as data (6.19, 7.2)
+- [ ] Citation validation + grounding check + outcome enum implemented; degraded path labelled (6.3a, 6.5, 6.9)
+- [ ] Versioning, freshness SLO and deletion propagation implemented and tested end to end (2.6–2.10)
+- [ ] Caches keyed by scope + ACL + versions; purged on delete and ACL change (5.7, 5.13)
+- [ ] Injection and poisoning controls in place; red-team suite covers untrusted corpora (1.14, 7.2)
+- [ ] Golden sets per query type; PR, re-index and pre-launch gates wired (8.1–8.3, 8.12)
+- [ ] Traces carry the required fields; isolation-violation alert pages on any non-zero (8.13)
+- [ ] Cost per answered query tracked by outcome and by tenant (8.7, `rag-operations-guide.md` §2)
+
+**Organisation-owned (recorded decisions and named people; no tool enforces these):**
+
+- [ ] Capability ADR records why RAG and the rejected alternatives (`ai-decision-record`)
+- [ ] Named owner per corpus, accountable for content and access; `approved_use`, `data_classification`, `pii_policy`, retention and legal-hold rules set by the data owner with Privacy/Legal where policy requires
+- [ ] ADAPT values ratified and recorded per corpus: `acl_sync_sla`, `deletion_sla`, freshness SLO, `isolation_boundary`, grounding thresholds, eval gate thresholds, fan-out budgets (`rag-architect/references/rag-operations-guide.md` §6)
+- [ ] Architecture review approves any new vector store (G13); embedding provider and region approved for the corpus classification (G9, G20)
+- [ ] Re-index / model-change approval includes the full re-embed cost and wall-clock estimate
+- [ ] Red-team cadence agreed for every corpus below `trusted-internal`
 
 ## Verdict format
 

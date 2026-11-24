@@ -4,6 +4,24 @@ Reference for assembling the final context window from ranked retrieval results,
 
 ---
 
+## 0. Context Assembly Rules (required)
+
+| Rule | Detail |
+|---|---|
+| Budget explicitly | `context_budget = model_window − system_prompt − tools − history − output_reserve`; never fill to the limit "for safety" |
+| Delimit retrieved text | Wrap each chunk in a clearly marked data block with `chunk_id`, source title, version and date; the system prompt states chunks are data, never instructions |
+| Order deliberately | Highest-relevance chunks first and last; group chunks of the same document; keep table chunks whole |
+| Dedupe | Drop near-identical chunks before packing (§1 step 2) |
+| Prefer fewer, better chunks | 5–10 high-precision chunks beat 30 marginal ones on faithfulness and cost |
+| Canonical facts first | Structured facts from systems of record go in a separate, labelled block and win on conflict (G16) |
+| Truncation | Truncate by whole chunk, never mid-sentence; record what was dropped (trace) |
+| History | Summarize long conversation history; never re-inject other users' history |
+| Per-source share | Cap one source's share of the final context (poisoning defence, `rag-security-reviewer` Query-side controls) |
+
+"Answer only from the context" in a prompt is necessary but not sufficient: verify after generation (`rag-response-contract.md` §10).
+
+---
+
 ## 1. Context Packing Pipeline
 
 After reranking, you have 50–100 candidate chunks. Packing decides which chunks enter the generation prompt and in what order.

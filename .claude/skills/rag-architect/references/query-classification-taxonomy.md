@@ -34,6 +34,18 @@ Match routing strategy to query volume predictability and class distribution:
 | Multiple data sources per query | **Fan-out** | Route to all relevant retrievers; merge results with RRF |
 | Query matches multiple classes | **Decomposition** | Split into sub-queries; answer each; merge (deferred to v2) |
 
+### Structured vs RAG routing (deterministic first)
+
+Route deterministically first; add a classifier or LLM router only when measured traffic shows the rules cannot cover it. Routing accuracy (structured-vs-RAG classification) is an eval metric (`rag-evaluator`).
+
+| Question shape | Path |
+|---|---|
+| Count, status, amount, date, identifier | Structured lookup (SQL / API) |
+| "What does document X say about Y" | Structured lookup to find X → RAG scoped to X |
+| Open-ended explanation / policy | RAG with citations |
+| "Find similar past cases" | Vector similarity over the authorized history; results are candidates, not authority (G14) |
+| Temporal ("as of last year") | Version-filtered retrieval (`versioning-and-freshness.md` §3–4) |
+
 ### Rule-Based Router Template
 ```python
 def route_query(query: str, user_context: dict) -> str:

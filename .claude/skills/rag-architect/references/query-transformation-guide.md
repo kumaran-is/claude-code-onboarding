@@ -19,6 +19,20 @@ These techniques are **v2 features** — ship the default stack first, measure y
 
 ---
 
+### Guardrails for every technique
+
+| Technique | Use when | Guardrail |
+|---|---|---|
+| Rewrite to standalone | Conversational follow-ups | Default for chat RAG |
+| Expansion (synonyms, domain vocabulary) | Vocabulary mismatch | The synonym list is versioned config, never hard-coded in prompts |
+| Multi-query (3–5 phrasings) | Broad or ambiguous queries | Counts toward the fan-out budget (`SKILL.md` defaults) |
+| Decomposition | Multi-part or comparison questions | Each sub-query retrieves and reranks separately; the answer cites per part |
+| HyDE | Short/vague queries after a low-confidence first pass | **Never** for high-stakes categories (legal, financial, safety, eligibility); the hypothetical text is a retrieval seed only, never evidence |
+
+Rewritten queries are logged; the original query is kept for the answer and for reranking; query understanding never widens the authorization scope (every derived query goes through the same scoped retrieval entry).
+
+---
+
 ## 2. Query Rewriting (§3.1)
 
 Reformulates conversational follow-ups into standalone queries using conversation history.

@@ -6,6 +6,8 @@
 
 Tools read and write session state through `ToolContext`; callbacks through `callback_context.state` (same interface).
 
+**State only persists through events.** The SessionService saves state when it appends an event: changes made through a `Context` (`tool_context.state`, `callback_context.state`) are tracked into the next event's `EventActions.state_delta`; code without a tracked context yields an event with `EventActions(state_delta={...})` itself. Never assign to `state` on a `Session` returned by `session_service.get_session(...)` (or `ctx.session.state` in a custom agent): the docs say it "bypasses the ADK's event tracking and can lead to lost data", and `InMemorySessionService` hides the loss because it shares the object. Test it on the persistent backend you deploy (`DatabaseSessionService` on SQLite in tests): run the agent, fetch the session again from a *new* service instance, assert the key. Prefixes: none = this session; `user:` = all of the user's sessions; `app:` = all users; `temp:` = this invocation only, never persisted. Source: adk.dev/sessions/state and adk.dev/events (fetched 2026-11-24; the pages state no 1.x/2.x difference for this rule).
+
 ```python
 from google.adk.tools import ToolContext
 

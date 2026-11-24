@@ -60,7 +60,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] Versioning strategy decided: URL path (`/api/v1/`) recommended
 - [ ] Version prefix consistent across all endpoints in the service
 - [ ] Deprecation policy defined (Sunset header for old versions)
-- [ ] Deprecated routes marked in the spec (`deprecated=True`), emit `Deprecation`/`Sunset` headers, and a check fails once a removal date has passed
+- [ ] Deprecated routes marked in the spec (`deprecated=True`), emit `Deprecation`/`Sunset` headers, and a check fails once a removal date has passed (mark each with `REMOVE-BY: YYYY-MM-DD`; `python3 .claude/scripts/check_deprecations.py` fails on a passed or malformed date, warns 30 days ahead)
 - [ ] Breaking vs non-breaking changes understood (removing/renaming fields = breaking)
 
 ## Error Handling

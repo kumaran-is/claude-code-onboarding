@@ -80,6 +80,13 @@ For each element in your DFD:
 3. If any question answer is "yes" or "unknown," record it as a threat finding
 4. Score each finding using the risk matrix below
 
+### Elements that are easy to leave off the diagram
+
+- **A client that talks to the database directly** (Firestore, Supabase, Firebase Storage): the security rules are the authorization layer, so draw the boundary between the app and the store, not only at your API. Each rule needs a denial test in the emulator (`database-schema-designer/reference/firestore-storage-security.md`).
+- **Side-effect channels** (push, email, SMS, webhooks out, payments): each is a Process with its own E and I threats. Who receives the message is an authorization decision: the recipient is resolved server-side from the current relationship, never taken from the request (`python-dev/reference/fastapi-authorization-boundaries.md`).
+- **Background workers and schedulers** acting without a user: record whose authority they use and what bounds it (tenant, scope, rate).
+- **Admin and support tooling**: usually the widest access with the weakest audit (R threats).
+
 ## Per-Interaction Analysis Pattern
 
 When two DFD elements communicate, analyze the interaction:

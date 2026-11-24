@@ -77,6 +77,14 @@ For each tool, define:
 - **Agent directive** — Include `next_actions` and `suggestion` in every response
 - **Error taxonomy** — Use `MCPErrorCode` enum with recovery actions
 
+### Adding a tool to an existing server
+
+1. Keep the tool a thin adapter: validate input, call the existing service or client, map the result and errors. No business rule lives only in the tool handler; if the logic is new, it goes into the service with its own unit tests.
+2. Classify it first (read-only, write, destructive, egress) and set the annotations to match; a write needs an idempotency key, a destructive tool needs the confirmation path (`reference/security-middleware-attacks.md` §1).
+3. Authorize in the server from the caller's verified identity and scope, never from a model-supplied id.
+4. Contract parity (one case per tool, `scripts/contract-test/contract.test.ts` is the model): add the name to the exact tool-set assertion ("no surprise tools"), plus at least one allowed call, one denied call (wrong role or scope) and one invalid-input call asserting the error code. A tool with no contract case, or a case with no tool, is a FAIL in review.
+5. Run `/verify full` (the Node block's MCP gate lists tools and compiles every schema) and the contract suite; quote both exit codes.
+
 ## Reference Files
 
 | Resource | When to Load |

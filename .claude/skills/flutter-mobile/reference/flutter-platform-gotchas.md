@@ -288,6 +288,16 @@ Read from the Flutter 3.50.1 tool templates (`gradle_utils.dart`, iOS project te
 - Native assets (build hooks that compile or bundle native code, e.g. `sqlite3` 3.x) are enabled by default on stable; do not add the end-of-life `sqlite3_flutter_libs` / `sqlcipher_flutter_libs` packages (see the offline-sync reference).
 - Upgrade path for an existing app: set the wrapper, AGP and Kotlin versions above, then run `flutter build apk --debug` and `flutter build ios --simulator --debug`, each with its own exit code.
 
+## 6. Feature Preflights (answer before writing the screen)
+
+Three questions that, left implicit, cause rework after the screen is built.
+
+**Refresh strategy.** For every list or detail screen, state in the plan which one applies and why: a live stream (Firestore snapshots, WebSocket: no refresh control, but show a reconnecting state), pull-to-refresh on a fetched list (`RefreshIndicator`, the future completes only when new data is in state), refetch on app resume or route re-entry (a lifecycle listener), or none (static content). Also say what the user sees while stale data is shown, and how a failed refresh is reported (it keeps the old data and shows an error, never an empty list). See `flutter-offline-cache-and-reads.md` for cache-first reads.
+
+**Media input.** Before adding camera or gallery input, decide: the source (camera, gallery or both); iOS usage strings in `Info.plist` (`NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`), which are required or the app is killed on first access; on Android, prefer the system photo picker, which needs no storage permission; the user cancelling (a `null` result is not an error); a size cap and downscale before upload; stripping EXIF location before upload; and the upload path (signed URL, see `database-schema-designer/reference/firestore-storage-security.md`). Maestro flows cover the permission-denied path on a device, never a browser.
+
+**Widget preview.** The Flutter Widget Previewer is stable since Flutter 3.47 (`flutter widget-preview start`, or the IDE "Flutter Widget Preview" tab; `@Preview` from `package:flutter/widget_previews.dart` on top-level functions, static methods or no-argument public constructors). Add previews for dumb widgets in loading, empty, error and long-text states, light and dark. Limits from the docs: it runs on Flutter Web, so native plugins and `dart:io` / `dart:ffi` calls throw; asset paths must be package-based. A preview is design feedback, never test evidence (widget tests and Maestro are). Source: docs.flutter.dev/tools/widget-previewer (checked 2026-11-24, "reflects Flutter 3.50").
+
 ## Pre-Commit Checklist (Platform/Emulator)
 
 ```

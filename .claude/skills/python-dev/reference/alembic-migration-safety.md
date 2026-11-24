@@ -228,6 +228,8 @@ Always run the round trip (section 7) so a broken downgrade is caught.
 
 Assess a generated draft by operation count: if it is mostly `drop_*`, the models are not fully imported or the filter is missing. Rewrite it, do not trim it.
 
+The opposite blind spot is silent: a **new model module that `env.py` never imports** is absent from `target_metadata`, so autogenerate emits nothing for it and `alembic check` stays green. Import every model module where the metadata is built (`models/__init__.py` imported by `env.py`), and run the static parity check, which needs no database: `python3 .claude/scripts/check_alembic_models.py <service root>` (FAIL: a `__tablename__` no migration creates; WARN: a migration table no model declares; `--selftest` proves it can fail).
+
 ---
 
 ## 9. Downgrade honesty

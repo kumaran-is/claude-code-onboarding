@@ -219,6 +219,7 @@ The answer to the 5th "Why?" is your fix target.
    - Automated test if possible
    - One-off test script if no framework
    - MUST have before fixing
+   - The test is **permanent**: committed in the same PR as the fix, named for the bug (`test_refund_twice_is_rejected`, not `test_fix_2`), and asserting the root cause rather than the symptom (the duplicate row is refused, not "no 500"). Show it red before the fix and green after; never delete or `skip` it once green
    - See `leverage-patterns.md` test-first protocol: write the test that defines success, then implement until it passes
 
 2. **Implement Single Fix**

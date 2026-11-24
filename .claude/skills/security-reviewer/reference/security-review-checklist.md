@@ -107,6 +107,8 @@ updates:
 - Database credentials not hardcoded; rotated regularly
 - **Secret rotation schedule enforced:** All secrets (API keys, DB passwords, JWT signing keys, service account keys) rotated every 90 days maximum. Use calendar reminders or automated rotation (GCP Secret Manager auto-rotation, AWS Secrets Manager rotation lambdas). Rotation must be zero-downtime: deploy new secret → verify → revoke old secret.
 - Parameterized queries only
+- **Firestore / Firebase Storage rules** (clients talk to the database directly, so the rules ARE the authorization layer): owner field pinned on update, editable fields allowlisted with `affectedKeys().hasOnly`, `list` scoped, server-only fields (approvals, counters, notification recipients) not client-writable, and an emulator suite of `assertFails` red-team cases. Missing owner pin or an unscoped `list` on user data = HIGH. → `.claude/skills/database-schema-designer/reference/firestore-storage-security.md`
+- **Notification and message recipients** are resolved server-side from the current relationship, never from a client-supplied address or id list → `.claude/skills/python-dev/reference/fastapi-authorization-boundaries.md`
 
 ### 9. Logging & Monitoring (MEDIUM)
 - Security events logged (failed logins, authorization failures, input validation errors)

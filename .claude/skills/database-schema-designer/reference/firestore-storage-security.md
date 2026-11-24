@@ -71,6 +71,21 @@ service cloud.firestore {
 | Missing `userId` check on user-owned data | IDOR vulnerability — users can access each other's records |
 | No default deny rule | New collections are open by default |
 | `allow delete: if true;` on user data | Malicious user can delete others' data |
+| `allow update` checks only `resource.data.userId` | The caller can rewrite `userId` (or a role, status or price field) to anything: owner check passes on the old document. Pin it: `request.resource.data.userId == resource.data.userId`, and allowlist editable fields with `request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])` |
+| `allow read` used where `list` matters | `read` = `get` + `list`: a rule that is safe for one document id can expose a whole collection to a query. Rules are not filters: a query must carry the same constraint (`where('userId', '==', uid)`) or it is denied, and the rule must require it |
+| Server-only fields writable from clients | Counters, approvals, payment state and notification recipients belong to the Admin SDK (which bypasses rules); deny client writes to them with `!affectedKeys().hasAny([...])` |
+
+### Red-team the rules in the emulator (required for any rules change)
+
+Write one denial test per attack, run against the Firestore emulator with `@firebase/rules-unit-testing` (modular API: `initializeTestEnvironment`, `authenticatedContext`, `unauthenticatedContext`, `withSecurityRulesDisabled` for seeding, `assertFails` / `assertSucceeds`; source: firebase.google.com/docs/rules/unit-tests, checked 2026-11-24). Minimum set per user-owned collection:
+
+1. unauthenticated get, list and write → `assertFails`;
+2. user B gets, lists, updates and deletes user A's document → `assertFails`;
+3. user A updates their own document but changes `userId` (ownership transfer) or a server-only field → `assertFails`;
+4. user A creates a document with `userId` = B → `assertFails`;
+5. an unscoped `list` query on the collection → `assertFails`; the same query with `where('userId','==','alice')` → `assertSucceeds` (positive control: proves the rules load and the emulator is reachable).
+
+Seed with `withSecurityRulesDisabled`, clear data between tests (`clearFirestore()`), and use a `demo-` project id so nothing can reach production. A suite with only `assertSucceeds` proves nothing about access control.
 
 ### Validation Rules
 
@@ -192,6 +207,8 @@ service firebase.storage {
 ## Checklist
 
 - [ ] Firestore rules enforce `request.auth.uid == resource.data.userId` on user-owned collections
+- [ ] Updates pin the owner field and allowlist editable fields (`affectedKeys().hasOnly`); server-only fields are not client-writable
+- [ ] Emulator red-team suite (5 denial cases above + 1 positive control) passes for every changed rule
 - [ ] Default deny rule exists (`allow read, write: if false;` on `/{document=**}`)
 - [ ] No blanket `allow read, write: if true;` rules in production
 - [ ] GCS buckets are NOT publicly accessible

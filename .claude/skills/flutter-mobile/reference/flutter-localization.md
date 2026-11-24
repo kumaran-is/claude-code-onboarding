@@ -153,6 +153,8 @@ void main() {
 
 Extend it to compare `{placeholder}` sets per key if translations are edited by hand.
 
+Without Dart, or as a CI step: `python3 .claude/scripts/check_l10n_parity.py lib/l10n` checks keys in both directions (missing and extra) and top-level ICU placeholder sets against the template named in `l10n.yaml`; exit 2 (template only, or no ARB files) is BLOCKED, not clean.
+
 ## 5. Formats and locale selection
 
 - Format dates/numbers with `intl` (`DateFormat`, `NumberFormat`), never by string concatenation.

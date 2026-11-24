@@ -251,6 +251,8 @@ non-production project available to the test environment).
 
 ## .env.example Template
 
+Keep it in parity with what the code reads, presence only (it never opens `.env`): `python3 .claude/scripts/check_env_parity.py <service root>` fails on a key read via `os.environ[...]`, `process.env.X`, a required `BaseSettings` field or a compose `${VAR}` that `.env.example` lacks, and warns on example keys nothing reads. Exit 2 (no `.env.example`) is BLOCKED, not clean.
+
 ```bash
 # Required — app will not start without these
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/myapp

@@ -1,6 +1,6 @@
 # Spring Boot Verification Gates
 
-Pre-PR static analysis gates for Java 21 + Spring Boot 3.5.x WebFlux services.
+Pre-PR static analysis gates for Java 25 + Spring Boot 4.2 services (Spring MVC and WebFlux).
 
 ---
 
@@ -84,7 +84,7 @@ Build fails on any `HIGH` severity bug. `MEDIUM`/`LOW` are reported but non-bloc
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0
     https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
-  <description>PMD rules for Spring Boot 3.5.x WebFlux / R2DBC services</description>
+  <description>PMD rules for Spring Boot 4.2 services</description>
 
   <rule ref="category/java/bestpractices.xml/AvoidDuplicateLiterals"/>
   <rule ref="category/java/bestpractices.xml/UnusedImports"/>
@@ -168,7 +168,7 @@ Chain all phases in a single `mvn verify`:
 mvn verify -DfailBuildOnCVSS=7
 ```
 
-**GitHub Actions snippet (Java 21):**
+**GitHub Actions snippet (Java 25):**
 
 ```yaml
 - name: Static Analysis & Tests

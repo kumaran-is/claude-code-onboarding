@@ -1,6 +1,8 @@
-# Spring Boot WebFlux Integration Testing Guide
+# Spring Boot Integration Testing Guide
 
-Integration testing patterns for Java 21 + Spring Boot 3.5.x reactive services — covering Testcontainers, contract testing with WireMock, external API resilience testing, and coverage standards.
+> **Stack:** the client samples below are **WebFlux** (`WebClient`, `StepVerifier`). Spring MVC integration tests (`RestTestClient`, Testcontainers, JWTs with issuer and audience) are in `spring-boot-templates.md` → Spring MVC → Tests.
+
+Integration testing patterns for Java 25 + Spring Boot 4.2 services — covering Testcontainers, contract testing with WireMock, external API resilience testing, and coverage standards.
 
 ## Testcontainers — Integration Testing
 
@@ -9,28 +11,21 @@ Use real databases instead of H2 to catch database-specific issues.
 ### PostgreSQL Setup
 
 ```java
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
-@Testcontainers
-@ActiveProfiles("integration-test")
-class OrderRepositoryIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")
-        .withDatabaseName("testdb")
-        .withUsername("test")
-        .withPassword("test");
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.r2dbc.url", () ->
-            "r2dbc:postgresql://" + postgres.getHost() + ":"
-            + postgres.getMappedPort(5432) + "/" + postgres.getDatabaseName());
-        registry.add("spring.r2dbc.username", postgres::getUsername);
-        registry.add("spring.r2dbc.password", postgres::getPassword);
-        registry.add("spring.flyway.url", postgres::getJdbcUrl);
-        registry.add("spring.flyway.user", postgres::getUsername);
-        registry.add("spring.flyway.password", postgres::getPassword);
+// Testcontainers 2: org.testcontainers.postgresql.PostgreSQLContainer (artifact testcontainers-postgresql), no generic.
+// @ServiceConnection wires the JDBC datasource (MVC), the R2DBC connection factory and Flyway (WebFlux) — no
+// hand-written spring.datasource / spring.r2dbc / spring.flyway properties.
+@TestConfiguration(proxyBeanMethods = false)
+public class TestcontainersConfiguration {
+    @Bean
+    @ServiceConnection
+    PostgreSQLContainer postgresContainer() {
+        return new PostgreSQLContainer(DockerImageName.parse("postgres:18.7")); // pinned, never "latest"
     }
+}
+
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@Import(TestcontainersConfiguration.class)
+class OrderRepositoryIntegrationTest {
 
     @Autowired
     private OrderRepository orderRepository;
@@ -50,22 +45,22 @@ class OrderRepositoryIntegrationTest {
 }
 ```
 
-### Maven Dependencies
+### Maven Dependencies (Testcontainers 2 artifact names; versions from the Boot BOM; plus `spring-boot-testcontainers`)
 
 ```xml
 <dependency>
     <groupId>org.testcontainers</groupId>
-    <artifactId>junit-jupiter</artifactId>
+    <artifactId>testcontainers-junit-jupiter</artifactId>
     <scope>test</scope>
 </dependency>
 <dependency>
     <groupId>org.testcontainers</groupId>
-    <artifactId>postgresql</artifactId>
+    <artifactId>testcontainers-postgresql</artifactId>
     <scope>test</scope>
 </dependency>
 <dependency>
     <groupId>org.testcontainers</groupId>
-    <artifactId>r2dbc</artifactId>
+    <artifactId>testcontainers-r2dbc</artifactId> <!-- WebFlux only -->
     <scope>test</scope>
 </dependency>
 ```
@@ -109,7 +104,7 @@ class PaymentServiceClientContractTest {
                     {"transactionId": "txn-123", "status": "APPROVED"}
                     """)));
 
-        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN)))
+        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN), "idem-order-1"))
             .expectNextMatches(r -> r.status().equals("APPROVED"))
             .verifyComplete();
     }
@@ -120,7 +115,7 @@ class PaymentServiceClientContractTest {
         wireMock.stubFor(post(urlEqualTo("/api/v1/payments"))
             .willReturn(aResponse().withStatus(500)));
 
-        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN)))
+        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN), "idem-order-1"))
             .expectError(ServiceIntegrationException.class)
             .verify();
     }
@@ -168,7 +163,7 @@ class PaymentServiceClientResilienceTest {
                     {"transactionId": "txn-123", "status": "APPROVED"}
                     """)));
 
-        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN)))
+        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN), "idem-order-1"))
             .expectNextMatches(r -> r.status().equals("APPROVED"))
             .verifyComplete();
     }
@@ -179,7 +174,7 @@ class PaymentServiceClientResilienceTest {
         when(cbRegistry.circuitBreaker("payment-api"))
             .thenThrow(CallNotPermittedException.createCallNotPermittedException(circuitBreaker));
 
-        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN)))
+        StepVerifier.create(client.processPayment(new PaymentRequest("order-1", BigDecimal.TEN), "idem-order-1"))
             .expectErrorMatches(t ->
                 t instanceof ServiceIntegrationException &&
                 t.getMessage().contains("payment"))

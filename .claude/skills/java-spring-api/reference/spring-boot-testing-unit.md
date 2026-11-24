@@ -1,6 +1,8 @@
-# Spring Boot WebFlux Unit Testing Guide
+# Spring Boot Unit Testing Guide
 
-Unit testing patterns for Java 21 + Spring Boot 3.5.x reactive services — covering test categories, BlockHound, Resilience4j mocking, and test data builders.
+> **Stack:** the samples below are mostly **WebFlux** (`StepVerifier`, BlockHound). Spring MVC tests (`@WebMvcTest` + `MockMvcTester`, `RestTestClient`, real RS256 tokens) are in `spring-boot-templates.md` → Spring MVC → Tests.
+
+Unit testing patterns for Java 25 + Spring Boot 4.2 services (MVC and WebFlux) — covering test categories, BlockHound, Resilience4j mocking, and test data builders.
 
 ## Test Categories
 
@@ -17,10 +19,10 @@ Unit testing patterns for Java 21 + Spring Boot 3.5.x reactive services — cove
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest { }
 
-// Controller slice — only web layer loaded, use @MockBean for service deps
+// Controller slice — only web layer loaded, @MockitoBean for service deps (@MockBean was removed in Boot 4)
 @WebFluxTest(OrderController.class)
 class OrderControllerTest {
-    @MockBean private OrderService orderService;
+    @MockitoBean private OrderService orderService;
     @Autowired private WebTestClient webTestClient;
 }
 
@@ -94,9 +96,9 @@ public abstract class BlockHoundTestBase {
                     .toArray(BlockHoundIntegration[]::new))
                 // Cryptographic operations — SecureRandom uses native OS calls
                 .allowBlockingCallsInside("java.security.SecureRandom", "nextBytes")
-                // Jackson — ObjectMapper may block during stream deserialization
-                .allowBlockingCallsInside("com.fasterxml.jackson.databind.ObjectMapper", "readValue")
-                .allowBlockingCallsInside("com.fasterxml.jackson.databind.ObjectMapper", "writeValueAsString")
+                // Jackson 3 (tools.jackson) — ObjectMapper may block during stream deserialization
+                .allowBlockingCallsInside("tools.jackson.databind.ObjectMapper", "readValue")
+                .allowBlockingCallsInside("tools.jackson.databind.ObjectMapper", "writeValueAsString")
                 // JUnit lifecycle — test framework internals
                 .allowBlockingCallsInside("org.junit.platform.launcher.core.DefaultLauncher", "execute")
                 // Log4j2 async — blocking queues in async appenders
@@ -165,8 +167,8 @@ Run tests with BlockHound enabled in the pipeline:
 # Maven — activate test profile for BlockHound
 mvn clean test -Dspring.profiles.active=test
 
-# JVM arg if needed for Java 21 bytecode instrumentation
-mvn test -DargLine="-XX:+AllowRedefinitionToAddDeleteMethods"
+# JVM arg BlockHound needs on JDK 13+ for bytecode instrumentation
+./mvnw test   # surefire argLine: -XX:+AllowRedefinitionToAddDeleteMethods -XX:+EnableDynamicAgentLoading (enough on JDK 25)
 ```
 
 ### Troubleshooting

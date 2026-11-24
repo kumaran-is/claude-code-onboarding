@@ -1,6 +1,20 @@
 # Reactive Patterns for Spring Boot WebFlux
 
-Advanced reactive patterns for Java 21 + Spring Boot 3.5.x covering Resilience4j operators, Redis, SSE, Spring Cloud Stream, and custom operators.
+Advanced reactive patterns for Java 25 + Spring Boot 4.2 WebFlux services
+
+## Blocking traps found by BlockHound in the Boot 4.2 reference app
+
+| Trap | Symptom | Fix |
+|---|---|---|
+| `UUID.randomUUID()` in a `WebFilter` | `/dev/urandom` read on the event loop → 500 under BlockHound | Build ids from `ThreadLocalRandom`, or generate them off the event loop |
+| First Bean Validation error loads Hibernate Validator's message `ResourceBundle` from the jar | One-time blocking read per locale | Narrow test-scope BlockHound allowance on `PlatformResourceBundleLocator.loadBundle`, nothing broader |
+| springdoc builds the OpenAPI model on the first `/v3/api-docs` request | Classpath scan on the event loop → 500 | `springdoc.pre-loading-enabled=true` + `springdoc.packages-to-scan` |
+| SSE response headers held until the first element | Clients and proxies think the stream hangs | Emit a keepalive comment at once: `Flux.interval(Duration.ZERO, 15s)` merged into the stream |
+| `Sinks.many().multicast().onBackpressureBuffer(n)` | Replays events emitted before anyone subscribed to the first subscriber | `multicast().directBestEffort()` + per-subscriber bounded `onBackpressureBuffer(n, onDrop, DROP_OLDEST)` |
+| `@Retryable` on a `Mono` method | Exhaustion surfaces as Reactor's retry-exhausted error (`Exceptions.isRetryExhausted(e)`), cause = last failure — unlike MVC, which rethrows the original | Map it in the advice (503/502) by unwrapping the cause |
+| JWT: `issuer-uri` and `public-key-location` both set | Boot uses OIDC discovery and ignores the key; an unreachable issuer → 500 on every request | Pick one; for offline keys build `NimbusReactiveJwtDecoder` with issuer and audience validators |
+
+Client properties: `spring.http.client.*` and `spring.http.reactiveclient.*` are deprecated in Boot 4 → `spring.http.clients.*`. covering Resilience4j operators, Redis, SSE, Spring Cloud Stream, and custom operators.
 
 ## Resilience4j Reactive Operators
 
@@ -223,7 +237,7 @@ Non-reactive signatures like `Function<Message, Message>` block the event loop.
 
 ### Wrapping Unavoidable Blocking I/O
 
-When blocking is unavoidable (legacy library, file I/O), isolate it on `boundedElastic`. On Java 21+, virtual threads are an alternative for blocking I/O isolation:
+When blocking is unavoidable (legacy library, file I/O), isolate it on `boundedElastic`. On Java 21+ (virtual threads are final), virtual threads are an alternative for blocking I/O isolation:
 
 ```java
 // Option 1: boundedElastic (default, always works)
@@ -277,10 +291,10 @@ Ensure the project uses reactive starters, not blocking equivalents:
 
 | Correct (Reactive) | Wrong (Blocking) |
 |---|---|
-| `spring-boot-starter-webflux` | `spring-boot-starter-web` |
+| `spring-boot-starter-webflux` | `spring-boot-starter-webmvc` (Boot 3 name: `-web`) |
 | `spring-boot-starter-data-r2dbc` | `spring-boot-starter-data-jpa` |
 | `spring-boot-starter-data-redis-reactive` | `spring-boot-starter-data-redis` |
-| `resilience4j-reactor` | `resilience4j-spring-boot3` alone |
+| `resilience4j-reactor` | `resilience4j-spring-boot4` alone |
 | Netty (default with webflux) | Tomcat (`spring-boot-starter-tomcat`) |
 
 Check for accidental blocking dependencies:

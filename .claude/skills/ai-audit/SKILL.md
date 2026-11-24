@@ -1,12 +1,12 @@
 ---
 name: ai-audit
-description: "Audit an existing AI feature or agentic app against the AI Playbook: reverse-engineered decision record, security review, eval audit, launch check, remediation plan. Use for /ai-audit or \"audit my AI app / agent\" on existing code, not for building new."
+description: "Audit an existing AI feature or agentic app: engineering audit against the AI Playbook (decision record, security review, eval audit, launch check, remediation plan) or governance mode (risk assessment, governance audit, production readiness review against the ai-governance skill, with validated JSON records). Use for /ai-audit, \"audit my AI app / agent\", \"assess AI risk\", \"governance audit\" or \"AI production readiness\" on existing code, not for building new."
 disable-model-invocation: true
-allowed-tools: Read, Write, Glob, Grep
-last-reviewed: 2026-05-17
+allowed-tools: Read, Write, Glob, Grep, Bash
+last-reviewed: 2026-11-23
 metadata:
-  triggers: audit my AI app, AI playbook audit, agentic system review, AI production readiness
-  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
+  triggers: audit my AI app, AI playbook audit, agentic system review, AI production readiness, AI risk assessment, AI governance audit
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-governance
 ---
 
 # AI Application Audit
@@ -18,6 +18,17 @@ metadata:
 Run a comprehensive audit of an existing agentic application or AI feature against the AI Playbook. This is for **verifying existing code**, not designing new features.
 
 The audit runs in five phases with explicit confirmation gates between each. Each phase produces a written artifact in the repo. The final output is a prioritized remediation plan.
+
+## Modes
+
+| Mode | Question | Standard | Output |
+|---|---|---|---|
+| `engineering` (default) | Is this AI code safe and well-evaluated? | AI Playbook + `.claude/skills/ai-playbook/reference/engineering-guardrails.md` | Phases 0–5 below |
+| `risk` | What is this system's governance risk tier and autonomy level? | `ai-governance` §2.4, §6 (`reference/risk-autonomy-oversight.md`) | `risk_assessment` (+ `autonomy_declaration` for A2+) |
+| `governance` | Which governance controls exist, who owns them and what proves them? | `ai-governance` §1, §9, §10, §16 (`reference/operating-model-and-registers.md`, `reference/supply-chain-eval-and-release.md`) | Control register entries, evidence gaps, boundary A–D per finding |
+| `readiness` | Is the system ready for production under the governance checklist? | `ai-governance` §19 (`assets/schemas/production_readiness.schema.json`) | `production_readiness` record + gap list |
+
+Pick the mode in Phase 0. `risk`, `governance` and `readiness` follow **Governance modes** at the end of this file and do not replace the engineering audit: a High or Critical system needs both.
 
 ## When to use this vs. the individual skills
 
@@ -40,6 +51,7 @@ Before any audit work, get clarity on what's being audited. Ask the user:
 2. **Is this a single feature audit or a multi-feature codebase?** (If multi-feature, ask which feature to audit first — running the full audit on multiple features in one shot is too token-heavy.)
 3. **Where is the AI code?** (Path or paths. If unknown, offer to scan and report back before continuing.)
 4. **Is there an existing Decision Record?** (Check `docs/ai-decisions/<feature-slug>.md`. If yes, this skips Phase 1 and uses it as input.)
+5. **Which mode?** (`engineering`, `risk`, `governance`, `readiness`; see Modes.) For a governance mode also check `governance/<feature-slug>/` for existing records.
 
 After confirming scope, summarize the plan:
 
@@ -335,6 +347,33 @@ Abort condition: Decision Record missing and user refuses to reverse-engineer on
 → Stop at Phase 1. Output: "Cannot proceed without a Decision Record. Run /ai-decision-record first."
 ```
 
+## Governance modes (`risk`, `governance`, `readiness`)
+
+Load the `ai-governance` skill first. Its Iron Law applies: a template or a valid record is never evidence that a control works or that anyone approved anything. Label every finding with its boundary: **A** toolkit implements and tests it, **B** toolkit template only, **C** needs enterprise infrastructure or a named organisational owner, **D** needs legal, regulatory or executive approval. Never report that the organisation has adopted the standard or that a control is effective without executed evidence.
+
+Records go to `governance/<feature-slug>/` as JSON (schemas in `.claude/skills/ai-governance/assets/schemas/`). Copy the matching file from `assets/examples/`, replace every value and set `record_status` to `draft`. Facts you cannot read from code are asked one at a time; unanswered fields stay out of the record so the validator flags them, never filled with guesses.
+
+**`risk` mode**
+1. Scan the AI surfaces as in Phase 1 step 1 and record the factors: data sensitivity, customer impact, likelihood, severity, reversibility, tenancy, state-changing, durable memory, fine-tuning.
+2. Propose a governance risk tier (Low/Medium/High/Critical) and autonomy level (A0–A4) as two separate judgements; record the engineering tier (T0–T3) only as a cross-reference. Never derive one from another.
+3. Ask for the named business, technical and risk owners and the value baseline (why AI beats a simpler solution).
+4. Write `risk_assessment.json` (`approval_status: pending`; only the risk owner can approve). For A2+ draft `autonomy_declaration.json`; numeric thresholds from the standard are illustrative and need risk-owner approval.
+
+**`governance` mode**
+1. Start from the 12 illustrative critical controls (`ai-governance/reference/operating-model-and-registers.md` §6) and the controls the risk tier implies. For each: does code enforce it (file:line), does a test prove it (command + own exit code + negative control), who owns it?
+2. Run the seeded unsafe scenarios the project can run locally (`ai-governance/reference/supply-chain-eval-and-release.md` §6: unauthorized tool access, cross-tenant retrieval, stale approval, duplicate mutation, injected retrieved content, invalid artifact manifest, known-bad output, prohibited data transfer). Record each as `control_evidence` with `mocked` set honestly. Scenarios needing a gateway or DLP you do not have are BLOCKED, not passed.
+3. Write `control_register_entry` per control. Untested controls are `Not tested` / `not_assessed`; placeholder owners are rejected.
+4. Draft `ai_bom.json` from lockfiles, image digests and prompt registry; mark components you cannot hash.
+
+**`readiness` mode**
+Fill `production_readiness.json` item by item with evidence references (Phase 4 strictness applies: verbal assertions are not evidence). Verdict READY only if no item is `not_done`; it is still a self-assessment, not sign-off. Cross-check `/ai-launch-check` (engineering release checklist); both must pass.
+
+**Validate and report (all governance modes)**
+```bash
+python3 .claude/skills/ai-governance/scripts/validate_governance_record.py --json governance/<feature-slug>/*.json > docs/ai-audits/<feature-slug>/governance-validation.json; echo "EXIT:$?"
+```
+Exit 0 = records complete and consistent; 1 = invalid records (list them as findings); 2 = usage or schema error. Write `docs/ai-audits/<feature-slug>/06-governance.md`: mode, records written, validator exit code, each finding with severity, boundary (A–D), evidence or NOT RUN/BLOCKED, and owner role. Remediation items join the Phase 5 plan.
+
 ## References
 
 - AI Playbook: `.claude/skills/ai-playbook/playbook.md` (Layers 1–4)
@@ -342,4 +381,5 @@ Abort condition: Decision Record missing and user refuses to reverse-engineer on
 - Launch checklist: `.claude/skills/ai-launch-check/SKILL.md` (Layer 4 §4.1)
 - Security adversarial catalog: Layer 3 §3.2 of playbook.md
 - Eval sizing table: Layer 2 §2.14 of playbook.md
+- Governance records, schemas, validator, boundary map: `.claude/skills/ai-governance/` (`reference/boundary-map.md`)
 - OWASP LLM Top 10: https://owasp.org/www-project-top-10-for-large-language-model-applications/

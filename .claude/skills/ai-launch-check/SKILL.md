@@ -15,7 +15,7 @@ metadata:
 
 **Do not output GO if any checklist item is ❌. A written exception in the Decision Record with an owner and deadline is required for every ⚠️ item. Verbal assertions do not count as evidence for any item.**
 
-Run the unified pre-production launch checklist from the AI Playbook (Layer 4 §4.1). This consolidates the pre-flight questions, pre-production gate, kill-switch tests, and adversarial test catalog into one launch review.
+Run the unified pre-production launch checklist from the AI Playbook (Layer 4 §4.1). This consolidates the pre-flight questions, pre-production gate, kill-switch tests, and adversarial test catalog into one launch review. It is also the §8 production release checklist of the engineering guardrails (rows applied by the capability's T-tier) and runs the §9 minimum verification tests. Requirement text for G1–G24, T0–T3 and the ten laws, plus the guardrail map: `.claude/skills/ai-playbook/reference/engineering-guardrails.md`.
 
 ## Procedure
 
@@ -66,7 +66,7 @@ Each item must point to a file, a log, or a running piece of code. Verbal assert
 - [ ] Prompt/model release path defined: eval-gated promotion, label/flag rollback with the registry cache TTL stated (`.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md`)
 - [ ] Rollout plan with promotion criteria (Layer 4 §4.2): offline → dogfood → shadow → beta → percentage → full
 - [ ] Incident response plan (Layer 4 §4.3): named on-call, rollback triggers with thresholds, affected-user identification, quarantine, reversal, post-mortem template, leading indicators
-- [ ] **Kill-switch tests passing** (Layer 4 §4.4): all eight tests in staging or shadow, with logs
+- [ ] **Kill-switch tests passing** (Layer 4 §4.4): all eight tests in staging or shadow, with logs; platform kill switch has a named owner, a runbook and a recorded drill (G10)
 
 ## Kill-switch tests — must all pass
 
@@ -80,6 +80,37 @@ Demand the test logs. If they don't exist, fail the launch check.
 - [ ] Simulate prompt injection from user input AND from a retrieved doc → least-privilege scope prevents harm
 - [ ] Roll back one prompt or model version → traffic shifts cleanly; metrics return to baseline
 - [ ] Verify deletion propagation → user-deleted data gone from embeddings, caches, logs, evals within SLA
+
+## Guardrail contract tests (§9 + L8 read-back) — must run
+
+The service implements the adapter in `assets/guardrail_contract_tests.py` (Python, pytest) or uses `assets/guardrail-contract.test.ts` (TypeScript + Zod 4 + Vitest, G3/G4 rows) and runs it in CI. Both templates were executed against a reference adapter and against deliberately broken adapters (every test red at least once): pytest 9.2.0 on Python 3.14.10; Vitest 5.1.1 + Zod 4.6.7 + TypeScript 6.0.3 on Node 26.13.1. Demand:
+
+- [ ] The command and its own exit code; pass / fail / skip counts. Any FAIL → ❌.
+- [ ] Every skipped test carries a NOT APPLICABLE reason (e.g. no offline client; no asynchronously settling action for the L8 `async_outcome` tests) listed in the report. A skip without a reason counts as FAIL.
+- [ ] At least one negative control per guardrail family (authority, contract, idempotency, isolation, budget, degradation): the control was disabled, the matching test went red, then restored. A suite never seen failing is not evidence.
+- [ ] Tests run against the real service boundary (HTTP or tool server) with a fake/scripted model; label it MOCKED. It is not live-provider evidence.
+
+## Release checklist (§8) rows not covered above (apply by T-tier)
+
+Governance readiness (enterprise governance §19) is a separate checklist: `.claude/skills/ai-governance/assets/schemas/production_readiness.schema.json` (validate with `.claude/skills/ai-governance/scripts/validate_governance_record.py`). Both must pass.
+
+
+- [ ] T-tier recorded (T0–T3, not the playbook 0–5 tier or A0–A4) and ≥ the floor of the highest principles action tier among the Decision Record's tools (A0/A1 → T0, T1 if user-facing or PII; A2, A3, A4, Emergency → T2; A4 or Emergency in a regulated or life-safety domain → T3; table: `engineering-guardrails.md` "Principles action tiers"), else ❌; canonical authority named for every input and output, AI vs deterministic steps separated, safety / authorization / spend / verification boundaries preserved (G2); T2/T3: independent sign-off named in the Decision Record (implementing team is never sole approver); T3: Legal/compliance sign-off and regulatory mapping
+- [ ] Outcome defined (G24): baseline, target, measurement method, evaluation window, cost to serve, disable trigger
+- [ ] Ten laws (four-element rule, `engineering-guardrails.md` "Ten laws"): the Decision Record's ten-laws table gives every applicable law a control, owner, evidence and failure condition (defaults: `engineering-guardrails.md` "Ten laws"); a law with no evidence → ❌. L8: every consequential action that settles asynchronously reports `PENDING_CONFIRMATION` until the system-of-record read-back passes (contract tests `test_async_action_is_pending_until_outcome_read_back`, `test_unverified_async_outcome_is_never_reported_done`)
+- [ ] Per-org rate, concurrency and period budget controls verified; stale AI intent cancelled by human override (test); idempotency keys org-scoped, payload-hash bound, replay window and retention defined; multi-step operations use the domain's saga / compensation, never half-mutated on budget exhaustion (G4)
+- [ ] Human exception queue: owner, SLA, capacity, priority classes, overflow behaviour
+- [ ] AI gateway / shared model client failure mode verified: degradation, no bypass (test); no parallel source of truth or retrieval store introduced
+- [ ] Cross-scope isolation tests include snippets, counts/facets, nearest neighbours and related entities; RAG ingestion ACLs travel with chunks and ACL changes propagate within SLA, deleted sources gone within SLA, stale versions excluded or labelled (G15)
+- [ ] Model-call egress: allowed/prohibited data classes, approved providers and region checked before the call (test); minimum-necessary PII; secrets excluded from embeddings and memory (test)
+- [ ] Trace-store privacy: org isolation, role-based access, retention, redaction
+- [ ] Safety-recall gate for safety-capable paths and out-of-distribution escalation defined; eval dataset provenance and review QA recorded; every production input language evaluated or routed to a manual flow (test)
+- [ ] Fairness / bias testing done where the output influences decisions about people (G19)
+- [ ] Feature flag default OFF until gates pass (T2/T3)
+- [ ] Role-safe advice boundaries reviewed (G18); AI disclosure reviewed (G21); accessibility reviewed by `accessibility-auditor` (G22)
+- [ ] Offline behaviour verified if any client is offline-capable (G23)
+- [ ] Model and provider approved and listed in the AI inventory (G20; `ai-governance` skill)
+- [ ] Waivers (§11): each has reason, compensating controls, owner, independent approver, unexpired date. A waiver of G2 or G9 at T2/T3 is invalid → ❌
 
 ## If streaming, voice or multimodal (skip for text-only features)
 
@@ -101,6 +132,9 @@ After running through every item, output:
 **Reviewer**: <Claude Code session> — <date>
 **Decision Record**: docs/ai-decisions/<feature-slug>.md
 
+**Guardrail contract suite**: `<command>` → exit <code>; <N> pass / <N> fail / <N> skipped (reasons listed); negative controls: <list>
+**Tiers**: T<0-3> (§3) · A<0-4> (governance §6) · playbook tier <0-5>
+
 ## Verified (✅)
 - ...
 
@@ -121,6 +155,7 @@ After running through every item, output:
 
 - Bias toward NO-GO. A launch check is a forcing function; if the team passes too easily, the check isn't doing its job.
 - Do not let "we'll fix it after launch" pass for kill-switch tests, output contract, or security review. Those are pre-launch by definition.
+- A guardrail contract suite that was not run is NOT RUN, and NOT RUN counts as FAIL for authority (G2), contract (G3), idempotency (G4), isolation (G9) and kill-switch (G10) rows.
 - Tier-3+ features with no human approval gate are an automatic NO-GO unless the Decision Record has a written domain-risk exception.
 
 ## If this skill cannot proceed
@@ -155,4 +190,6 @@ Abort condition: all 8 kill-switch tests have no logs
 - AI Playbook Layer 4 §4.2 Rollout strategy: `.claude/skills/ai-playbook/playbook.md`
 - AI Playbook Layer 4 §4.4 Kill-switch tests: `.claude/skills/ai-playbook/playbook.md`
 - AI Playbook Layer 2 §2.14 Eval size floors: `.claude/skills/ai-playbook/playbook.md`
+- Guardrail requirements (§3 tiers, G1–G24, §11 waivers, ten laws, action tiers, adoption checklist): `.claude/skills/ai-playbook/reference/engineering-guardrails.md`
+- Contract test templates: `.claude/skills/ai-launch-check/assets/`
 - Prerequisite: `/ai-decision-record` (must exist before launch check runs)

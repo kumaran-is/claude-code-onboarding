@@ -5,7 +5,7 @@ allowed-tools: Read
 last-reviewed: 2026-11-22
 metadata:
   triggers: AI feature design, should I use AI, build an agent, RAG design, LLM call, prompt injection, AI lifecycle, AI guardrails, AI observability
-  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit
+  related-skills: ai-playbook, ai-decision-record, ai-launch-check, ai-incident-response, ai-audit, ai-governance
 ---
 
 # AI Application Playbook
@@ -46,10 +46,13 @@ This skill is the entry point for production AI work. Each stage has ONE canonic
 | 5. RAG: retrieval, permissions, vector stores | `skills/rag-architect/`, `skills/vector-database/`, `skills/weaviate/`; debugging `skills/rag-debugger/`; security `skills/rag-security-reviewer/` | `rag-implementation-reviewer`, `pgvector-schema-reviewer`, `weaviate-schema-reviewer` | `/rag-design`, `/scaffold-rag-pipeline`, `/rag-debug`, `/rag-review` |
 | 6. Evals and testing (fake models, golden sets, judges, CI tiers) | `skills/eval-guide/`, `skills/llm-evaluation/`, `skills/rag-evaluator/`, `skills/adk-eval-guide/` | `ai-eval-designer` (design), `eval-reviewer` (code), `rag-eval-runner` (execution) | `/rag-eval-init` |
 | 7. Review (full AI checklist) | `agents/ai-security-reviewer.md` checklist; audit orchestration `skills/ai-audit/` | `ai-security-reviewer` + the stack reviewer above | `/ai-audit` |
-| 8. Guardrails and governance (deterministic vs probabilistic, fail closed, egress, approvals) | playbook §2.4 (output contract), §2.5 (security + control table), §2.6 (agent guardrails), §2.13 (data governance); code: `skills/agentic-ai-dev/reference/agentic-guardrails-security.md` | `ai-security-reviewer` | — |
+| 8. Guardrails G1–G24 (deterministic vs probabilistic, fail closed, egress, approvals, idempotency, kill switch) | `skills/ai-playbook/reference/engineering-guardrails.md` (canonical: G1–G24 and ten-laws requirement text, T-tier and action-tier tables, and per guardrail the impl, reviewer, gate, test); playbook §2.4–§2.6, §2.13; code: `skills/agentic-ai-dev/reference/agentic-guardrails-security.md`; §9 contract tests `skills/ai-launch-check/assets/` | `ai-security-reviewer` + stack reviewer | `/ai-decision-record`, `/ai-launch-check` |
+| 8b. Enterprise governance (risk class, A0–A4 autonomy, approvals, AI BOM, control evidence); multi-tenant starter | `skills/ai-governance/`; tenant isolation checklist `skills/ai-playbook/reference/multi-tenant-ai-starter.md` | — | `/ai-audit` |
 | 9. Observability (GenAI semconv traces, token/cost/TTFT metrics, redaction, prompt provenance, alerts) | `skills/deployment-ci-cd/reference/ai-observability.md` (extends `python-observability.md`); ADK specifics `skills/adk-observability-guide/` | — | — |
 | 10. LLMOps (prompt/model versioning, eval-gated promotion, canary/rollback, provider migration, quota) | `skills/deployment-ci-cd/reference/llmops-release-and-rollout.md`; prompt registry `skills/eval-guide/reference/langfuse-prompts.md`; ADK deploy `skills/adk-deploy-guide/` | launch gate `skills/ai-launch-check/`; incidents `skills/ai-incident-response/` | `/ai-launch-check`, `/ai-incident-response` |
 | 11. Streaming, multimodal, voice (optional) | `skills/streaming-protocols/`, `skills/ai-chat/`, `skills/voice-ai-development/` | — | — |
+
+**Three tier vocabularies, never mixed:** engineering risk tier **T0–T3** (`reference/engineering-guardrails.md` §3: which of G1–G24 are mandatory), autonomy level **A0–A4** (governance standard §6), and this playbook's blast-radius tier **0–5** (playbook §2.2: review intensity). A fourth, per action: the principles action tier A0–A4 / Emergency (`engineering-guardrails.md`, written "principles A2"). Always name the vocabulary when writing a tier.
 
 Claude Code session guardrails for AI work (hooks in `.claude/hooks/`): `pre-prompt-injection.sh` blocks terminal-escape and NUL shapes and advises on injection phrases; `output-llm-quota-guard.sh` separates billing/quota exhaustion (stop, BLOCKED) from transient rate limits (bounded retry); `prompt-secret-scan.sh` blocks provider keys in prompts; `post-edit-python-log-pii-advisory.sh` flags exception text in log calls.
 
@@ -151,5 +154,8 @@ Situation: user insists on AI after triage says no
 - Layer 2 §2.3 Implementation Minimum: 6 required items before shipping any AI feature
 - Layer 2 §2.4 Output Contract: schema → types → business rules → permissions → confidence → audit → route
 - Layer 3 §3.2 Adversarial test catalog: prompt injection, tool misuse, retrieval poisoning
+- Guardrails G1–G24, ten laws L1–L10, tiers and adoption checklist: `.claude/skills/ai-playbook/reference/engineering-guardrails.md`
+- Multi-tenant AI starter (governance §14.1 golden path; checklist of the §8.1 isolation controls, each linked to its canonical file): `.claude/skills/ai-playbook/reference/multi-tenant-ai-starter.md`
 - Lifecycle skills: `/ai-decision-record` → `/ai-launch-check` → `/ai-incident-response` → `/ai-audit` (full stage map: "Lifecycle router" above)
-- OWASP LLM Top 10: https://owasp.org/www-project-top-10-for-large-language-model-applications/
+- OWASP Top 10 for LLM Applications (2025) and Agentic Applications (2026): https://genai.owasp.org/llm-top-10/ — per-class IDs and MITRE ATLAS mapping: `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` §3.1
+- Data governance and privacy (egress, retention, erasure propagation, purpose limits): `.claude/skills/ai-playbook/reference/data-governance-privacy.md`

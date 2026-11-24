@@ -28,6 +28,12 @@ selftest() {
 /repo/keys/server.pem|2|key/certificate
 /repo/infra/prod.tfvars|2|Terraform
 /repo/package-lock.json|2|lock files
+/repo/.claude/state/review/main/ledger.json|2|review evidence
+/repo/.claude/state/review/feat__x/stamps/review.json|2|review evidence
+/repo/.Claude/State/review/main/ledger.json|2|review evidence
+/repo/.claude//state/review/main/ledger.json|2|review evidence
+/repo/.claude/./state/review/main/ledger.json|2|review evidence
+/repo/.claude/statements.md|0|
 /repo/.env.example|0|
 /repo/apps/api/.env.sample|0|
 /repo/.env.template|0|
@@ -49,6 +55,13 @@ file=$(echo "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""' 2
 # --- Git internals: hooks, config and objects must change through git, never through file edits ---
 if echo "$file" | grep -qE '(^|/)\.git/'; then
   echo "BLOCKED: Cannot modify .git/ internals via Write/Edit (hooks, config, objects). Use git commands." >&2
+  exit 2
+fi
+
+# --- Enforcement-kit evidence: the ledger and stamps are written only by review_state.py and the kit's hooks ---
+# Case-insensitive (APFS) and with // and /./ collapsed, so path spellings do not dodge it.
+if printf '%s\n' "$file" | sed -e 's#//*#/#g' -e 's#/\./#/#g' | grep -qiE '(^|/)\.claude/state/'; then
+  echo "BLOCKED: .claude/state holds review evidence (ledger, stamps); only review_state.py and the enforcement kit write it." >&2
   exit 2
 fi
 

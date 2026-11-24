@@ -126,8 +126,9 @@ def add_finding(data: dict, reviewer: str, severity: str, summary: str, location
     return f
 
 
-def record_report(data: dict, reviewer: str, agent_id: str, text: str) -> tuple[str, int]:
-    """Parse a reviewer report. Returns (status, count): status is recorded | duplicate | none | missing."""
+def record_report(data: dict, reviewer: str, agent_id: str, text: str, tree: str = "") -> tuple[str, int]:
+    """Parse a reviewer report. Returns (status, count): status is recorded | duplicate | none | missing.
+    `tree` is the fingerprint the reviewer saw (set by the SubagentStop hook): review_check() trusts only that."""
     if agent_id and agent_id in data["reports"]:
         return "duplicate", 0
     rows = FINDING_RE.findall(text or "")
@@ -135,7 +136,8 @@ def record_report(data: dict, reviewer: str, agent_id: str, text: str) -> tuple[
         return "missing", 0
     for sev, loc, summary in rows:
         add_finding(data, reviewer, sev, summary, loc, agent_id)
-    data["reports"][agent_id or f"anon-{len(data['reports']) + 1}"] = {"reviewer": reviewer, "at": time.time(), "count": len(rows)}
+    data["reports"][agent_id or f"anon-{len(data['reports']) + 1}"] = {"reviewer": reviewer, "at": time.time(),
+                                                                       "count": len(rows), "tree": tree}
     return ("recorded" if rows else "none"), len(rows)
 
 
@@ -231,7 +233,42 @@ def fingerprint(root: Path, scope: list[str] | None = None) -> str:
     return digest.hexdigest()
 
 
+REVIEW_FIX = ("dispatch the stack's reviewer agents on the current tree (/review-code) and resolve every blocking "
+              "finding; the SubagentStop hook records their reports. This evidence cannot be written by hand")
+
+
+def review_check(root: Path) -> tuple[str, str]:
+    """Reviewer-approval evidence: every reviewer's LATEST report was recorded by the SubagentStop hook against the
+    current tree, and no finding blocks. A stamp file or a CLI call cannot produce it (stamp_write refuses 'review')."""
+    try:
+        with ledger(root) as data:
+            latest: dict[str, dict] = {}
+            for rep in data["reports"].values():
+                if rep["reviewer"] not in latest or rep["at"] >= latest[rep["reviewer"]]["at"]:
+                    latest[rep["reviewer"]] = rep
+            rows = blocking(data)
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:  # corrupt ledger: never VALID
+        return "UNKNOWN", f"unreadable review ledger ({type(exc).__name__}); re-run the reviewers. {REVIEW_FIX}"
+    if not latest:
+        return "MISSING", "no reviewer report has been recorded on this branch"
+    try:
+        current = fingerprint(root)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        return "UNKNOWN", f"cannot fingerprint the tree: {exc}"
+    stale = sorted(r for r, rep in latest.items() if rep.get("tree") != current)
+    if stale:
+        return "CHANGED", f"files changed since {', '.join(stale)} last reviewed (re-dispatch them)"
+    if rows:
+        return "BLOCKED", f"{len(rows)} blocking finding(s) open: {', '.join(f['id'] for f in rows[:6])}"
+    age_h = (time.time() - min(rep["at"] for rep in latest.values())) / 3600
+    if age_h > float(os.environ.get("REVIEW_STAMP_MAX_AGE_HOURS", "72")):
+        return "EXPIRED", f"the oldest current review is {age_h:.0f}h old"
+    return "VALID", f"{len(latest)} reviewer(s) reviewed the current tree; no blocking findings"
+
+
 def stamp_write(root: Path, name: str, note: str = "", mode: str = "") -> dict:
+    if name == "review":
+        raise ValueError("'review' evidence comes only from recorded reviewer reports; " + REVIEW_FIX)
     d = state_dir(root) / "stamps"
     d.mkdir(parents=True, exist_ok=True)
     scope = SCOPES.get(name)
@@ -296,8 +333,13 @@ def cli(argv: list[str]) -> int:
     if args.cmd == "enabled":
         on = is_enabled(root); print("on" if on else "off"); return 0 if on else 1
     if args.cmd == "stamp":
+        if args.op == "check" and args.name == "review":
+            status, why = review_check(root); print(f"{status}: {why}"); return 0 if status == "VALID" else 1
         if args.op == "write":
-            rec = stamp_write(root, args.name, args.note, args.mode)
+            try:
+                rec = stamp_write(root, args.name, args.note, args.mode)
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr); return 2
             print(f"stamp {args.name} = {rec['tree'][:12]}" + (f" ({args.mode})" if args.mode else "")); return 0
         modes = tuple(m for m in args.mode.split(",") if m)
         status, why = stamp_check(root, args.name, modes); print(f"{status}: {why}"); return 0 if status == "VALID" else 1
@@ -410,6 +452,24 @@ def selftest() -> int:
             ok(stamp_check(root, "verify")[0] == "CHANGED", "positive: quote and newline in a file name are hashed, not an error")
             (state_dir(root) / "stamps" / "verify.json").write_text("{not json")
             ok(stamp_check(root, "verify")[0] == "UNKNOWN", "a corrupt stamp is UNKNOWN (never VALID)")
+            # reviewer-approval evidence (G2): only hook-recorded reports on the current tree count
+            ok(review_check(root)[0] == "MISSING", "review: MISSING before any reviewer report")
+            raises(lambda: stamp_write(root, "review", "trust me"), "positive: a hand-written 'review' stamp is refused")
+            d = state_dir(root) / "stamps"; d.mkdir(parents=True, exist_ok=True)
+            (d / "review.json").write_text(json.dumps({"name": "review", "tree": fingerprint(root), "at": time.time()}))
+            ok(review_check(root)[0] == "MISSING", "positive: a forged review.json file is not evidence")
+            with ledger(root, write=True) as data:
+                record_report(data, "code-reviewer", "r1", "FINDINGS: none", tree=fingerprint(root))
+            ok(review_check(root)[0] == "VALID", "negative: a clean report on the current tree -> VALID")
+            (root / "a.txt").write_text("edited after review\n")
+            ok(review_check(root)[0] == "CHANGED", "positive: an edit after the review -> CHANGED")
+            with ledger(root, write=True) as data:
+                record_report(data, "code-reviewer", "r2", "FINDING: HIGH | a.txt:1 | bad", tree=fingerprint(root))
+            ok(review_check(root)[0] == "BLOCKED", "positive: a current report with an open finding -> BLOCKED")
+            with ledger(root, write=True) as data:
+                data["findings"][-1]["state"] = "CLOSED"
+                record_report(data, "security-reviewer", "r3", "FINDINGS: none", tree="")
+            ok(review_check(root)[0] == "CHANGED", "positive: a report without a recorded tree never counts as current")
         except (RuntimeError, OSError) as exc:
             ok(False, f"stamp fixture: {exc}")
     print("selftest PASS" if fails == 0 else "selftest FAIL")

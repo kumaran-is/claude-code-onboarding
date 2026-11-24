@@ -28,7 +28,7 @@ Slack token (xox.-/xapp-)	xox[abeoprs]-[0-9]+-[0-9A-Za-z-]{8,}|xapp-[0-9]+-[A-Za
 Langfuse secret key (sk-lf-...)	sk-lf-[0-9a-zA-Z-]{20,}
 Hugging Face token (hf_...)	hf_[A-Za-z0-9]{34,}
 HashiCorp Vault token (hvs./hvb.)	hv[sb]\.[A-Za-z0-9_-]{20,}
-Private key (-----BEGIN ... PRIVATE KEY-----)	-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----|-----BEGIN PGP PRIVATE KEY BLOCK-----
+Private key (-----BEGIN ... PRIVATE KEY-----)	-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----|-----BEGIN PGP PRIVATE[ ]KEY BLOCK-----
 Database connection string with embedded credentials	(postgres(ql)?|mysql|mariadb|mongodb(\+srv)?)""://[^:/@[:space:]]+:[^@[:space:]\$]{6,}@[^[:space:]]+
 Literal bearer token	[Bb]earer [A-Za-z0-9._~+/-]{40,}
 Hardcoded secret assignment (key = \"...\")	(api_key|apikey|secret_key|access_token|auth_token|private_key|client_secret)[\"']?[[:space:]]*[=:][[:space:]]*[\"'][a-zA-Z0-9+/_-]{32,}[\"']

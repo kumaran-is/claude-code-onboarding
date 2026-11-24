@@ -53,6 +53,8 @@ def scan(root: Path, today: dt.date, warn_days: int) -> tuple[int, list[str]]:
                     lines.append(f"WARN {where}: removal due {due} (in {(due - today).days} day(s))")
     if files == 0:
         return 2, [f"BLOCKED: no source files under {root}"]
+    if marks == 0:  # nothing promised a removal date: the check cannot apply, so it is never counted as a PASS
+        return 2, [f"NOT APPLICABLE: {files} file(s) scanned, no REMOVE-BY marker"]
     lines.append(f"scanned: {files} file(s), {marks} REMOVE-BY marker(s), today={today}")
     return (1 if any(l.startswith("FAIL") for l in lines) else 0), lines
 
@@ -87,6 +89,9 @@ def selftest() -> int:
         ok(rc == 1 and any("api.py:1" in l for l in out), "positive: time passing turns a clean marker into a FAIL", out)
     with tempfile.TemporaryDirectory() as d:
         ok(scan(Path(d), today, 30)[0] == 2, "an empty tree is BLOCKED, never clean")
+        (Path(d) / "plain.py").write_text("x = 1  # no removal promised\n")
+        rc, out = scan(Path(d), today, 30)
+        ok(rc == 2 and out[-1].startswith("NOT APPLICABLE"), "files but no marker -> exit 2 NOT APPLICABLE, never PASS", out)
     print("selftest PASS" if fails == 0 else "selftest FAIL")
     return 1 if fails else 0
 

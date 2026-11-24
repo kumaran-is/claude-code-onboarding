@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Content-pin gate for build inputs: every GitHub Action `uses:` pinned to a 40-hex commit SHA, every
 # Dockerfile `FROM` pinned by `@sha256:` digest, no `COPY --from=<image-ref>`, no `:latest`.
-# Local actions (`./...`) and `docker://` refs with a digest are allowed. Rationale and how to resolve pins:
+# Local actions (`./...`) and `docker://` refs with a digest are allowed. Markdown (CI templates in skills, commands,
+# agents) is checked for `uses:` only, and also accepts an `@<placeholder>` such as `@<40-hex-sha>`. Rationale and how to resolve pins:
 # .claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md section 3.
 # usage: check-pins.sh <file>...   |   check-pins.sh --selftest
 # exit: 0 clean, 1 violations, 2 nothing to scan (zero files is a failure, never clean)
@@ -12,6 +13,8 @@ scan() {  # prints violations; returns 1 if any
   case "$f" in
     *.yml|*.yaml)
       hits=$(grep -nE '^[[:space:]-]*uses:[[:space:]]+["'"'"']?[^./[:space:]"'"'"']' "$f" | grep -vE '@[0-9a-f]{40}["'"'"']?([[:space:]]|$)|docker://[^[:space:]]+@sha256:[0-9a-f]{64}') ;;
+    *.md)  # templates teach the pattern: same uses: rule, placeholders allowed
+      hits=$(grep -nE '^[[:space:]-]*uses:[[:space:]]+["'"'"']?[A-Za-z0-9_.-]+/[^[:space:]"'"'"']*@' "$f" | grep -vE '@[0-9a-f]{40}["'"'"']?([[:space:]]|$)|@<[^>]+>') ;;
     *)  # FROM <earlier stage name> is a reference, not an image: stage names come from `AS <name>`
       hits=$(awk 'BEGIN { IGNORECASE = 1 }
         toupper($1) == "FROM" {
@@ -46,6 +49,10 @@ selftest() {
   out=$(scan "$d/Dockerfile.nostage"); [ -n "$out" ]; ok $? "positive: FROM <name> that is not an earlier stage is still flagged"
   out=$(scan "$d/bad.yml"); [ -n "$out" ] && case "$out" in *"actions/checkout@v7"*) true ;; *) false ;; esac; ok $? "positive: a tag-pinned action is reported with file:line"
   out=$(scan "$d/Dockerfile.bad"); [ "$(printf '%s\n' "$out" | grep -c .)" -ge 2 ]; ok $? "positive: undigested FROM and COPY --from=<image> are both reported"
+  printf '```yaml\n- uses: actions/checkout@%s # v7.0.1\n- uses: google-github-actions/auth@<40-hex-sha>\n```\nText uses: a@v1 in prose.\n' "$sha40" > "$d/good.md"
+  scan "$d/good.md" >/dev/null; ok $? "negative: SHA-pinned and <placeholder> refs in a Markdown template are clean"
+  printf '```yaml\n      - uses: actions/setup-node@v4\n```\n' > "$d/bad.md"
+  out=$(scan "$d/bad.md"); case "$out" in *"setup-node@v4"*) true ;; *) false ;; esac; ok $? "positive: a tag-pinned action in a Markdown template is reported"
   "$BASH" "$self" >/dev/null 2>&1; [ $? -eq 2 ]; ok $? "zero files -> exit 2, never clean"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"

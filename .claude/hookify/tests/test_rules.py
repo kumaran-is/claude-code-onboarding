@@ -85,6 +85,25 @@ CASES = {
         (False, f"{NG}/filter.component.html", '<input type="file" (change)="pick($event)" />'),
         (False, "/w/web/admin/src/app/shared/ui/input.component.html", '<input class="input" />'),
     ],
+    "design-tier-comment-dart": [
+        (True, "/w/packages/shared_ui/lib/src/widgets/task_card.dart", "import 'package:flutter/widgets.dart';\n"),
+        (True, "/w/packages/shared_ui/lib/components/atoms/pill.dart", "// Tier: atom\nclass Pill {}\n"),
+        (True, "/w/packages/shared_ui/lib/src/widgets/row.dart", "// Copyright\n// Tier: Molecule\n"),
+        (False, "/w/packages/shared_ui/lib/src/widgets/task_card.dart", "// Tier: Molecule\nimport 'package:flutter/widgets.dart';\n"),
+        (False, "/w/packages/shared_ui/lib/src/widgets/pill.dart", "// Tier: Atom"),
+        (False, "/w/packages/shared_ui/lib/src/widgets/task_card.g.dart", "part of 'task_card.dart';\n"),
+        (False, "/w/packages/shared_ui/lib/src/widgets/task_card_test.dart", "void main() {}\n"),
+        (False, "/w/packages/shared_ui/lib/src/theme/app_spacing.dart", "class AppSpacing {}\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "class HomeScreen {}\n"),
+    ],
+    "design-tier-comment-angular": [
+        (True, f"{NG}/../../shared/components/item-card/item-card.component.ts", "import { Component } from '@angular/core';\n"),
+        (True, "/w/web/src/app/shared/components/error-state/error-state.component.ts", "// Tier: Template\n"),
+        (False, "/w/web/src/app/shared/components/item-card/item-card.component.ts", "// Tier: Organism\nimport { Component } from '@angular/core';\n"),
+        (False, "/w/web/src/app/shared/components/item-card/item-card.component.spec.ts", "describe('x', () => {});\n"),
+        (False, "/w/web/src/app/shared/components/item-card/item-card.component.html", "<div></div>\n"),
+        (False, f"{NG}/list.component.ts", "import { Component } from '@angular/core';\n"),
+    ],
 }
 
 

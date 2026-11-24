@@ -194,7 +194,7 @@ jobs:
 
       - name: Hookify rule tests
         run: |
-          python3 .claude/hookify/tests/test_rules.py > hookify.log 2>&1; rc=$?
+          rc=0; python3 .claude/hookify/tests/test_rules.py > hookify.log 2>&1 || rc=$?  # under bash -e a bare `; rc=$?` exits before the log is shown
           cat hookify.log
           if [ "$rc" -eq 0 ] && ! grep -q 'selftest PASS' hookify.log; then echo "::error::no 'selftest PASS' line"; rc=99; fi
           exit "$rc"
@@ -220,3 +220,5 @@ jobs:
           bash .claude/scripts/check-pins.sh --selftest
           shopt -s nullglob
           bash .claude/scripts/check-pins.sh .github/workflows/*.yml .github/workflows/*.yaml .github/actions/*/action.yml .github/actions/*/action.yaml
+          # CI templates in skills, commands and agents teach the same rule (placeholders like @<40-hex-sha> allowed)
+          git ls-files -z -- '.claude/**/*.md' README.md | xargs -0 bash .claude/scripts/check-pins.sh

@@ -25,47 +25,70 @@ The protocol choice lives in `../SKILL.md`. This file covers what the SERVER mus
 
 ---
 
-## 2. SSE endpoint (FastAPI + sse-starlette)
+## 2. SSE endpoint (FastAPI native `fastapi.sse`)
 
-The `event_stream` body is the executed fixture (Python 3.14, FastAPI 0.165, Starlette 1.10, sse-starlette 3.7.1, uvicorn 0.54, scripted fake model, no provider; `ruff check` and `mypy --strict` clean) with app names substituted (`ChatRequest`, `model_stream`, `save_answer`). The route below it (auth, flag, `disabled_stream`) is illustrative, not executed. `log_exception` is the Phase 2 helper (`deployment-ci-cd/reference/python-observability.md` section 2).
+Default: FastAPI's own SSE (0.135+). Executed on Python 3.14.10, FastAPI 0.165.0, Starlette 1.10.0,
+uvicorn 0.54.0 (`ruff`, `ruff format --check`, `mypy --strict` clean; tests run in-process and
+against a real uvicorn). Names are substituted (`ChatRequest`, `model_stream`, `save_answer`, `ChatDelta`;
+the kill-switch branch and `model.aclose()` are illustrative, the rest is the executed shape);
+`log_exception` is the shared helper (`deployment-ci-cd/reference/python-observability.md` section 2).
 
 ```python
-async def event_stream(request: Request, req: ChatRequest) -> AsyncIterator[dict[str, str]]:
+from fastapi.sse import EventSourceResponse, ServerSentEvent
+
+ChatUser = Annotated[Principal, Depends(require_scope("chat:write"))]   # 401/403 before the 200
+
+
+@router.post("/chat/stream", response_class=EventSourceResponse)
+async def chat_stream(request: Request, req: ChatRequest, user: ChatUser) -> AsyncIterator[ServerSentEvent]:
+    if not request.app.state.settings.chat_enabled:                    # kill switch: same contract
+        yield ServerSentEvent(data={"code": "DISABLED"}, event="error")
+        return
     model = model_stream(req)                      # async generator wrapping the provider stream
     parts: list[str] = []
     status = "incomplete"                          # stays incomplete on stop / disconnect / cancel
     try:
         async with asyncio.timeout(STREAM_BUDGET_S):          # < platform request timeout
             async for chunk in model:
-                if await request.is_disconnected():
-                    return                                     # finally closes the upstream call
                 parts.append(chunk)
-                yield {"event": "content", "data": json.dumps({"delta": chunk})}
+                yield ServerSentEvent(data=ChatDelta(delta=chunk), event="content")   # JSON-encoded
         status = "complete"                        # only now validate and act on the full message
-        yield {"event": "done", "data": "{}"}
+        yield ServerSentEvent(data={}, event="done")
     except Exception as exc:  # noqa: BLE001 - stream boundary; NOT BaseException
         status = "error"
-        log_exception(logger, "stream_failed", exc, request_id=req.request_id)
-        yield {"event": "error", "data": json.dumps({"code": "STREAM_ERROR"})}  # never str(exc)
+        log_exception(logger, "stream_failed", exc, subject=user.subject)
+        yield ServerSentEvent(data={"code": "STREAM_ERROR"}, event="error")  # never str(exc)
     finally:
         await model.aclose()                       # cancels/finalizes the provider call
         with anyio.CancelScope(shield=True):       # this await runs while being cancelled
             await save_answer(req.message_id, "".join(parts), status)
-
-
-@router.post("/chat/stream")
-async def chat_stream(request: Request, req: ChatRequest, user: User = Depends(current_user)) -> EventSourceResponse:
-    authorize(user, req)                           # decisions + their logs happen HERE
-    if not flags.chat_enabled:
-        return EventSourceResponse(disabled_stream())   # yields one {"event":"error","code":"DISABLED"}
-    return EventSourceResponse(event_stream(request, req), ping=15)
 ```
+
+The route is an async generator with `response_class=EventSourceResponse`. Dependencies (authn, authz)
+run before the response starts, so a rejected caller gets a 401/403 status, not a stream (executed). No
+`request.is_disconnected()` polling: on disconnect FastAPI cancels the producer task group and the
+`finally` runs (executed against uvicorn: the producer counter stopped and the record was `incomplete`).
+
+Native SSE facts (read from the installed 0.165.0 source and executed): `data` is always JSON-encoded
+(`raw_data=` sends text as-is), the response sets `Cache-Control: no-cache` and `X-Accel-Buffering: no`,
+an idle stream gets a `: ping` comment every 15 s (fixed), the generator runs at most one item ahead of
+the socket (buffer of 1), and a sync generator runs in a thread pool, where cancellation cannot reach it:
+use `async def`. Typed items (`-> AsyncIterator[ChatDelta]`) are validated and documented in OpenAPI.
 
 `model_stream` must cancel the provider HTTP stream when it is closed or cancelled: wrap the SDK's async iterator in `async with` / `try/finally` per the SDK docs. If the SDK only offers a blocking iterator, run it so that cancellation reaches it; a thread cannot be cancelled.
 
-sse-starlette facts (read from the installed 3.7.1 source): default ping interval 15 s (`ping=0` disables), it always sets `X-Accel-Buffering: no`, `send_timeout=` tears down a stuck client, and a disconnect listener cancels the generator's task group.
+**When to use `sse-starlette` (3.7.1) instead:** you need a configurable ping interval or a
+`send_timeout=` that tears down a stuck client (read from its installed source: default ping 15 s,
+`ping=0` disables, always sets `X-Accel-Buffering: no`, a disconnect listener cancels the generator's task
+group). Return `EventSourceResponse(event_stream(...), ping=..., send_timeout=...)` from a normal route and
+keep the same `try/except/finally` body.
 
 Starlette's `GZipMiddleware` excludes `text/event-stream` by default in Starlette 1.10 (`DEFAULT_EXCLUDED_CONTENT_TYPES`). Other compressors, CDNs and older pinned Starlette versions may still buffer: check yours.
+
+**Testing cancellation.** Starlette 1.9+ `TestClient` cancels the request's app call (its cancel scope, `cancel_if_incomplete` in 1.10.0) when a client closes an
+unfinished stream, so an in-process test cannot show a producer that outlives its client. Run the
+disconnect test against a real uvicorn (a thread or subprocess on a free port) and assert that a
+producer counter stops (section 4).
 
 ---
 
@@ -135,8 +158,13 @@ async def run_attempt(att: Attempt) -> None:
 | No frame for `IDLE_S` | `error` `IDLE_TIMEOUT` |
 | `{"type":"stop"}` | `final` message, close 1000, claim released |
 
+Cancel the producer from the receive loop, not from a failed send: run the producer in a task group
+(or a task the handler owns), loop on `receive()` until `websocket.disconnect`, then cancel it in
+`finally`. A producer that only notices `WebSocketDisconnect` at its next send keeps paying for upstream
+work until then (Starlette 1.7+ raises `WebSocketDisconnected` for operations after a disconnect).
+
 Notes:
-- Browsers cannot set an `Authorization` header on a WebSocket. Issue a short-lived, single-use connect token over an authenticated HTTP call and pass it in the subprotocol list or query string; never log the URL with the connect token.
+- Browsers cannot set an `Authorization` header on a WebSocket. Issue a single-use ticket from an authenticated HTTP call (stored with a 30 s TTL), then in the handshake check `Origin` against an allowlist and consume the ticket atomically (`GETDEL`) before `accept()`: `python-dev/reference/fastapi-auth-security.md` §3a. Never put a bearer token in the query string (it lands in access logs).
 - `ACTIVE` is per process. With more than one instance, claim in a shared store (atomic set-if-absent with a TTL) and release in `finally`.
 - No in-band sentinels such as `b"END"` inside the audio channel: a stop is a text control frame.
 - Logs carry attempt id, fixed code, byte counts and durations only: never transcript text, audio, provider error text or `str(exc)`.
@@ -145,7 +173,7 @@ Notes:
 
 ## 4. Evidence from the executed fixture
 
-Client (`httpx`) disconnects after the first content frame; the fake model records cancellation.
+Client disconnects after the first content frame; the fake model records cancellation. Rows 1-7: sse-starlette 3.7.1 fixture; the rows after them: native `fastapi.sse` and WebSocket fixture.
 
 | Case | Upstream cancelled | Tokens produced after disconnect | Answer record |
 |------|-------------------|----------------------------------|---------------|
@@ -156,5 +184,10 @@ Client (`httpx`) disconnects after the first content frame; the fake model recor
 | LangGraph `graph.astream` iterated directly in a `StreamingResponse` generator (langgraph 1.0.7 and 1.2.24, slow fake model) | **no**: the in-flight model call completed after disconnect | — | — |
 | Same, `astream` in a task the generator owns, `task.cancel()` in `finally` (`agentic-ai-dev/reference/agentic-streaming-hitl.md`) | yes | — | — |
 | Fake model raises mid-stream | — | — | frames: 2 `content` + exactly 1 `error` `{"code":"STREAM_ERROR"}`; exception text absent from frames and logs |
+| Native `fastapi.sse` route above, real uvicorn, client closes after frame 1 (FastAPI 0.165.0) | yes | 0 (counter constant for 0.3 s) | `incomplete` |
+| Same, upstream moved into a detached `create_task` | **no** | counter kept rising | test fails (negative control) |
+| WebSocket producer cancelled from the receive loop, real uvicorn | yes | 0 | `cancelled` |
+| WebSocket producer NOT cancelled on disconnect: in-process `TestClient` | — | 0 (the test client cancelled the app call) | test **passed**: a false green |
+| Same mutation against real uvicorn | **no** | kept producing | test fails (negative control) |
 
 What this does NOT prove: behaviour behind your proxy/CDN, other ASGI servers (uvicorn 0.54 advertises ASGI spec 2.3, so Starlette uses a disconnect listener; servers on spec ≥ 2.4 surface the disconnect when the next send fails), or a real provider SDK's cancellation. Re-run the same test against your stack: start a stream against a slow fake model, close the client after the first chunk, assert the fake's cancel flag is set within 2 s and its token counter stops.

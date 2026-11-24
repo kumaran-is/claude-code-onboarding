@@ -289,7 +289,7 @@ app.use(compression({
 ### ❌ SSE Connection Timeouts on Long Agent Runs
 Long agent runs exceed default proxy timeouts (often 60s). Connection drops mid-stream.
 
-**Fix:** Send periodic keepalive comments every ≤ 15 s, below the tightest proxy idle timeout (`sse-starlette` pings every 15 s by default):
+**Fix:** Send periodic keepalive comments every ≤ 15 s, below the tightest proxy idle timeout (FastAPI's native `EventSourceResponse` and `sse-starlette` both ping every 15 s by default):
 ```
 : keepalive
 

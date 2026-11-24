@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -34,7 +34,7 @@ Create Pydantic models following the multi-model pattern for clean, safe API con
 
 ## Full Pattern Example
 
-Executed on Pydantic 2.14 (`EmailStr` needs `pydantic[email]`).
+Executed on Pydantic 2.14.4 with FastAPI 0.165.0 (`EmailStr` needs `pydantic[email]`).
 
 ```python
 from datetime import datetime
@@ -123,9 +123,9 @@ class UserResponse(BaseModel):
     created_at: datetime
 ```
 
-`validate_by_name` / `validate_by_alias` / `serialize_by_alias` need Pydantic 2.11+ (executed on 2.14);
-they supersede `populate_by_name=True` (older flag; check the release notes of your pinned version
-before removing it). With `serialize_by_alias=True` you no longer need `by_alias=True` on every dump.
+`validate_by_name` / `validate_by_alias` / `serialize_by_alias` need Pydantic 2.11+ (executed on 2.14.4);
+use them in new code. `populate_by_name=True` is the older spelling and still works without a warning on
+2.14.4. With `serialize_by_alias=True` you no longer need `by_alias=True` on every dump.
 
 ---
 
@@ -150,6 +150,34 @@ async def update_project(id: UUID, payload: ProjectUpdate, session: AsyncSession
 Keep an allowlist of patchable fields on the model, never `setattr` from a free-form dict. Do not
 document "None means do not change" together with `exclude_unset`: pick one meaning (executed:
 `{}` → no changes, `{"nickname": null}` → clears it, `{"name": null}` → 422).
+
+---
+
+## Query Parameter Models and FastAPI Defaults
+
+Group list/filter query parameters in one model; `extra="forbid"` turns a misspelt parameter into a
+422 instead of a silently ignored filter (executed on FastAPI 0.165: `?pgae=3` → 422).
+
+```python
+class ListParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+    order: Literal["asc", "desc"] = "desc"
+
+
+@router.get("/projects")
+async def list_projects(params: Annotated[ListParams, Query()], ...) -> list[ProjectResponse]: ...
+```
+
+FastAPI behaviour that changed after 0.135 (executed on 0.165.0):
+
+| Since | Behaviour | Consequence |
+|-------|-----------|-------------|
+| 0.148 | An omitted Query/Header/Cookie/Form parameter's default is **not validated** | `limit: Annotated[int, Query(ge=10)] = 1` returns `1`; add `validate_default=True` or fix the default |
+| 0.151 | JSON `null` is distinct from an omitted Body field | omitted → the declared default; `null` → `None`. Decide per field, as for PATCH above |
+| 0.155 | Unknown kwargs on `Query()`/`Body()`/`Path()`/... raise `TypeError` | put OpenAPI extras in `json_schema_extra={...}` |
+| — | `regex=` warns `FastAPIDeprecationWarning` | use `pattern=` |
 
 ---
 
@@ -210,8 +238,8 @@ Session and transaction ownership: `python-dev/reference/sqlalchemy-async-sessio
 
 1. Create models in `src/<service>/schemas/<resource>.py`
 2. Export from `src/<service>/schemas/__init__.py`
-3. Import in routes: `from src.<service>.schemas.<resource> import UserCreate, UserResponse`
-4. Use `Create` as request body param, `Response` as return type annotation
+3. Import in routes: `from <service>.schemas.<resource> import UserCreate, UserResponse` (the package, never a `src.` prefix)
+4. Use `Create` as request body param, `Response` as return type annotation (FastAPI filters and documents the response from the annotation)
 5. Use `model_validate(orm_obj)` in the service layer to convert ORM → Response
 6. After any route/model change, regenerate the committed OpenAPI snapshot in the same PR (a stale snapshot compares stale to stale)
 

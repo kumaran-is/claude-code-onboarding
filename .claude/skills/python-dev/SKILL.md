@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -19,29 +19,45 @@ last-reviewed: "2026-03-14"
 # Python 3.14 Development Skill
 
 ## Code Conventions
-- Use **Python 3.14** with type hints everywhere
-- **FastAPI** for REST APIs, **Pydantic v2** for validation
-- Async by default: `async def` endpoints, `asyncpg` for PostgreSQL
-- Use `uv` for package management, `ruff` for linting, `mypy` for types
+- **Python 3.14** with type hints everywhere; `mypy --strict`
+- **FastAPI 0.165** (Starlette 1.10) for REST APIs, **Pydantic 2.14** + pydantic-settings 2.16 for validation and config
+- Async by default: `async def` endpoints, SQLAlchemy 2.1 async + `asyncpg` for PostgreSQL
+- `uv` for packages and the lockfile, `ruff` for lint and format
 - Folder structure: `api/routes/ → services/ → repositories/ → models/`
-- Tests: pytest + pytest-asyncio + httpx
+- Tests: pytest + pytest-asyncio + **httpx2** (`ASGITransport`, `TestClient`); `filterwarnings = ["error"]`
+- Outbound HTTP from service code: **httpx 0.28.1** (tracing and mocking libraries target it); httpx2 for outbound calls is deferred until they support it
+
+Versions verified together (uv 0.13.9, CPython 3.14.10): fastapi 0.165.0, starlette 1.10.0, uvicorn 0.54.0,
+pydantic 2.14.4, pydantic-settings 2.16.3, sqlalchemy 2.1.9, structlog 26.1.0, pyjwt 2.15.1, httpx2 2.16.2,
+pytest 9.2.0, pytest-asyncio 1.5.0, ruff 0.17.6, mypy 2.4.1. Full pin list: `reference/fastapi-templates.md`.
+
+**FastAPI changes that bite (0.136 → 0.165):**
+- `app.routes` is a tree since 0.137: walk `fastapi.routing.iter_route_contexts(app.routes)`, never
+  `isinstance(r, APIRoute)` over `app.routes` (it silently sees nothing under an included router).
+- `FastAPI(max_body_size=...)` (0.164) returns 413 before routing; `Depends(dep, max_concurrency=N)` (0.163).
+- Native SSE: `fastapi.sse.EventSourceResponse` / `ServerSentEvent` (0.135).
+- Removed or deprecated: `**extra` on params (`TypeError`, 0.155: use `json_schema_extra`), `regex=`
+  (use `pattern=`), `FastAPI(root_path=...)` (use the server's `--root-path`), `on_event` / `on_startup`
+  (ignored when `lifespan=` is set; removed from Starlette 1.0).
+- JSON `null` is no longer the same as an omitted Body field (0.151), and omitted Query/Header/Cookie/Form
+  defaults are not validated unless `validate_default=True` (0.148).
+- Starlette's `TestClient` warns when only `httpx` is installed; install `httpx2`.
+- Native OpenTelemetry (0.142+): `FastAPI(telemetry={...})` replaces `opentelemetry-instrumentation-fastapi`; settings (`"logs": False`, probe exclusion) in `deployment-ci-cd/reference/python-observability.md` §3.2.
 
 ## Quick Scaffold — New Python Project
 
 ```bash
-# Using uv (preferred)
-uv init my-service
-cd my-service
-uv add fastapi uvicorn pydantic pydantic-settings
-uv add --dev pytest pytest-asyncio httpx ruff mypy
-
-# Or using pip
-mkdir my-service && cd my-service
-python -m venv .venv
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install fastapi uvicorn pydantic pydantic-settings
-pip install -e ".[dev]"
+uv init --package my-service && cd my-service
+echo "3.14.10" > .python-version          # keep requires-python = ">=3.14" in pyproject.toml
+uv add "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "pydantic==2.14.4" "pydantic-settings==2.16.3" \
+  "sqlalchemy[asyncio]==2.1.9" "asyncpg==0.32.0" "structlog==26.1.0"
+uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "pytest-cov==7.1.0" "httpx2==2.16.2" \
+  "ruff==0.17.6" "mypy==2.4.1"
+uv sync --locked                           # CI and Docker install from the committed uv.lock
 ```
+
+Pin exact versions (never bare `uv add fastapi`). pip is not used for services: `uv.lock` is the
+reproducible install.
 
 ## Reference Files
 
@@ -85,8 +101,8 @@ pip install -e ".[dev]"
 6. **Implement route handlers** in `api/routes/` with proper HTTP methods and status codes
 7. **Add business logic** in `services/` layer (keep routes thin)
 8. **Configure environment** using pydantic-settings in `core/config.py`
-9. **Write tests** with pytest-asyncio and AsyncClient fixtures
-10. **Format and type-check**: Run `ruff format`, `ruff check --fix`, and `mypy`
+9. **Write tests** with pytest-asyncio and an `httpx2.AsyncClient` over `ASGITransport` inside `app.router.lifespan_context(app)`; include 401/403/404/422 negatives
+10. **Gate**: `ruff check`, `ruff format --check`, `mypy --strict`, `pytest --cov`, each with its own exit code
 
 ## Key Patterns
 
@@ -98,8 +114,11 @@ pip install -e ".[dev]"
 | **Config** | pydantic-settings with `.env` file support |
 | **Dependency injection** | FastAPI `Depends()` for services and repositories |
 | **Error handling** | Services raise domain errors; only routes, dependencies and exception handlers raise `HTTPException` (`reference/fastapi-error-handling.md`) |
-| **Database** | SQLAlchemy 2.0+ with async session and `Mapped[]` types |
-| **Testing** | pytest with fixtures, httpx AsyncClient, 80%+ coverage |
+| **Database** | SQLAlchemy 2.1 async, request-scoped `AsyncSession`, service owns the commit, `Mapped[]` types |
+| **Body limits** | `FastAPI(max_body_size=...)` app-wide, tighter per route where needed |
+| **Streaming** | `EventSourceResponse` or WebSocket; producer cancelled on disconnect (`streaming-protocols/reference/server-stream-lifecycle.md`) |
+| **Shutdown** | `lifespan` exit disposes engines/clients; `uvicorn --timeout-graceful-shutdown` below the platform grace period |
+| **Testing** | pytest with fixtures, httpx2 `AsyncClient`, negative tests, 80%+ coverage |
 
 ## Documentation Sources
 
@@ -109,6 +128,8 @@ Before generating code, consult these sources for current syntax and APIs:
 |--------|-----------|---------|
 | Pydantic v2 | `https://docs.pydantic.dev/latest/llms-full.txt` | Model validation, Field constraints, settings |
 | FastAPI / Python | `Context7` MCP | Latest FastAPI endpoints, dependencies, middleware |
+| FastAPI release notes | `https://fastapi.tiangolo.com/release-notes/` | Breaking changes per minor version |
+| Starlette release notes | `https://raw.githubusercontent.com/Kludex/starlette/main/docs/release-notes.md` | 1.x removals and additions |
 
 ## Error Handling
 
@@ -132,20 +153,20 @@ raise HTTPException(status_code=404, detail="Account not found")
 ## Common Commands
 
 ```bash
-uvicorn my_service.main:create_app --factory --reload      # Dev server (hot reload; factory, no module-level app)
-pytest -q                                              # Run tests (quiet output)
-pytest -q --cov=src --cov-report=term-missing          # Tests with coverage
-ruff check --fix .                                     # Lint and auto-fix
-ruff format .                                          # Format code
-mypy src/                                              # Type check
-alembic upgrade head                                   # Run pending migrations
-alembic revision --autogenerate -m "description"       # Generate new migration
+uv run uvicorn my_service.main:create_app --factory --reload   # dev server (factory, no module-level app)
+uv run pytest -q --cov --cov-report=term-missing               # tests with coverage
+uv run ruff check . && uv run ruff format --check .            # lint + format check
+uv run mypy src tests                                          # strict type check
+uv run alembic upgrade head                                    # run pending migrations
+uv run alembic revision --autogenerate -m "description"        # generate a migration
 ```
 
 ## Hard Prohibitions
 
 - Use `str | None` union syntax (Python 3.10+), not `Optional[str]`
 - Use `model_validator` for cross-field Pydantic validation, not ad-hoc `__init__` logic
+- No `@app.on_event`, `on_startup=`, `regex=`, `root_path=` on `FastAPI()`, or `**extra` kwargs on params
+- No `app.routes` walk with `isinstance(..., APIRoute)`: use `iter_route_contexts()`
 
 ## Background Worker Services
 

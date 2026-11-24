@@ -57,10 +57,10 @@ async def test_<svc>_health(<svc>_client):
     r = await <svc>_client.get("/health/live")
     assert r.status_code == 200
 
-# 2. Auth gate — no credentials → 401/403
+# 2. Auth gate — no credentials → 401 + WWW-Authenticate (FastAPI's HTTPBearer, executed on 0.165)
 async def test_<svc>_list_requires_auth(<svc>_client):
     r = await <svc>_client.get("/api/v1/<resources>")
-    assert r.status_code in (401, 403)
+    assert r.status_code == 401 and r.headers["www-authenticate"].startswith("Bearer")
 
 # 3. Fake JWT rejection → 401
 async def test_<svc>_create_with_fake_jwt_returns_401(<svc>_client):
@@ -74,7 +74,7 @@ async def test_<svc>_create_with_fake_jwt_returns_401(<svc>_client):
 # 4. Internal endpoint requires secret (for services with /internal/* routes)
 async def test_<svc>_internal_requires_secret(<svc>_client):
     r = await <svc>_client.post(f"/api/v1/internal/<resources>/{uuid.uuid4()}/action")
-    assert r.status_code in (401, 403)
+    assert r.status_code == 403            # backend-service-patterns.md P1
 
 # 5. Input validation — 422 on missing required fields
 #    Only testable with a credential that PASSES the auth dependency. With a JWT dependency,
@@ -146,8 +146,18 @@ Backend services commonly use an `/api/v1/` prefix. Internal routes often use
 `/api/v1/internal/`. Always verify from the OpenAPI spec — admin or identity routes may differ.
 
 ### Lifespan and state
-Live E2E exercises the real lifespan (startup checks, pools, health checker). In-process tests must wrap the app with
-`asgi_lifespan.LifespanManager` or `TestClient` to get the same.
+Live E2E exercises the real lifespan (startup checks, pools, health checker). In-process tests must wrap the app in
+`app.router.lifespan_context(app)` (around an httpx2 `ASGITransport`) or use `TestClient` as a context manager.
+
+### What only a real server proves
+Two behaviours need a real uvicorn (container or a test-started process on a free port), not an in-process client:
+- **Stream cancellation.** Starlette 1.9+ `TestClient` cancels the request's app call when a client closes an unfinished stream, so a
+  WebSocket/SSE producer that outlives its socket still passes in-process (executed: a leaking WebSocket producer
+  passed under `TestClient` and failed against uvicorn). Assert a producer counter stops after the client disconnects
+  (`streaming-protocols/reference/server-stream-lifecycle.md`).
+- **Graceful shutdown.** Send SIGTERM to the server process and assert the lifespan shutdown log line plus
+  `rc in (0, 143)` (`-15` from `subprocess`). uvicorn 0.54 re-raises the signal after a clean shutdown: 143 on a
+  host or with `--init`, 0 as container PID 1. 137 or a missing log line means the process was killed.
 
 ## Pre-commit Gate
 

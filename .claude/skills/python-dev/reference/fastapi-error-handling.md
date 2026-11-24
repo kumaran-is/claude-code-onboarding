@@ -13,14 +13,15 @@ patterns are async-safe — no `time.sleep()` in async routes.
 > Log the exception **type** and non-PII ids through the one `log_exception` helper
 > (`deployment-ci-cd/reference/python-observability.md` §2; handler-side rules in §6). Logging
 > is `structlog` with the stdlib bridge, configured once as described there. Snippets below were
-> executed on FastAPI 0.165 / Starlette 1.10 / Pydantic 2.14 / SQLAlchemy 2.1.
+> executed on FastAPI 0.165.0 / Starlette 1.10.0 / Pydantic 2.14.4 / SQLAlchemy 2.1.9.
 
 ---
 
 ## Dependencies
 
 ```bash
-uv add structlog tenacity circuitbreaker httpx   # then pin the resolved versions (templates guide)
+uv add structlog tenacity circuitbreaker httpx   # outbound client stays httpx 0.28.1 (tracing/mocking support)
+uv add --dev httpx2                               # ASGI test client (§8)
 ```
 
 ---
@@ -110,17 +111,9 @@ def envelope(
     request: Request, status: int, code: str, message: str, details: Any = None
 ) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None)
-    response = JSONResponse(
-        status_code=status,
-        content={
-            "code": code,
-            "message": message,
-            "details": details,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "path": request.url.path,
-            "requestId": request_id,
-        },
-    )
+    body = {"code": code, "message": message, "details": details, "requestId": request_id,
+            "timestamp": datetime.now(UTC).isoformat(), "path": request.url.path}
+    response = JSONResponse(status_code=status, content=body)
     if request_id:
         # belt and braces: a plain FastAPI + add_middleware would miss the 500
         response.headers["X-Request-ID"] = request_id
@@ -177,6 +170,11 @@ re-raises after the catch-all responds, so the server still logs a traceback: sc
 Executed (§6 middleware): a request with a valid `X-Request-ID` that hit an unhandled error got the same id in
 the response header, the body and the `unhandled_error` log line.
 
+**One status bypasses the envelope:** `FastAPI(max_body_size=...)` (0.164+) answers an oversized body
+with a plain-text `413 Content Too Large` before routing, so these handlers never see it (executed on
+0.165.0: `text/plain`, with `X-Request-ID` from the outer `App.__call__` wrapper). Document the 413
+shape in the API contract; do not try to re-wrap it in middleware.
+
 ---
 
 ## 3. Service Layer — Using Domain Exceptions
@@ -188,7 +186,7 @@ Services raise typed exceptions. Never raise `HTTPException` here.
 import structlog
 from sqlalchemy.exc import IntegrityError
 
-from .core.exceptions import ConflictError, ExternalServiceError, NotFoundError
+from .core.exceptions import ConflictError, NotFoundError
 from .core.logging import log_exception
 
 logger = structlog.get_logger(__name__)
@@ -212,19 +210,9 @@ async def create_order(data: CreateOrderRequest, session: AsyncSession) -> Order
         # the exception text contains the values
         log_exception(logger, "order_conflict", exc, order_ref=data.reference)
         raise ConflictError("Order already exists", details={"reference": data.reference}) from exc
-
-
-async def charge_order(order: Order) -> PaymentResult:
-    try:
-        return await payment_client.charge(order.total)
-    except PaymentClientError as exc:
-        log_exception(logger, "payment_failed", exc, order_id=str(order.id))
-        raise ExternalServiceError(
-            "Payment processing failed",
-            service="payment_service",
-            details={"order_id": str(order.id)},
-        ) from exc
 ```
+
+A dependency failure becomes `ExternalServiceError(...) from exc` the same way (§5).
 
 ---
 
@@ -242,13 +230,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 import structlog
-from tenacity import (
-    RetryCallState,
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 logger = structlog.get_logger(__name__)
 RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
@@ -257,9 +239,7 @@ RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
 def _log_retry(state: RetryCallState) -> None:
     """tenacity's before_sleep_log needs a stdlib logger; this keeps the one structlog stack."""
     exc = state.outcome.exception() if state.outcome else None
-    logger.warning(
-        "retrying", attempt=state.attempt_number, error_type=type(exc).__name__ if exc else None
-    )
+    logger.warning("retrying", attempt=state.attempt_number, error_type=type(exc).__name__)
 
 
 def is_transient(exc: BaseException) -> bool:
@@ -270,9 +250,7 @@ def is_transient(exc: BaseException) -> bool:
 
 
 def with_retry[**P, R](
-    max_attempts: int = 3,
-    min_wait: float = 1.0,
-    max_wait: float = 10.0,
+    max_attempts: int = 3, min_wait: float = 1.0, max_wait: float = 10.0,
     retry_on: Callable[[BaseException], bool] = is_transient,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     return retry(
@@ -286,7 +264,6 @@ def with_retry[**P, R](
 
 ```python
 # src/my_service/core/clients.py
-# a structlog logger: log_exception(logger, event, exc, **ids)
 logger = structlog.get_logger(__name__)
 
 
@@ -404,10 +381,9 @@ behaviours of that middleware:
 | It accepts an inbound id only if it parses as a UUID, else generates one | a junk `X-Request-ID: bad\r\nvalue` is replaced by a generated UUID |
 | It sets `X-Request-ID` by wrapping `send`, and wraps the whole app in `App.__call__` | covers EVERY response, including the framework's 500 (executed) |
 
-One hole remains on the unhandled-exception path, closed in the §2 handlers: the log line is written after the middleware reset its context, so the catch-all passes
-`request_id=request.state.request_id` explicitly. Executed with a valid inbound id: header, body
-`requestId` and the `unhandled_error` log line all carried it, and the `RuntimeError("card 4111 ...")`
-text appeared in none of them.
+One hole remains on the unhandled-exception path, closed in the §2 handlers: the log line is written
+after the middleware reset its context, so the catch-all passes `request_id=request.state.request_id`
+explicitly (executed: header, body and log line carried the id; the card text appeared in none).
 
 Less diagnostic detail in logs is the trade-off; compensate with `requestId`, error type and stable
 event names, and send tracebacks only to a scrubbed sink. Allow a documented marker for
@@ -434,17 +410,19 @@ infrastructure start-up diagnostics only.
 ## 8. Testing Error Paths
 
 `raise_app_exceptions=False` shows what a real client sees (the catch-all re-raises for the server log).
-`Settings` and `create_app(settings)` come from the templates guide (the `settings` fixture below builds
-explicit values, never the developer's `.env`); the test-only `/boom` route is added inside the test.
+The ASGI client is **httpx2** (Starlette 1.10 deprecates httpx for its test client); the outbound
+client under test stays `httpx` with `httpx.MockTransport`. `Settings` and `create_app(settings)` come
+from the templates guide; the test-only `/boom` route is added inside the test.
 
 ```python
 # tests/test_error_handling.py
 from collections.abc import AsyncIterator
 
 import httpx
+import httpx2
 import pytest
 import structlog
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 from tenacity import wait_none
 
 from my_service.core.exceptions import ExternalServiceError
@@ -507,8 +485,7 @@ async def test_transient_failure_is_retried_and_4xx_is_not(monkeypatch: pytest.M
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(flaky), base_url="http://dep") as c:
         assert await fetch_exchange_rate(c, "USD") == 1.5
-    # retried twice, succeeded on the third
-    assert len(calls) == 3
+    assert len(calls) == 3                                     # retried twice, succeeded on the third
 
     calls.clear()
 
@@ -516,10 +493,8 @@ async def test_transient_failure_is_retried_and_4xx_is_not(monkeypatch: pytest.M
         calls.append(request)
         return httpx.Response(404)
 
-    not_found = httpx.MockTransport(not_found_handler)
-    async with httpx.AsyncClient(transport=not_found, base_url="http://dep") as c:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(not_found_handler), base_url="http://dep") as c:
         with pytest.raises(ExternalServiceError):
             await fetch_exchange_rate(c, "USD")
-    # a 4xx is the caller's error: never repeated
-    assert len(calls) == 1
+    assert len(calls) == 1                                     # a 4xx is never repeated
 ```

@@ -157,9 +157,8 @@ public class DatabaseHealthIndicator implements ReactiveHealthIndicator {
 Split by purpose: liveness checks the process only (no dependency calls), readiness checks dependencies concurrently with a per-check timeout. Executed against real PostgreSQL: ready -> 200 with `{"database": "ok"}`; unreachable database -> 503 while `/health/live` stays 200, and the response body contains no host or exception text.
 
 ```python
-# src/api/health.py
+# src/my_service/api/health.py
 import asyncio
-import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import Literal
@@ -169,13 +168,13 @@ from fastapi import APIRouter, Request, Response
 from sqlalchemy import text
 
 router = APIRouter(tags=["health"])
-log = structlog.get_logger()
+logger = structlog.get_logger(__name__)
 _started = time.monotonic()
 CHECK_TIMEOUT_S = 2.0
 
 
 async def check_database(request: Request) -> None:
-    async with request.app.state.sessionmaker() as session:
+    async with request.app.state.session_factory() as session:   # set in lifespan
         await session.execute(text("SELECT 1"))
 
 
@@ -189,23 +188,27 @@ async def live() -> dict[str, str | int]:
 
 @router.get("/health/ready")
 async def ready(request: Request, response: Response) -> dict[str, object]:
-    async def run(name: str, check: Callable[[Request], Awaitable[None]]) -> tuple[str, Literal["ok", "error"]]:
+    async def run(
+        name: str, check: Callable[[Request], Awaitable[None]]
+    ) -> tuple[str, Literal["ok", "error"]]:
         try:
             async with asyncio.timeout(CHECK_TIMEOUT_S):
                 await check(request)
             return name, "ok"
-        except Exception as exc:                      # log the type, report "error"; never leak the message
-            log.warning("health_check_failed", check=name, error_type=type(exc).__name__)
+        except Exception as exc:  # noqa: BLE001 - probe boundary: log the type, report "error"
+            logger.warning("health_check_failed", check=name, error_type=type(exc).__qualname__)
             return name, "error"
 
     results = dict(await asyncio.gather(*(run(n, c) for n, c in CHECKS.items())))
     healthy = all(v == "ok" for v in results.values())
     response.status_code = 200 if healthy else 503
-    return {"status": "ok" if healthy else "unavailable", "checks": results,
-            "version": os.getenv("APP_VERSION", "unknown")}
+    version = request.app.state.settings.app_version   # from Settings, never os.getenv
+    return {"status": "ok" if healthy else "unavailable", "checks": results, "version": version}
 ```
 
 The old single `/health` that swallowed the exception and returned 200 with `"degraded"` hid outages from both the orchestrator and the logs; do not reintroduce it. Logging, tracing and probe wiring: `python-observability.md`.
+
+**Shutdown.** uvicorn stops accepting connections on SIGTERM, lets in-flight requests finish for up to `--timeout-graceful-shutdown` seconds, then runs the lifespan exit, which disposes the engine (executed on uvicorn 0.54: the shutdown log line appears and the process re-raises SIGTERM: status 143 on a host or with `docker run --init`, 0 as container PID 1; 137 or no log line means it was killed). Close resources in the lifespan `finally`, not `atexit` (it does not run on the 143 path). Keep that timeout below the platform's grace period (Cloud Run sends SIGKILL 10 s after SIGTERM). Probes never touch `app.state.session_factory` outside a request, so they need no shutdown handling of their own.
 
 ---
 

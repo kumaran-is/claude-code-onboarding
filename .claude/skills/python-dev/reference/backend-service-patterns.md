@@ -25,32 +25,28 @@ is `True`, so an empty expected secret admits everyone). Never write `!=` or an 
 comparison for secrets. Always `.encode()` before comparing (a non-ASCII `str` raises `TypeError`, i.e. a 500).
 
 ```python
-# ✅ REQUIRED — timing-safe internal secret dependency
+# ✅ REQUIRED — timing-safe internal secret dependency; the secret comes from app.state.settings,
+# which create_app(settings) set (no module-level settings: fastapi-architecture-and-config.md §3)
 import hmac
 from typing import Annotated
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
+
+# in Settings: internal_api_secret: SecretStr = Field(min_length=32)  -> empty is a boot failure
 
 
-def make_internal_secret_dep(secret: str):
-    """Factory: returns a FastAPI dependency that validates X-Internal-Secret."""
-    if not secret:
-        # fail at construction, not at 3 a.m.
-        raise ValueError("internal secret must be non-empty")
-    expected = secret.encode()
+def require_internal_secret(
+    request: Request, x_internal_secret: Annotated[str | None, Header()] = None
+) -> None:
+    expected = request.app.state.settings.internal_api_secret.get_secret_value().encode()
+    if not x_internal_secret or not hmac.compare_digest(x_internal_secret.encode(), expected):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-    def _check(x_internal_secret: Annotated[str | None, Header()] = None) -> None:
-        if not x_internal_secret or not hmac.compare_digest(x_internal_secret.encode(), expected):
-            raise HTTPException(status_code=403, detail="Forbidden")
-    return _check
 
-# Wire at module level (captures config once, not per request)
-_require_secret = make_internal_secret_dep(settings.internal_api_secret.get_secret_value())
-
-@router.post("/internal/action", dependencies=[Depends(_require_secret)])
+@router.post("/internal/action", dependencies=[Depends(require_internal_secret)])
 async def internal_action() -> None: ...
 
 # ❌ BANNED — bare != comparison (timing attack)
-if x != settings.SECRET: ...
+if x != expected_secret: ...
 
 # ❌ BANNED — route-body secret check (instantiates DB session before auth)
 async def handler(request: Request, db=Depends(get_session)):
@@ -58,7 +54,7 @@ async def handler(request: Request, db=Depends(get_session)):
     if not secret or ...: raise HTTPException(403)
 ```
 
-Test every variant: header absent, empty, wrong, correct; and `make_internal_secret_dep("")` raises.
+Test every variant: header absent, empty, wrong, non-ASCII, correct; and `Settings(internal_api_secret="")` fails at boot.
 The `/internal/` prefix is a convention; the guard is the control. Endpoints with third-party
 side effects (send, charge, metered calls) must use it, never an end-user JWT:
 `fastapi-authorization-boundaries.md` §3.
@@ -266,7 +262,7 @@ for the full Pattern A/B/C decision tree.
 
 **Rule:** Client initialization belongs in the app's `lifespan`. Handlers added with
 `app.router.on_startup.append(...)` or `@app.on_event(...)` are **never called** once
-`lifespan=` is set (executed: handler count 0), and `on_event` is deprecated. `redis.asyncio.from_url`
+`lifespan=` is set (executed on FastAPI 0.165: handler count 0); `on_event` is deprecated in FastAPI and removed from Starlette 1.0. `redis.asyncio.from_url`
 is lazy, so a `try/except` around it never detects an outage: call `ping()` at boot. Never log the
 URL (it carries credentials).
 
@@ -341,8 +337,8 @@ _GCS_URI_PATTERN = re.compile(
 
 @lru_cache(maxsize=1)
 def _allowed_buckets() -> frozenset[str]:
-    from .core.config import settings as _cfg
-    return frozenset({_cfg.GCS_MY_BUCKET})
+    from .core.config import get_settings   # cached Settings; never a module-level instance
+    return frozenset({get_settings().gcs_my_bucket})
 
 def validate_gcs_uri(uri: str, path_prefix: str | None = None) -> None:
     """Validate GCS URI against service bucket allowlist.
@@ -397,18 +393,19 @@ come from environment variables. Hardcoded defaults in `core/config.py` silently
 wrong resources in staging/production.
 
 ```python
-# ✅ REQUIRED — env-varying values are required bare str (fail at startup if absent)
+# ✅ REQUIRED — env-varying values are required, no default (fail at startup if absent);
+# anything carrying a credential is SecretStr (P2)
 class Settings(BaseSettings):
-    DATABASE_URL: str           # required — no default; differs per env
-    GOOGLE_CLOUD_PROJECT: str   # required — no default
-    EMAIL_FROM: str             # required — domain differs per env
+    database_url: SecretStr     # required — no default; differs per env; holds a password
+    google_cloud_project: str   # required — no default
+    email_from: str             # required — domain differs per env
 
 # ❌ BANNED — hardcoded GCP project ID silently routes to wrong project
 class Settings(BaseSettings):
-    GOOGLE_CLOUD_PROJECT: str = "my-project-dev"
+    google_cloud_project: str = "my-project-dev"
 
 # ❌ BANNED — localhost fails inside Docker Compose (resolves to the container itself)
-    REDIS_URL: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6379/0"
 
 # ❌ BANNED — os.getenv sentinel fallback bypasses Pydantic validation
     project = os.getenv("GOOGLE_CLOUD_PROJECT") or "my-project"
@@ -440,7 +437,7 @@ Never define local copies. Common targets for duplication:
 from shared.utils.pubsub_utils import topic_path as _build_topic_path   # your shared package
 
 def _topic_path(topic: str) -> str:
-    return _build_topic_path(settings.GOOGLE_CLOUD_PROJECT, topic)
+    return _build_topic_path(get_settings().google_cloud_project, topic)
 
 # ❌ BANNED — inline f-string that duplicates shared utility
 def _topic_path(project_id: str, topic: str) -> str:

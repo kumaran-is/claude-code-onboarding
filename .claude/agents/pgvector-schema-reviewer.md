@@ -11,7 +11,7 @@ skills:
 vibe: "Operator-index mismatch is a silent full-table scan — caught here, not in prod"
 color: blue
 emoji: "📐"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # pgvector Schema Reviewer
@@ -37,7 +37,7 @@ You are a PostgreSQL + pgvector specialist reviewing migrations for correctness,
 - [ ] **HNSW/IVFFlat dimension limit**: an index on a `vector` column supports at most 2000 dims (`column cannot have more than 2000 dimensions for hnsw index`). A 3072-dim model needs reduced dimensions or a `halfvec` expression index (≤ 4000 dims, pgvector ≥ 0.7). Decide at model selection.
 - [ ] **Extension presence**: `CREATE EXTENSION IF NOT EXISTS vector;` appears in migration `up`.
 - [ ] **No dimension 0**: `vector(0)` is invalid; always requires explicit dimension.
-- [ ] **Filtered ANN recall** (when the table is queried with a selective `WHERE`, e.g. `tenant_id`): pgvector applies the `WHERE` *after* the index scan (default `hnsw.ef_search` = 40 candidates), so a 1%-selective filter can return fewer than `LIMIT` rows or none. Reproduced on pgvector 0.6.2: 20k rows, 1% tenant, HNSW → 0 of 10 rows; exact scan → 10. Require one of: iterative scans (`SET LOCAL hnsw.iterative_scan = relaxed_order`, pgvector ≥ 0.8), a partial index per hot filter value, partitioning by tenant, or an exact scan for small tenants — plus a fixture test asserting `count == LIMIT` over more than 5 calls on one pooled connection. Flag HIGH: a partial index on a bound parameter (`tenant_id = $2`) needs `SET LOCAL plan_cache_mode = force_custom_plan`, or it silently stops being used after 5 prepared executions (executed: `[10, 10, 0, 0, 0, 0, 0]` without it, `[10] × 7` with it). Isolation is intact (rows are still filtered); recall is not. See `vector-database/references/ann-vs-knn.md` §Filtered ANN.
+- [ ] **Filtered ANN recall** (when the table is queried with a selective `WHERE`, e.g. `tenant_id`): pgvector applies the `WHERE` *after* the index scan (default `hnsw.ef_search` = 40 candidates), so a 1%-selective filter can return fewer than `LIMIT` rows or none. Reproduced on PostgreSQL 18.7 + pgvector 0.8.7 (20k rows, 1%-selective unindexed filter): HNSW default → 0–1 of 10 rows; `hnsw.iterative_scan = strict_order`/`relaxed_order` → 10 of 10; exact scan → 10 (also on pgvector 0.6.2, which has no iterative scans). Require one of: iterative scans (`SET LOCAL hnsw.iterative_scan = relaxed_order`, pgvector ≥ 0.8), a partial index per hot filter value, partitioning by tenant, or an exact scan for small tenants — plus a fixture test asserting `count == LIMIT` over more than 5 calls on one pooled connection. Flag HIGH: a partial index on a bound parameter (`tenant_id = $2`) needs `SET LOCAL plan_cache_mode = force_custom_plan`, or it silently stops being used after 5 prepared executions (executed: `[10, 10, 0, 0, 0, 0, 0]` without it, `[10] × 7` with it). Isolation is intact (rows are still filtered); recall is not. See `vector-database/references/ann-vs-knn.md` §Filtered ANN.
 
 ### HIGH — Fix before merge
 
@@ -46,7 +46,8 @@ You are a PostgreSQL + pgvector specialist reviewing migrations for correctness,
 - [ ] **Null guard in queries**: Any example query in migration comments or associated code filters `WHERE embedding IS NOT NULL`. NULL vectors (and zero vectors for cosine) are not indexed, so the guard documents intent and keeps exact-scan fallbacks correct; it does not prevent a full scan.
 - [ ] **Reversible migration**: Migration has a `down` section that removes added columns and indexes cleanly.
 - [ ] **IVFFlat lifecycle**: the index is built after the data is loaded; `lists` ≈ `rows / 1000` up to 1M rows and `sqrt(rows)` above; `ivfflat.probes` starts near `sqrt(lists)`. After a large change in data distribution, `REINDEX INDEX CONCURRENTLY` recomputes the lists — `ANALYZE` only refreshes planner statistics and does not re-cluster.
-- [ ] **Query-time knobs are transaction-scoped**: `hnsw.ef_search`, `hnsw.iterative_scan`, `ivfflat.probes` are set with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified: `SET LOCAL` reverts to 40 after commit; session `SET` stays 100).
+- [ ] **Query-time knobs are transaction-scoped**: `hnsw.ef_search`, `hnsw.iterative_scan`, `ivfflat.probes` are set with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified on PostgreSQL 18.7 + pgvector 0.8.7: `SET LOCAL` reverts to 40 after commit; session `SET` stays 200).
+- [ ] **Server and library versions pinned and checked**: the database image pins the extension version (e.g. `pgvector/pgvector:0.8.7-pg18-trixie@sha256:...`, not a floating `pg18`), and code that sets `hnsw.iterative_scan` / `ivfflat.iterative_scan` checks `extversion >= 0.8.0` at startup. Python: `pgvector==0.5.x` (imports from `pgvector`, not the removed `pgvector.utils`; SQLAlchemy reads return `list[float]`), `sqlalchemy[asyncio]==2.1.x`. An indexed generated column (`tsvector` for hybrid search) uses `Computed(..., persisted=True)`: SQLAlchemy 2.1 otherwise emits VIRTUAL and PostgreSQL 18 rejects the index.
 - [ ] **Index build outside the migration transaction**: large vector indexes use `CREATE INDEX CONCURRENTLY` (not inside a transaction block) with a sized `maintenance_work_mem`; Alembic autogenerate drop/create churn on ANN indexes is stripped — see `python-dev/reference/alembic-migration-safety.md`.
 
 ### MEDIUM — Should fix

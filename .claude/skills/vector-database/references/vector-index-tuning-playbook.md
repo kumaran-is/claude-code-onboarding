@@ -41,18 +41,18 @@ Binary:                dimensions/8 bytes
 ## Template 1: HNSW Parameter Benchmarking
 
 ```python
-import numpy as np
-from typing import List, Tuple
 import time
+
+import numpy as np
 
 def benchmark_hnsw_parameters(
     vectors: np.ndarray,
     queries: np.ndarray,
     ground_truth: np.ndarray,
-    m_values: List[int] = [8, 16, 32, 64],
-    ef_construction_values: List[int] = [64, 128, 256],
-    ef_search_values: List[int] = [32, 64, 128, 256]
-) -> List[dict]:
+    m_values: tuple[int, ...] = (8, 16, 32, 64),
+    ef_construction_values: tuple[int, ...] = (64, 128, 256),
+    ef_search_values: tuple[int, ...] = (32, 64, 128, 256)
+) -> list[dict[str, object]]:
     """Benchmark different HNSW configurations."""
     import hnswlib
 
@@ -149,7 +149,6 @@ def recommend_hnsw_params(
 
 ```python
 import numpy as np
-from typing import Optional, Tuple
 
 class VectorQuantizer:
     """Quantization strategies for vector compression."""
@@ -157,9 +156,9 @@ class VectorQuantizer:
     @staticmethod
     def scalar_quantize_int8(
         vectors: np.ndarray,
-        min_val: Optional[float] = None,
-        max_val: Optional[float] = None
-    ) -> Tuple[np.ndarray, dict]:
+        min_val: float | None = None,
+        max_val: float | None = None
+    ) -> tuple[np.ndarray, dict[str, float]]:
         """Scalar quantization to INT8."""
         if min_val is None:
             min_val = vectors.min()
@@ -189,7 +188,7 @@ class VectorQuantizer:
         vectors: np.ndarray,
         n_subvectors: int = 8,
         n_centroids: int = 256
-    ) -> Tuple[np.ndarray, dict]:
+    ) -> tuple[np.ndarray, dict[str, object]]:
         """Product quantization for aggressive compression."""
         from sklearn.cluster import KMeans
 
@@ -404,7 +403,6 @@ def tune_search_parameters(
 ```python
 import time
 from dataclasses import dataclass
-from typing import List
 import numpy as np
 
 @dataclass
@@ -473,7 +471,7 @@ class VectorSearchMonitor:
 def profile_index_build(
     build_fn,
     vectors: np.ndarray,
-    batch_sizes: List[int] = [1000, 10000, 50000]
+    batch_sizes: tuple[int, ...] = (1000, 10000, 50000)
 ) -> dict:
     """Profile index build performance."""
     results = {}

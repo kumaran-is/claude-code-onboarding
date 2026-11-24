@@ -11,6 +11,8 @@
 
 ## Standard Migration
 
+Verified server: PostgreSQL 18.7 + pgvector 0.8.7 (`pgvector/pgvector:0.8.7-pg18-trixie@sha256:ab49524d18df7200b74ac9a475e1db6297fc1eb57da4c214c63d10ecc4b754fa`, resolved 2026-11-23 with `docker buildx imagetools inspect`). Pin the extension version in the image tag, never a floating `pg18` tag, and check `SELECT extversion FROM pg_extension WHERE extname = 'vector'` in CI.
+
 Every pgvector migration must:
 - `CREATE EXTENSION IF NOT EXISTS vector` in `up()`
 - Declare dimension matching the model exactly
@@ -102,7 +104,7 @@ SELECT id FROM documents WHERE tenant_id = $2 AND embedding_model = $3
 ORDER BY embedding <=> $1 LIMIT 10;
 COMMIT;
 ```
-Selective `WHERE` filters run after the index scan and can return fewer than `LIMIT` rows — see `ann-vs-knn.md` §Filtered ANN (iterative scans need pgvector ≥ 0.8).
+Selective `WHERE` filters run after the index scan and can return fewer than `LIMIT` rows — see `ann-vs-knn.md` §Filtered ANN. Iterative scans need pgvector ≥ 0.8.0 (executed on 0.8.7: 0–1 → 10 of 10 rows); use `SET LOCAL hnsw.iterative_scan = relaxed_order` in the same transaction.
 
 ---
 
@@ -201,7 +203,7 @@ ALTER TABLE {table}
   ADD COLUMN embedding        vector({old_dims}),
   ADD COLUMN embedding_model  varchar(100);
 ```
-(Verified on PG16 + pgvector 0.6.2: expand → contract → down round-trips without error. The previous down added `embedding_v2` before renaming onto the same name and failed.)
+(Verified on PG16 + pgvector 0.6.2 and again on PostgreSQL 18.7 + pgvector 0.8.7 with 2,000 rows: expand → `CREATE INDEX CONCURRENTLY` → backfill → contract → down round-trips without error and keeps the 2,000 re-embedded vectors. The previous down added `embedding_v2` before renaming onto the same name and failed.)
 
 ---
 
@@ -215,4 +217,4 @@ ALTER TABLE {table}
 | `<->` | `vector_l2_ops` | L2 (Euclidean) distance |
 | `<#>` | `vector_ip_ops` | Negative inner product |
 
-Mismatch: the planner cannot use the index and falls back to a sequential scan — no error, only latency (verified with EXPLAIN: `<->` on a `vector_cosine_ops` index → Seq Scan).
+Mismatch: the planner cannot use the index and falls back to a sequential scan — no error, only latency (verified with EXPLAIN on PostgreSQL 18.7 + pgvector 0.8.7: `<->` on a `vector_cosine_ops` index → Seq Scan + Sort; `<=>` → `Index Scan using ...`).

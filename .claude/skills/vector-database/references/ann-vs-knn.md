@@ -64,7 +64,7 @@ ANN doesn't mean "bad recall" — **well-tuned HNSW can often reach 95–99% rec
 
 **The golden workflow:** Measure recall of your ANN config against KNN ground truth on a sample, then tune until ANN-vs-exact overlap@k is acceptable for your use case. (This index-quality measure — the share of the exact top-k that ANN also returns — is distinct from retrieval Recall@K against labeled relevant chunks; metric formulas live in the `llm-evaluation` skill.)
 
-Set query-time knobs with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified on PG16: `SET LOCAL hnsw.ef_search = 100` reverts to 40 after commit; a session `SET` stays 100).
+Set query-time knobs with `SET LOCAL` inside the request transaction. A plain `SET` on a pooled connection persists into the next request (verified on PG16 and again on PostgreSQL 18.7 + pgvector 0.8.7: `SET LOCAL hnsw.ef_search = 200` reverts to 40 after commit; a session `SET` stays 200).
 
 ---
 
@@ -72,7 +72,18 @@ Set query-time knobs with `SET LOCAL` inside the request transaction. A plain `S
 
 pgvector applies the `WHERE` clause **after** the HNSW/IVFFlat index produces its candidate list (`hnsw.ef_search`, default 40). With a selective filter — a small tenant, a rare category, `is_current` on a mostly-superseded corpus — the query can return fewer than `LIMIT` rows or none. Unauthorized rows are still excluded (isolation is fine); the right rows are simply never reached.
 
-**Reproduced** on PostgreSQL 16 + pgvector 0.6.2 (20,000 rows, `vector(8)`, tenant 1 = 1% of rows, `LIMIT 10`):
+**Reproduced on PostgreSQL 18.7 + pgvector 0.8.7** (20,000 rows, `vector(8)`, HNSW `m=16, ef_construction=64`, an unindexed filter matching 1% of rows, `LIMIT 10`, SQLAlchemy 2.1.9 + asyncpg; executed test with a negative control):
+
+| Plan | Rows returned | Overlap with exact top-10 |
+|---|---|---|
+| HNSW, default (`hnsw.iterative_scan = off`, `ef_search = 40`) | **0–1** (two runs) | 0.0–0.1 |
+| HNSW, `SET LOCAL hnsw.iterative_scan = strict_order` | 10 | 1.0 |
+| HNSW, `SET LOCAL hnsw.iterative_scan = relaxed_order` | 10 | 1.0 |
+| Negative control: `ALTER DATABASE ... SET hnsw.iterative_scan = relaxed_order` | 10 for the "default" query too, so the test's "default loses rows" assertion failed as intended | - |
+
+**Planner note (pgvector >= 0.8.0 cost estimation):** when the filter column has its own selective B-tree index (`tenant_id = 150`, 30 rows), the planner chose `Index Scan using ix_chunks_tenant` + sort, i.e. an exact search with full recall, and did not touch HNSW. The recall loss appears when the filter is unindexed or not selective enough for the B-tree path. Always read `EXPLAIN` for your real filter before deciding which fix you need.
+
+Earlier reproduction on PostgreSQL 16 + pgvector 0.6.2 (tenant 1 = 1% of rows; this version has no iterative scans):
 
 | Plan | Rows returned |
 |---|---|
@@ -87,7 +98,7 @@ Fixes, in order of preference:
 
 | Fix | When | Notes |
 |---|---|---|
-| Iterative index scans | pgvector ≥ 0.8.0 | `SET LOCAL hnsw.iterative_scan = relaxed_order` (or `strict_order`; `ivfflat.iterative_scan = relaxed_order`); bounded by `hnsw.max_scan_tuples` (default 20000) / `ivfflat.max_probes`. Not executed here — verify on your version |
+| Iterative index scans | pgvector ≥ 0.8.0 | `SET LOCAL hnsw.iterative_scan = relaxed_order` (or `strict_order`; IVFFlat accepts only `off`/`relaxed_order`, executed); bounded by `hnsw.max_scan_tuples` (default 20000), `hnsw.scan_mem_multiplier` (default 1) / `ivfflat.max_probes`. Executed on 0.8.7: 0–1 → 10 rows (table above). `relaxed_order` may return results slightly out of distance order: re-sort in an outer query when order matters |
 | Partial index per hot filter value | Few, stable filter values (e.g. `is_current`, a large tenant) | `CREATE INDEX … USING hnsw (embedding vector_cosine_ops) WHERE is_current`. If the predicate's value is a bind parameter (`tenant_id = $2`), you MUST also `SET LOCAL plan_cache_mode = force_custom_plan` (generic-plan trap below) |
 | Partition by tenant (or list/range key) | Many tenants, tenant-scoped queries | Each partition has its own index; the planner prunes |
 | Exact scan for small scopes | Tenant below a row threshold | Exact search over a few thousand rows is cheap and has perfect recall |
@@ -120,7 +131,7 @@ ORDER BY embedding <=> $3 LIMIT 10;
 COMMIT;
 ```
 
-**`iterative_scan` on pgvector < 0.8 can be a silent no-op.** On pgvector 0.6.2, `SET LOCAL hnsw.iterative_scan = relaxed_order` was **accepted without error** in a backend where the vector library was not yet loaded (PostgreSQL stores it as a placeholder setting); it errored ("reserved prefix") only once the library was loaded. So the setting is not proof that iterative scans are active. Check the version at startup and fail closed: `SELECT extversion FROM pg_extension WHERE extname = 'vector'` must be ≥ `0.8.0` before you rely on fix #1.
+**`iterative_scan` on pgvector < 0.8 can be a silent no-op.** (On 0.8.7 an invalid value fails: `Available values: off, relaxed_order, strict_order`.) On pgvector 0.6.2, `SET LOCAL hnsw.iterative_scan = relaxed_order` was **accepted without error** in a backend where the vector library was not yet loaded (PostgreSQL stores it as a placeholder setting); it errored ("reserved prefix") only once the library was loaded. So the setting is not proof that iterative scans are active. Check the version at startup and fail closed: `SELECT extversion FROM pg_extension WHERE extname = 'vector'` must be ≥ `0.8.0` before you rely on fix #1.
 
 **Required test:** a fixture with a filter matching ≤ 1% of rows asserts `count == LIMIT` (and equals the exact-scan ids, modulo relaxed ordering). Run the query **more than 5 times on one pooled connection** with the production driver, so a generic-plan switch is caught. Weaviate multi-tenancy avoids this structurally (one shard per tenant); Weaviate property filters inside a shared collection are applied during the HNSW search, but still measure with the same test.
 

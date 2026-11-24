@@ -70,6 +70,7 @@ Out of scope:
 - Is the tenant/permission filter applied inside the retrieval call (pgvector `WHERE`, Weaviate `with_tenant()` + `filters=`)? Or is the code retrieving globally and filtering Python-side? **The latter is critical.**
 - Does the tenant id come from the verified auth context — not the request body, tool args or model output? Is an optional/`None` tenant possible? **Critical.**
 - pgvector + selective tenant filter: is there iterative scan (≥ 0.8), a partial index, partitioning or an exact-scan path, and a ≤ 1%-selective fixture test run > 5 times on one connection? Without it, small tenants get empty results (recall, HIGH — not a leak). Also HIGH: a partial index on a bound parameter (`tenant_id = $2`) needs `SET LOCAL plan_cache_mode = force_custom_plan`, or it silently stops being used after 5 prepared executions.
+- Client/server versions: pgvector server ≥ 0.8.0 checked at startup when iterative scans are relied on (verified on 0.8.7: 0–1 → 10 of 10 rows on a 1% filter); `pgvector==0.5.x` (SQLAlchemy reads return `list[float]`; `pgvector.utils` removed); `weaviate-client==4.24.1` with no `connect_to_wcs`, `vectorizer_config=`/`vector_index_config=` create arguments or `graphql_raw_query()` (deprecated). Query knobs are `SET LOCAL`, never session `SET`.
 - Are retrieval/answer cache keys scoped by tenant, permission fingerprint and index version? Caches keyed by query alone are critical.
 
 ### Embedding

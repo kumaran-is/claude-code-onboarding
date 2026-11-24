@@ -128,18 +128,20 @@ src/<pipeline-name>/
 |-----------|---------|----------------|
 | `m` | 16 | Higher = better recall, more memory. Range: 4–64 |
 | `ef_construction` | 64 | Higher = better recall at build time. Range: 32–400 |
-| `ef_search` | 40 | Higher = better recall at query time. Set per session |
+| `ef_search` | 40 | Higher = better recall at query time. Set with `SET LOCAL` per transaction (a plain `SET` leaks to the next request on a pooled connection) |
 
 **IVFFlat parameters**:
 
 | Parameter | Guidance |
 |-----------|---------|
 | `lists` | `sqrt(row_count)` for balanced perf/recall |
-| `probes` | `lists / 10` as starting point; increase for recall |
+| `probes` | start near `sqrt(lists)`; increase for recall |
+
+**Filtered queries** (tenant, category): on pgvector ≥ 0.8.0 add `SET LOCAL hnsw.iterative_scan = relaxed_order` (IVFFlat: `ivfflat.iterative_scan = relaxed_order`). Verified on PostgreSQL 18.7 + pgvector 0.8.7: a 1%-selective filter returned 0–1 of 10 rows without it and 10 of 10 with it. See `vector-database/references/ann-vs-knn.md` §Filtered ANN.
 
 5. Generate SQL: `DROP INDEX CONCURRENTLY` + `CREATE INDEX CONCURRENTLY` (non-blocking)
 6. Generate `EXPLAIN ANALYZE` template
-7. Generate query-time settings (`SET ivfflat.probes = N` / `SET hnsw.ef_search = N`)
+7. Generate query-time settings inside the query transaction (`SET LOCAL ivfflat.probes = N` / `SET LOCAL hnsw.ef_search = N` / `SET LOCAL hnsw.iterative_scan = relaxed_order`)
 8. Provide monitoring queries (index size, query times)
 9. Report recommendation
 

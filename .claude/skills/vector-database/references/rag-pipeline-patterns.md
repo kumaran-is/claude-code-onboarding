@@ -1,6 +1,6 @@
 # RAG Pipeline Patterns
 
-Framework-neutral core first (plain Python + SQL), optional extensions after. Snippets marked *verified* were executed this cycle against PostgreSQL 16 + pgvector 0.6.2 or with scripted fakes — no live model or Weaviate server.
+Framework-neutral core first (plain Python + SQL), optional extensions after. Snippets marked *verified* were executed against PostgreSQL 16 + pgvector 0.6.2 or with scripted fakes; the asyncpg retrieval snippet was re-run on PostgreSQL 18.7 + pgvector 0.8.7 with asyncpg 0.32.0 and pgvector-python 0.5.1. No live model.
 
 ## Table of Contents
 1. [Chunking Strategies](#chunking-strategies)
@@ -93,7 +93,6 @@ asyncpg needs the vector codec registered on every connection. Query-time knobs 
 
 ```python
 import asyncpg
-import numpy as np
 from pgvector.asyncpg import register_vector
 
 pool = await asyncpg.create_pool(dsn, init=register_vector)
@@ -110,8 +109,8 @@ async def search_documents(pool: asyncpg.Pool, query_vec: list[float], ctx: Auth
                            limit: int = 10) -> list[dict[str, object]]:
     async with pool.acquire() as conn, conn.transaction():
         await conn.execute("SET LOCAL hnsw.ef_search = 100")      # never a session-level SET
-        rows = await conn.fetch(SEARCH_SQL, np.asarray(query_vec, dtype=np.float32),
-                                ctx.tenant_id, settings.embedding_model, limit)
+        # pgvector-python 0.5: a plain list[float] is encoded by register_vector (no NumPy needed)
+        rows = await conn.fetch(SEARCH_SQL, query_vec, ctx.tenant_id, settings.embedding_model, limit)
     return [dict(r) for r in rows]
 ```
 
@@ -122,7 +121,9 @@ Dynamic filters: build the `WHERE` from a fixed allowlist of column names and bi
 Both legs carry the same scope filters. *Verified on a fixture: an identifier query (`INV-20931`) is found by the full-text leg, a zero-overlap paraphrase by the vector leg; rows from another tenant and an old embedding model never appear.*
 
 ```sql
--- tsv: tsvector GENERATED ALWAYS AS (to_tsvector('english', body)) STORED, with a GIN index
+-- tsv: tsvector GENERATED ALWAYS AS (to_tsvector('english', body)) STORED, with a GIN index.
+-- STORED is required: PostgreSQL 18 defaults generated columns to VIRTUAL and cannot index those.
+-- SQLAlchemy 2.1 model: Computed("to_tsvector('english', body)", persisted=True)
 WITH vec AS (
   SELECT id, row_number() OVER (ORDER BY embedding <=> $1) AS rnk
   FROM doc_chunks WHERE tenant_id = $2 AND embedding_model = $3 AND is_current

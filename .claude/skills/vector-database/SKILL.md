@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Vector Database Skill
@@ -106,9 +106,9 @@ LIMIT 10;
 COMMIT;
 ```
 
-**Filtered ANN returns fewer rows than `LIMIT`.** pgvector applies `WHERE` after the index produces its candidates, so a selective filter (small tenant, rare category) can return few rows or none. Reproduced on pgvector 0.6.2 with a 1%-selective tenant filter: HNSW → 0 of 10 rows, `ef_search = 400` → 3–6, exact scan → 10, partial index → 10 for the first 5 calls, then 0 once PostgreSQL switches the prepared statement to a generic plan (fix: `SET LOCAL plan_cache_mode = force_custom_plan`). Fixes, details and the required test: `references/ann-vs-knn.md` §Filtered ANN.
+**Filtered ANN returns fewer rows than `LIMIT`.** pgvector applies `WHERE` after the index produces its candidates, so a selective filter (small tenant, rare category) can return few rows or none. Reproduced on PostgreSQL 18.7 + pgvector 0.8.7 with a 1%-selective unindexed filter: HNSW default → 0–1 of 10 rows, `SET LOCAL hnsw.iterative_scan = strict_order` or `relaxed_order` → 10 of 10 (overlap with exact top-10 = 1.0). With a selective B-tree-indexed filter the 0.8 planner skipped HNSW and searched exactly. On pgvector < 0.8 (no iterative scans) a partial index returned 10 for the first 5 calls, then 0 after PostgreSQL switched the prepared statement to a generic plan (fix: `SET LOCAL plan_cache_mode = force_custom_plan`). Check `SELECT extversion FROM pg_extension WHERE extname = 'vector'` ≥ 0.8.0 at startup before relying on iterative scans. Fixes, details and the required test: `references/ann-vs-knn.md` §Filtered ANN.
 
-SQLAlchemy + `pgvector-python` (verified on SQLAlchemy 2.0.58 and 2.1.9):
+SQLAlchemy + `pgvector-python` 0.5.1 (verified on SQLAlchemy 2.1.9 + asyncpg 0.32.0, PostgreSQL 18.7, pgvector 0.8.7; an earlier cycle also verified SQLAlchemy 2.0.58):
 ```python
 from pgvector.sqlalchemy import Vector
 
@@ -127,6 +127,8 @@ stmt = (select(Chunk.id, Chunk.text)
         .limit(k))
 ```
 With raw asyncpg, call `pgvector.asyncpg.register_vector(conn)` (e.g. in the pool `init`) before passing vectors as parameters.
+
+pgvector-python 0.5 return types (executed): through SQLAlchemy a `vector` column reads back as `list[float]` (no NumPy; drop `.tolist()` on results); raw asyncpg with `register_vector` returns a `pgvector.Vector` (`.to_list()`). `pgvector.utils` and re-exports were removed: import `Vector`, `HalfVector`, `SparseVector`, `Bit` from `pgvector`. The SQLAlchemy module also provides `HALFVEC`, `SPARSEVEC`, `BIT` types and `avg`/`sum`.
 
 For full migration template → see `references/pgvector-migration-template.md`
 
@@ -167,7 +169,7 @@ client.collections.create(
 )
 ```
 
-`vectorizer_config=`, `vector_index_config=` (create arguments) and `Configure.NamedVectors` are deprecated: weaviate-client 4.24.1 emits Dep024/Dep025 when they are passed to `create()`, and the current form above emits none (checked with an unconnected client and `warnings.catch_warnings`). For a server-side vectorizer use `Configure.Vectors.text2vec_<provider>(...)`; for several named vectors pass a list of `Configure.Vectors.*(name=...)`.
+`vectorizer_config=`, `vector_index_config=` (create arguments) and `Configure.NamedVectors` are deprecated: weaviate-client 4.24.1 emits Dep024/Dep025 when they are passed to `create()`, and the current form above emits none (checked with an unconnected client and `warnings.catch_warnings`). Executed against a Weaviate 1.40.7 server under `python -W error::DeprecationWarning`: create (self-provided vectors, HNSW cosine, multi-tenancy with `auto_tenant_creation=False`), batch insert, hybrid with `vector=`, filtered `near_vector`, tenant isolation, `delete_many` all passed; the deprecated create arguments failed the run (Dep024). The client refuses servers older than 1.27.0. weaviate-client 4.24.1 caps `grpcio<1.80` (resolves 1.78.2, which has no cp315 wheel); this is one of the blockers for Python 3.15, so Weaviate services stay on 3.14. `graphql_raw_query()` is deprecated (Dep031, removal after May 2027): use the typed `query.*` API. For a server-side vectorizer use `Configure.Vectors.text2vec_<provider>(...)`; for several named vectors pass a list of `Configure.Vectors.*(name=...)`.
 
 ### Query Patterns
 

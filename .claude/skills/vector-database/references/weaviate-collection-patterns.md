@@ -1,6 +1,6 @@
 # Weaviate Collection Patterns
 
-Python client v4 current API (verified against weaviate-client 4.24.1 signatures; create calls checked for deprecation warnings with an unconnected client — no server-side behaviour was executed here).
+Python client v4 current API: weaviate-client 4.24.1 against a Weaviate 1.40.7 server, run with `python -W error::DeprecationWarning` (self-provided vectors + HNSW cosine create, multi-tenancy, batch insert, hybrid with `vector=`, filtered `near_vector`, tenant isolation, `delete_many`: executed; named vectors, PQ/RQ compression and server-side vectorizers below are checked against signatures only). The 4.24 client refuses servers older than 1.27.0. weaviate-client 4.24.1 caps `grpcio<1.80` (resolves 1.78.2, which has no cp315 wheel); this is one of the blockers for Python 3.15, so Weaviate services stay on 3.14.
 
 ## Table of Contents
 1. [Client Setup](#client-setup)
@@ -29,8 +29,10 @@ client = weaviate.connect_to_weaviate_cloud(
     },
 )
 
-# Local / Docker
-client = weaviate.connect_to_local()
+# Local / Docker. Pin the server image by digest, e.g.
+#   semitechnologies/weaviate:1.40.7@sha256:1373d227ef808c95601b79be75d5e613c04c5ad33a1a2e91ed91a5e6c2748144
+# (resolved 2026-11-23 with `docker buildx imagetools inspect`; re-resolve when you bump the tag)
+client = weaviate.connect_to_local()               # host/port/grpc_port args when not 8080/50051
 
 # Always close the connection (or use `with weaviate.connect_to_local() as client:`)
 try:

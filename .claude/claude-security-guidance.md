@@ -7,7 +7,7 @@ Project-specific rules on top of the plugin's built-in checklist. Full review me
 
 ## Stack
 
-Java 21 / Spring Boot 3.5 WebFlux (R2DBC) · NestJS 11 / Fastify / Prisma · Python 3.14 / FastAPI /
+Java 25 / Spring Boot 4.2 (MVC default, WebFlux + R2DBC when justified) · NestJS 11 / Fastify / Prisma · Python 3.14 / FastAPI /
 SQLAlchemy async · Angular 22 and React 19.3 SPAs · Flutter 3.50 (Firebase Auth, Firestore) ·
 PostgreSQL with RLS · LangChain/LangGraph and Google ADK agents · MCP servers.
 
@@ -16,8 +16,8 @@ PostgreSQL with RLS · LangChain/LangGraph and Google ADK agents · MCP servers.
 - Authentication is not authorization. Every read and write is scoped to the caller: tenant and
   user ids come from the verified token, never the request body, path, tool arguments or model
   output. Foreign objects return 404. Client route guards and hidden buttons are UX only.
-- Spring WebFlux: every route outside `/actuator/health` and `/actuator/info` is covered by a
-  `SecurityWebFilterChain` rule or `@PreAuthorize`; the full actuator never sits on the public port.
+- Spring Boot: every route outside `/actuator/health` and `/actuator/info` is covered by a
+  `SecurityFilterChain` (MVC) or `SecurityWebFilterChain` (WebFlux) rule or `@PreAuthorize`; the full actuator never sits on the public port.
 - NestJS: authentication is a global `APP_GUARD`; routes opt out with `@Public()`. `@Public()` on a
   route that writes state or returns user data IS a finding. Per-route opt-in guards are a finding.
 - FastAPI: protected routes depend on the auth dependency; admin routes add

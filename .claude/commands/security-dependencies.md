@@ -93,7 +93,7 @@ pkg:{ecosystem}/{package}@{version}
 Examples:
 - `pkg:npm/express@4.18.2`
 - `pkg:pypi/fastapi@0.165.0`
-- `pkg:maven/org.springframework.boot/spring-boot-starter@3.5.0`
+- `pkg:maven/org.springframework.boot/spring-boot-starter@4.2.0`
 - `pkg:pub/riverpod@3.0.0`
 
 ### Step 5: Produce final report

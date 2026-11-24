@@ -20,7 +20,7 @@ Scan the file list for tech signals and build a dispatch list:
 
 | Signal | Agent |
 |--------|-------|
-| `*.java` or `pom.xml` | `spring-reactive-reviewer` |
+| `*.java` or `pom.xml` | `spring-boot-reviewer` |
 | `*.ts` + NestJS decorators (`@Controller`, `@Injectable`, `@Module`) | `nestjs-reviewer` |
 | `*.ts`/`*.html` under Angular project (`angular.json` present) | `code-reviewer` (Angular) |
 | `*.tsx`/`*.jsx` (React) | `code-reviewer` (React) |
@@ -47,6 +47,7 @@ Scan the file list for tech signals and build a dispatch list:
 First run `/verify quick` for the diff's stacks and fix what it reports: reviewers spend their budget on judgement, not on compile and lint errors a tool finds in seconds. A quick-verify FAIL left unfixed is listed in the report, and the verdict cannot be APPROVE.
 
 Launch all identified agents simultaneously with the Agent tool (`run_in_background: true`).
+Give each reviewer its own slice of the file list from Step 2 (a stack reviewer gets that stack's files; `security-reviewer` gets auth, input, crypto and config files; `code-reviewer` gets the whole list) and name the files in its prompt. A reviewer handed the whole diff spends its budget on files it cannot judge.
 Do **not** wait for one to finish before starting the next.
 
 Example for a NestJS + database change:

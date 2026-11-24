@@ -11,7 +11,7 @@ Detect which stacks are present and run coverage for each. Lists files below 80%
 
 ## Stack Detection + Coverage Commands
 
-### Spring Boot (Java 21 / Maven)
+### Spring Boot (Java 25 / Maven)
 Detected by: `pom.xml` containing `spring-boot`
 
 ```bash

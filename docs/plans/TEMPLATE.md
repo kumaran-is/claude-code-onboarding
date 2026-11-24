@@ -23,7 +23,7 @@ Created by `/plan-review`. Validated by `subagent-driven-development` Step 0-PRE
 
 ### Task 1: [Title]
 
-**Stack:** NestJS 11.x | Angular 22.3.x | React 19.3 | Flutter 3.50 | Spring Boot 3.5.x | FastAPI | PostgreSQL | Firebase
+**Stack:** NestJS 11.x | Angular 22.3.x | React 19.3 | Flutter 3.50 | Spring Boot 4.2 | FastAPI | PostgreSQL | Firebase
 
 #### Context Brief
 
@@ -102,7 +102,7 @@ Record every change to this plan after it is APPROVED. Do NOT edit tasks silentl
 
 ## Implementation notes
 
-[Append-only, one dated line per decision too small for an ADR: `- YYYY-MM-DD: chose X over Y because Z (file:line)`. Once this plan is committed, `git diff --numstat -- <this file>` must show `N	0` before each commit; before its first commit there is nothing to check.]
+[Append-only, one dated line per decision too small for an ADR: `- YYYY-MM-DD: chose X over Y because Z (file:line)`. Add ` [needs human review]` to a line when the choice changes behaviour the plan did not specify, weakens a check, or was a guess; the PR body lists every flagged line and the human clears it there. `/promote-lessons` routes project facts here. Once this plan is committed, `git diff --numstat -- <this file>` must show `N	0` before each commit; before its first commit there is nothing to check.]
 
 ---
 

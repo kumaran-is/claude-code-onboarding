@@ -58,7 +58,7 @@ Fix the root cause, not the instance: when one query, sink or route is vulnerabl
 
 ### Step 5 -- Backend hardening
 Apply hardening across all backend layers:
-- **Java/Spring Boot (WebFlux)**: Spring Security `SecurityWebFilterChain`, CSRF where cookies authenticate, security headers; SQL through R2DBC `DatabaseClient` with bound parameters (`.bind(...)`) or repositories, never blocking `JdbcTemplate` on an event-loop thread and never string-built SQL
+- **Java/Spring Boot 4.2 (MVC default, WebFlux when justified)**: Spring Security `SecurityFilterChain` (`SecurityWebFilterChain` on WebFlux), CSRF where cookies authenticate, security headers; SQL through repositories or bound parameters (`JdbcClient` on MVC, R2DBC `DatabaseClient` `.bind(...)` on WebFlux), never blocking JDBC on a WebFlux event-loop thread and never string-built SQL
 - **NestJS (Fastify adapter)**: `@fastify/helmet` registered with `await app.register(helmet)` (Express `app.use(helmet())` does not apply; see `.claude/skills/nestjs-api/reference/nestjs-production-baseline.md` §4), rate limiting (`@nestjs/throttler`), global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`; other tenants' resources answer 404
 - **Python/FastAPI**: Input validation with Pydantic v2, dependency injection for auth guards
 - **Common**: AES-256 encryption for PII fields, OAuth2/OIDC integration, secure session config

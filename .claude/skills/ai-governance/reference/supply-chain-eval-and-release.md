@@ -70,7 +70,7 @@ Severity depends on actual and potential impact, whether unsafe behaviour was bl
 
 ### 7.1 Severity crosswalk: S0–S3 ↔ SEV-1–SEV-4
 
-Governance §13.2 (the factors in §7 above) lists severity factors but names no levels; S0–S3 is this toolkit's `incident_record.severity` scale (S0 most severe). `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` (SEC §8.2) defines SEV-1–SEV-4 with §9.1 SLAs. The crosswalk is one-to-one, and every row carries the **stricter** obligation of the two sources, so neither standard is weakened:
+Governance §13.2 (the factors in §7 above) lists severity factors but names no levels; S0–S3 is this toolkit's `incident_record.severity` scale (S0 most severe). `.claude/skills/security-reviewer/reference/ai-threat-model-attack-classes.md` §6 ("Scoring, severity and remediation SLAs") defines SEV-1–SEV-4 and their SLAs. The crosswalk is one-to-one, and every row carries the **stricter** obligation of the two sources, so neither standard is weakened:
 
 | Level | Meets this level when (any one suffices; the §13.2 factor triggers are toolkit defaults that only escalate) | Acknowledge / stabilize | Mitigate · permanent fix | Severity set by · downgrade needs | Notify |
 |---|---|---|---|---|---|
@@ -88,7 +88,7 @@ Rules (validator-enforced where marked ✓):
 - Every level records the §13.3 evidence; `resolved`/`closed` needs root cause, corrective actions and preventive test cases (✓), and the regression case must fail on pre-fix code and pass on post-fix code (playbook §9.1).
 - Times are the playbook's ADAPT placeholders, the `ai-incident-response` stage times and the runbook defaults below. **The organisation may tighten this crosswalk (shorter times, a more severe row, more approvers) but may not loosen it**: no longer time, no shifted mapping, no removed approver.
 
-**Runbook levels on the same rows.** `.claude/skills/ai-incident-response/reference/runbook-playbooks.md` (IR §3) SEV1–SEV4 and the eval flywheel P0–P3 (runbook §3, eval strategy §7.9; `regression_case.severity`) map one-to-one onto these rows: S0 = SEV-1 = SEV1 = P0 … S3 = SEV-4 = SEV4 = P3. Where the runbook (§3, §10.1, §13, §14) is stricter than the table above it governs; the playbook's mitigate and permanent-fix limits still bound what the runbook leaves open:
+**Runbook levels on the same rows.** `.claude/skills/ai-incident-response/reference/runbook-playbooks.md` (IR §3) SEV1–SEV4 and the eval flywheel P0–P3 (runbook §3, `eval-guide/reference/golden-dataset.md` "Data flywheel"; `regression_case.severity`) map one-to-one onto these rows: S0 = SEV-1 = SEV1 = P0 … S3 = SEV-4 = SEV4 = P3. Where the runbook (§3, §10.1, §13, §14) is stricter than the table above it governs; the playbook's mitigate and permanent-fix limits still bound what the runbook leaves open:
 
 | Level | Page · IC named | Contain (runbook rung pulled; playbook "mitigate" by flag/kill switch) | Detection → regression dataset · → green CI | Mitigate / permanent fix | Update cadence · PIR |
 |---|---|---|---|---|---|

@@ -50,7 +50,7 @@ Every row inherits: open the ticket, name the IC, capture evidence (§9) **befor
 | I10 | post-deploy canary, Git ↔ registry drift, error spike after a change | 2 or 3 or routing rollback; freeze promotions | Git ↔ registry content hash ↔ `production` label; traces by `prompt_version` / `model_version` | drift check clean; post-deploy canary green; re-promoted through the pipeline only | pipeline / promotion-gate test that blocks the error class (`llmops-release-and-rollout.md` §3, `langfuse-prompts.md` prompt regression test) |
 | I11 | retrieval-eval drop, `rag_no_answer_rate`, poisoning canary, ingestion audit | quarantine source; 1 for capabilities on the corpus | index snapshot id, ingestion logs, chunk ids served and recipients | retrieval evals at baseline; blue/green index swap, old index read-only until verified | forbidden-context-id cases; deletion test `test_deleted_source_not_retrievable_after_sla`; ingestion screen `test_secret_bearing_text_is_excluded_from_index`; triage `skills/rag-debugger/`, controls `skills/rag-security-reviewer/` |
 
-Trace and version fields to read: `skills/deployment-ci-cd/reference/ai-observability.md` §6, §10. Evidence privacy (access-controlled store, redaction, legal hold, sanitized regression cases): §9, `.claude/skills/ai-playbook/reference/data-governance-privacy.md`, eval strategy §7.11 (`skills/eval-guide/reference/golden-dataset.md`).
+Trace and version fields to read: `skills/deployment-ci-cd/reference/ai-observability.md` §6, §10. Evidence privacy (access-controlled store, redaction, legal hold, sanitized regression cases): §9, `.claude/skills/ai-playbook/reference/data-governance-privacy.md`, `skills/eval-guide/reference/golden-dataset.md` (sanitized regression cases).
 
 ## 4. Closure and record
 

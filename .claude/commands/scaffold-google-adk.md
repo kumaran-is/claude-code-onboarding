@@ -133,7 +133,7 @@ Before writing any code or running any command, ask ALL of the following. Presen
 
 4. Evals and guardrails (every option; ADK-first, no LangChain):
    - Record the capability's risk tier (T0–T3, guardrails §3) and eval plan in the ADR the user creates with `/ai-decision-record`; unsure between two tiers → the higher one. T0–T3 is the engineering risk tier, not an autonomy level (A0–A4).
-   - Golden data at `tests/golden/features/<feature>/` with a `dataset_manifest.yaml` (eval strategy §7.3–§7.4; schema and starter files in the `eval-guide` skill), a stable `case_id` per case and no real PII (§7.11). The `adk eval` evalset (`adk-eval-guide`) reads the same cases; it calls a live model, so it is R2, never R1.
+   - Golden data at `tests/golden/features/<feature>/` with a `dataset_manifest.yaml` (`eval-guide/reference/golden-dataset.md` "Layout" and "Manifest, versioning and run metadata"; schema and starter files in the `eval-guide` skill), a stable `case_id` per case and no real PII. The `adk eval` evalset (`adk-eval-guide`) reads the same cases; it calls a live model, so it is R2, never R1.
    - R1 tests (`@pytest.mark.r1`, scripted fake model, `eval-guide/reference/pytest-harness.md`): every allowlisted tool resolves; scope ids are injected server-side; a schema-invalid model output executes no tool; budget exhaustion returns the typed fallback; and for each write tool, a reused idempotency key with a changed payload is rejected with no second side effect (guardrails §9).
 5. Verify (show each command's exit code):
    - `python3 .claude/scripts/check-ai-assets.py --root $ARGUMENTS` (from the workspace root that holds `.claude/`) — exit 0 required; 3 = BLOCKED

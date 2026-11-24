@@ -90,16 +90,16 @@ def move_label(lf: Langfuse, name: str, version: int, label: str, *, registry_he
 | `few_shot_examples` | `examples` | full golden set + bias/fairness checks where applicable (G19) |
 | `safety_wording` | changed lines mention escalate / refuse / safety / harm / legal / medical / fraud | above + safety-recall set at 100% critical sub-threshold + red-team subset |
 | `rag_citation` | changed lines mention citations, sources, retrieval, `<context` | above + faithfulness, context precision, citation correctness |
-| `tools` | `tools` list, or a tool name in changed lines | above + trajectory eval + tool-surface hash update + tool red-team (eval strategy §10) |
+| `tools` | `tools` list, or a tool name in changed lines | above + trajectory eval + tool-surface hash update + tool red-team (`eval-guide/reference/mcp-eval-patterns.md`) |
 | `model_change` | provider, model, version or params | **full** golden set + safety + red-team + latency and cost comparison; fallback binding re-evaluated |
 | `new_language` | language added | full golden set + safety recall in that language |
 | `new_prompt` | card not in base | everything above that applies + baseline before first promotion |
 
-Gates: compare against the baseline rather than pass/fail alone (no regression on any critical, safety, isolation or compliance case; aggregate within tolerance, eval strategy §7.7). Evals run on a pinned dataset version and record prompt, model and dataset versions. Judge prompts are themselves prompt cards (type `judge`). A failing version is never promoted "temporarily". Execution, path routing and thresholds: `eval-guide` (`reference/ci-tiers.md`, `reference/red-teaming.md`). A behaviour change without a new changelog version is a BLOCK (`PC_CHANGELOG_NOT_BUMPED`).
+Gates: compare against the baseline rather than pass/fail alone (no regression on any critical, safety, isolation or compliance case; aggregate within tolerance, `eval-guide/reference/golden-dataset.md` "Baselines (triple) and the gate"). Evals run on a pinned dataset version and record prompt, model and dataset versions. Judge prompts are themselves prompt cards (type `judge`). A failing version is never promoted "temporarily". Execution, path routing and thresholds: `eval-guide` (`reference/ci-tiers.md`, `reference/red-teaming.md`). A behaviour change without a new changelog version is a BLOCK (`PC_CHANGELOG_NOT_BUMPED`).
 
 ## 4. Prompt security suite (PRM §16)
 
-Every T1+ user-facing or tool-using prompt has these cases, path-routed into its PR gate. The success of any hard-blocker case blocks merge, and every confirmed production injection becomes a permanent regression case (eval strategy §7.9). Red-team tiers and tooling: `eval-guide/reference/red-teaming.md`. Attack-class catalogue: `security-reviewer/reference/ai-threat-model-attack-classes.md`. `test_ac*` names are in `security-reviewer/assets/ai-attack-class-fixture/test_attack_classes.py`; `test_runtime_*` in `../assets/prompts-scaffold/promptops/test_prompt_registry.py`. Schema-breaking, encoded/obfuscated, multi-turn and per-language cases have no deterministic test here: they are model-behaviour evals (`eval-guide/reference/red-teaming.md`).
+Every T1+ user-facing or tool-using prompt has these cases, path-routed into its PR gate. The success of any hard-blocker case blocks merge, and every confirmed production injection becomes a permanent regression case (`eval-guide/reference/golden-dataset.md` "Data flywheel"). Red-team tiers and tooling: `eval-guide/reference/red-teaming.md`. Attack-class catalogue: `security-reviewer/reference/ai-threat-model-attack-classes.md`. `test_ac*` names are in `security-reviewer/assets/ai-attack-class-fixture/test_attack_classes.py`; `test_runtime_*` in `../assets/prompts-scaffold/promptops/test_prompt_registry.py`. Schema-breaking, encoded/obfuscated, multi-turn and per-language cases have no deterministic test here: they are model-behaviour evals (`eval-guide/reference/red-teaming.md`).
 
 | Case | Expected outcome | Deterministic layer that also covers it (executed test) |
 |---|---|---|
@@ -135,7 +135,7 @@ uv run --script $S/prompt_drift.py --prompts-root prompts --registry snapshot.js
 | Traces show a version at no label | continuous (sampled spans) | `DRIFT_TRACE_UNLABELED` | REVIEW |
 | Git prompt never synced / registry-only prompt | every run | `DRIFT_NOT_SYNCED` / `DRIFT_REGISTRY_ORPHAN` | REVIEW |
 
-Behavioural drift (same prompt, changing outcomes) is not a hash problem. It is detected by sampled production evaluation and the triple baseline (eval strategy §5.5, §7.8) and handled as an AI incident (`ai-incident-response`).
+Behavioural drift (same prompt, changing outcomes) is not a hash problem. It is detected by sampled production evaluation and the triple baseline (`eval-guide/reference/eval-program-adoption.md`; `golden-dataset.md` "Baselines (triple) and the gate") and handled as an AI incident (`ai-incident-response`).
 
 **Attribution (§18), on every model call:** `prompt_name`, `prompt_version`, `prompt_label`, `prompt_content_hash`, `model_provider`, `model_name`, `model_version`, generation params, `output_schema_version`, `validation_result`, `retry_count`, `input_tokens`, `output_tokens`, `cached_tokens`, `cost`, `latency`, `language`, `fallback_mode` (`normal | degraded | emergency`). Attribute names and the OTel GenAI mapping: `deployment-ci-cd/reference/ai-observability.md`. Store rendered prompt text only where the trace-store privacy rules allow (G8). Dashboards show the live version per environment with per-version quality, cost and latency.
 

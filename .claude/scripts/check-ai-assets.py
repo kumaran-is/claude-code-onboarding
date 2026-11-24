@@ -32,7 +32,7 @@ Usage:
   check-ai-assets.py --file PATH                             per-file code signals (edit hook), exit 0
   check-ai-assets.py --selftest                              positive + negative controls
 Exit codes: 0 PASS / REVIEW / NOT_APPLICABLE, 1 BLOCK (or REVIEW with --strict), 2 usage, 3 BLOCKED.
-Standards: eval strategy §5.2, §7, §9; guardrails G2, G4, G9, G11; governance §5.1, §14.2; prompt standard §7-§8;
+Rules: eval-guide ci-tiers.md (L2 PR gates), golden-dataset.md, prompt-engineering-patterns promptops-lifecycle.md; guardrails G2, G4, G9, G11; governance §5.1, §14.2; prompt standard §7-§8;
 model-selection-routing standard (pinned versions, explicit fallbacks).
 """
 

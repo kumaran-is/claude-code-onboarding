@@ -199,7 +199,7 @@ Examples are the strongest steering signal in a prompt and the easiest place to 
 
 | Rule | Requirement | Enforced by |
 |---|---|---|
-| Source | Synthetic or sanitized (eval strategy §7.11); never raw production data or real PII | `validate_prompts.py`: `PC_EXAMPLE_PII` (BLOCK), `PC_EXAMPLE_PROVENANCE` (REVIEW) |
+| Source | Synthetic or sanitized (`eval-guide/reference/golden-dataset.md`); never raw production data or real PII | `validate_prompts.py`: `PC_EXAMPLE_PII` (BLOCK), `PC_EXAMPLE_PROVENANCE` (REVIEW) |
 | Location | In Git with the prompt (inline `examples:` in the card or `examples/`), versioned with it | Card schema |
 | Coverage | At least one edge case and one uncertain/escalate example | `PC_EXAMPLE_COVERAGE` (REVIEW) |
 | Balance | Label distribution does not bias output toward one class unless intended and documented | Review (§19 checklist) |

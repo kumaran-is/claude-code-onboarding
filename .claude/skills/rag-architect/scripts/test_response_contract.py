@@ -2,7 +2,7 @@
 
 Stdlib unittest with a scripted support checker: no network, no model. Run from anywhere:
     python3 .claude/skills/rag-architect/scripts/test_response_contract.py
-(pytest also collects it.) Each test names the register row it evidences.
+(pytest also collects it.) Each test names the contract rule it evidences.
 """
 
 import sys

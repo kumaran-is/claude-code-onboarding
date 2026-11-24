@@ -42,6 +42,8 @@ Scan the file list for tech signals and build a dispatch list:
 > **Dependency manifest changed** (`pyproject.toml`, `uv.lock`, `package.json`/lockfile, `pom.xml`): also run the stack's dependency audit and report PASS | FAIL | BLOCKED | NOT RUN from the tool's OWN exit code (`cmd > log 2>&1; echo "EXIT:$?"`). Python: the `/verify` pre-pr EXPORT + AUDIT lines (`pip-audit` on the exported `uv.lock`, not on the interpreter it runs in; no severity column, so never grep it for CRITICAL/HIGH; `pip audit` is not a command) — see `.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md`. A missing tool or failed scan is BLOCKED, never a green.
 
 ### Step 3 — Dispatch in parallel
+First run `/verify quick` for the diff's stacks and fix what it reports: reviewers spend their budget on judgement, not on compile and lint errors a tool finds in seconds. A quick-verify FAIL left unfixed is listed in the report, and the verdict cannot be APPROVE.
+
 Launch all identified agents simultaneously with the Agent tool (`run_in_background: true`).
 Do **not** wait for one to finish before starting the next.
 
@@ -74,7 +76,7 @@ agents flagged independently (keep the most specific description).
 - Agents dispatched: [list]
 - Total issues: N  (critical: X, high: Y, medium: Z, low: W)
 - Duplicate findings collapsed: N
-- Verdict: ✅ APPROVE / ⚠️ NEEDS_REVIEW / ❌ BLOCK
+- Verdict: ✅ APPROVE / ⚠️ NEEDS_REVIEW / ❌ BLOCK @ [HEAD short sha] (+ "uncommitted changes" when the tree is dirty)
 
 Dependency audit: [PASS | FAIL | BLOCKED | NOT RUN | NOT APPLICABLE — command and exit code]
 Docs conformance: [PASS | FAIL — deprecated API / stale pin at file:line | UNVERIFIED]
@@ -88,6 +90,8 @@ Verdict rules:
   Any dispatched agent or audit that is BLOCKED/NOT RUN caps the verdict at ⚠️ NEEDS_REVIEW (never ✅ APPROVE)
   Docs conformance FAIL is at least a HIGH finding; UNVERIFIED caps the verdict at ⚠️ NEEDS_REVIEW
 ```
+
+A verdict describes the commit it names. Any commit or edit after it makes it stale: re-run the affected reviewers (scoped re-review, `verification-loop.md` §4) before quoting the verdict in a PR, never the earlier sha's result.
 
 ### Step 5 — Documentation conformance (`code-standards.md` "Documentation Before Code")
 

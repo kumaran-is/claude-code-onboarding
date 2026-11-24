@@ -481,6 +481,8 @@ Python — 2 failures:
 ## Final Verdict: ❌ FAIL (2 of 6 stacks failing)
 ```
 
+**Evidence stamp:** when the verdict is PASS (every applicable check PASS, none BLOCKED), record it against the current content: `python3 .claude/scripts/review_state.py stamp write verify --note "<mode>: <stacks and executed counts>"`. Executed Playwright or Maestro runs that passed stamp `ui-web` / `ui-mobile` the same way. Never stamp a FAIL, BLOCKED or NOT RUN verdict. The stamp goes stale as soon as a file in its scope changes; `gh pr create` and `gh pr merge` check it (`verification-loop.md` §4, enforcement kit).
+
 **Binary rule:** If ANY stack fails → overall verdict is FAIL. No partial credit. `/verify` reports build/test PASS/FAIL only; review-finding severities (CRITICAL → BLOCK, HIGH → NEEDS_REVIEW) follow the Review Severity Policy in `.claude/rules/verification-and-reporting.md`.
 
 ## pre-commit Checks

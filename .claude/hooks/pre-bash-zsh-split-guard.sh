@@ -16,6 +16,10 @@
 # command that takes a list of paths or names.
 # Also WARNS when a command starts with `timeout N` on macOS without a `timeout` binary: zsh prints
 # "command not found" into a pipe that hides it, and the empty output reads like a hang or a clean run.
+# Also WARNS when a test runner (pytest, flutter/dart test, vitest, jest, mvn/gradle test, ng test,
+# playwright test, npm test) is piped into tail/head/grep/tee/wc/sed/awk with no `pipefail` or
+# `PIPESTATUS` in the command: the pipeline's status is the last command's, so a failing run reads
+# as a pass.
 # Not affected: scripts run as `bash file.sh` (real bash word-splits), quoted globs, and the
 # explicit zsh list forms ${=VAR}, ${(f)VAR}, "${arr[@]}".
 #
@@ -63,6 +67,10 @@ check() { # $1 = command text; prints the advisory JSON, exits 2 to block
      [ "$(os_name)" = "Darwin" ] && ! has_timeout; then
     warn="${warn}- 'timeout' is not installed on macOS: the command fails with 'command not found' and the pipeline prints nothing, which reads like a hang or a clean run. Use the Bash tool's timeout parameter, or gtimeout (coreutils). "
   fi
+  if grep -qE '(^|[;&(])[[:space:]]*(([A-Z_][A-Z_0-9]*=[^[:space:]]*|(uv|poetry|pdm|hatch)[[:space:]]+run|npx|python3?[[:space:]]+-m|time)[[:space:]]+)*(pytest|flutter[[:space:]]+test|dart[[:space:]]+test|vitest|jest|(\./)?mvnw?[[:space:]][^|;]*[[:space:]]test|(\./)?gradlew?[[:space:]][^|;]*test|ng[[:space:]]+test|playwright[[:space:]]+test|npm[[:space:]]+(run[[:space:]]+)?test(:[[:alnum:]_:-]+)?)([[:space:]][^|;]*)?\|&?[[:space:]]*(tail|head|grep|tee|wc|sed|awk)([[:space:]]|$)' <<<"$cmd" &&
+     ! grep -qE 'pipefail|PIPESTATUS' <<<"$cmd"; then
+    warn="${warn}- a test runner piped into tail/head/grep/tee: the exit status is the last command's, so a failing run reads as a pass. Capture the runner's own code: 'runner > log 2>&1; echo EXIT:\$?; tail log', or set -o pipefail / \${PIPESTATUS[0]}. "
+  fi
   if [ -n "$warn" ]; then
     jq -n --arg m "zsh-split advisory: ${warn}Never trust a zero-findings result until a positive control matched in the same session." \
       '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$m}}'
@@ -108,6 +116,19 @@ selftest() {
   probe warn  'timeout 30 pytest -q'
   probe warn  'cd app && timeout 120 npm test 2>&1 | tail -5'
   probe pass  'gtimeout 30 pytest -q'
+  probe warn  'uv run pytest -q 2>&1 | tail -5'
+  probe warn  'flutter test | grep -E "passed|failed"'
+  probe warn  './mvnw -q test | tail -20'
+  probe warn  'npx playwright test --reporter=line | tail -3'
+  probe pass  'set -o pipefail; uv run pytest -q 2>&1 | tail -5'
+  probe pass  'npx vitest run | tail -3; echo "${PIPESTATUS[0]}"'
+  probe pass  'uv run pytest -q > /tmp/p.log 2>&1; echo "EXIT:$?"; tail -5 /tmp/p.log'
+  probe warn  'uv run pytest -q |& tee out.log'
+  probe warn  'npm run test:unit | tail -5'
+  probe pass  'git log --oneline | grep test'
+  probe pass  'grep -rn pytest docs | head'
+  probe pass  'echo "run flutter test" | tee notes.txt'
+  probe warn  'cd app && CI=true npm test 2>&1 | tail -5'
   probe pass  'echo timeout'
   probe pass  'git commit -m "raise timeout 30 to 60"'
   ZSH_GUARD_HAS_TIMEOUT=1; probe pass 'timeout 30 pytest -q'

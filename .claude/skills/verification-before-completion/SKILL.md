@@ -57,6 +57,7 @@ Skip any step = lying, not verifying
 | Regression test works | Red-green cycle verified | Test passes once |
 | Agent completed | VCS diff shows changes | Agent reports "success" |
 | Requirements met | Line-by-line checklist | Tests passing |
+| Feature works | The business outcome: persisted state re-read from the store, under the right tenant/owner, exactly once (a retry or double submit creates no duplicate), async work (job, webhook, notification) at its final status | HTTP 200/201, a success toast, "the API returned ok" |
 | PR task complete | GitHub Actions CI green + deployment workflow succeeded on the base branch | PR merged |
 
 ## Red Flags — STOP

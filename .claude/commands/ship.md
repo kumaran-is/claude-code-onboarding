@@ -178,6 +178,9 @@ Blockers:      X/7 passed (AI release counts only when applicable)
 High priority: X/4 passed
 Recommended:   X/4 passed
 
+Evidence       verify stamp VALID  |  ⚠️ CHANGED / EXPIRED / MISSING — re-run /verify pre-pr (`review_state.py stamp check verify`)
+Lessons        reviewed: [N routed: lesson / rule / control / skill / note]  |  "no new lesson"  (/create-pr Step 2.3; never skipped)
+
 Verdict: ✅ READY TO SHIP  |  ❌ NOT READY — fix blockers first
 ─────────────────────────────────────────────────
 

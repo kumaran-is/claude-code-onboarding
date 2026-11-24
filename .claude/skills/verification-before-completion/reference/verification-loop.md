@@ -26,6 +26,7 @@ implement → narrow verify (the test file, then the package)
 - A gate whose declared input scope is byte-identical to its last GREEN run cannot change verdict. Elapsed time, a new session or an expired sentinel file are not source changes.
 - An **under-declared** input scope is a false green (the gate reads a file its scope does not list). When unsure, declare more inputs.
 - When the diff since the last green is comments or prose only (zero code lines in the gate's scope), the green holds; say so with the diff that proves it instead of re-running.
+- The kit's `verify` stamp (section 4) implements this rule: it is a content fingerprint, so an unchanged tree stays VALID across sessions. Its max-age backstop exists for inputs outside the tree (toolchain, registry, services), not as a substitute for the fingerprint.
 - Attribute before re-running: narrowest scope first (test file → package → affected gate → umbrella gate on the frozen tree).
 
 ## 3. Heavy gates
@@ -38,15 +39,46 @@ implement → narrow verify (the test file, then the package)
 
 ## 4. Findings ledger
 
-Reviewer findings recorded only at the end become bookkeeping; recorded on arrival, they bound the next round. Keep one append-only ledger (a TSV or JSON file under a gitignored state directory, or the task list) with: `id | reviewer | severity | status (OPEN/CLOSED/DISMISSED) | summary | closing evidence`.
+Reviewer findings recorded only at the end become bookkeeping; recorded on arrival, they bound the next round. Keep one ledger with: `id | reviewer | severity | status | summary | closing evidence`. With the enforcement kit (below) it is `.claude/state/review/<branch>/ledger.json` (ids `F1`, `F2`…, states OPEN / INVESTIGATION_REQUIRED / CLOSED / DISMISSED); without it, a TSV under a gitignored state directory or the task list, append-only.
 
-- **Record each finding as it arrives**, one per entry. Namespace ids per reviewer and round (`sec-r2-1`, `db-r1-3`); never a bare `H1`, and severity goes in its own column.
+- **Record each finding as it arrives**, one per entry, severity in its own column. In a hand-kept ledger, namespace ids per reviewer and round (`sec-r2-1`, `db-r1-3`), never a bare `H1`; the kit records reviewer and round itself.
 - **Close against the file:** grep the fix back out of the changed file and name the positive control (`removed the guard → test_x FAILED`). A finding about the environment closes with the output of the command that settles it.
 - Dismiss only with a citation (why it is not a defect), never by deleting the entry.
-- Do not launch the next review round, and do not report done, while any finding is OPEN. A scoped re-review covers only that reviewer's findings.
+- Do not launch the next review round, and do not report done, while any **blocking** finding is OPEN: every open finding in rounds 1–2, only CRITICAL/HIGH from round 3 (see "Bounded re-review"; MEDIUM/LOW then go in the PR body). A scoped re-review covers only that reviewer's findings.
 - A reviewer-suggested fix gets the same positive control as your own code.
 
-Hook enforcement of this ledger (a SubagentStop recorder, a PreToolUse(Agent) gate on reviewer launches, a bounded Stop gate) is optional; any blocking Stop hook must honour `stop_hook_active` (`.claude/rules/hook-and-gate-authoring.md`).
+### Closure evidence and escalation
+
+Every close names one evidence class; a finding never closes on "looks fixed".
+
+| Class | Means | Example |
+|---|---|---|
+| `CONTROL` | A test or check that failed before the fix and passes after | `tests/test_auth.py::test_rejects_unsigned FAILED before, PASSED after` |
+| `MECHANISM` | A gate, hook, type or constraint now makes the defect impossible | `NOT NULL` + migration; lint rule now errors on the shape |
+| `STATIC` | Verified by reading the code; cite `path:line` | `src/auth/guard.ts:41 now checks audience` |
+| `NOCONTROL` | Fixed, but no automated control is possible; say why | copy change in a marketing page |
+| `DISMISSED` | Not a defect; the citation says why | reviewer misread a generated file |
+
+A close that does not survive re-verification is recorded as a failed attempt. After **2 failed closes** the finding becomes `INVESTIGATION_REQUIRED`: stop patching, find the root cause (`systematic-debugging`), and close it only with `CONTROL` or `MECHANISM` evidence. This pairs with the 3-attempt hard stop in `first-principles.md`.
+
+### Bounded re-review
+
+The review round is the most reports any one reviewer has made on the branch. Rounds 1–2 block on every open finding; from **round 3 only CRITICAL and HIGH block**. MEDIUM and LOW stay open, are still fixed where cheap, and go into the PR body as advisories. Re-dispatch only the reviewers that own open findings or findings closed since their last report, never the whole panel; run `/verify quick` on the diff's stacks before dispatching any reviewer.
+
+### Enforcement kit (opt-in, per branch)
+
+`python3 .claude/scripts/review_state.py init` turns the kit on for the current branch (or set `CLAUDE_ENFORCEMENT_KIT=1` for every branch); `disable` turns it off. State lives in `.claude/state/review/<branch>/` (gitignored). The hook `.claude/hooks/enforcement-kit.py` is registered for SubagentStart, SubagentStop, PreToolUse (Bash, Agent) and Stop, and is a no-op for the ledger until the kit is on.
+
+| When | What the kit does |
+|---|---|
+| A reviewer starts (an agent whose frontmatter disallows Write and Edit) | Injects the contract: end the report with `FINDING: <SEVERITY> \| <path:line> \| <summary>` lines or `FINDINGS: none` |
+| The reviewer stops | Records each FINDING line (idempotent per `agent_id`). No contract line: sent back once (bounded by `stop_hook_active`), then recorded as a MEDIUM "unparsed report" finding |
+| A reviewer is dispatched again | Denied while it owns OPEN or INVESTIGATION_REQUIRED findings: fix, close with evidence, then re-dispatch to verify |
+| The session tries to stop | Blocked once while findings block (round rule above); a second stop in a row only warns, so it cannot loop |
+| `gh pr create`, `gh pr merge`, `gh api …/pulls` (write) | Needs a VALID `verify` stamp (section 2). Kit off: advisory. Kit on: denied unless the command is prefixed with `REVIEW_GATE_OVERRIDE="<reason>"`, and the reason goes in the PR |
+| UI files changed (always on) | One reminder per tree state when web UI or Flutter `lib/` files changed without a VALID `ui-web` / `ui-mobile` stamp: run Playwright (web) or Maestro (Flutter Android/iOS), or report NOT RUN / BLOCKED. Kit off: a `systemMessage`; kit on: one bounded block |
+
+Ledger commands: `review_state.py findings list | add | close ID --class … --evidence … | fail ID --note … | dismiss ID --reason … | blocking | rereview`. Stamps: `review_state.py stamp write <verify|ui-web|ui-mobile> --note "<command, counts>"` after the check PASSED, `stamp check <name>` (VALID / CHANGED / EXPIRED / MISSING / UNKNOWN). A stamp is a content fingerprint of the files in its scope (`ui-*` stamps cover only UI files), so it goes stale when content changes, not on a timer; `REVIEW_STAMP_MAX_AGE_HOURS` (default 72) is the backstop. Writing a stamp without running the check is a false completion claim (`verification-and-reporting.md`). The `verify` stamp covers every untracked, non-ignored file too: write PR and commit bodies to `$TMPDIR` or the session scratchpad, never into the work tree, or the stamp goes CHANGED right before `gh pr create`. Limits: the PR gate reads the command text, so `bash -c "…"`, `xargs gh` and shell aliases are not seen; it is a guard against forgetting, not a sandbox.
 
 ## 5. Reporting
 
@@ -78,3 +110,13 @@ fix: <what> | invalidates: <gates> | preserved: <gates> | next: <cmd>
 
 - File content goes through Write/Edit, not heredocs or `python3 -c "…"`. In a double-quoted shell argument, backticks are command substitution: the shell runs the code span and silently removes it from the text (in `git commit -m "…"` as much as anywhere). Prompt-injection hooks that scan Bash command strings can also block heredoc content.
 - Multi-line commit messages → `git commit -F <file>`; PR and issue bodies → `--body-file <file>`.
+
+## 9. Paired manual QA (human + agent)
+
+For a user-facing change that automated suites cannot judge (copy, feel, flows across devices), run a short paired session instead of an unstructured "click around":
+
+1. **Charter (agent, 5 min):** the change, the risk list from the diff, the target (web: Playwright CLI; Flutter mobile: Maestro on an emulator or device, `testing-tool-selection.md`), the accounts and seed data, and 5–10 numbered scenarios including at least one error, one empty and one permission-denied path.
+2. **Drive (human or agent):** one scenario at a time; the other side records. The agent captures evidence for each (screenshot, trace or Maestro output) and never marks a scenario passed on the human's word alone without an artifact, or on its own reading of code.
+3. **Log each finding** in the ledger format (§4): `FINDING: <severity> | <screen or path:line> | <observed vs expected>`, plus the reproduction steps and the evidence file. Opinions on taste are LOW unless they block a task.
+4. **Close:** every scenario is PASS / FAIL / NOT RUN (with why); FAIL findings get a regression test where one is possible (`systematic-debugging` Phase 4). Write the `ui-web` / `ui-mobile` stamp only after the automated suite passes too: a manual session is not a substitute for it.
+

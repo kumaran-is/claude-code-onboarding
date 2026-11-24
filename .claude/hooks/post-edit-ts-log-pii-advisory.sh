@@ -166,7 +166,7 @@ const dbg = () => console.log('x'); // mcp-lint: ok dev-only CLI flag, never und
   expect "negative: MCP test files skipped" "$imp
 server.tool('x', s, h); console.log('t');" "$v2/src/__tests__/a.test.ts" ""
   expect "negative: file without an MCP import is ignored" "console.log('x'); router.tool('x');" "$v2/src/tools/util.ts" ""
-  # Prose that NAMES the v1 shapes (docs/workflows/mcp-server-setup.md "Do not" line): only JS/TS source is scanned.
+  # Prose that NAMES the v1 shapes (a Markdown "Do not" line in MCP setup docs): only JS/TS source is scanned.
   expect "negative: Markdown prose naming v1 shapes in a v2 project is silent" "**Do not** start new code on the v1 package (\`$sdk\`, \`new Server(...)\` + \`setRequestHandler(ListToolsRequestSchema, ...)\`, \`server.tool(...)\`, \`SSEServerTransport\`): v1 is in maintenance.
 Migrating means replacing \`server.tool(\` and \`SSEServerTransport\` and \`$sdk/server/mcp.js\`; console.log breaks stdio.
 import { McpServer } from '@modelcontextprotocol/server';" "$v2/mcp-server-setup.md" ""

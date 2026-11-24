@@ -20,6 +20,8 @@
 #       DevTools MCP or Playwright). Lines that say the old form no longer exists are allowed.
 #   R6  Flutter-context files (MOBILE_CONTEXT without the React Native skill/agent) must not recommend another device
 #       UI/E2E driver (Detox, Appium, Patrol, Espresso, XCUITest, flutter_driver) unless the line carries a guard word.
+#   R7  The scan set cannot shrink silently: every MOBILE_CONTEXT pattern matches at least one file and every
+#       BROWSER_ASSETS / MUST_LINK_CANON file exists (a deleted or renamed file is a violation, not a skipped scan).
 #
 # Usage: lint-testing-tools.sh [--root <repo>] [--selftest]      Exit 0 = clean, 1 = violations.
 set -uo pipefail
@@ -42,11 +44,12 @@ MOBILE_CONTEXT = [
     ".claude/skills/mobile-design/**/*.md", ".claude/skills/mobile-developer/**/*.md", ".claude/skills/screenshot-to-flutter/**/*.md",
     ".claude/skills/flutter-security-expert/**/*.md", ".claude/skills/riverpod-patterns/**/*.md",
     ".claude/agents/flutter-*.md", ".claude/agents/mobile-developer.md", ".claude/agents/riverpod-reviewer.md",
-    ".claude/commands/scaffold-flutter-*.md", ".claude/rules/flutter-*.md", "docs/workflows/feature-flutter-mobile.md",
+    ".claude/commands/scaffold-flutter-*.md", ".claude/rules/flutter-*.md",
 ]
 BROWSER_ASSETS = [
     ".claude/agents/browser-testing.md", ".claude/skills/browser-testing/SKILL.md",
-    ".claude/agents/reality-checker.md", "docs/workflows/browser-e2e-testing.md",
+    ".claude/agents/reality-checker.md", ".claude/skills/browser-testing/reference/browser-testing-workflows.md",
+    ".claude/skills/browser-testing/reference/playwright-test-suite.md",
 ]
 MUST_LINK_CANON = ["CLAUDE.md", ".claude/skills/flutter-mobile/SKILL.md",
                    ".claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md", ".claude/rules/skill-triggers.md"]
@@ -95,8 +98,14 @@ def lint(root):
     # R2
     for p in BROWSER_ASSETS:
         f = os.path.join(root, p)
-        if os.path.exists(f) and "testing-tool-selection" not in open(f, errors="ignore").read():
+        if not os.path.exists(f):
+            bad.append(f"R7 {p}: browser asset is missing (update BROWSER_ASSETS; a deleted file must not shrink the scan)")
+        elif "testing-tool-selection" not in open(f, errors="ignore").read():
             bad.append(f"R2 {p}: teaches browser testing but does not link {CANON} (scope is unstated)")
+    # R7: every mobile-context pattern still matches something
+    for p in MOBILE_CONTEXT:
+        if not files(root, [p]):
+            bad.append(f"R7 {p}: mobile-context pattern matches no file (update MOBILE_CONTEXT; the scan must not shrink silently)")
     # R3
     if not os.path.exists(os.path.join(root, CANON)):
         bad.append(f"R3 {CANON}: canonical rule is missing")
@@ -145,6 +154,8 @@ def selftest():
         w(CANON, "# rule\n")
         for p in MUST_LINK_CANON + BROWSER_ASSETS:
             w(p, link)
+        for p in MOBILE_CONTEXT:  # one fixture file per pattern, so R7 sees a complete scan set
+            w(p.replace("**/", "").replace("*", "fixture"), "# fixture\n")
         clean = lint(t)
         print("  ok   clean tree has no violations" if not clean else f"  FAIL clean tree flagged: {clean}")
         fail += bool(clean)
@@ -182,6 +193,13 @@ def selftest():
                 os.remove(os.path.join(t, path))
             else:
                 w(path, before[path])
+        for path in (".claude/skills/browser-testing/reference/playwright-test-suite.md", ".claude/rules/flutter-fixture.md"):
+            saved = open(os.path.join(t, path)).read()
+            os.remove(os.path.join(t, path))
+            hits = [h for h in lint(t) if h.startswith("R7") and (path in h or "flutter-*" in h)]
+            print(f"  {'ok  ' if hits else 'FAIL'} detects R7 shrunken scan set when {path} is deleted")
+            fail += (not hits)
+            w(path, saved)
         guarded = [
             ".claude/skills/flutter-mobile/reference/y.md|Never test the Android emulator app with Playwright; use Maestro.\n",
             "docs/g3.md|Angular web app on an emulator-sized viewport uses Playwright.\n",

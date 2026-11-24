@@ -6,8 +6,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob
 
 # Setup Team Memory — claude-mem + claude-mem-sync
 
-One-shot installer and verifier for your team memory stack.
-Reference doc: `docs/workflows/setup-team-memory.md`
+One-shot installer and verifier for your team memory stack. This command is the reference: every step, the troubleshooting fixes and the schedule live below.
 
 ---
 
@@ -559,8 +558,7 @@ If overall verdict is READY, print:
    git commit -m "chore: add claude-mem-sync team memory infrastructure"
    git push origin develop
 
-2. SHARE this doc with all 4 teammates:
-   docs/workflows/setup-team-memory.md
+2. SHARE with every teammate:
    → Each teammate runs: /setup-team-memory
 
 3. AFTER your first week of coding, share your observations:
@@ -577,7 +575,7 @@ If overall verdict is READY, print:
 6. MONTHLY (optional):
    mem-sync distill --project your-project   # extract rules → .claude/rules/
 
-Full reference: docs/workflows/setup-team-memory.md
+Full reference: .claude/commands/setup-team-memory.md
 ══════════════════════════════════════════════════════════
 ```
 

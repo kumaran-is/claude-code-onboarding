@@ -56,6 +56,31 @@ This skill is the entry point for production AI work. Each stage has ONE canonic
 
 Claude Code session guardrails for AI work (hooks in `.claude/hooks/`): `pre-prompt-injection.sh` blocks terminal-escape and NUL shapes and advises on injection phrases; `output-llm-quota-guard.sh` separates billing/quota exhaustion (stop, BLOCKED) from transient rate limits (bounded retry); `prompt-secret-scan.sh` blocks provider keys in prompts; `post-edit-python-log-pii-advisory.sh` flags exception text in log calls.
 
+## Proposed AI commands → existing capabilities
+
+The AI engineering domains name commands that this toolkit deliberately does not ship as separate files; each maps onto existing commands, skills and agents. Deterministic gate for all of them: `python3 .claude/scripts/check-ai-assets.py --root .`
+
+| Proposed | Use | What runs |
+|----------|-----|-----------|
+| `/scaffold-ai-eval` | `/rag-eval-init`; eval step of `/scaffold-agentic-ai`, `/scaffold-google-adk` | golden set + manifest + R1 tests |
+| `/audit-ai-evaluation` | `/ai-audit` + `eval-reviewer` | eval code and dataset review |
+| `/run-agent-evals` | `adk-eval-guide` + `/verify` AI block | R1 only; R2+ NOT RUN unless opted in |
+| `/run-rag-evals` | `rag-eval-runner` agent | retrieval and answer metrics vs baseline |
+| `/red-team-ai` | `eval-guide/reference/red-teaming.md` (R1–R4) + `security-reviewer/reference/ai-threat-model-attack-classes.md` (AC-01–AC-18) | R1 in `pytest -m r1`; R2–R4 NOT RUN unless opted in |
+| `/audit-ai-threat-model` | `threat-modeling-expert` + `threat-modeling` (design); `ai-security-reviewer` (code) | threat model; AI code review |
+| `/audit-ai-guardrails` | `/review-code` AI rows + `/ai-launch-check` | G1–G24 review; guardrail contract tests |
+| `/assess-ai-risk` | `/ai-decision-record` + `ai-governance` | risk tier, autonomy declaration |
+| `/audit-ai-governance` | `/ai-audit` (governance mode) + `ai-governance` validator | governance records validated |
+| `/review-ai-production-readiness` | `/ai-launch-check` + `/ship` AI release gate | launch gate + R3 report + readiness record |
+| `/audit-model-routing` | `agentic-llm-routing.md` + `llm-inference-and-model-routing.md` | `validate_model_registry.py`; MODEL_UNPINNED / LITELLM_ROUTER_FALLBACK checks |
+| `/scaffold-model-router` | `/scaffold-agentic-ai` or `/scaffold-google-adk` + `agentic-ai-dev/assets/reference-router/` | central model client; reference router tests |
+| `/review-prompt` | `prompt-engineering-patterns` review checklist + `eval-reviewer` | `validate_prompts.py` via the gate |
+| `/audit-promptops` | `prompt-engineering-patterns` (`promptops-lifecycle.md`) | `validate_prompts.py classify`, `prompt_drift.py` |
+| `/audit-rag` | `/rag-review` + `rag-implementation-reviewer` + `rag-security-reviewer` | full RAG audit |
+| `/scaffold-rag` | `/rag-design` then `/scaffold-rag-pipeline` | pipeline scaffold + eval init |
+| `/audit-agent-memory` | `agent-memory-lifecycle.md` + `agentic-memory-systems.md` + `ai-security-reviewer` | memory-record validator via the gate |
+| `/validate-ai-standards` | `/verify` AI block + `/ai-audit` + `check-doc-refs.sh` | deterministic gate; toolkit references resolve |
+
 ## When to load the full playbook
 
 Read `playbook.md` and apply the matching layer based on what the user is doing:

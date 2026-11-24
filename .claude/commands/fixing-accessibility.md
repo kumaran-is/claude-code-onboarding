@@ -35,5 +35,5 @@ Never report "compliant" from automated results.
 
 - `accessibility-audit` skill: the checklist, automated test setup and CI
 - `accessibility-auditor` agent: read-only WCAG 2.2 AA review with file:line findings
-- `docs/workflows/accessibility-audit.md`: the end-to-end audit workflow
+- `accessibility-audit` skill `SKILL.md` Process: the end-to-end audit (automated scan → manual checks → fix → CI gate)
 - `/lint-design-system`: token compliance (run alongside for the full UI gate)

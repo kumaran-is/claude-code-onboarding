@@ -990,7 +990,7 @@ Or manage existing rules:
 
 Keep architecture diagrams next to the code they describe and update them in the same change as the code.
 
-Naming convention: the folder name is the diagram prefix, so `src/auth/` maps to `docs/diagrams/auth-flow.md`. If a change touches files covered by an existing diagram, update that diagram; if a new service, flow or integration has no diagram, add a Mermaid one (`docs/diagrams/<feature>-flow.md`). See [documentation-generation](docs/workflows/documentation-generation.md).
+Naming convention: the folder name is the diagram prefix, so `src/auth/` maps to `docs/diagrams/auth-flow.md`. If a change touches files covered by an existing diagram, update that diagram; if a new service, flow or integration has no diagram, add a Mermaid one (`docs/diagrams/<feature>-flow.md`). See [`/doc-generate`](.claude/commands/doc-generate.md).
 
 ```
 docs/
@@ -2012,11 +2012,10 @@ claude-code-onboarding/
                                           # release notes generation (1 reference file)
 │
 └── docs/
-    └── workflows/                        # 43 multi-phase workflow guides (humans + Claude Code)
-        └── README.md                     # ← Index of all workflows by category
+    └── plans/                            # approved implementation plans (TEMPLATE.md + YYYY-MM-DD-<feature>.md)
 ```
 
-> **Workflow guides**: [`docs/workflows/README.md`](docs/workflows/README.md) — covers every development process from ideation to deployment, organized by phase (Feature Dev, Testing, Security, Shipping, Ops, Tooling).
+> **Processes live in the toolkit itself**: each skill's `SKILL.md` Process section, each command's steps and each agent's checklist. Find the right one with the CLAUDE.md Code Conventions table or [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md).
 
 ### MCP Servers (`.mcp.json`)
 
@@ -3097,7 +3096,7 @@ Beyond the passive guardrails above, this kit ships dedicated security commands,
 ## 19. CI/CD Automation — Deployment Engineer Agent
 
 **This toolkit's own CI:**
-- `.github/workflows/toolkit-lint.yml` runs on every PR that touches `.claude/**`, `docs/**` or `CLAUDE.md`. It runs the 4 lint scripts (skills, agents, commands, testing tools), `bash -n` on every hook and script, and every hook `--selftest`.
+- `.github/workflows/toolkit-lint.yml` runs on every PR that touches `.claude/**`, `docs/**`, `README.md` or `CLAUDE.md`. It runs the 4 lint scripts (skills, agents, commands, testing tools), the documentation-reference check (`check-doc-refs.sh`: links, anchors and toolkit paths resolve), the AI asset gates, `bash -n` on every hook and script, and every hook `--selftest`.
 - `.github/workflows/context-budget-gate.yml` runs when the always-loaded instructions change.
 
 For a Flutter app's PR gate, see `.claude/skills/deployment-ci-cd/reference/flutter-ci.md`. Maestro device tests are advisory there and report BLOCKED when no device is available.

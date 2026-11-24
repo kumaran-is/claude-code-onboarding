@@ -36,7 +36,7 @@ Never use `@latest`. To move versions, change this table after re-running the ve
 | Case | When | What runs |
 |---|---|---|
 | **A. New workspace** (this command) | No Angular workspace at the target path | Steps 1–12 below |
-| **B. Feature in an existing workspace** | `angular.json` exists | Skip steps 1–4. Use the workspace's own CLI (`npm exec --no -- ng …`; never a global or `npx @latest` CLI) for `ng generate`, then the custom steps. Workflow: `docs/workflows/feature-angular-spa.md` |
+| **B. Feature in an existing workspace** | `angular.json` exists | Skip steps 1–4. Use the workspace's own CLI (`npm exec --no -- ng …`; never a global or `npx @latest` CLI) for `ng generate`, then the custom steps. Process: `angular-spa` skill `SKILL.md` |
 | **C. Existing project on an older major** | `@angular/core` < 22 | Do not scaffold over it. Upgrade: commit or stash first, then `npm exec --no -- ng update @angular/core@22 @angular/cli@22` (one major at a time; read angular.dev/update-guide). Then the opt-in migrations, each with `--dry-run` first: `ng generate @angular/core:service-migration` (Injectable → Service; alias `@angular/core:service`), `@angular/core:inject-migration`, `@angular/core:control-flow-migration`, `@angular/core:signal-input-migration`, `@angular/core:output-migration`, `@angular/core:signal-queries-migration`, `@angular/core:common-to-standalone-migration`, `@angular/core:ngclass-to-class-migration`, `@angular/core:ngstyle-to-style-migration`. List them with `ng generate @angular/core: --help` |
 
 **Never overwrite an existing project.** Before step 1, check that the target directory does not

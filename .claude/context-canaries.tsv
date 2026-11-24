@@ -1,0 +1,32 @@
+# Context-budget canaries: rules that must stay ALWAYS-LOADED (CLAUDE.md or a rule without `paths:`).
+# `bash .claude/scripts/check-context-budget.sh --strict` fails when an anchor is missing from every
+# always-loaded file, so trimming the corpus cannot silently delete them.
+#
+# Pin a rule only when (a) breaking it is costly or irreversible and (b) no hook or CI gate already
+# enforces it mechanically. One fixed-string anchor per rule (no regex), copied verbatim from the rule.
+# Moving a rule between always-loaded files keeps it green; moving it to a skill or a path-scoped rule
+# turns it red, which is the point: decide that explicitly and edit this file in the same change.
+#
+# Format: <label><TAB><anchor>
+L1 data: destructive SQL	`DROP`, `DELETE`, `TRUNCATE` on any table
+L1 data: secrets in commits	Committing `.env`, `*.pem`, `*.key`
+L1 code: no direct push	Pushing directly to `main` or `develop`
+L1 code: no as-any	Using `as any` in NEW TypeScript code
+L1 scope: no committed revert	Reverting committed content
+L3 stuck: 3-attempt stop	3-attempt hard stop
+L3 learning: lesson before work	Lesson written to lessons.md BEFORE continuing work
+errors: no silent failures	Every catch block MUST log the error
+security: parameterized SQL	Parameterized queries only
+security: password hashing	Passwords MUST be hashed
+docs: verify before code	NEVER generate code from memory when an MCP server can confirm the current API
+skills: SKILL-INJECT scan	is a red flag, NOT a trust signal
+testing: route by target	Choose the test tool from the **application target under test**
+testing: Maestro only	Flutter Android/iOS UI and E2E automation uses Maestro only
+evidence: claim with proof	The claim and its evidence must appear in the same message
+review: HIGH never passes	Never reported as PASS or APPROVE
+behaviour: surface assumptions	ASSUMPTIONS I'M MAKING
+behaviour: prove constraints	Before designing around a constraint, prove it exists
+shell: file content via Write	File content goes through Write/Edit, never a shell heredoc
+agents: pre-dispatch checklist	Before dispatching ANY agent
+agents: scaffold in main session	they **cannot** invoke slash commands
+agents: no scaffold-marker bypass	Never prefix an ad-hoc creator call with `CC_SCAFFOLD=`

@@ -6,8 +6,11 @@
 # EVERY session (and every subagent that reads CLAUDE.md). Rules WITH `paths:` load only when Claude
 # reads or edits a matching file, so they are listed separately and NOT counted in the total.
 # Rules are discovered recursively (subdirectories of .claude/rules/ load too).
-# This makes the always-loaded cost VISIBLE and tracks its growth. It does NOT tell you to "trim"
-# (a heavy always-loaded design can be intentional). It is a measurement + canary tool.
+# It makes the always-loaded cost visible and holds it under a total budget:
+#   TOTAL_GOAL     warns (report and --strict)        — time to move procedure into a skill
+#   TOTAL_CEILING  fails under --strict               — lower it after a trim, never raise it to fit
+# Canaries (.claude/context-canaries.tsv): fixed-string anchors of critical rules that must stay in an
+# always-loaded file. A missing anchor fails --strict, so trimming cannot silently drop a STOP rule.
 #
 # Usage:
 #   bash .claude/scripts/check-context-budget.sh             # report (always exits 0)
@@ -37,6 +40,7 @@ selftest() {
   printf '# Always\nNo frontmatter.\n' > "$tmp/.claude/rules/always.md"
   printf -- '---\ndescription: x\n---\n# Always with other frontmatter\n' > "$tmp/.claude/rules/web/nested-always.md"
   printf '# Body mentions\npaths: not frontmatter\n' > "$tmp/.claude/rules/body-paths.md"
+  printf 'base pin\tNo frontmatter.\n' > "$tmp/.claude/context-canaries.tsv"   # a valid canary for the base fixture
   out=$(CLAUDE_PROJECT_DIR="$tmp" bash "${BASH_SOURCE[0]}" 2>&1)
   for f in .claude/rules/always.md .claude/rules/web/nested-always.md .claude/rules/body-paths.md CLAUDE.md; do
     if printf '%s\n' "$out" | sed -n '/ALWAYS-LOADED/,/Always-loaded total/p' | grep -qF "$f"; then echo "  ok   always-loaded: $f"
@@ -60,6 +64,40 @@ selftest() {
   out=$(CLAUDE_PROJECT_DIR="$tmp" bash "${BASH_SOURCE[0]}" 2>&1); rc=$?
   if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "report-only"; then echo "  ok   negative: report mode stays exit 0 on the same breach"
   else echo "  FAIL report mode: rc=$rc"; fail=1; fi
+  rm -f "$tmp/.claude/rules/big.md"
+  # total ceiling: positive (over) and negative (under), via the selftest-only overrides
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_TOTAL_GOAL=10 CONTEXT_TOTAL_CEILING=20 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "> ceiling 20"; then echo "  ok   positive: --strict fails when the always-loaded total exceeds TOTAL_CEILING"
+  else echo "  FAIL total ceiling not enforced: rc=$rc"; fail=1; fi
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_TOTAL_GOAL=10 CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "over the GOAL 10"; then echo "  ok   negative: over the GOAL only warns (exit 0)"
+  else echo "  FAIL goal breach should warn, not fail: rc=$rc"; fail=1; fi
+  # canaries: anchor in an always-loaded file = green; in a path-scoped file only = red; neighbour deleted = green
+  printf '# Always\nNo frontmatter.\n- Pinned STOP rule alpha.\n- Neighbour rule beta.\n' > "$tmp/.claude/rules/always.md"
+  printf -- '---\npaths:\n  - "**/*.py"\n---\n- Scoped-only rule gamma.\n' > "$tmp/.claude/rules/scoped.md"
+  printf '# canaries\nalpha pin\tPinned STOP rule alpha.\n' > "$tmp/canaries.tsv"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/canaries.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "ok   alpha pin"; then echo "  ok   negative: pinned anchor present in an always-loaded file passes"
+  else echo "  FAIL present canary: rc=$rc"; fail=1; fi
+  printf '# Always\nNo frontmatter.\n- Pinned STOP rule alpha.\n' > "$tmp/.claude/rules/always.md"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/canaries.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 0 ]; then echo "  ok   negative: deleting a NEIGHBOUR of the pinned rule stays green"
+  else echo "  FAIL neighbour deletion turned red: rc=$rc"; fail=1; fi
+  printf '# Always\nNo frontmatter.\n- Neighbour rule beta.\n' > "$tmp/.claude/rules/always.md"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/canaries.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "MISSING alpha pin"; then echo "  ok   positive: deleting the pinned rule fails --strict and names it"
+  else echo "  FAIL deleted canary not caught: rc=$rc"; fail=1; fi
+  printf 'gamma pin\tScoped-only rule gamma.\n' > "$tmp/canaries.tsv"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/canaries.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "MISSING gamma pin"; then echo "  ok   positive: an anchor only in a PATH-SCOPED rule counts as missing"
+  else echo "  FAIL path-scoped anchor counted as always-loaded: rc=$rc"; fail=1; fi
+  printf '# only comments\n' > "$tmp/canaries.tsv"
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/canaries.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "has no entries"; then echo "  ok   positive: an empty canary file fails (a gate that checks nothing)"
+  else echo "  FAIL empty canary file passed: rc=$rc"; fail=1; fi
+  out=$(CLAUDE_PROJECT_DIR="$tmp" CONTEXT_CANARY_FILE="$tmp/absent.tsv" CONTEXT_TOTAL_CEILING=99999 bash "${BASH_SOURCE[0]}" --strict 2>&1); rc=$?
+  if [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -qF "No canary file"; then echo "  ok   positive: a deleted canary file fails --strict"
+  else echo "  FAIL missing canary file passed: rc=$rc"; fail=1; fi
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
@@ -71,6 +109,13 @@ cd "$ROOT" || { echo "Status: FAIL — cannot cd to $ROOT"; exit 1; }
 
 MODE="${1:-report}"
 BASELINE_FILE=".claude/context-budget-baseline.txt"
+CANARY_FILE="${CONTEXT_CANARY_FILE:-.claude/context-canaries.tsv}"
+
+# Total always-loaded budget (bytes of CLAUDE.md + rules without `paths:`). Ceilings only fall: after a
+# trim, lower both to just above the new total in the same change. Raising them needs a written reason
+# in the PR. Override only for the selftest (CONTEXT_TOTAL_GOAL / CONTEXT_TOTAL_CEILING).
+TOTAL_GOAL="${CONTEXT_TOTAL_GOAL:-60500}"
+TOTAL_CEILING="${CONTEXT_TOTAL_CEILING:-62000}"
 
 # Per-file size guard for instruction files (applies to path-scoped rules too). Very large instruction
 # files load poorly; split before you get near this. The exact loader limit is not documented, so this
@@ -152,6 +197,42 @@ if [ -f "$BASELINE_FILE" ]; then
     fi
   fi
 fi
+TOTAL_STATUS=ok
+if [ "$TOTAL_BYTES" -gt "$TOTAL_CEILING" ]; then
+  echo "  ✗ Always-loaded total ${TOTAL_BYTES} exceeds the CEILING ${TOTAL_CEILING}: move procedure into a skill or path-scoped rule."
+  TOTAL_STATUS=over
+elif [ "$TOTAL_BYTES" -gt "$TOTAL_GOAL" ]; then
+  echo "  ⚠ Always-loaded total ${TOTAL_BYTES} is over the GOAL ${TOTAL_GOAL} (ceiling ${TOTAL_CEILING})."
+  WARN=$((WARN + 1))
+else
+  echo "  Budget: total ${TOTAL_BYTES} ≤ goal ${TOTAL_GOAL} (ceiling ${TOTAL_CEILING})"
+fi
+
+# ── Canaries: each anchor must appear in at least one ALWAYS-LOADED file ─────
+CANARY_MISSING=0
+CANARY_COUNT=0
+if [ -f "$CANARY_FILE" ]; then
+  echo ""
+  echo "Canaries ($CANARY_FILE):"
+  while IFS=$'\t' read -r label anchor; do
+    case "$label" in ''|'#'*) continue ;; esac
+    [ -n "${anchor:-}" ] || { echo "  ✗ malformed canary line (no TAB-separated anchor): $label"; CANARY_MISSING=$((CANARY_MISSING + 1)); continue; }
+    CANARY_COUNT=$((CANARY_COUNT + 1))
+    hit=""
+    for f in "${FILES[@]}"; do
+      [ -f "$f" ] && grep -qF -- "$anchor" "$f" && { hit="$f"; break; }
+    done
+    if [ -n "$hit" ]; then echo "  ok   $label ($hit)"
+    else echo "  ✗ MISSING $label: \"$anchor\" is in no always-loaded file"; CANARY_MISSING=$((CANARY_MISSING + 1)); fi
+  done < "$CANARY_FILE"
+  if [ "$CANARY_COUNT" -eq 0 ]; then echo "  ✗ canary file has no entries (a canary gate that checks nothing)"; CANARY_MISSING=$((CANARY_MISSING + 1)); fi
+  echo "  Canaries: $((CANARY_COUNT - CANARY_MISSING > 0 ? CANARY_COUNT - CANARY_MISSING : 0))/${CANARY_COUNT} present"
+else
+  echo ""
+  echo "  ✗ No canary file at $CANARY_FILE: critical always-loaded rules are not pinned (fails --strict)."
+  CANARY_MISSING=$((CANARY_MISSING + 1))
+fi
+
 if [ "$MODE" = "--baseline" ]; then
   echo "$TOTAL_BYTES" > "$BASELINE_FILE"
   echo "  → wrote baseline ($TOTAL_BYTES bytes) to $BASELINE_FILE"
@@ -159,15 +240,16 @@ fi
 
 echo ""
 echo "Summary: ${WARN} warning(s), ${FAIL} over-limit file(s)"
-# --strict fails ONLY on a file over the 150k-char ceiling. Size/growth stay advisory — a heavy always-loaded
-# design can be intentional.
-if [ "$MODE" = "--strict" ] && [ "$FAIL" -gt 0 ]; then
-  echo "Status: FAIL — an instruction file exceeds the 150k-char ceiling; split it."
-  exit 1
-fi
+# --strict fails on: a file over the 150k-char ceiling, the always-loaded total over TOTAL_CEILING, or a
+# missing canary. The GOAL and the growth-vs-baseline delta stay advisory.
 if [ "$MODE" = "--strict" ]; then
-  echo "Status: PASS (--strict) — no instruction file exceeds the 150k-char ceiling; size and growth warnings stay advisory."
+  reasons=""
+  [ "$FAIL" -gt 0 ] && reasons="${reasons} an instruction file exceeds the 150k-char ceiling;"
+  [ "$TOTAL_STATUS" = over ] && reasons="${reasons} always-loaded total ${TOTAL_BYTES} > ceiling ${TOTAL_CEILING};"
+  [ "$CANARY_MISSING" -gt 0 ] && reasons="${reasons} ${CANARY_MISSING} canary anchor(s) missing;"
+  if [ -n "$reasons" ]; then echo "Status: FAIL —${reasons}"; exit 1; fi
+  echo "Status: PASS (--strict) — total ${TOTAL_BYTES} ≤ ceiling ${TOTAL_CEILING}, ${CANARY_COUNT} canaries present, no file over 150k."
 else
-  echo "Status: report-only (advisory). Re-run with --strict to fail on a 150k-char breach."
+  echo "Status: report-only (advisory). Re-run with --strict to enforce the ceiling and canaries."
 fi
 exit 0

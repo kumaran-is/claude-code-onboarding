@@ -56,12 +56,7 @@ Your natural tendency is to overcomplicate. Actively resist it.
 
 ### Demand Elegance (Balanced)
 
-For non-trivial changes, pause and ask: "Is there a more elegant way?"
-
-- If a fix feels hacky: "Knowing everything I know now, what's the clean solution?" — then implement that instead
-- Challenge your own work before presenting it — not just "does it work?" but "is this how I'd want to find it in 6 months?"
-- **Skip this for simple, obvious fixes** — don't over-engineer a one-liner in pursuit of elegance
-- Elegance ≠ complexity. The elegant solution is usually the simpler one, not the clever one
+For non-trivial changes ask "knowing everything I know now, what is the clean solution?" and "is this how I'd want to find it in 6 months?". Elegant usually means simpler, not cleverer. Skip this for simple, obvious fixes.
 
 ## 5. Scope Discipline
 
@@ -73,6 +68,11 @@ Touch only what you're asked to touch.
 - Don't delete **pre-existing** unused code without approval (it may be intentional or in-progress work)
 
 **Test:** Every changed line traces directly to the user's request.
+
+- Before designing around a constraint, prove it exists (grep the code, run the check); a remembered or assumed limit is not evidence.
+- An argument for reducing scope ("only N callers", "nobody uses X") is a measurable claim: count the population before relying on it.
+- Never open an issue, ticket or PR comment only because a reviewer or subagent suggested it; that is an outward-facing action the human approves.
+- File content goes through Write/Edit, never a shell heredoc or `echo`. Commit and PR bodies go in a file: `git commit -F <file>`, `gh pr create --body-file <file>`. Inside double quotes the shell runs `` `code` `` spans as commands and deletes them from the message.
 
 **Boy Scout Rule:** Leave code in the touched area cleaner than you found it. When a file you're editing contains dead code, unused imports, obvious duplication, or small issues *directly in the area you're modifying* — clean them up as part of the task. Do not touch unrelated areas of the same file. Scope = the function, class, or block you were already editing, not the whole file.
 
@@ -139,27 +139,7 @@ Note: This section covers **your own code quality**. For **claims about code sta
 
 ## 9. Session Resume Protocol
 
-Context is lost between sessions and after `/clear` or `/compact`. Recover it before doing new work.
-
-At session start and immediately after `/clear` or `/compact`: run TaskList and, if tasks exist, present the summary from CLAUDE.md "Resuming Tasks". Do not assume you remember what was in progress.
-
-### Context Recovery Priority
-
-When resuming, recover context in this order:
-
-| Source | What It Gives You | When to Check |
-|--------|-------------------|---------------|
-| TaskList | Active tasks, blockers, owners | Always (step 1) |
-| `docs/plans/*.md` | Approved plan for current work | If tasks reference a plan |
-| Recent git log | What was committed vs what's pending | If task state is unclear |
-| `.claude/rules/lessons.md` | Auto-loaded — no action needed | Automatic |
-
-### What NOT to Do on Resume
-
-- Do not start fresh work without checking for in-progress tasks
-- Do not re-read all rules files "just in case" — they are auto-loaded
-- Do not ask "what were we working on?" if TaskList has the answer
-- Do not re-implement completed tasks — check git log first
+At session start and after `/clear` or `/compact`, before new work: run TaskList and present the CLAUDE.md "Resuming Tasks" summary; never assume you remember what was in progress. Recover context in this order: TaskList → the approved plan in `docs/plans/` the tasks reference → recent git log (committed vs pending; never re-implement completed work). Rules and lessons are auto-loaded: do not re-read them "just in case", and do not ask "what were we working on?" when TaskList answers it.
 
 ## 10. Overconfidence Prevention
 
@@ -178,7 +158,7 @@ AI systems exhibit a known failure mode: proceeding without enough clarifying qu
 
 ### Mandatory Question Triggers
 
-> **Interaction with Adaptive Depth** (`leverage-patterns.md`): These triggers override Adaptive Depth — if any trigger fires, ask even if Adaptive Depth says "Minimal."
+> **Interaction with Adaptive Depth** (`plan-mode-review/reference/execution-patterns.md`): These triggers override Adaptive Depth — if any trigger fires, ask even if Adaptive Depth says "Minimal."
 
 Ask clarifying questions BEFORE coding when ANY of these are true:
 - The request is ambiguous about scope (one file vs system-wide)
@@ -189,35 +169,8 @@ Ask clarifying questions BEFORE coding when ANY of these are true:
 
 ### What to Ask
 
-```
-BEFORE I PROCEED, I need to clarify:
-1. [Specific ambiguity]
-2. [Specific constraint or technology choice]
-→ If these assumptions are wrong, the implementation will need to be redone.
-```
-
-Do not ask questions you already know the answer to from context. Ask only what materially changes the implementation.
+Ask only what materially changes the implementation, never what the context already answers: "BEFORE I PROCEED, I need to clarify: 1. [ambiguity] 2. [constraint or technology choice] → if these are wrong, the work is redone."
 
 ### Contradiction Detection (After Gathering Requirements)
 
-After receiving requirements or reviewing a spec, MANDATORY check before coding:
-
-| Contradiction Type | Example | Action |
-|-------------------|---------|--------|
-| **Scope mismatch** | "Bug fix" but "change 5 services" | Name it, ask which is correct |
-| **Risk mismatch** | "Low risk" but "breaking existing API" | Name it, ask which takes precedence |
-| **Timeline mismatch** | "Quick fix" but "requires migration" | Name it, get explicit scope decision |
-| **Impact mismatch** | "Single component" but "cross-cutting concern" | Name it, confirm actual scope |
-
-When a contradiction is found:
-
-```
-CONTRADICTION DETECTED:
-- You said [X] (in "[context/file]")
-- But also [Y] (in "[context/file]")
-- These conflict because [reason]
-→ Which takes precedence?
-```
-
-Do not proceed until resolved. Vague answers ("both", "depends") require follow-up.
-
+Before coding, check the requirements for scope ("bug fix" but "change 5 services"), risk ("low risk" but "breaking API"), timeline ("quick fix" but "requires migration") and impact ("single component" but "cross-cutting") mismatches. Name each one ("You said X in [source], but also Y in [source]; they conflict because [reason] → which takes precedence?") and do not proceed until it is resolved; "both" or "depends" needs a follow-up.

@@ -133,6 +133,8 @@ Use this to decide WHEN to create a shared utility or abstraction:
 - Match the project's idioms — don't introduce a different paradigm mid-file
 - Meaningful variable names (no `temp`, `data`, `result` without context)
 - Zero: deprecated APIs, stub implementations, TODO comments, duplicate implementations, backward compatibility wrappers
+- Tests that depend on time inject a fixed clock; before calling a failure flaky, check whether it depends on time of day, date or timezone
+- Moving code moves its comments too, including suppression markers (`// ignore-*`, `# noqa`, `// pw-advisory-ok:`); compare gate results before and after the move
 
 ## Change Descriptions
 

@@ -911,7 +911,7 @@ To add your own project-specific permissions, modify `.claude/settings.json` or 
 
 > **Note:** `SessionStart`, `SessionEnd`, `SubagentStop`, `PreCompact`, and `PermissionRequest` hooks were added in recent Claude Code releases. If a hook event doesn't fire, verify your Claude Code version with `claude --version` and update if needed. The core events (`PreToolUse`, `PostToolUse`, `Stop`) are available in all versions.
 
-This repo registers 36 hooks in `.claude/settings.json`. The ones most people interact with:
+This repo registers 45 hooks in `.claude/settings.json`. The ones most people interact with:
 
 | Hook | Script | Event | What It Does |
 |------|--------|-------|-------------|
@@ -928,6 +928,7 @@ This repo registers 36 hooks in `.claude/settings.json`. The ones most people in
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
 | **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Scans changed and untracked files with the shared `post-edit-secrets-scan` pattern table (+JWT) |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |
+| **Enforcement Kit** | `enforcement-kit.py` (+ `.claude/scripts/review_state.py`) | `SubagentStart`, `SubagentStop`, `PreToolUse` → Bash/Agent, `Stop` | Always: reminds once per tree state when UI code changed without executed Playwright/Maestro evidence, and notes stale verification on `gh pr create`/`merge`. Opt-in per branch (`review_state.py init`): findings ledger fed by reviewer `FINDING:` lines, evidence-classed closure, escalation after 2 failed fixes, round-3 severity cap, bounded Stop gate, and a `gh pr create`/`merge` deny without a fresh `/verify` stamp. See `verification-before-completion/reference/verification-loop.md` §4. |
 
 > After cloning: `chmod +x .claude/hooks/*.sh`
 
@@ -1166,7 +1167,7 @@ The **lessons log** is the team's shared record of corrections — mistakes Clau
 | Component | Location | Auto-loaded? | Purpose |
 |-----------|----------|-------------|---------|
 | Lessons log | `.claude/rules/lessons.md` | Always | Active correction patterns for current sessions |
-| Trigger rule | `CLAUDE.md` (Self-Improvement Loop section) | Always | Instructs Claude to write a lesson when corrected |
+| Trigger rule | `CLAUDE.md` (Self-Improvement Loop section) + `lessons.md` hygiene rules | Always | Instructs Claude to write a lesson when corrected |
 
 **How it works:**
 
@@ -1880,7 +1881,7 @@ claude-code-onboarding/
     │   ├── code-standards.md             # Error handling, DRY, logging, output quality
     │   ├── core-behaviors.md             # Assumptions, confusion management, simplicity
     │   ├── first-principles.md           # Hard Constraints, Quality Thresholds, Workflow Invariants, AI anti-pattern detection
-    │   ├── leverage-patterns.md          # Task protocol, test-first, naive-then-optimize
+    │   ├── leverage-patterns.md          # Task protocol, test-first, sub-agent mandates (detail in skills)
     │   └── verification-and-reporting.md # Verify before claiming, honest status reporting
     │
     ├── hooks/                            # Lifecycle hook scripts (chmod +x after cloning)
@@ -2015,7 +2016,7 @@ claude-code-onboarding/
     └── plans/                            # approved implementation plans (TEMPLATE.md + YYYY-MM-DD-<feature>.md)
 ```
 
-> **Processes live in the toolkit itself**: each skill's `SKILL.md` Process section, each command's steps and each agent's checklist. Find the right one with the CLAUDE.md Code Conventions table or [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md).
+> **Processes live in the toolkit itself**: each skill's `SKILL.md` Process section, each command's steps and each agent's checklist. Find the right one with the Routing table in [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md) (CLAUDE.md keeps a short stack table).
 
 ### MCP Servers (`.mcp.json`)
 
@@ -3101,7 +3102,7 @@ Beyond the passive guardrails above, this kit ships dedicated security commands,
 
 **This toolkit's own CI:**
 - `.github/workflows/toolkit-lint.yml` runs on every PR that touches `.claude/**`, `docs/**`, `README.md` or `CLAUDE.md`. It runs the 4 lint scripts (skills, agents, commands, testing tools), the documentation-reference check (`check-doc-refs.sh`: links, anchors and toolkit paths resolve), the AI asset gates, `bash -n` on every hook and script, and every hook `--selftest`.
-- `.github/workflows/context-budget-gate.yml` runs when the always-loaded instructions change.
+- `.github/workflows/context-budget-gate.yml` runs when the always-loaded instructions change: it fails when CLAUDE.md plus the always-loaded rules exceed the total ceiling (62,000 bytes, lowered only) or when a critical rule pinned in `.claude/context-canaries.tsv` disappears from them.
 
 For a Flutter app's PR gate, see `.claude/skills/deployment-ci-cd/reference/flutter-ci.md`. Maestro device tests are advisory there and report BLOCKED when no device is available.
 
@@ -3593,7 +3594,7 @@ Sonnet 4.6 and Opus 4.6 have a **1M token context window** with automatic compac
 | Too many MCPs enabled | Each MCP's tool definitions eat context before you even start. 20+ MCPs can cut usable context significantly | Keep MCPs in config but disable unused ones — enable ≤ 10 servers / ≤ 80 tools at a time |
 | Too many plugins active | Same issue — each plugin adds tool definitions | Install many, enable only 4–5 per project |
 | Long sessions without compacting | Context fills up, Claude loses track of earlier work | Use `/compact` to manually trigger compaction, or let auto-compact handle it |
-| Oversized CLAUDE.md | Goes into every prompt, crowding out actual task context | Keep < 300 lines or <40 KB, use progressive disclosure |
+| Oversized CLAUDE.md | Goes into every prompt, crowding out actual task context | Keep CLAUDE.md plus always-loaded rules under the budget gate's ceiling; move procedure into skills (progressive disclosure) |
 
 **Three principles for long sessions:**
 
@@ -3603,7 +3604,7 @@ Sonnet 4.6 and Opus 4.6 have a **1M token context window** with automatic compac
 | **Degradation threshold** | Onset at ~700K tokens (70% of 1M). Signs: repeating earlier steps, forgetting which files were modified, losing track of decisions. Begin compression here. |
 | **Structured summary** | Before `/compact` or sub-agent handoff, produce the 6-section template: Session Intent → Files Modified → Decisions Made → Current State → Next Steps. Prose summaries silently drop file paths and decisions; structure forces preservation. |
 
-> Full rules in `.claude/rules/leverage-patterns.md §Context Window Management`
+> Full rules in `.claude/skills/subagent-driven-development/reference/orchestration-and-context.md` §Context Window Management
 
 **Check your current state anytime:**
 

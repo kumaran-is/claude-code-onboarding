@@ -1,11 +1,12 @@
 name: Context Budget Gate
 
-# Path-scoped guard for the ALWAYS-LOADED instruction corpus (CLAUDE.md + .claude/rules/*.md —
-# injected into every session AND every subagent). Fails ONLY on the genuine, silent defect: a
-# rules file exceeding a 150k-char house ceiling (the exact per-file load limit is not documented;
-# the ceiling keeps each file well below any truncation risk). It does NOT police size or
-# growth — a heavy always-loaded design can be intentional. Runs only when the corpus changes,
-# so it adds zero overhead to other PRs.
+# Path-scoped guard for the ALWAYS-LOADED instruction corpus (CLAUDE.md + .claude/rules/*.md without
+# `paths:`, injected into every session and most subagents). --strict fails when:
+#   - one file exceeds the 150k-char house ceiling (truncation risk),
+#   - the corpus total exceeds TOTAL_CEILING in check-context-budget.sh (lowered only, never raised
+#     without a written reason), or
+#   - a critical rule pinned in .claude/context-canaries.tsv is no longer in any always-loaded file.
+# Runs only when the corpus, the canaries or the script change.
 
 on:
   pull_request:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'CLAUDE.md'
       - '.claude/rules/**'
+      - '.claude/context-canaries.tsv'
       - '.claude/scripts/check-context-budget.sh'
       - '.github/workflows/context-budget-gate.yml'
   workflow_dispatch:
@@ -36,10 +38,11 @@ jobs:
         shell: bash
         run: |
           chmod +x .claude/scripts/check-context-budget.sh
+          bash .claude/scripts/check-context-budget.sh --selftest
           bash .claude/scripts/check-context-budget.sh --strict
 
       - name: Helpful pointer on failure
         if: ${{ failure() }}
         run: |
-          echo "::error title=Context Budget Gate::A rules file crossed the 150k-char house ceiling. Split it into smaller files."
+          echo "::error title=Context Budget Gate::A file crossed 150k chars, the corpus crossed its total ceiling, or a pinned canary rule disappeared. Move procedure into a skill reference; keep pinned rules always-loaded."
           echo "::notice::Run locally: bash .claude/scripts/check-context-budget.sh   (add --strict to reproduce the gate)"

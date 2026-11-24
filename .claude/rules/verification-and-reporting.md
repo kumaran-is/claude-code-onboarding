@@ -36,19 +36,7 @@ Actually check code before saying "missing" or "implemented". Don't guess. Don't
 
 ### When User Challenges Your Analysis
 
-Don't flip. Re-verify:
-
-```
-"Let me re-verify by actually reading the code..."
-[Actually read the files]
-"I found [X] at [file:line]. My initial analysis was wrong because
-I didn't check [specific thing]."
-
-OR
-
-"I re-verified and my initial analysis was correct.
-Here's the evidence: [show what you searched, what's not there]"
-```
+Don't flip: re-read the code, then either "I found [X] at [file:line]; I was wrong because I didn't check [Y]" or "I re-verified and was correct: [what I searched, what is not there]".
 
 **Forbidden:** "I believe it's..." / "It should be in..." — either you verified or you didn't.
 

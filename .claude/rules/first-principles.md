@@ -3,8 +3,7 @@
 This file is the **numeric enforcement layer** on top of `core-behaviors.md`.
 Where core-behaviors gives guidance, this file gives measurable pass/fail gates.
 
-**Precedence:** This file sits between `core-behaviors` and `code-standards`.
-When a rule here conflicts with `code-standards`, this file wins.
+Precedence: CLAUDE.md "Rule precedence".
 
 ---
 
@@ -28,6 +27,7 @@ These are absolute. No exceptions, no judgment calls. Violation = stop immediate
 - Touching files outside the stated task → **STOP. Ask first.**
 - Refactoring adjacent code while fixing a bug → **STOP. Separate PR.**
 - Deleting pre-existing code you don't fully understand → **STOP. Ask first.**
+- Reverting committed content (`git reset --hard`, `git checkout <ref> -- <path>`, `git restore --source=<ref>`) → **STOP. Ask first.** "Looks like an unintended side effect" is not a reason to revert.
 
 ---
 
@@ -154,10 +154,8 @@ Named, detectable failure modes specific to LLMs. Flag these in self-review befo
 **Detection:** Does this code conflict with any ASSUMPTION I stated earlier this session?
 **Fix:** Acknowledge the conflict explicitly. Ask which takes precedence.
 
-> **Removed anti-patterns** (covered elsewhere): Confidence Without Evidence → `verification-and-reporting.md`; Sycophancy Drift → `core-behaviors.md §3`; Premature Abstraction → `code-standards.md Rule of Three`; Scope Creep → `core-behaviors.md §5`; Over-Apology → default Claude behavior.
-
 ---
 
 ## Self-Check Before Reporting Done
 
-→ **Use the Quality Gates in `verification-and-reporting.md`.** They are the single canonical completion checklist. The gates enforce Layers 1–4 of this file plus workflow-specific requirements. If ANY gate item is NO → do not say "done".
+The Quality Gates in `verification-and-reporting.md` are the single completion checklist (they enforce Layers 1–4). Any item NO → do not say "done".

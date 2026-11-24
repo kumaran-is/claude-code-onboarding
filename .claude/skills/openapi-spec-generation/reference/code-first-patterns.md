@@ -15,7 +15,7 @@ Generate OpenAPI specs directly from annotated code. Each stack auto-generates t
 
 | Stack | Command |
 |-------|---------|
-| FastAPI | `python -c "import json; from main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json` |
+| FastAPI | `uv run python scripts/dump_openapi.py openapi.json` (script below: builds the app from its factory; no server, port or `.env`) |
 | Spring Boot | `curl http://localhost:8080/v3/api-docs > openapi.json` |
 | Fastify + zod | `node dist/emit-openapi.js` (script below; no server or port needed) |
 
@@ -198,98 +198,199 @@ public record CreateUserRequest(
 
 ## Python / FastAPI
 
+Executed 2026-11-23 on Python 3.14.10, FastAPI 0.165.0, Pydantic 2.14.4: `mypy --strict`, ruff and
+`ruff format --check` exit 0; 3 tests pass: the contract (201 with `createdAt`, unknown key → 422,
+`limit=500` → 422, 204 on delete, tenant taken from the token), every route 401 without or with a forged
+token and 403 for a non-admin, and the document declaring `HTTPBearer` plus 401/403 on every operation.
+Removing the admin dependency from `create_user`, or the role check, turns tests red. The generated document
+is OpenAPI 3.1.0 with `additionalProperties: false` on `UserCreate`, `$ref` responses and the enum values.
+The return annotation is the response model; `response_model=` is only needed when they must differ.
+
 ```python
-from fastapi import FastAPI, HTTPException, Query, Path
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
+# users_api/api.py — the OpenAPI document comes from types, Field() metadata and route declarations
 from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Any, Protocol
 from uuid import UUID
-from enum import Enum
 
-app = FastAPI(
-    title="User Management API",
-    description="API for managing users and profiles",
-    version="2.0.0",
-    openapi_tags=[
-        {"name": "Users", "description": "User operations"},
-        {"name": "Admin", "description": "Admin operations"},
-    ],
-    servers=[
-        {"url": "https://api.example.com/v2", "description": "Production"},
-        {"url": "http://localhost:8000", "description": "Development"},
-    ],
-)
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic.alias_generators import to_camel
 
-# Enums
-class UserStatus(str, Enum):
-    active = "active"
-    inactive = "inactive"
-    suspended = "suspended"
 
-class UserRole(str, Enum):
-    user = "user"
-    moderator = "moderator"
-    admin = "admin"
+class UserStatus(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
 
-# Models
+
 class UserCreate(BaseModel):
-    email: EmailStr = Field(..., description="User email address")
-    name: str = Field(..., min_length=1, max_length=100, description="Display name")
-    role: UserRole = Field(default=UserRole.user)
+    """Request body: unknown keys are a 422; no role, id or timestamps (the server owns them)."""
 
-    model_config = {
-        "json_schema_extra": {
-            "examples": [{"email": "user@example.com", "name": "John Doe", "role": "user"}]
-        }
-    }
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"email": "user@example.com", "name": "John Doe"}]},
+    )
+    email: EmailStr = Field(description="User email address")
+    name: str = Field(min_length=1, max_length=100, description="Display name")
+
 
 class User(BaseModel):
-    id: UUID = Field(..., description="Unique identifier")
-    email: EmailStr
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel,
+        validate_by_name=True,  # services build it with snake_case names
+        serialize_by_alias=True,  # clients see camelCase
+    )
+    id: UUID = Field(description="Unique identifier")
+    email: str
     name: str
     status: UserStatus
-    role: UserRole
-    created_at: datetime = Field(..., alias="createdAt")
+    created_at: datetime
 
-    model_config = {"populate_by_name": True}
+
+class Pagination(BaseModel):
+    page: int
+    limit: int
+    total: int
+
 
 class UserListResponse(BaseModel):
-    data: List[User]
-    pagination: dict
+    data: list[User]
+    pagination: Pagination
+
 
 class ErrorResponse(BaseModel):
-    code: str = Field(..., description="Error code")
-    message: str = Field(..., description="Error message")
+    """The service-wide error envelope (python-dev fastapi-error-handling.md §2)."""
 
-# Endpoints
-@app.get("/users", response_model=UserListResponse, tags=["Users"])
+    code: str
+    message: str
+    details: object | None = None
+    timestamp: datetime
+    path: str
+    request_id: str | None = Field(default=None, alias="requestId")
+
+
+class Caller(BaseModel):
+    subject: str
+    tenant_id: UUID
+    is_admin: bool
+
+
+class Authenticator(Protocol):
+    """Verifies the token (python-dev fastapi-auth-security.md §3/§3a); None when invalid."""
+
+    async def __call__(self, token: str) -> Caller | None: ...
+
+
+class UserService(Protocol):
+    """Every method takes the caller's tenant and puts it in the query: a foreign id is a 404."""
+
+    async def list_page(
+        self, tenant_id: UUID, *, page: int, limit: int, status: UserStatus | None
+    ) -> UserListResponse: ...
+    async def create(self, tenant_id: UUID, data: UserCreate) -> User: ...
+    async def get(self, tenant_id: UUID, user_id: UUID) -> User: ...
+    async def delete(self, tenant_id: UUID, user_id: UUID) -> None: ...
+
+
+bearer = HTTPBearer(auto_error=False)  # also declares the HTTPBearer security scheme in OpenAPI
+
+
+async def require_admin(
+    request: Request, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
+) -> Caller:
+    authenticate: Authenticator = request.app.state.authenticate
+    caller = await authenticate(creds.credentials) if creds else None
+    if caller is None:
+        raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    if not caller.is_admin:
+        raise HTTPException(403, "Insufficient role")
+    return caller
+
+
+def get_user_service(request: Request) -> UserService:
+    service: UserService = request.app.state.user_service  # wired in create_app / lifespan
+    return service
+
+
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+AdminDep = Annotated[Caller, Depends(require_admin)]
+UserId = Annotated[UUID, Path(description="User ID")]
+NOT_FOUND: dict[int | str, dict[str, Any]] = {404: {"model": ErrorResponse, "description": "User not found"}}
+AUTH_ERRORS: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorResponse, "description": "Missing or invalid token"},
+    403: {"model": ErrorResponse, "description": "Caller is not an admin"},
+}
+
+# admin-only router: user management is never anonymous (public sign-up is a uniform 202 elsewhere)
+router = APIRouter(prefix="/users", tags=["Users"], responses=AUTH_ERRORS)
+
+
+@router.get("")
 async def list_users(
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    status: Optional[UserStatus] = Query(None, description="Filter by status"),
-):
+    admin: AdminDep,
+    service: UserServiceDep,
+    page: Annotated[int, Query(ge=1, description="Page number")] = 1,
+    limit: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 20,
+    status: Annotated[UserStatus | None, Query(description="Filter by status")] = None,
+) -> UserListResponse:
     """List users with pagination and filtering."""
-    pass
+    return await service.list_page(admin.tenant_id, page=page, limit=limit, status=status)
 
-@app.post("/users", response_model=User, status_code=201, tags=["Users"],
-          responses={409: {"model": ErrorResponse, "description": "Email exists"}})
-async def create_user(user: UserCreate):
-    """Create a new user and send welcome email."""
-    pass
 
-@app.get("/users/{user_id}", response_model=User, tags=["Users"],
-         responses={404: {"model": ErrorResponse}})
-async def get_user(user_id: UUID = Path(..., description="User ID")):
-    """Get user by ID."""
-    pass
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": ErrorResponse, "description": "Email exists in this tenant"}},
+)
+async def create_user(body: UserCreate, admin: AdminDep, service: UserServiceDep) -> User:
+    """Create a user in the caller's tenant."""
+    return await service.create(admin.tenant_id, body)
 
-@app.delete("/users/{user_id}", status_code=204, tags=["Users", "Admin"])
-async def delete_user(user_id: UUID = Path(..., description="User ID")):
-    """Delete user permanently."""
-    pass
 
-# Export: python -c "import json; from main import app; print(json.dumps(app.openapi(), indent=2))"
+@router.get("/{user_id}", responses=NOT_FOUND)
+async def get_user(user_id: UserId, admin: AdminDep, service: UserServiceDep) -> User:
+    """Get a user by id."""
+    return await service.get(admin.tenant_id, user_id)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"], responses=NOT_FOUND)
+async def delete_user(user_id: UserId, admin: AdminDep, service: UserServiceDep) -> None:
+    """Delete a user permanently."""
+    await service.delete(admin.tenant_id, user_id)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="User Management API",
+        description="API for managing users and profiles",
+        version="2.0.0",
+        openapi_tags=[
+            {"name": "Users", "description": "User operations"},
+            {"name": "Admin", "description": "Admin operations"},
+        ],
+        servers=[{"url": "https://api.example.com/v2", "description": "Production"}],
+    )
+    app.include_router(router)
+    return app
 ```
+
+```python
+# scripts/dump_openapi.py — no server, no port, no .env: build the app and write the document
+import json
+import sys
+from pathlib import Path
+
+from users_api.api import create_app
+
+Path(sys.argv[1]).write_text(json.dumps(create_app().openapi(), indent=2, sort_keys=True) + "\n")
+```
+
+Write it to a committed snapshot and diff it in CI (`sdk-and-cicd.md`). Since FastAPI 0.137 `app.routes`
+is a tree: tooling that inspects routes walks `fastapi.routing.iter_route_contexts(app.routes)`, not
+`isinstance(r, APIRoute)` over `app.routes` (that sees nothing under an included router).
 
 ---
 

@@ -41,7 +41,7 @@ Generate, validate, and maintain OpenAPI 3.1 specifications for RESTful APIs. Su
 
 | Stack | Command |
 |-------|---------|
-| FastAPI | `python -c "import json; from main import app; print(json.dumps(app.openapi(), indent=2))" > openapi.json` |
+| FastAPI | `uv run python scripts/dump_openapi.py openapi.json` (builds the app from `create_app()`; `reference/code-first-patterns.md`) |
 | Spring Boot | `curl http://localhost:8080/v3/api-docs > openapi.json` |
 | tsoa | `npx tsoa spec` |
 

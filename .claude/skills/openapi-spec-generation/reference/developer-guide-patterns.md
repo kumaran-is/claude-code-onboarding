@@ -165,72 +165,68 @@ record FieldError(String field, String message) {}
 
 ---
 
-#### Python / FastAPI (httpx async client)
+#### Python (httpx async client)
 
-Matches FastAPI async conventions from `code-first-patterns.md`.
+Matches the FastAPI models in `code-first-patterns.md` (camelCase on the wire). Executed 2026-11-23 on
+Python 3.14.10, httpx 0.28.1, Pydantic 2.14.4 with `httpx.MockTransport`: 201 parses, a 409 raises
+`ApiError` carrying the envelope's `requestId`; `mypy --strict` and ruff (including `T20`, no `print`) exit 0.
+Create one `httpx.AsyncClient(base_url=..., timeout=...)` per process (lifespan) and pass it in; a new
+client per call discards the connection pool.
 
 ```python
-import httpx
-from pydantic import BaseModel
-from typing import Optional
+# users_client.py — typed async client for the Users API (one shared httpx.AsyncClient per process)
+from datetime import datetime
+from uuid import UUID
 
-# Models — match Pydantic models from code-first-patterns.md
-class CreateUserRequest(BaseModel):
+import httpx
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+
+
+class ApiModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, serialize_by_alias=True)
+
+
+class CreateUserRequest(ApiModel):
     email: str
     name: str
-    role: str = "user"
 
-class User(BaseModel):
-    id: str
+
+class User(ApiModel):
+    id: UUID
     email: str
     name: str
     status: str
-    role: str
-    created_at: str
+    created_at: datetime
 
-class ErrorResponse(BaseModel):
+
+class ErrorResponse(ApiModel):
     code: str
     message: str
+    request_id: str | None = None
 
-# Async client
-async def create_user(
-    request: CreateUserRequest,
-    access_token: str,
-    base_url: str = "https://api.example.com",
-) -> User:
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{base_url}/api/v1/users",
-            headers={"Authorization": f"Bearer {access_token}"},
-            json=request.model_dump(),
-        )
-        if response.status_code == 409:
-            error = ErrorResponse.model_validate(response.json())
-            raise ValueError(f"Email already exists: {error.message}")
-        response.raise_for_status()
-        return User.model_validate(response.json())
 
-# Usage (in async context / FastAPI endpoint)
-user = await create_user(
-    CreateUserRequest(email="user@example.com", name="John Doe"),
-    access_token=token,
-)
-print(f"Created user: {user.id}")
+class ApiError(Exception):
+    """Non-2xx answer from the API, carrying the server's error envelope."""
+
+    def __init__(self, status: int, error: ErrorResponse) -> None:
+        super().__init__(f"{status} {error.code}")
+        self.status, self.error = status, error
+
+
+async def create_user(client: httpx.AsyncClient, body: CreateUserRequest, access_token: str) -> User:
+    response = await client.post(
+        "/api/v1/users",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json=body.model_dump(mode="json"),
+    )
+    if response.is_error:
+        raise ApiError(response.status_code, ErrorResponse.model_validate(response.json()))
+    return User.model_validate(response.json())
 ```
 
-**Sync alternative (requests — for scripts):**
-```python
-import requests
-
-response = requests.post(
-    "https://api.example.com/api/v1/users",
-    headers={"Authorization": f"Bearer {access_token}"},
-    json={"email": "user@example.com", "name": "John Doe", "role": "user"},
-)
-response.raise_for_status()
-user = response.json()
-print(f"Created user: {user['id']}")
-```
+For a script, `httpx.Client` offers the same calls synchronously; do not add `requests` as a second
+HTTP stack.
 
 ---
 
@@ -358,11 +354,10 @@ All errors return the same structure:
         }))
 ```
 
-**Python / FastAPI:**
+**Python (httpx client):**
 ```python
-if response.status_code == 404:
-    raise HTTPException(status_code=404, detail="Resource not found")
-response.raise_for_status()  # raises httpx.HTTPStatusError for 4xx/5xx
+if response.is_error:   # map the envelope to a client exception; HTTPException is server-side only
+    raise ApiError(response.status_code, ErrorResponse.model_validate(response.json()))
 ```
 
 **TypeScript / NestJS:**

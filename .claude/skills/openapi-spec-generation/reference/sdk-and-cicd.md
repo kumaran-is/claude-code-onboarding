@@ -105,8 +105,8 @@ openapi-generator-cli generate \
 |-----------|---------------|-------|
 | `typescript-fetch` | `supportsES6`, `npmName`, `npmVersion` | Browser + Node.js compatible |
 | `typescript-axios` | `npmName`, `withSeparateModelsAndApi` | Axios-based, good for Node.js |
-| `python` | `packageName`, `projectName` | Uses urllib3 by default |
-| `python-pydantic-v1` | `packageName` | Pydantic model generation |
+| `python` | `packageName`, `projectName`, `library` | `library`: `urllib3` (default), `asyncio`, `httpx`, `httpx2` (openapi-generator v7.27.0 docs) |
+| `python-pydantic-v1` | `packageName` | Pydantic **v1** models: do not use for services on Pydantic 2 |
 | `java` | `library`, `dateLibrary`, `groupId` | Libraries: webclient, resttemplate, okhttp-gson |
 | `dart-dio` | `pubName`, `pubAuthor` | For Flutter/Dart projects |
 | `kotlin` | `library`, `groupId` | Libraries: jvm-okhttp4, jvm-retrofit2 |

@@ -132,4 +132,27 @@ Every threat model document MUST include these sections:
 - [ ] **Threat Enumeration** -- Every DFD element analyzed against applicable STRIDE categories
 - [ ] **Risk Scores** -- Each threat scored with impact x likelihood, sorted by severity
 - [ ] **Mitigations** -- At least one control mapped to each High/Critical threat
-- [ ] **Residual Risk** -- Risks accepted after mitigation, with justification and review date
+- [ ] **Attack Trees** -- One per Critical/High threat; leaves are the attack vectors the security audit tests
+- [ ] **Pre-mortem Findings** -- Breach pre-mortem (`the-fool`) answers, each mapped to a mitigation, SR or test
+- [ ] **Security Requirements** -- Numbered, testable `SR-NNN` statements, each traced to a threat and to its spec criterion, test and audit item
+- [ ] **Residual Risk** -- Risks accepted after mitigation, with justification, owner and review date
+
+### Document Skeleton
+
+Save to `docs/threat-models/<feature>-threat-model.md`:
+
+```markdown
+# Threat Model: <Feature>
+Date: YYYY-MM-DD · Reviewers: <roles> · Status: draft | approved
+
+## Assets
+## Scope and Trust Boundaries      (DFD as Mermaid; every boundary crossing named)
+## STRIDE Analysis                 (table per element: threat, STRIDE letter, impact, likelihood, risk, mitigation)
+## Attack Trees                    (Critical/High threats only)
+## Pre-mortem Findings
+## Security Requirements
+| ID | Requirement (MUST / MUST NOT + measurable condition) | Threat | Spec criterion | Test | Audit item |
+|----|------------------------------------------------------|--------|----------------|------|------------|
+| SR-001 | All endpoints except the health and login routes MUST require a valid, server-verified access token | S-03 | AC-4 | `auth.e2e: rejects missing token` | `/audit-security` A01 |
+## Residual Risks                  (risk, justification, owner, review date)
+```

@@ -76,6 +76,7 @@ CI/CD pipeline design and deployment automation specialist covering GitHub Actio
 | `reference/web-frontend-delivery.md` | Browser apps on static hosting: `npm ci` + Node pin, runtime `config.json` validated at boot (fail closed), hashed-immutable vs `no-cache` caching, previews, promote/rollback, private source maps, post-deploy header check script, error monitoring, OTel browser (experimental) + `traceparent` CORS |
 | `reference/flutter-ci.md` | Flutter PR gate (GitHub Actions example): SDK pinned via `flutter-version-file`, `--enforce-lockfile`, codegen before analyze, format/analyze/test/release build, separate advisory Maestro device job, signing only in the release workflow |
 | `reference/genui-contract-ci.md` | GenUI A2UI v0.9 contract CI (GitHub Actions example): path-filtered catalog schema + fixtures, action payload compatibility, protocol version, declared-platform parity, tsc/analyze/unit, security negative controls, Playwright + axe (web), hook selftest, link check |
+| `reference/production-incident-runbook.md` | Non-AI production incidents: P0–P3 classification, Cloud Run detection (`jsonPayload` logs, 5xx rate), per-target mitigation, `error-detective` diagnosis, staged fix rollout, communication, blameless post-mortem |
 
 ## Production Readiness Checklist
 

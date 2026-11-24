@@ -1,6 +1,6 @@
 # Workspace Agent Catalog
 
-Complete descriptions of all 42 agents available in this workspace (.claude/agents/). Use this to select the right agent for each orchestration role.
+Descriptions of the agents in this workspace. The authoritative list and count is whatever `.claude/agents/*.md` contains (`ls .claude/agents/*.md | wc -l`); do not rely on a hard-coded number. Use this to select the right agent for each orchestration role.
 
 Last verified: 2026-03-15
 
@@ -36,7 +36,7 @@ Last verified: 2026-03-15
 | `comment-analyzer` | Comment accuracy vs actual implementation | Comment rot findings |
 | `type-design-analyzer` | TypeScript, Dart, Java, Pydantic type design quality | Encapsulation score per type |
 | `dedup-code-agent` | Duplicate code, unused code, dependency bloat | Duplication map |
-| `output-evaluator` | LLM-as-Judge: staged changes quality gate | APPROVE / NEEDS_REVIEW / REJECT with scores |
+| `output-evaluator` | LLM-as-Judge: advisory pre-commit check of staged changes (probabilistic; not a merge gate) | APPROVE / NEEDS_REVIEW / REJECT with scores (advisory) |
 
 ### Security
 | Agent | What It Reviews | Output |
@@ -127,5 +127,6 @@ agentic-ai-reviewer + security-reviewer + rag-implementation-reviewer (if RAG) +
 
 ### Pre-merge full audit
 ```
-[stack-specific reviewer] + security-reviewer + silent-failure-hunter + pr-test-analyzer + output-evaluator
+[stack-specific reviewer] + security-reviewer + silent-failure-hunter + pr-test-analyzer
 ```
+Optional advisory: `output-evaluator` (never the merge verdict; the merge verdict comes from synthesis under the Review Severity Policy, and `reality-checker` is the evidence gate for UI/user-visible work).

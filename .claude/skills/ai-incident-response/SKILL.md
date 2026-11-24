@@ -170,6 +170,7 @@ corpus/index <snapshot> · tool surface <hash> · dataset <name@version> · flag
 - It does not page on-call. Use your incident comms process.
 - It does not authorize destructive reversals (refunds, retractions). Those need human approval per the feature's risk tier.
 - It does not replace the team's general incident management playbook — it complements it with AI-specific steps.
+- It does not cover non-AI production incidents → `.claude/skills/deployment-ci-cd/reference/production-incident-runbook.md`.
 
 ## If this skill cannot proceed
 

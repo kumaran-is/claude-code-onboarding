@@ -18,7 +18,16 @@ Dispatch `security-reviewer` agent (model: opus) to perform:
 - Secret scanning (API keys, tokens, passwords in source)
 - OWASP Top 10 checklist review
 
-Output: findings categorized by CVSS severity (Critical / High / Medium / Low).
+Output: findings categorized by CVSS severity (Critical / High / Medium / Low), plus any open findings from `/audit-security`, `/security-sast` and `/security-dependencies`. Triage every finding into this order before fixing anything:
+
+| Priority | Criteria | Action |
+|---|---|---|
+| P0 | CRITICAL, or exploitable without authentication | Fix before any deploy; stop other work |
+| P1 | HIGH, or reachable from the internet | Fix before production deploy |
+| P2 | MEDIUM (MEDIUM in auth, session or crypto code is treated as P1) | Fix in the current sprint |
+| P3 | LOW | Track in the backlog |
+
+Record each P0/P1 as `### P<n>: <title> — <file:line>` with type (injection, auth, crypto, XSS, ...), exact attack vector and intended fix.
 
 ### Step 2 -- Threat modeling
 Dispatch `threat-modeling-expert` agent (model: sonnet) to perform:
@@ -45,10 +54,12 @@ Dispatch `security-reviewer` agent (model: opus) to fix all CVSS 7+ findings:
 - Authentication bypass patterns -- secure session validation
 - Insecure direct object references -- authorization checks on every access
 
+Fix the root cause, not the instance: when one query, sink or route is vulnerable, grep for every sibling and fix them all. Every P0/P1 fix ships with a regression test that fails on the pre-fix code (e.g. the injection payload, the unauthenticated or other-tenant request) and passes after. Record per finding: root cause, fix `file:line`, regression test `file:line`.
+
 ### Step 5 -- Backend hardening
 Apply hardening across all backend layers:
-- **Java/Spring Boot**: Spring Security config, CSRF protection, security headers
-- **NestJS**: Helmet middleware, rate limiting (`@nestjs/throttler`), global validation pipes
+- **Java/Spring Boot (WebFlux)**: Spring Security `SecurityWebFilterChain`, CSRF where cookies authenticate, security headers; SQL through R2DBC `DatabaseClient` with bound parameters (`.bind(...)`) or repositories, never blocking `JdbcTemplate` on an event-loop thread and never string-built SQL
+- **NestJS (Fastify adapter)**: `@fastify/helmet` registered with `await app.register(helmet)` (Express `app.use(helmet())` does not apply; see `.claude/skills/nestjs-api/reference/nestjs-production-baseline.md` §4), rate limiting (`@nestjs/throttler`), global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`; other tenants' resources answer 404
 - **Python/FastAPI**: Input validation with Pydantic v2, dependency injection for auth guards
 - **Common**: AES-256 encryption for PII fields, OAuth2/OIDC integration, secure session config
 
@@ -83,10 +94,13 @@ git grep -nE '-----BEGIN (RSA |EC )?PRIVATE KEY-----'
 ## Phase 4: Validation
 
 ### Step 9 -- Security scan validation
-Run security scans on remediated code:
+First dispatch `silent-failure-hunter` over the auth flows and error paths touched in Phases 2-3: no swallowed token/permission failures (`catch` returning `null`, `[]` or a fallback user), every security event (failed login, denied access, token rejection) logged without secrets or PII, and failures surfaced as an explicit error (e.g. `UnauthorizedException`), never a value the caller may not check.
+
+Then re-scan the remediated code, each tool judged by its own exit code:
 - Execute `/audit-security` on the target path
 - Execute dependency audit: `/security-dependencies` (npm audit / `pip-audit` on the exported `uv.lock` / Maven dependency-check; `pip audit` is not a command)
-- **Fail gate**: any remaining CRITICAL finding blocks completion
+- Dispatch `security-reviewer` on the files changed during remediation: no new vulnerability introduced by a fix, every P0/P1 marked FIXED
+- **Fail gate**: zero CRITICAL **and zero HIGH** unresolved in the re-scan (the same bar as the `/audit-security` Lock Document), no scan BLOCKED or NOT RUN, and every P0/P1 has root cause, fix `file:line`, a passing regression test and a re-scan showing it resolved. Anything else is FAIL, not done
 
 ### Step 10 -- Compliance check
 Verify against:
@@ -107,7 +121,9 @@ SECURITY HARDENING RESULTS:
 [PASS/FAIL] Zero hardcoded secrets in git-tracked files
 [PASS/FAIL] Security headers configured (Helmet for NestJS, Spring Security headers for Java)
 [PASS/FAIL] MFA-capable authentication implemented
-[PASS/FAIL] Security scan shows no CRITICAL findings
+[PASS/FAIL] Re-scan shows zero CRITICAL and zero HIGH unresolved (no scan BLOCKED / NOT RUN)
+[PASS/FAIL] Every P0/P1 has root cause, fix file:line and a regression test
+[PASS/FAIL] silent-failure-hunter: no swallowed auth/security failures
 ```
 
 $ARGUMENTS

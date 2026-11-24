@@ -5,7 +5,7 @@ allowed-tools: Read, Grep, Glob, Bash
 agent: threat-modeling-expert
 metadata:
   triggers: threat model, STRIDE, attack tree, security design, threat analysis, security architecture review, DFD, AI threat model, agent threat model
-  related-skills: security-reviewer, sast-configuration, architecture-design, ai-governance, ai-playbook
+  related-skills: security-reviewer, sast-configuration, architecture-design, ai-governance, ai-playbook, the-fool
   domain: security
   role: architect
   scope: design
@@ -31,7 +31,10 @@ Every new feature, service, or architectural change requires a threat model befo
 3. **Model the system** — Identify assets, trust boundaries, DFD elements, and interactions
 4. **Run STRIDE** — Apply per-element and per-interaction analysis using the methodology reference
 5. **Map mitigations** — Select controls from the library; verify defense-in-depth across layers
-6. **Score and report** — Calculate `risk = impact × likelihood`, document residual risks
+6. **Score** — Calculate `risk = impact × likelihood` with the thresholds in `references/stride-methodology.md`; build an attack tree for each Critical/High threat (its leaves become attack vectors the security audit must test)
+7. **Breach pre-mortem** — Load `the-fool` and assume the system was breached six months after launch. Ask: (1) the most likely way in? (2) the highest-value data reachable from there? (3) what we wish we had logged? (4) the earliest warning sign? (5) which team assumption was wrong (e.g. "HTTPS everywhere", "short token expiry", "DB not internet-reachable")? Each answer becomes a mitigation, a security requirement or a test; none stays a note
+8. **Extract security requirements** — Turn threats and pre-mortem findings into numbered, testable `SR-NNN` statements (MUST/MUST NOT + a measurable condition: "`POST /auth/login` MUST be rate-limited to N requests/min per IP", not "use rate limiting"). Each SR feeds three places: an acceptance criterion in the feature spec, a test case (integration or security), and a checklist item for `/audit-security`
+9. **Write the document** — Save to `docs/threat-models/<feature>-threat-model.md` using the skeleton in `references/stride-methodology.md` "Output Document Checklist"; document residual risks with owner and review date, and update the model when the feature changes
 
 ## AI, RAG and Agent Systems
 

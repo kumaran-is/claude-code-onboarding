@@ -59,10 +59,10 @@ After all agents in an orchestration complete — before reporting to the user.
 ### Verdict
 **[APPROVE | NEEDS_REVIEW | BLOCK]**
 
-Verdict criteria:
-- APPROVE: zero CRITICAL, zero HIGH findings
-- NEEDS_REVIEW: MEDIUM findings only — can merge with documented exceptions
-- BLOCK: any CRITICAL or HIGH finding — must fix before merge
+Verdict criteria (repo Review Severity Policy, `.claude/rules/verification-and-reporting.md`; domain reviewers may be stricter, never looser):
+- APPROVE: zero CRITICAL, zero HIGH — MEDIUM/LOW listed as advisories, MEDIUMs tracked as follow-up tasks
+- NEEDS_REVIEW: any HIGH (and no CRITICAL) — merge only after each HIGH is fixed or justified in writing in the PR; never reported as PASS. A required check that is BLOCKED or NOT RUN also caps the verdict here
+- BLOCK: any CRITICAL — fix before merge
 
 ### Action Items
 - [ ] [Critical fix 1] — assign to: [team/person]

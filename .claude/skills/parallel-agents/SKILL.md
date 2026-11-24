@@ -64,7 +64,7 @@ Load `references/workspace-agent-catalog.md` for full descriptions. Quick refere
 | `flutter-security-expert` | Flutter | Secure storage, certificate pinning, GDPR |
 | `dedup-code-agent` | Tech Debt | Duplication, unused code, dependency bloat |
 | `plan-challenger` | Planning | Adversarial plan review (5 attack dimensions) |
-| `output-evaluator` | Quality Gate | LLM-as-Judge: APPROVE / NEEDS_REVIEW / REJECT |
+| `output-evaluator` | Advisory check | LLM-as-Judge pre-commit verdict (advisory, not a merge gate) |
 | `pr-test-analyzer` | Testing | Behavioral coverage gaps, critical paths |
 | `architect` | Architecture | C4 diagrams, API contracts, ADRs |
 | `java-spring-api` | Java | Spring Boot WebFlux implementation |
@@ -119,8 +119,9 @@ Parallel:
   security-reviewer     → security findings
   [stack reviewer]      → framework correctness
   pr-test-analyzer      → test coverage gaps
-Sequential:
-  output-evaluator      → APPROVE / NEEDS_REVIEW / REJECT verdict
+Then:
+  synthesis             → APPROVE / NEEDS_REVIEW / BLOCK per the Review Severity Policy
+  output-evaluator      → optional advisory opinion only (not a merge gate)
 ```
 
 ### Pattern 3: Full Flutter Feature

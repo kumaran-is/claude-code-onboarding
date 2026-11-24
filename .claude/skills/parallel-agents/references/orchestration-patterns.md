@@ -54,8 +54,10 @@ Dispatch in parallel:
   pr-test-analyzer      → "Identify behavioral test gaps in [PR files]"
 
 After parallel agents complete:
-  output-evaluator      → "Evaluate these staged changes. Input: [combined findings].
-                           Output: APPROVE / NEEDS_REVIEW / REJECT with scores."
+  synthesize            → merge verdict APPROVE / NEEDS_REVIEW / BLOCK per
+                           references/synthesis-protocol.md (Review Severity Policy)
+  output-evaluator      → optional advisory second opinion on the staged diff;
+                           its verdict never replaces the synthesis verdict (not a merge gate)
 ```
 
 ---

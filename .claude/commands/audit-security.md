@@ -10,7 +10,28 @@ Run a comprehensive security audit on the codebase.
 
 ## Process
 
-1. **Determine scope** — audit `$ARGUMENTS` if provided, otherwise audit the full project
+1. **Determine scope** — audit `$ARGUMENTS` if provided, otherwise audit the full project. Record what changed since the last audit (git range) and the scope's risk profile, then run at least this depth (the highest matching row wins; this command alone never satisfies a row that names more):
+
+   | Risk profile of the scope | Minimum audit depth |
+   |---|---|
+   | Auth, payments, PII | This command + `/security-sast` + `/security-dependencies` + `/xss-scan` (if it has a web UI) + `threat-modeling-expert` review of the design; Flutter code adds `flutter-security-expert` |
+   | New or changed API endpoints | This command + `/security-dependencies` |
+   | UI-only change | `/xss-scan` + `security-reviewer` |
+   | Config / infrastructure | `/security-dependencies` + secrets check (step 3) + `.claude/skills/security-reviewer/reference/owasp-infrastructure-baseline.md` (SECURITY-01–SECURITY-15) |
+   | Routine feature | This command + `/security-dependencies` |
+   | Calls a model, retrieves, runs tools or renders model output | The rows for its other surfaces + the AI security checks in step 2 (`ai-security-reviewer` for a full AI review) |
+
+   **Remediation timelines** (findings and CVEs alike; they never relax the Lock Document rule in step 8):
+
+   | Severity | Action | Deadline |
+   |---|---|---|
+   | CRITICAL (incl. CVSS 9+) | Block the release; fix now | Before any deploy |
+   | HIGH | Fix; an unavoidable HIGH needs a written justification and keeps the verdict at NEEDS_REVIEW (no Lock Document) | Before production deploy |
+   | MEDIUM | Fix and track as a follow-up task | Current sprint (≤ 2 weeks) |
+   | LOW | Track | Within the quarter |
+   | INFO | Note | Best effort |
+
+   A CVE whose patch breaks compatibility: first look for a patched minor/patch release of the same package; otherwise record an accepted risk with the CVE id, affected path, justification, owner and review date (the Lock Document "Waivers" section), never a silent skip.
 2. **Delegate to `security-reviewer` agent** with the following checks:
    - Hardcoded secrets, API keys, tokens, passwords
    - OWASP Top 10 vulnerabilities (injection, XSS, SSRF, broken auth, etc.)

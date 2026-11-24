@@ -29,6 +29,22 @@ Read `.claude/rules/lessons.md`. For each entry with `[x3]` or higher:
 4. Delete the entry from `lessons.md`.
 5. Report what was promoted and where.
 
+**Hookify alternative.** If the mistake is detectable by a regex on one tool-call field (a Bash command, an edited file's path or new text, the stop event or the user prompt), enforce it with a Hookify rule instead of, or as well as, a rules-file line. Write `.claude/hookify.<verb>-<name>.local.md` using the schema in `.claude/commands/hookify.md`:
+
+```markdown
+---
+name: warn-console-log-typescript
+enabled: true
+event: file          # bash | file | stop | prompt | all
+pattern: console\.(log|warn|error)\(
+action: warn         # warn | block
+---
+
+New production TypeScript must use the Logger, not console.* (first-principles.md Layer 1).
+```
+
+Test the pattern against a bad and a good sample (`python3 -c "import re; print(re.search(r'<pattern>', '<sample>'))"`), narrow it with `conditions:` (e.g. `file_path` `regex_match` `\.ts$`) when it would fire on unrelated files, then delete the lesson entry and report the rule file as its destination. Judgment calls (scope, communication) stay as rules-file text.
+
 ## Step 2: Consolidate agent-memory orphans
 
 Check if `.claude/agent-memory/` exists. If it does, for each `MEMORY.md` or `*.md` file:
@@ -56,7 +72,7 @@ If `lessons.md` has more than 15 entries after consolidation:
 ## Lessons Lifecycle Report
 
 ### Promoted (x3+ → rules)
-- [lesson summary] → [target-file:section]
+- [lesson summary] → [target-file:section | .claude/hookify.<name>.local.md (event, action)]
 
 ### Consolidated (agent-memory → lessons/skills)
 - [agent]/[file]: [N] items → lessons.md, [M] items → [skill reference]

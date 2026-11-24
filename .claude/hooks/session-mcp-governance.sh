@@ -95,11 +95,28 @@ selftest() { # runs this hook as a subprocess against throw-away project dirs; n
   jq '.mcpServers.extra = {command: "npx", args: ["-y", "extra-mcp@1.0.0"]}' "$tmp/good/.mcp.json" > "$tmp/good/m" && mv "$tmp/good/m" "$tmp/good/.mcp.json"
   out=$(ctx "$(hook "$tmp/good")")
   if printf '%s' "$out" | grep -q 'UNAPPROVED' && printf '%s' "$out" | grep -q 'CHANGED since last approval'; then echo "  ok   positive: unapproved server + hash drift still reported"; else echo "  FAIL drift checks (got: $out)"; fail=1; fi
+  out=$("$BASH" "$self" --hygiene "$tmp/bad/.mcp.json"); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF -- "pay — --api-key in args" && printf '%s' "$out" | grep -qF -- "py — unpinned package: no version"; then echo "  ok   positive: --hygiene <file> reports credentials in args and unpinned packages"; else echo "  FAIL --hygiene positive (rc=$rc got: $out)"; fail=1; fi
+  if printf '%s' "$out" | grep -qF -e "$lit" -e "plain-value-123" -e "static-abc"; then echo "  FAIL --hygiene printed a secret VALUE"; fail=1; else echo "  ok   negative: --hygiene prints no credential value"; fi
+  out=$("$BASH" "$self" --hygiene "$tmp/good/.mcp.json"); rc=$?
+  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then echo "  ok   negative: --hygiene on a clean config is silent"; else echo "  FAIL --hygiene clean (rc=$rc got: $out)"; fail=1; fi
+  printf '{ not json' > "$tmp/broken.json"; out=$("$BASH" "$self" --hygiene "$tmp/broken.json"); rc=$?
+  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q 'NOT checked'; then echo "  ok   fail-loud: --hygiene on invalid JSON exits 2 and says NOT checked"; else echo "  FAIL --hygiene invalid JSON (rc=$rc got: $out)"; fail=1; fi
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
 }
 if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
+
+# --hygiene <file>: Check 3 only, on any MCP config file (used by post-edit-ts-log-pii-advisory.sh right after an
+# edit of a .mcp.json). Prints one "server — detail" line per finding (names, never values); exit 0 = it ran
+# (silent = clean), exit 2 = it could not run (no jq, unreadable or invalid JSON).
+if [ "${1:-}" = "--hygiene" ]; then
+  command -v jq >/dev/null 2>&1 || { echo "jq not found: MCP hygiene NOT checked"; exit 2; }
+  HYG=$(jq -r "$HYGIENE_JQ" "${2:-}" 2>/dev/null) || { echo "invalid JSON or unreadable file: MCP hygiene NOT checked"; exit 2; }
+  [ -n "$HYG" ] && printf '%s\n' "$HYG" | awk -F'\t' '{ printf "%s — %s%s\n", $1, ($2 == "unpinned" ? "unpinned package: " : ""), $3 }'
+  exit 0
+fi
 
 [ -f "$MCP_JSON" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0

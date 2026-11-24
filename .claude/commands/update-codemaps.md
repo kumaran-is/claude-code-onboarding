@@ -13,6 +13,7 @@ Generates and updates `docs/CODEMAPS/` — compact, <1000-token snapshots of eac
 |------|--------|
 | `docs/CODEMAPS/spring-api.md` | Java 21 / Spring Boot 3.5.x WebFlux service |
 | `docs/CODEMAPS/nestjs-api.md` | NestJS 11.x / Fastify / Prisma service |
+| `docs/CODEMAPS/mcp-server.md` | TypeScript MCP server (SDK v2, Node 26 LTS) |
 | `docs/CODEMAPS/angular-spa.md` | Angular 22.3.x SPA |
 | `docs/CODEMAPS/flutter-mobile.md` | Flutter 3.50.x mobile app |
 | `docs/CODEMAPS/python-api.md` | Python 3.14 / FastAPI service |
@@ -20,7 +21,7 @@ Generates and updates `docs/CODEMAPS/` — compact, <1000-token snapshots of eac
 
 ## Process
 
-1. **Detect which services exist** — check for `pom.xml`, `package.json` with NestJS deps, `angular.json`, `pubspec.yaml`, `pyproject.toml` in the project tree
+1. **Detect which services exist** — check for `pom.xml`, `package.json` with NestJS or `@modelcontextprotocol/server` deps, `angular.json`, `pubspec.yaml`, `pyproject.toml` in the project tree
 2. **For each detected service**, generate the codemap (see format below)
 3. **30% diff gate** — if an existing codemap exists, run `git diff --stat` against the files it covers. If < 30% of covered files changed since last update → skip with note "No significant changes (< 30% diff)"
 4. **Write files** to `docs/CODEMAPS/` (create dir if missing)

@@ -28,6 +28,7 @@ NestJS                  → skill: "scaffold-nestjs-api",   args: "<name>"
 Python / FastAPI        → skill: "scaffold-python-api",   args: "<name>"
 Java / Spring Boot      → skill: "scaffold-spring-api",   args: "<name>"
 Agentic AI              → skill: "scaffold-agentic-ai",   args: "<name>"
+MCP server (TypeScript) → skill: "scaffold-mcp-server",   args: "<name> [stdio|http|both]"
 
 STEP 2 — Verify scaffold output before writing agent task files
 ──────────────────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ Check that tech-specific key directories exist, e.g.:
   Angular  → src/app/core/, src/app/features/, src/app/design-system/
   React    → src/app/, src/features/, src/shared/
   NestJS   → src/common/, src/config/, src/modules/
+  MCP      → src/, test/
 If missing → scaffold did not complete — do NOT spawn agents yet.
 
 STEP 3 — Spawn agents with "PROJECT ALREADY SCAFFOLDED" header

@@ -132,4 +132,5 @@ prevent false triggers.
 | New skill/MCP being added | Run §P0 Skill Security Audit above | Self-written from scratch, no external code |
 | Flutter Android/iOS UI/E2E test | Maestro CLI/MCP via `flutter-e2e-maestro.md` (`.claude/rules/testing-tool-selection.md`) | Web target: use `browser-testing` instead |
 | GenUI/A2UI catalog, renderer or action change | Load `genui-contract` skill; review with `genui-contract-reviewer`; gate with `/audit-a2ui-parity` + `/validate-genui-feature` | Single-platform styling change with no catalog/action/protocol impact |
+| New TypeScript MCP server | Run `/scaffold-mcp-server`, load `mcp-builder` | Python MCP server (`python-mcp-setup.md`); adding tools to an existing server |
 | Architecture change proposed | Load `architecture-design` skill + create ADR | Single-file refactor with no cross-service impact |

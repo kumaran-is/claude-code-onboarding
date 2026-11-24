@@ -157,7 +157,9 @@ async function runGate(sdk) {
   }
   const stderrTail = [];
   transport.stderr?.on('data', (chunk) => stderrTail.push(...String(chunk).split('\n').filter(Boolean)));
-  const client = new sdk.Client({ name: 'verify-mcp-gate', version: '1.0.0' });
+  // v2 clients default to the 2025 'legacy' handshake; 'auto' probes server/discover first, then falls back to initialize.
+  const options = sdk.line === 'v2' ? { versionNegotiation: { mode: 'auto' } } : undefined;
+  const client = new sdk.Client({ name: 'verify-mcp-gate', version: '1.0.0' }, options);
   const timeoutMs = Number(process.env.MCP_GATE_TIMEOUT_MS ?? 20000);
   let timer;
   const deadline = new Promise((_, reject) => {
@@ -170,12 +172,14 @@ async function runGate(sdk) {
     const info = client.getServerVersion();
     report('connect', 'PASS', `${target}, server ${info?.name ?? '?'}@${info?.version ?? '?'}, client SDK ${sdk.line}`);
     const min = process.env.MCP_MIN_PROTOCOL;
-    if (!sdk.SUPPORTED_PROTOCOL_VERSIONS.includes(negotiated)) {
+    // v2 exports only the 2025-era list (SUPPORTED_PROTOCOL_VERSIONS, LATEST = 2025-11-25); 2026-07-28 is negotiated
+    // through server/discover, so a completed v2 connect already proves the client supports the revision.
+    if (sdk.line === 'v1' && !sdk.SUPPORTED_PROTOCOL_VERSIONS.includes(negotiated)) {
       report('spec version', 'FAIL', `negotiated ${negotiated} is not a revision this client supports`);
     } else if (min && negotiated < min) {
       report('spec version', 'FAIL', `negotiated ${negotiated} < MCP_MIN_PROTOCOL ${min}`);
     } else {
-      report('spec version', 'PASS', `negotiated ${negotiated}; newest known to the client ${sdk.LATEST_PROTOCOL_VERSION}`);
+      report('spec version', 'PASS', `negotiated ${negotiated}`);
     }
     if (!client.getServerCapabilities()?.tools) {
       report('tools/list', 'NOT RUN', 'server does not declare the tools capability');
@@ -206,8 +210,10 @@ async function runGate(sdk) {
     }
     report('tool schemas', problems.length ? 'FAIL' : 'PASS', problems.length ? problems.join('; ') : `${tools.length} schema set(s) compile, names valid`);
   } catch (err) {
-    if (process.env.MCP_SERVER_URL && ['ECONNREFUSED', 'ENOTFOUND'].includes(err.cause?.code)) {
-      report('connect', 'BLOCKED', `nothing listening at MCP_SERVER_URL (${err.cause.code}): start the server first`);
+    // v1: err.cause is the socket error; v2 'auto' wraps it once more (ERA_NEGOTIATION_FAILED -> fetch failed -> socket)
+    const netCode = [err.cause?.code, err.cause?.cause?.code].find((c) => ['ECONNREFUSED', 'ENOTFOUND'].includes(c));
+    if (process.env.MCP_SERVER_URL && netCode) {
+      report('connect', 'BLOCKED', `nothing listening at MCP_SERVER_URL (${netCode}): start the server first`);
       return;
     }
     report('session', 'FAIL', `${err.message}${stderrTail.length ? ` | server stderr: ${(stderrTail.find((l) => /error/i.test(l)) ?? stderrTail.at(-1)).trim()}` : ''}`);

@@ -84,7 +84,7 @@ grep -rn \
   --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=build --exclude-dir=target \
   . 2>/dev/null | grep -v ".example" | grep -v "_test\." | head -20
 
-# console.log in TypeScript (should use NestJS Logger or Angular ErrorHandler)
+# console.log in TypeScript (should use NestJS Logger, pino in Node/MCP servers, or Angular ErrorHandler)
 grep -rn "console\.log\b\|console\.debug\b" \
   --include="*.ts" \
   --exclude-dir=node_modules --exclude-dir=dist \

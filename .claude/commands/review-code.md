@@ -24,7 +24,7 @@ Scan the file list for tech signals and build a dispatch list:
 | `*.tsx`/`*.jsx` (React) | `code-reviewer` (React) |
 | UI templates/widgets changed (Angular, React, Flutter) | + `accessibility-auditor` |
 | GenUI catalog, renderer or action (`**/a2ui/**`, `**/genui/**`, `*catalog*.json`) | `genui-contract-reviewer` |
-| MCP server code (`**/mcp/**`, `@modelcontextprotocol/*`) | `code-reviewer` + `security-reviewer` (tool contracts, authz) |
+| MCP server code (`**/mcp/**`, `@modelcontextprotocol/*`) | `code-reviewer` + `security-reviewer` (tool contracts, authz); checklist `mcp-builder/reference/mcp-quality-standards.md` |
 | `*.dart` or `pubspec.yaml` | `riverpod-reviewer` |
 | `*.py` + LangChain/LangGraph imports | `agentic-ai-reviewer` |
 | `*.py` (other) | `python-reviewer` (+ `python-worker-reviewer` when a worker/Pub/Sub/scheduler entrypoint changed) |

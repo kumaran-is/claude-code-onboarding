@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-03-30"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -223,38 +223,48 @@ After a purchase, `ref.invalidate(hasProProvider)`. Riverpod 3 passes a plain `R
 
 ### Python (Server-Side Verification)
 
+REST API v2 (`GET /v2/projects/{project_id}/customers/{customer_id}`, response `active_entitlements.items[]` with `entitlement_id` and `expires_at` in ms; RevenueCat API v2 docs, 2026-11-23). Executed against an `httpx.MockTransport` (Python 3.14.10, httpx 0.28.1): active, lifetime (`expires_at: null`), expired, other entitlement, unknown customer -> False, and a 503 raises instead of returning "not entitled". Mocked: not live-provider validation.
+
 ```python
-# Backend entitlement verification via RevenueCat REST API v2
+import hashlib
+import hmac
+import json
+import time
+from datetime import UTC, datetime
+
 import httpx
+import structlog
+from fastapi import APIRouter, HTTPException, Request, status
 
-REVENUECAT_API_SECRET = settings.REVENUECAT_API_V2_SECRET_KEY
-REVENUECAT_BASE_URL = "https://api.revenuecat.com/v2"
+logger = structlog.get_logger(__name__)
+router = APIRouter()
+RC_V2 = "https://api.revenuecat.com/v2"
 
-async def verify_entitlement(user_id: str, entitlement_id: str) -> bool:
-    """Server-side entitlement check — never trust client claims."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{REVENUECAT_BASE_URL}/projects/{PROJECT_ID}/subscribers/{user_id}",
-            headers={
-                "Authorization": f"Bearer {REVENUECAT_API_SECRET}",
-                "Content-Type": "application/json",
-            },
-        )
-        if response.status_code != 200:
-            logger.error(f"RevenueCat API error: {response.status_code}")
-            return False
 
-        subscriber = response.json()["subscriber"]
-        entitlement = subscriber.get("entitlements", {}).get(entitlement_id)
-        if not entitlement:
-            return False
+class EntitlementLookupError(RuntimeError):
+    """RevenueCat unreachable or refused: the caller decides (fail closed), never 'not entitled'."""
 
-        # Check expiration
-        expires = entitlement.get("expires_date")
-        if expires and datetime.fromisoformat(expires) < datetime.now(UTC):
-            return False
 
-        return True
+async def has_active_entitlement(http: httpx.AsyncClient, *, project_id: str, customer_id: str,
+                                 entitlement_id: str, api_key: str) -> bool:
+    """entitlement_id is RevenueCat's entitlement id (entl...), not the lookup key shown in the app."""
+    response = await http.get(
+        f"{RC_V2}/projects/{project_id}/customers/{customer_id}",
+        headers={"Authorization": f"Bearer {api_key}"},  # v2 secret key, customer_information:customers:read
+        timeout=5.0,
+    )
+    if response.status_code == 404:
+        return False  # unknown customer: genuinely no entitlement
+    if response.status_code != 200:
+        logger.error("revenuecat_lookup_failed", status=response.status_code)
+        raise EntitlementLookupError(f"RevenueCat returned {response.status_code}")
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    page = response.json()["active_entitlements"]  # first page; follow next_page for many entitlements
+    return any(
+        item["entitlement_id"] == entitlement_id
+        and (item["expires_at"] is None or item["expires_at"] > now_ms)
+        for item in page["items"]
+    )
 ```
 
 ## Webhook Integration (RevenueCat → Backend)
@@ -271,27 +281,73 @@ RevenueCat sends server-to-server webhooks for subscription events:
 | `PRODUCT_CHANGE` | Update tier (Pro ↔ Growth) |
 | `TRANSFER` | Handle family sharing / account transfer |
 
+Scheme (RevenueCat webhook docs, re-read 2026-11-23): with HMAC signing enabled on the integration, each delivery carries `X-RevenueCat-Webhook-Signature: t=<unix_timestamp>,v1=<hmac_sha256_hex>`, computed over `"<timestamp>.<raw_json_body>"` with the integration's signing secret; verify the raw bytes before parsing. The page states neither the secret's length nor the hex case of `v1` (its examples use `hexdigest()`), so the code requires only a 16-character minimum and accepts either case. Enable HMAC signing before deploying this handler; this skill ships no `Authorization`-header-only variant.
+
+Executed (FastAPI 0.165.0 via `httpx.ASGITransport`, pydantic-settings 2.16.3, SQLAlchemy 2.1.9 async on SQLite/aiosqlite; the same `INSERT ... ON CONFLICT DO NOTHING RETURNING` runs on PostgreSQL), 14 tests: valid HMAC -> processed; same event id again -> duplicate; wrong secret, missing header, a `t` 301 s old, a body changed after signing, a non-ASCII `v1` -> 401 (not 500); an empty or 15-character secret fails at boot (`ValidationError`) and a 16-character one boots; an upper-case `v1` is accepted and the secret never appears in `repr`; handler failure -> 500 with its writes rolled back, then the retry processes it; a request cancelled mid-handler leaves no event row and the redelivery processes it. Controls (each turned the matching test red): no `min_length` -> an empty secret boots; no `.lower()` -> an upper-case `v1` is rejected; `compare_digest` on `str` without the format check -> 500 on a non-ASCII `v1`; committing the event-id insert in its own transaction -> the retry answers "duplicate" and the event is lost (a claim released in `except Exception` has the same hole: `CancelledError` is not an `Exception`). Engine: `create_async_engine(..., hide_parameters=True)`; external calls go through an outbox row in the same transaction (`python-dev/reference/reliability-idempotency-retries-outbox.md` §1, §4).
+
 ```python
+# same module as has_active_entitlement, plus:
+import re
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+
+class WebhookSettings(BaseSettings):
+    # SecretStr: never printed in reprs/logs. RevenueCat does not document the secret's length, so
+    # min_length=16 only rejects empty/placeholder values (with an empty HMAC key anyone can sign
+    # INITIAL_PURCHASE events, and no SDK refuses it for you)
+    revenuecat_webhook_signing_secret: SecretStr = Field(min_length=16)
+
+
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")  # hex case is not documented: accept both
+
+
+def verify_signature(raw_body: bytes, header: str | None, secret: SecretStr, tolerance_s: int = 300) -> None:
+    """Header `t=<unix>,v1=<hex HMAC-SHA256 of f"{t}.{raw body}">` (RevenueCat webhook docs)."""
+    if not header:
+        raise ValueError("missing signature")
+    parts = dict(p.split("=", 1) for p in header.split(",") if "=" in p)
+    t, v1 = parts.get("t", ""), parts.get("v1", "")
+    if not t.isdigit() or abs(time.time() - int(t)) > tolerance_s:
+        raise ValueError("stale or malformed timestamp")
+    if not _HEX64.fullmatch(v1):  # rejects non-ASCII / wrong length before comparing
+        raise ValueError("malformed signature")
+    key = secret.get_secret_value().encode()  # unwrapped only here
+    expected = hmac.new(key, f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected.encode(), v1.lower().encode()):  # bytes on both sides
+        raise ValueError("bad signature")
+
+
+CLAIM = text(
+    "INSERT INTO revenuecat_events (event_id) VALUES (:id) ON CONFLICT DO NOTHING RETURNING event_id"
+)
+
+
 @router.post("/webhooks/revenuecat")
-async def revenuecat_webhook(request: Request):
-    payload = await request.json()
-    # Verify webhook authorization header
-    auth = request.headers.get("Authorization")
-    if auth != f"Bearer {settings.REVENUECAT_WEBHOOK_SECRET}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    event_type = payload.get("event", {}).get("type")
-    app_user_id = payload.get("event", {}).get("app_user_id")
-
-    match event_type:
-        case "INITIAL_PURCHASE" | "RENEWAL":
-            await activate_subscription(app_user_id, payload)
-        case "EXPIRATION" | "CANCELLATION":
-            await deactivate_subscription(app_user_id, payload)
-        case "BILLING_ISSUE":
-            await flag_billing_issue(app_user_id, payload)
-
-    return {"status": "ok"}
+async def revenuecat_webhook(request: Request) -> dict[str, str]:
+    raw = await request.body()  # verify the raw bytes before parsing
+    try:
+        verify_signature(raw, request.headers.get("X-RevenueCat-Webhook-Signature"),
+                         request.app.state.settings.revenuecat_webhook_signing_secret)  # WebhookSettings
+    except ValueError as exc:
+        logger.warning("revenuecat_signature_rejected")  # no payload, no header in logs
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized") from exc
+    event = json.loads(raw)["event"]
+    sessions: async_sessionmaker[AsyncSession] = request.app.state.sessions
+    try:
+        # ONE transaction: event-id insert + the handler's writes (+ outbox rows for external calls).
+        # Error, cancellation or kill rolls all of it back, so the redelivery (same id) is processed.
+        async with sessions.begin() as session:
+            if (await session.execute(CLAIM, {"id": event["id"]})).first() is None:
+                return {"status": "duplicate"}  # 200: RevenueCat stops retrying
+            await request.app.state.entitlements.apply(session, event)
+    except Exception as exc:
+        logger.error("revenuecat_event_failed", event_id=event["id"], error_type=type(exc).__name__)
+        raise  # non-200: RevenueCat retries up to 5 times over ~80 minutes
+    return {"status": "processed"}
 ```
 
 ## Testing
@@ -306,22 +362,12 @@ class MockPurchases extends Mock implements Purchases {}
 ```
 
 ```python
-# Mock RevenueCat API in Python tests
-@pytest.fixture
-def mock_revenuecat(httpx_mock):
-    httpx_mock.add_response(
-        url="https://api.revenuecat.com/v2/projects/test-project/subscribers/test-user",
-        json={
-            "subscriber": {
-                "entitlements": {
-                    "pro": {
-                        "expires_date": "2027-01-01T00:00:00Z",
-                        "purchase_date": "2026-01-01T00:00:00Z",
-                    }
-                }
-            }
-        },
-    )
+# Python tests: inject an httpx.AsyncClient with a MockTransport (no extra plugin)
+def client_for(status: int, items: list[dict[str, object]]) -> httpx.AsyncClient:
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.url.path == "/v2/projects/proj1/customers/u1"
+        return httpx.Response(status, json={"active_entitlements": {"items": items, "next_page": None}})
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 ```
 
 ## Security Checklist
@@ -329,7 +375,7 @@ def mock_revenuecat(httpx_mock):
 - [ ] RevenueCat API keys stored in environment variables only
 - [ ] Dedicated API v2 secret key created for MCP server (not shared with other services)
 - [ ] Server-side entitlement verification for all gated features (never trust client)
-- [ ] Webhook authorization header verified on all RevenueCat webhook endpoints
+- [ ] HMAC signing enabled; `X-RevenueCat-Webhook-Signature` verified on the raw body (bytes `compare_digest`, 5 min tolerance); signing secret is `SecretStr` with `min_length=16`
 - [ ] User identification via `Purchases.logIn()` after authentication
 - [ ] `Purchases.logOut()` on user sign-out to prevent entitlement leaking
 - [ ] Sandbox/test keys in dev/staging, production keys in production only

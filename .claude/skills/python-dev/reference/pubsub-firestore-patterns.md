@@ -59,9 +59,9 @@ async def _publish_event(data: dict) -> None:
     try:
         publisher = _get_publisher()
         encoded = json.dumps(data, default=str).encode()
-        await asyncio.to_thread(
-            lambda: publisher.publish(_topic_path(settings.PUBSUB_MY_TOPIC), encoded).result()
-        )
+        future = publisher.publish(_topic_path(settings.PUBSUB_MY_TOPIC), encoded)
+        # bounded: an unbounded result() pins a worker thread past a cancelled task
+        await asyncio.to_thread(future.result, timeout=settings.PUBSUB_PUBLISH_TIMEOUT_S)
         logger.info("pubsub_publish_ok", event_type=data.get("event_type"))
     except Exception as exc:
         logger.error(
@@ -258,9 +258,7 @@ live streaming without polling. Only applies when Firestore is part of the stack
 ### Required implementation
 
 ```python
-import asyncio
 import uuid
-from datetime import UTC, datetime
 
 import structlog
 from google.cloud import firestore
@@ -271,6 +269,7 @@ logger = structlog.get_logger(__name__)
 
 
 async def write_status_event(
+    client: firestore.AsyncClient,  # ONE client from lifespan (app.state.firestore), never one per call
     resource_id: uuid.UUID,
     event_id: uuid.UUID,
     status: str,
@@ -283,23 +282,22 @@ async def write_status_event(
     Non-fatal: failures are logged but NEVER raised to the caller.
     The relational DB already committed the canonical state before this runs.
     """
-    client: firestore.AsyncClient | None = None
+    doc_ref = (
+        client.collection("resources")
+        .document(str(resource_id))
+        .collection("status_events")
+        .document(str(event_id))  # deterministic id: a retried write overwrites, never duplicates
+    )
     try:
-        client = firestore.AsyncClient(project=settings.GOOGLE_CLOUD_PROJECT)
-        doc_ref = (
-            client.collection("resources")
-            .document(str(resource_id))
-            .collection("status_events")
-            .document(str(event_id))
-        )
         await doc_ref.set(
             {
                 "status": status,
                 "previous_status": previous_status,
                 "actor_id": str(actor_id) if actor_id else None,
                 "actor_type": actor_type,
-                "timestamp": datetime.now(tz=UTC).isoformat(),
-            }
+                "timestamp": firestore.SERVER_TIMESTAMP,  # server clock, orderable in queries
+            },
+            timeout=settings.FIRESTORE_WRITE_TIMEOUT_S,
         )
     except Exception as exc:
         logger.error(
@@ -307,14 +305,16 @@ async def write_status_event(
             resource_id=str(resource_id),
             error_type=type(exc).__name__,
         )
-    finally:
-        if client is not None:
-            await client.close()
 
 
+# lifespan: app.state.firestore = firestore.AsyncClient(project=settings.GOOGLE_CLOUD_PROJECT)
+#           ... yield ...; app.state.firestore.close()
+# google-cloud-firestore 2.34.1: AsyncClient.close() is synchronous (returns None):
+# `await client.close()` raises TypeError (executed).
 # In the route/service — always spawn(), never await
 spawn(
     write_status_event(
+        request.app.state.firestore,
         resource_id=resource_id,
         event_id=uuid.uuid4(),
         status=new_status,
@@ -360,39 +360,20 @@ make up                # new topic created on stack start
 
 ## Subscriber Pattern
 
-`subscribe()` returns a `StreamingPullFuture`; stream errors are set ON that future. A discarded future is a consumer that died silently.
-Route every subscription through `SubscriptionSupervisor` (re-subscribes with capped backoff, stops on `stop()`; code and executed test in
-`reliability-idempotency-retries-outbox.md` section 7) and start it from lifespan, not at import time.
+Executed on google-cloud-pubsub 2.44.0 against the Pub/Sub emulator (worker in `reliability-idempotency-retries-outbox.md` section 7a: duplicates, retry,
+dead-letter, SIGTERM drain; 13 tests). `subscribe()` returns a `StreamingPullFuture`; stream errors are set ON that future, so a discarded future is a
+consumer that died silently. Inside a FastAPI service, route every subscription through `SubscriptionSupervisor` (section 7) started from lifespan;
+a standalone worker process exits non-zero when the stream dies and lets the platform restart it (section 7a).
 
 ```python
-from google.cloud import pubsub_v1
-
-
-def start_consumer(
-    subscription: str, dispatch_fn, loop: asyncio.AbstractEventLoop
-) -> SubscriptionSupervisor:
-    subscriber = pubsub_v1.SubscriberClient()
-    path = subscriber.subscription_path(settings.GOOGLE_CLOUD_PROJECT, subscription)
-
-    def callback(message: pubsub_v1.subscriber.message.Message) -> None:
-        # loop captured in lifespan
-        fut = asyncio.run_coroutine_threadsafe(dispatch_fn(json.loads(message.data)), loop)
-        try:
-            fut.result(timeout=30)
-            message.ack()
-        except TimeoutError:
-            fut.cancel()  # otherwise the handler keeps running while the message is redelivered
-            message.nack()
-        except Exception as exc:
-            logger.error("pubsub_dispatch_failed", error_type=type(exc).__name__)
-            message.nack()  # triggers redelivery
-
-    flow = pubsub_v1.types.FlowControl(max_messages=50)  # default is 1000 in-flight messages
-    supervisor = SubscriptionSupervisor(
-        lambda: subscriber.subscribe(path, callback=callback, flow_control=flow), name=subscription
-    )
-    supervisor.start()
-    return supervisor  # lifespan shutdown: supervisor.stop(); subscriber.close()
+flow = pubsub_v1.types.FlowControl(
+    max_messages=settings.WORKER_MAX_MESSAGES,          # default 1000 in flight: size it to what finishes within the ack deadline
+    max_lease_duration=int(settings.HANDLER_TIMEOUT_S * 2),  # default 3600 s: stop extending a hung message's lease
+)
+future = subscriber.subscribe(
+    path, callback=callback, flow_control=flow,
+    await_callbacks_on_shutdown=True,  # after cancel(), result() also waits for running callbacks
+)
 ```
 
 **Hard rules for subscribers:**
@@ -400,7 +381,10 @@ def start_consumer(
 - ALWAYS set a `timeout` on `run_coroutine_threadsafe().result()` — unbounded wait = thread leak
 - NEVER process messages synchronously in the callback if the handler is async — use `run_coroutine_threadsafe`
 - NEVER discard the `subscribe()` future or swallow a startup failure behind a "fallback": a consumer that never started must fail the readiness check
-- Poison input (malformed) -> dead-letter/ack after logging; transient failure -> nack for redelivery. For push handlers: malformed -> 4xx, transient -> 5xx,
-  attempts exhausted -> publish a "failed" event then 2xx; verify the caller's signed identity and keep the write idempotent
+- Delivery is at-least-once, even with exactly-once enabled (publish-side duplicates): dedupe on an event id in the same transaction as the effect
+- Poison input (malformed, schema, permanent business error) -> publish to the dead-letter topic, then `ack()`; transient failure -> `nack()`.
+  The subscription's `DeadLetterPolicy` (`max_delivery_attempts` 5–100) is the backstop for messages that keep failing. Push handlers: malformed -> 4xx,
+  transient -> 5xx, attempts exhausted -> publish a "failed" event then 2xx; verify the caller's signed identity and keep the write idempotent
 - Side effects that must not repeat (e.g. push notifications): commit a `pending` claim row BEFORE the external call (`reliability-idempotency-retries-outbox.md` section 6)
-- Not executed here: the `google-cloud-pubsub` client was not installed in the validation environment; confirm `subscribe(..., flow_control=...)` against your pinned version
+- Trace context crosses the message boundary in attributes (inject on publish, extract on consume; PRODUCER/CONSUMER spans): `deployment-ci-cd/reference/python-observability.md` §3.3. Flush telemetry explicitly on shutdown (§3.1): a signal exit skips `atexit`, and buffered spans are lost
+- mypy: `google-cloud-pubsub` ships no `py.typed`; add a `[[tool.mypy.overrides]]` with `module = ["google.cloud.pubsub_v1", "google.cloud.pubsub_v1.*", "google.pubsub_v1", "google.pubsub_v1.*"]` and `follow_untyped_imports = true`

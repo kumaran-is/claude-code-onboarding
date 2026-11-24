@@ -168,102 +168,113 @@ npm install @google-cloud/storage
 
 ### Python FastAPI
 
+Executed (google-cloud-storage 3.17.2, FastAPI 0.165.0, Python 3.14.10, TestClient on httpx2 2.16.2 with DeprecationWarning as error; 6 tests, no GCS call): unauthenticated -> 401; the URL is a V4 `GOOG4-RSA-SHA256` PUT URL, 900 s, with `content-type` in the signed headers; bad type/size -> 422; confirm accepts only the caller's own key (another user's key -> 404; control: removing the prefix check returns 204 and fails the test) and deletes an oversized object -> 422. Storage calls are blocking: they run in `asyncio.to_thread`.
+
 ```python
 # src/upload/router.py
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
-from google.cloud import storage
-from datetime import timedelta
-from pathlib import Path
-import uuid
+import asyncio
 import logging
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Protocol
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from google.api_core.exceptions import NotFound
+from google.cloud import storage
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/upload", tags=["upload"])
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+ALLOWED_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
 MAX_BYTES = 100 * 1024 * 1024  # 100 MB
+URL_TTL = timedelta(minutes=15)
+
+
+@dataclass(frozen=True)
+class Principal:
+    user_id: str
+
+
+class Signer(Protocol):
+    def __call__(self, blob: storage.Blob, *, content_type: str) -> str: ...
+
+
+async def current_user() -> Principal:  # replace with your auth dependency (401 when missing)
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED)
+
+
+def get_bucket(request: Request) -> storage.Bucket:
+    return request.app.state.upload_bucket  # ONE storage.Client from lifespan, bucket name from settings
+
+
+def get_signer(request: Request) -> Signer:
+    return request.app.state.upload_signer  # see "Signing on Cloud Run" below
 
 
 class PresignedUrlRequest(BaseModel):
-    filename: str
-    content_type: str
-    size: int
-
-    @field_validator("content_type")
-    @classmethod
-    def validate_content_type(cls, v: str) -> str:
-        if v not in ALLOWED_TYPES:
-            raise ValueError(f"content_type not allowed: {v}")
-        return v
-
-    @field_validator("size")
-    @classmethod
-    def validate_size(cls, v: int) -> int:
-        if v < 1 or v > MAX_BYTES:
-            raise ValueError(f"size must be between 1 and {MAX_BYTES} bytes")
-        return v
+    content_type: str = Field(json_schema_extra={"enum": sorted(ALLOWED_TYPES)})
+    size: int = Field(ge=1, le=MAX_BYTES)
 
 
 class PresignedUrlResponse(BaseModel):
     upload_url: str
     object_key: str
-    expires_at: str
+    expires_at: datetime
+
+
+class ConfirmRequest(BaseModel):
+    object_key: str = Field(max_length=200)
 
 
 @router.post("/presigned-url", response_model=PresignedUrlResponse)
 async def get_presigned_url(
-    request: PresignedUrlRequest,
-    # current_user = Depends(get_current_user),  # add your auth dependency
+    body: PresignedUrlRequest,
+    user: Annotated[Principal, Depends(current_user)],
+    bucket: Annotated[storage.Bucket, Depends(get_bucket)],
+    sign: Annotated[Signer, Depends(get_signer)],
 ) -> PresignedUrlResponse:
-    # Sanitize extension — never use client filename directly as object key
-    suffix = Path(request.filename).suffix.lower()
-    safe_suffix = "".join(c for c in suffix if c.isalnum() or c == ".")
-    object_key = f"uploads/{uuid.uuid4()}{safe_suffix}"
-
-    client = storage.Client()
-    bucket = client.bucket("YOUR_GCS_BUCKET")  # inject via settings
+    suffix = ALLOWED_TYPES.get(body.content_type)
+    if suffix is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "content_type not allowed")
+    # server-chosen key under the caller's prefix; the client filename never reaches the key
+    object_key = f"uploads/{user.user_id}/{uuid.uuid4()}{suffix}"
     blob = bucket.blob(object_key)
-
-    upload_url = blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(minutes=15),
-        method="PUT",
-        content_type=request.content_type,  # GCS enforces this on PUT
-    )
-
-    from datetime import datetime, timezone
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-
-    logger.info("Presigned URL issued", extra={"object_key": object_key})
-    return PresignedUrlResponse(
-        upload_url=upload_url,
-        object_key=object_key,
-        expires_at=expires_at,
-    )
-
-
-class ConfirmRequest(BaseModel):
-    object_key: str
+    # signing may call IAM signBlob (network): keep it off the event loop
+    upload_url = await asyncio.to_thread(sign, blob, content_type=body.content_type)
+    logger.info("upload_url_issued", extra={"object_key": object_key})
+    expires_at = datetime.now(UTC) + URL_TTL
+    return PresignedUrlResponse(upload_url=upload_url, object_key=object_key, expires_at=expires_at)
 
 
 @router.post("/confirm", status_code=status.HTTP_204_NO_CONTENT)
-async def confirm_upload(request: ConfirmRequest) -> None:
-    client = storage.Client()
-    bucket = client.bucket("YOUR_GCS_BUCKET")
-    blob = bucket.blob(request.object_key)
-
-    if not blob.exists():
-        logger.error("confirm_upload: object not found", extra={"object_key": request.object_key})
-        raise HTTPException(status_code=404, detail="Upload not found in storage")
-
-    logger.info("Upload confirmed", extra={"object_key": request.object_key})
-    # Persist object_key to database here
+async def confirm_upload(
+    body: ConfirmRequest,
+    user: Annotated[Principal, Depends(current_user)],
+    bucket: Annotated[storage.Bucket, Depends(get_bucket)],
+) -> None:
+    if not body.object_key.startswith(f"uploads/{user.user_id}/"):
+        # another user's key gets the same answer as a missing one
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found")
+    blob = bucket.blob(body.object_key)
+    try:
+        await asyncio.to_thread(blob.reload, timeout=10)  # loads size + content type
+    except NotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found") from None
+    # the signed PUT fixes the content type, not the size: enforce it after the fact
+    if blob.size is None or blob.size > MAX_BYTES or blob.content_type not in ALLOWED_TYPES:
+        await asyncio.to_thread(blob.delete, timeout=10)
+        logger.warning("upload_rejected", extra={"object_key": body.object_key, "size": blob.size})
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Upload rejected")
+    logger.info("upload_confirmed", extra={"object_key": body.object_key, "size": blob.size})
+    # persist object_key + owner in the same request; malware scan / content sniffing runs async
 ```
 
-```
-# Install
-uv add google-cloud-storage
+Signing on Cloud Run: there is no private key in the container. `app.state.upload_signer` calls `blob.generate_signed_url(version="v4", expiration=900, method="PUT", content_type=..., credentials=creds, service_account_email=sa_email, access_token=creds.token)` after `creds.refresh(...)`; the library then signs through IAM `signBlob` (the runtime service account needs `roles/iam.serviceAccountTokenCreator` on itself). Executed with key-file credentials only; the keyless path needs a real project (NOT RUN).
+
+```bash
+uv add "google-cloud-storage==3.17.2"
 ```
 
 ---

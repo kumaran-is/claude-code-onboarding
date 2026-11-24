@@ -35,10 +35,10 @@ Use `list_products` / `list_customers` to verify connection
 
 **Steps**:
 1. Create webhook endpoint in Python/FastAPI
-2. Add signature verification using `stripe.Webhook.construct_event()`
-3. Handle each event type with a dedicated handler function
-4. Log all events with structured context
-5. Return `{"status": "ok"}` — Stripe retries on non-2xx
+2. Verify the signature on the RAW body with `client.construct_event(payload, sig, secret, tolerance=300)` (`StripeClient`, stripe 17.1.0); 400 on failure, no payload logged
+3. Insert the event id (unique key) and apply the handler's database writes in one transaction; a duplicate insert answers 200
+4. On any failure the transaction rolls back and the endpoint returns 5xx so Stripe retries; external calls go through an outbox row (a release-in-`except Exception` design strands the claim on cancellation, since `CancelledError` is not an `Exception`)
+5. Log event id, type and `error_type` only, never the payload or the exception text (stripe skill: Python webhook endpoint, executed on PostgreSQL)
 
 **Key events**:
 
@@ -67,7 +67,7 @@ Use `list_products` / `list_customers` to verify connection
 - No PCI data stored in your database
 
 **Steps**:
-1. Create customer on signup (`stripe.Customer.create`)
+1. Create customer on signup (`client.v1.customers.create(params=..., options={"idempotency_key": f"customer-create-{user.id}"})`)
 2. Create checkout session or payment intent
 3. Return `client_secret` to Flutter
 4. Stripe processes payment
@@ -101,10 +101,10 @@ Use `list_products` / `list_customers` to verify connection
 **Skill**: `stripe` (Connect section)
 
 **Steps**:
-1. Create Express account for vendor (`stripe.Account.create`)
-2. Generate onboarding link (`stripe.AccountLink.create`)
-3. Vendor completes onboarding in Stripe-hosted UI
-4. Create transfer after job completion (`stripe.Transfer.create`)
+1. Create the vendor account with Accounts v2 (`client.v2.core.accounts.create`, `dashboard="express"`, recipient `stripe_transfers` capability, deterministic idempotency key)
+2. Generate an onboarding link (`client.v2.core.account_links.create`, `use_case.type="account_onboarding"`)
+3. Vendor completes onboarding in Stripe-hosted UI; read status from the account, not the return URL
+4. Create the transfer after job completion (`client.v1.transfers.create`, key `payout-ticket-{ticket_id}-vendor-{vendor_id}`)
 5. Handle `account.updated` and `transfer.created` webhooks
 
 **Gate**: Vendor onboarding flow works, test transfer completes
@@ -152,8 +152,10 @@ stripe listen --forward-to localhost:8000/webhooks/stripe
 | Storing card numbers in database | Use Stripe Payment Sheet / Checkout |
 | Using root `sk_*` key | Create Restricted API Key with minimum permissions |
 | Floating-point dollar amounts | Always use integer cents |
-| Missing idempotency key | Add `idempotency_key` param to every mutating call |
-| Not handling webhook retries | Make handlers idempotent — check if event already processed |
+| Missing idempotency key | `options={"idempotency_key": <business-id key>}` on every mutating call; the SDK's own random key does not survive an application-level retry |
+| `StripeClient` without `max_network_retries` | Default is 0 retries: set it explicitly (e.g. 2) |
+| Legacy `stripe.Customer.create` / `client.customers` | `client.v1.customers.create` (un-versioned accessors emit `DeprecationWarning`) |
+| Not handling webhook retries | Event-id row (unique constraint) and the handler's writes in ONE transaction; duplicates answer 200 |
 
 ## Related Workflows
 

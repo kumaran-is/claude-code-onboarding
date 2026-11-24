@@ -3,7 +3,7 @@
 > Python + PostgreSQL patterns for requests that may repeat, race or half-fail. Session/transaction ownership is
 > defined in `sqlalchemy-async-sessions-and-transactions.md`; task and cancellation hygiene in `asyncio-concurrency-and-tasks.md`;
 > the Pub/Sub messaging patterns in `pubsub-firestore-patterns.md`. Broker, cloud and cache names are examples, not requirements.
-> Snippets were executed against PostgreSQL 16 (SQLAlchemy 2.1.9, asyncpg 0.32, tenacity 9.2.1, circuitbreaker 2.1.3, httpx 0.28) unless marked otherwise.
+> Snippets were executed against PostgreSQL 16 (SQLAlchemy 2.1.9, asyncpg 0.32, tenacity 9.2.1, circuitbreaker 2.1.3, httpx 0.28) unless marked otherwise; section 7a on google-cloud-pubsub 2.44.0 against the Pub/Sub emulator.
 
 ---
 
@@ -397,9 +397,78 @@ class SubscriptionSupervisor:
             delay = min(delay * 2, self._max)
 ```
 
-Executed against a fake future (two stream failures, then healthy): 3 subscribe calls, thread stopped cleanly. The real `google-cloud-pubsub` client was **not** installed
-in the validation environment: confirm against your pinned client version. Default `FlowControl` allows 1000 in-flight messages (python-pubsub `types.py`): set `max_messages` to what a worker can finish within the ack deadline.
-Add an architecture test (grep) that fails on a bare `subscriber.subscribe(` whose result is discarded.
+Executed against a fake future (two stream failures, then healthy): 3 subscribe calls, thread stopped cleanly. Use the supervisor inside a long-lived service;
+a standalone worker (7a) exits non-zero on stream death instead and lets the platform restart it. Add an architecture test (grep) that fails on a bare
+`subscriber.subscribe(` whose result is discarded.
+
+### 7a. Standalone streaming-pull worker (google-cloud-pubsub 2.44.0, executed)
+
+Executed on Python 3.14.10 against the Pub/Sub emulator (digest-pinned container): a duplicate event is processed once; a transient failure is retried
+in-process then redelivered and succeeds; malformed and permanent events go to the dead-letter topic without retries; an always-failing event is
+dead-lettered by the subscription's `DeadLetterPolicy` after 5 attempts; SIGTERM drains an in-flight message and exits 0; SIGTERM past the drain deadline
+cancels the handler, exits 0 within 10 s and the message is redelivered. 13 tests, 3 consecutive green runs. Controls: dropping the dedupe key, the SIGTERM
+handler, the dead-letter policy, or the cancel-on-deadline each fails its test.
+
+```python
+def _callback(self, message: Message) -> None:  # subscriber thread
+    if self._stopping.is_set():
+        message.nack()  # draining: hand it to another instance now
+        return
+    cfut = asyncio.run_coroutine_threadsafe(handle(message.data, dict(message.attributes)), self._loop)
+    self._track(cfut)
+    try:
+        result = cfut.result(timeout=self._cfg.handler_timeout_s)
+    except TimeoutError:
+        cfut.cancel()  # otherwise the handler keeps running while the message is redelivered
+        message.nack()
+        return
+    except concurrent.futures.CancelledError:  # cancelled by drain()
+        message.nack()
+        return
+    except Exception as exc:  # noqa: BLE001 - per-message boundary: log, nack, keep consuming
+        logger.error("event_handler_crashed", message_id=message.message_id, error_type=type(exc).__name__)
+        message.nack()
+        return
+    finally:
+        self._untrack(cfut)
+    if result.outcome is Outcome.RETRY_LATER:  # in-process retry budget exhausted
+        message.nack()
+    elif result.outcome is Outcome.DEAD_LETTER:  # poison: explicit dead-letter, then ack
+        try:
+            self._publisher.publish(self._cfg.dead_letter_topic_path, message.data, dlq_reason=result.reason,
+                                    source_message_id=message.message_id).result(timeout=self._cfg.publish_timeout_s)
+        except Exception as exc:  # noqa: BLE001 - not dead-lettered: nack so it is not lost
+            logger.error("dead_letter_publish_failed", error_type=type(exc).__name__)
+            message.nack()
+            return
+        message.ack()
+    else:  # PROCESSED or DUPLICATE (insert-first dedupe, section 1)
+        message.ack()
+
+async def drain(self, future: StreamingPullFuture) -> None:  # on SIGTERM
+    self._stopping.set()  # readiness turns false; new callbacks nack
+    future.cancel()  # stop pulling; the client nacks queued and on-hold messages
+    try:  # await_callbacks_on_shutdown=True: result() waits for running callbacks
+        await asyncio.to_thread(future.result, timeout=self._cfg.drain_timeout_s)  # 7 s
+    except TimeoutError:
+        for cfut in self._snapshot_inflight():
+            cfut.cancel()  # their callbacks nack -> redelivered elsewhere
+        await asyncio.to_thread(future.result, timeout=self._cfg.cancel_grace_s)  # 1 s: total < Cloud Run's 10 s
+```
+
+Process wiring: `loop.add_signal_handler(signal.SIGTERM, stop.set)` in the worker's `main` (under uvicorn use lifespan shutdown instead: uvicorn owns the
+signal); `run()` waits for `stop` or the stream ending, and re-raises the stream error so the process exits non-zero; `finally: subscriber.close();
+publisher.stop()`, then flush telemetry (`Telemetry.shutdown()`: force_flush + shutdown, `deployment-ci-cd/reference/python-observability.md` §3.1) after the last ack. A signal exit skips `atexit`, so buffered spans and logs are otherwise lost. Trace propagation through message attributes: same file, §3.3. (Example D emits no spans; its flush path was not exercised.) Readiness = stream up and not draining. Cloud Run sends SIGTERM, then SIGKILL 10 s later.
+
+| Topic | Verified fact (2.44.0 source / Pub/Sub docs) | Rule |
+|---|---|---|
+| Retry layers | in-process tenacity budget x `max_delivery_attempts` multiply | small in-process budget (3 attempts, 5 s); let redelivery do the rest |
+| Dead-letter policy | `DeadLetterPolicy(dead_letter_topic, max_delivery_attempts)`, 5–100, approximate; `message.delivery_attempt` is `None` without it; forwarded messages carry `CloudPubSubDeadLetterSource*` attributes | set it on every subscription; grant the Pub/Sub service agent publisher on the DLQ topic and subscriber on the source; alert on DLQ depth |
+| Retry policy | `RetryPolicy(minimum_backoff, maximum_backoff)` on the subscription | backoff between redeliveries instead of an immediate nack loop |
+| Lease | `FlowControl.max_lease_duration` default 3600 s, `max_messages` default 1000 | lease = 2x handler timeout; `max_messages` = what finishes within it |
+| Exactly-once | `enable_exactly_once_delivery`; pull/StreamingPull only, one region; only the latest ack id is valid; min ack deadline 60 s; `ack_with_response().result()` raises `AcknowledgeError` (`INVALID_ACK_ID`, `FAILED_PRECONDITION`, ...) | still dedupe (publish-side duplicates remain); use `ack_with_response` and treat a failed ack as "will be redelivered"; expect higher latency |
+| Ordering | `PublisherOptions(enable_message_ordering=True)`, `publish(..., ordering_key=k)`, subscription `enable_message_ordering`; after a publish error the key pauses until `resume_publish(topic, k)`; publish from one region | order only per key; a nacked message holds back its key |
+| Emulator | supports dead-letter topics, retry policies and ordering; no IAM, no UpdateTopic | integration tests on the emulator; IAM and exactly-once behaviour need a real project (not exercised here) |
 
 Push (HTTP) handler semantics:
 
@@ -430,4 +499,5 @@ Push (HTTP) handler semantics:
 - [ ] Outbox: attempts, backoff, `ORDER BY`, batch cap, exhausted state, idempotent consumers, TTL > retry horizon
 - [ ] Claim queues have a lease and an attempts cap
 - [ ] No session held across a network call; delivery semantics chosen and written down
-- [ ] Every streaming consumer supervised; handlers classify poison vs transient
+- [ ] Every streaming consumer supervised (service) or exits non-zero on stream death (worker); handlers classify poison vs transient
+- [ ] Dead-letter policy on every subscription; SIGTERM drain finishes within the platform's kill window; lease capped

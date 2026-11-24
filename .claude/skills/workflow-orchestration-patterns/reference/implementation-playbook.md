@@ -38,43 +38,51 @@ spring:
 
 ### Python 3.14 / FastAPI
 
-pyproject.toml:
-```toml
-[project]
-dependencies = [
-    "temporalio==1.7.0",
-    "fastapi>=0.135.2",
-    "uvicorn[standard]",
-    "pydantic>=2.0",
-]
+Executed on temporalio 1.36.1 / Python 3.14.10 (time-skipping test server): the saga, approval, heartbeat-resume and duplicate-start code below, 8 tests; negative controls in the comments. Pin exactly with a lockfile:
+
+```bash
+uv add "temporalio==1.36.1" "fastapi[standard-no-fastapi-cloud-cli]==0.165.0"
+uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0"   # module-scoped env: asyncio_default_{fixture,test}_loop_scope = "module"
 ```
 
-Worker startup (separate process from FastAPI):
+Worker startup (separate process from FastAPI; SIGTERM drains in-flight activities):
 ```python
 import asyncio
+import signal
+from datetime import timedelta
+
 from temporalio.client import Client
 from temporalio.worker import Worker
-from .workflows import OrderWorkflow
-from .activities import PaymentActivities, InventoryActivities
 
-async def run_worker():
-    client = await Client.connect("localhost:7233")
+from orders.activities import Ledger, process_chunks
+from orders.workflows import ApprovalWorkflow, ChunkedJobWorkflow, OrderSagaWorkflow
+
+
+async def run_worker() -> None:
+    client = await Client.connect(settings.TEMPORAL_ADDRESS, namespace=settings.TEMPORAL_NAMESPACE)
+    ledger = Ledger()  # real code: inject the payment / inventory clients here
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
     async with Worker(
         client,
         task_queue="order-processing",
-        workflows=[OrderWorkflow],
+        workflows=[OrderSagaWorkflow, ApprovalWorkflow, ChunkedJobWorkflow],
         activities=[
-            PaymentActivities.charge_payment,
-            PaymentActivities.refund_payment,
-            InventoryActivities.reserve_inventory,
-            InventoryActivities.release_inventory,
+            ledger.reserve_inventory, ledger.release_inventory, ledger.charge_payment,
+            ledger.refund_payment, ledger.fulfil_order, process_chunks,
         ],
+        graceful_shutdown_timeout=timedelta(seconds=8),  # under Cloud Run's 10 s SIGTERM->SIGKILL window
     ):
-        await asyncio.Future()  # run forever
+        await stop.wait()  # leaving the block calls Worker.shutdown(): stop polling, drain, cancel the rest
+
 
 if __name__ == "__main__":
     asyncio.run(run_worker())
 ```
+
+Workflow modules import activity types through `with workflow.unsafe.imports_passed_through():` so the sandbox does not re-import them on every replay.
 
 ### NestJS 11.x / TypeScript
 
@@ -107,72 +115,70 @@ runWorker().catch((err) => {
 
 ### Python — Saga Workflow
 
+Activities are methods on one object holding the clients (`orders/activities.py`: `Ledger.reserve_inventory`, `release_inventory`, `charge_payment` raising `ApplicationError(..., type="InsufficientFundsError", non_retryable=True)` on a decline, `refund_payment`, `fulfil_order`), each keyed by `order_id` so a retry is not a second effect.
+
 ```python
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from temporalio import workflow, activity
+
+from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 
-@dataclass
-class OrderInput:
-    order_id: str
-    user_id: str
-    amount_cents: int
-    product_id: str
+with workflow.unsafe.imports_passed_through():
+    from orders.activities import Ledger, OrderInput, process_chunks
+
+STEP_TIMEOUT = timedelta(seconds=30)
+COMPENSATE_RETRY = RetryPolicy(maximum_attempts=10, maximum_interval=timedelta(minutes=1))
+
 
 @workflow.defn
 class OrderSagaWorkflow:
     @workflow.run
-    async def run(self, input: OrderInput) -> str:
-        compensations: list = []
-
+    async def run(self, order: OrderInput) -> str:
+        compensations: list[Callable[[Ledger, OrderInput], Awaitable[None]]] = []
         try:
-            # Step 1: Reserve inventory
-            await workflow.execute_activity(
-                reserve_inventory,
-                args=[input.order_id, input.product_id],
-                start_to_close_timeout=timedelta(seconds=30),
+            # register the compensation BEFORE the step: a step that timed out may still have applied
+            compensations.append(Ledger.release_inventory)
+            await workflow.execute_activity_method(
+                Ledger.reserve_inventory,
+                order,
                 retry_policy=RetryPolicy(maximum_attempts=3),
+                start_to_close_timeout=STEP_TIMEOUT,
             )
-            compensations.append(("release_inventory", [input.order_id, input.product_id]))
-
-            # Step 2: Charge payment
-            await workflow.execute_activity(
-                charge_payment,
-                args=[input.order_id, input.user_id, input.amount_cents],
-                start_to_close_timeout=timedelta(seconds=30),
+            compensations.append(Ledger.refund_payment)
+            await workflow.execute_activity_method(
+                Ledger.charge_payment,
+                order,
                 retry_policy=RetryPolicy(
-                    maximum_attempts=3,
-                    non_retryable_error_types=["InsufficientFundsError", "InvalidCardError"],
+                    maximum_attempts=3, non_retryable_error_types=["InsufficientFundsError"]
                 ),
+                start_to_close_timeout=STEP_TIMEOUT,
             )
-            compensations.append(("refund_payment", [input.order_id, input.amount_cents]))
-
-            # Step 3: Fulfill order
-            await workflow.execute_activity(
-                fulfill_order,
-                args=[input.order_id],
-                start_to_close_timeout=timedelta(minutes=5),
+            await workflow.execute_activity_method(
+                Ledger.fulfil_order, order, start_to_close_timeout=STEP_TIMEOUT
             )
-
-            return f"Order {input.order_id} fulfilled"
-
-        except ActivityError as e:
-            # Run compensations in reverse order (LIFO)
-            for comp_name, comp_args in reversed(compensations):
+            return "fulfilled"
+        except ActivityError as step_error:
+            failed: list[str] = []
+            for compensate in reversed(compensations):
                 try:
-                    await workflow.execute_activity(
-                        comp_name,
-                        args=comp_args,
-                        start_to_close_timeout=timedelta(seconds=30),
-                        retry_policy=RetryPolicy(maximum_attempts=5),
+                    await workflow.execute_activity_method(
+                        compensate, order, retry_policy=COMPENSATE_RETRY, start_to_close_timeout=STEP_TIMEOUT
                     )
-                except Exception:
-                    # Log but continue — best-effort compensation
-                    pass
-            raise ApplicationError(f"Order {input.order_id} failed, compensated") from e
+                except ActivityError as comp_error:
+                    workflow.logger.error(
+                        "compensation_failed", extra={"step": compensate.__name__, "error": str(comp_error)}
+                    )
+                    failed.append(compensate.__name__)
+            if failed:  # never silent: the workflow fails with the steps a human must fix
+                raise ApplicationError(
+                    "compensation incomplete", failed, type="CompensationFailed", non_retryable=True
+                ) from step_error
+            raise ApplicationError("order failed and was compensated", type="OrderFailed") from step_error
 ```
+
+Executed: happy path; a declined charge runs once (non-retryable type) and compensates `refund` then `release` (the compensation for the failing step is registered BEFORE it, because a timed-out step may still have applied); a failure after the charge refunds then releases. Control: registering the refund after the charge leaves `['charge', 'release']` and fails the test. A compensation that still fails after its retries fails the workflow with `CompensationFailed` and the step names: never `except Exception: pass`.
 
 ### Java — Saga Workflow
 
@@ -293,25 +299,23 @@ class ShoppingCartWorkflow:
 
     @workflow.run
     async def run(self, cart_id: str) -> str:
-        # Cart expires after 24 hours of inactivity
-        await workflow.wait_condition(
-            lambda: self._checked_out,
-            timeout=timedelta(hours=24),
-        )
-        if self._checked_out:
-            return f"Cart {cart_id} checked out with {len(self._items)} items"
-        return f"Cart {cart_id} expired"
+        # Cart expires 24 hours after start; wait_condition RAISES TimeoutError on timeout
+        try:
+            await workflow.wait_condition(lambda: self._checked_out, timeout=timedelta(hours=24))
+        except TimeoutError:
+            return f"Cart {cart_id} expired"
+        return f"Cart {cart_id} checked out with {len(self._items)} items"
 
     @workflow.signal
-    async def add_item(self, item: CartItem) -> None:
+    def add_item(self, item: CartItem) -> None:
         self._items.append(item)
 
     @workflow.signal
-    async def remove_item(self, product_id: str) -> None:
+    def remove_item(self, product_id: str) -> None:
         self._items = [i for i in self._items if i.product_id != product_id]
 
     @workflow.signal
-    async def checkout(self) -> None:
+    def checkout(self) -> None:
         self._checked_out = True
 
     @workflow.query
@@ -410,323 +414,33 @@ class DocumentBatchWorkflow:
 ### Python — Human Approval Workflow
 
 ```python
-from temporalio import workflow
-from datetime import timedelta
-
 @workflow.defn
 class ApprovalWorkflow:
     def __init__(self) -> None:
-        self._approved: bool | None = None
+        self._decision: bool | None = None
 
     @workflow.run
     async def run(self, request_id: str, timeout_hours: int = 48) -> str:
-        # Wait for approval signal with timeout
-        approved = await workflow.wait_condition(
-            lambda: self._approved is not None,
-            timeout=timedelta(hours=timeout_hours),
-        )
-        if not approved:
-            return f"Request {request_id} timed out — auto-rejected"
-        return f"Request {request_id} {'approved' if self._approved else 'rejected'}"
-
-    @workflow.signal
-    async def approve(self) -> None:
-        self._approved = True
-
-    @workflow.signal
-    async def reject(self) -> None:
-        self._approved = False
-```
-
----
-
-## Activity Heartbeats {#heartbeat}
-
-For activities running longer than 30 seconds.
-
-### Python — Long-Running File Processing Activity
-
-```python
-from temporalio import activity
-from datetime import timedelta
-
-@activity.defn
-async def process_large_file(file_path: str, chunk_size_mb: int = 10) -> str:
-    """Process a large file in chunks with heartbeat reporting."""
-    chunks = get_file_chunks(file_path, chunk_size_mb)
-    total = len(chunks)
-
-    for i, chunk in enumerate(chunks):
-        # Heartbeat every chunk — includes progress for resume after failure
-        activity.heartbeat(f"Processing chunk {i+1}/{total}")
-        await process_chunk(chunk)
-
-    return f"Processed {total} chunks from {file_path}"
-```
-
-Activity options for heartbeat:
-```python
-ActivityOptions(
-    start_to_close_timeout=timedelta(hours=2),
-    heartbeat_timeout=timedelta(seconds=30),  # fails if no heartbeat in 30s
-)
-```
-
-### Java — Long-Running Activity with Heartbeat
-
-```java
-@ActivityImpl
-public class FileProcessingActivitiesImpl implements FileProcessingActivities {
-
-    @Override
-    public String processLargeFile(String filePath) {
-        List<FileChunk> chunks = getFileChunks(filePath);
-        for (int i = 0; i < chunks.size(); i++) {
-            Activity.getExecutionContext().heartbeat("Chunk " + (i + 1) + "/" + chunks.size());
-            processChunk(chunks.get(i));
-        }
-        return "Processed " + chunks.size() + " chunks";
-    }
-}
-```
-
----
-
-## Workflow Versioning {#versioning}
-
-Safe changes to workflow code while old executions are still running.
-
-### Python
-
-```python
-@workflow.defn
-class OrderWorkflow:
-    @workflow.run
-    async def run(self, input: OrderInput) -> str:
-        # Use patched() to branch behavior for new vs old executions
-        if workflow.patched("add-notification-step"):
-            # New code path for executions started after this deploy
-            await workflow.execute_activity(send_notification, args=[input.order_id], ...)
-
-        await workflow.execute_activity(fulfill_order, args=[input.order_id], ...)
-        return "done"
-```
-
-### Java
-
-```java
-@Override
-public String processOrder(OrderInput input) {
-    int version = Workflow.getVersion("add-notification-step", Workflow.DEFAULT_VERSION, 1);
-    if (version == 1) {
-        notification.sendNotification(input.getOrderId());
-    }
-    // ... rest of workflow
-}
-```
-
----
-
-## Child Workflows {#child}
-
-Decompose large workflows for scalability and isolation.
-
-### Python — Parent Dispatching Child Workflows
-
-```python
-from temporalio import workflow
-from temporalio.workflow import ParentClosePolicy
-
-@workflow.defn
-class BulkNotificationWorkflow:
-    @workflow.run
-    async def run(self, user_ids: list[str], message: str) -> dict[str, str]:
-        # Decompose into batches of 1000 to stay under history limits
-        batch_size = 1000
-        batches = [user_ids[i:i + batch_size] for i in range(0, len(user_ids), batch_size)]
-
-        handles = [
-            await workflow.start_child_workflow(
-                NotificationBatchWorkflow,
-                args=[batch, message],
-                id=f"notify-batch-{idx}",
-                parent_close_policy=ParentClosePolicy.TERMINATE,
+        try:
+            await workflow.wait_condition(
+                lambda: self._decision is not None, timeout=timedelta(hours=timeout_hours)
             )
-            for idx, batch in enumerate(batches)
-        ]
+        except TimeoutError:  # wait_condition RAISES on timeout; it does not return False
+            return "timed_out"
+        return "approved" if self._decision else "rejected"
 
-        results = await asyncio.gather(*[h.result() for h in handles])
-        return {"total_batches": len(batches), "results": results}
+    @workflow.signal
+    def decide(self, approved: bool) -> None:
+        if self._decision is None:  # first decision wins; duplicate signals are ignored
+            self._decision = approved
+
+    @workflow.query
+    def pending(self) -> bool:
+        return self._decision is None
 ```
+
+Executed: approve, reject (a second, contradicting signal is ignored), and timeout (the time-skipping server fires the 48 h timer at once). Control: the old pattern `approved = await workflow.wait_condition(...)`; `if not approved` fails the timeout test: `wait_condition` returns `None` and raises `TimeoutError` on timeout, so the "timed out" branch was unreachable and the workflow failed instead.
 
 ---
 
-## Retry Policies {#retry}
-
-### Non-Retryable Error Classification
-
-**Python:**
-```python
-# In activity: throw non-retryable for business rule violations
-from temporalio.exceptions import ApplicationError
-
-async def charge_payment(order_id: str, amount_cents: int) -> None:
-    result = await payment_gateway.charge(order_id, amount_cents)
-    if result.code == "INSUFFICIENT_FUNDS":
-        raise ApplicationError(
-            "Payment declined — insufficient funds",
-            "InsufficientFundsError",
-            non_retryable=True,  # do not retry
-        )
-    if result.code == "NETWORK_TIMEOUT":
-        raise ApplicationError("Gateway timeout", "NetworkTimeoutError")  # retryable (default)
-```
-
-**Java:**
-```java
-// Non-retryable: throw ApplicationFailure
-throw ApplicationFailure.newNonRetryableFailure("Insufficient funds", "InsufficientFundsError");
-
-// Retryable (default behavior — just throw any other exception):
-throw new RuntimeException("Gateway timeout");
-```
-
-**NestJS:**
-```typescript
-import { ApplicationFailure } from '@temporalio/workflow';
-
-// In activity:
-throw ApplicationFailure.create({
-  message: 'Payment declined',
-  type: 'InsufficientFundsError',
-  nonRetryable: true,
-});
-```
-
-### Standard Retry Policy
-
-```python
-# Python
-RetryPolicy(
-    initial_interval=timedelta(seconds=1),
-    backoff_coefficient=2.0,
-    maximum_interval=timedelta(seconds=60),
-    maximum_attempts=5,
-    non_retryable_error_types=["InsufficientFundsError", "ValidationError"],
-)
-```
-
-```java
-// Java
-RetryOptions.newBuilder()
-    .setInitialInterval(Duration.ofSeconds(1))
-    .setBackoffCoefficient(2.0)
-    .setMaximumInterval(Duration.ofSeconds(60))
-    .setMaximumAttempts(5)
-    .setDoNotRetry("InsufficientFundsError", "ValidationError")
-    .build()
-```
-
----
-
-## Starting Workflows (Client Code)
-
-### Python — FastAPI Client
-
-```python
-from temporalio.client import Client
-from fastapi import FastAPI
-from .workflows import OrderSagaWorkflow
-from .types import OrderInput
-
-from contextlib import asynccontextmanager
-
-temporal_client: Client | None = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global temporal_client
-    temporal_client = await Client.connect("localhost:7233")
-    yield
-
-app = FastAPI(lifespan=lifespan)
-
-@app.post("/orders")
-async def create_order(input: OrderInput):
-    handle = await temporal_client.start_workflow(
-        OrderSagaWorkflow.run,
-        input,
-        id=f"order-{input.order_id}",
-        task_queue="order-processing",
-    )
-    return {"workflow_id": handle.id, "run_id": handle.first_execution_run_id}
-```
-
-### Java — Spring Boot REST Controller
-
-```java
-@RestController
-@RequestMapping("/orders")
-@RequiredArgsConstructor
-public class OrderController {
-
-    private final WorkflowClient workflowClient;
-
-    @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@RequestBody @Valid OrderInput input) {
-        OrderWorkflow workflow = workflowClient.newWorkflowStub(
-            OrderWorkflow.class,
-            WorkflowOptions.newBuilder()
-                .setWorkflowId("order-" + input.getOrderId())
-                .setTaskQueue("order-processing")
-                .build()
-        );
-
-        WorkflowClient.start(workflow::processOrder, input);
-        return ResponseEntity.accepted().body(new OrderResponse(input.getOrderId()));
-    }
-}
-```
-
-### NestJS — Controller + Temporal Client Service
-
-```typescript
-// temporal-client.service.ts
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Client, Connection } from '@temporalio/client';
-import { orderSagaWorkflow } from './workflows/order-saga.workflow';
-import { OrderInput } from './types';
-
-@Injectable()
-export class TemporalClientService implements OnModuleInit {
-  private client: Client;
-
-  async onModuleInit() {
-    const connection = await Connection.connect({ address: 'localhost:7233' });
-    this.client = new Client({ connection });
-  }
-
-  async startOrderWorkflow(input: OrderInput): Promise<string> {
-    const handle = await this.client.workflow.start(orderSagaWorkflow, {
-      args: [input],
-      taskQueue: 'order-processing',
-      workflowId: `order-${input.orderId}`,
-    });
-    return handle.workflowId;
-  }
-}
-```
-
----
-
-## Common Pitfalls
-
-| Mistake | Why It Breaks | Fix |
-|---------|--------------|-----|
-| `datetime.now()` in workflow | Non-deterministic — replay produces different time | Use `workflow.now()` |
-| HTTP call in workflow | Non-deterministic, may fail | Move to activity |
-| Non-idempotent activity | Retries cause duplicate charges/sends | Add idempotency key or upsert |
-| Missing heartbeat on long activity | Temporal can't detect stalled work | Call `heartbeat()` every <30s |
-| No `non_retryable_error_types` | Validation errors retried forever | Classify errors explicitly |
-| Giant workflow (1M tasks in one) | History size limit hit | Use child workflows to decompose |
-| Changing workflow code without versioning | Old executions replay incorrectly | Use `workflow.patched()` / `Workflow.getVersion()` |
+Heartbeats, versioning, child workflows, retry policies, client code and common pitfalls: `implementation-playbook-operations.md`.

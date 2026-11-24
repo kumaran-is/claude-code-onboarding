@@ -5,7 +5,7 @@ model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 vibe: "A worker fails silently at 3am: who notices, and does a redelivery do the work twice?"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 color: orange
 emoji: "🛠️"
 ---
@@ -31,20 +31,25 @@ and `pubsub-firestore-patterns.md`: read the relevant section before flagging.
 - [ ] No sensitive data (PII, credentials, raw documents) logged; exceptions logged by type (`error_type=type(exc).__name__`), not `str(exc)` or `exc_info=True`
 - [ ] External clients (APIs, cloud services) are injected, not instantiated inline — enables mocking in tests
 - [ ] No bare `asyncio.create_task(...)` statement (ruff `RUF006`): tasks are retained via `spawn()` and drained at shutdown
-- [ ] Every streaming-pull `subscribe()` future is owned by a supervisor; a discarded future is a dead consumer nobody sees
+- [ ] Every streaming-pull `subscribe()` future is owned: a supervisor inside a service, or awaited by a standalone worker that exits non-zero when the stream dies; a discarded future is a dead consumer nobody sees
 - [ ] No session-level advisory locks (`pg_advisory_lock`) through a pool; transaction-scoped locks only
 - [ ] Idempotent handler: a redelivery or re-trigger with the same payload produces the same result (key row + effect in one transaction, constraint-arbitrated)
 
 ### High (P1 — fix before merge)
-- [ ] Poison vs transient classification: malformed input -> ack/4xx (dead-letter), transient failure -> nack/5xx; attempts exhausted -> publish a "failed" event and stop
+- [ ] Poison vs transient classification: malformed input -> publish to the dead-letter topic, then ack (push: 4xx); transient failure -> nack/5xx; attempts exhausted -> publish a "failed" event and stop
+- [ ] Every subscription has a `DeadLetterPolicy` (`max_delivery_attempts` 5–100) and a `RetryPolicy`; the Pub/Sub service agent has publisher on the DLQ topic and subscriber on the source; in-process retry budget kept small (it multiplies with `max_delivery_attempts`)
+- [ ] Exactly-once delivery is not treated as dedupe: handlers still dedupe on an event id; with exactly-once enabled, `ack_with_response()` failures are handled (ack deadline >= 60 s)
 - [ ] Retries only on transient errors (connect/read timeout, 429, 502/503/504), never 4xx, POST only with an idempotency key, jitter, attempts AND total window, one retry layer
 - [ ] Outbox/claim queues: `ORDER BY`, batch cap, attempts counter, backoff, exhausted state logged at ERROR, lease for `SKIP LOCKED` claims; consumer dedupe TTL > retry horizon
 - [ ] Side effects that must not repeat: a `pending` claim is committed BEFORE the external call; provider errors classified (dead target / permanent / transient)
 - [ ] No DB session held across a slow network call: compute first, then open the session, write, commit; no session shared across tasks
 - [ ] Thread-to-loop bridges: loop captured explicitly, `result(timeout=...)` set, future cancelled on timeout, ack/nack explicit
 - [ ] Cleanup (flags, semaphores, probe slots, claims) in `finally`, not only `except Exception` (`CancelledError` is a `BaseException`)
-- [ ] Shutdown: lifespan (not `on_event`), no custom SIGTERM handler, `drain_background()` then stop consumers then dispose engine
-- [ ] `FlowControl` set deliberately for streaming pull (default allows 1000 in-flight messages)
+- [ ] Shutdown inside a FastAPI/uvicorn service: lifespan (not `on_event`), no custom SIGTERM handler (uvicorn owns the signal), `drain_background()` then stop consumers then dispose engine
+- [ ] Shutdown in a standalone streaming-pull worker: SIGTERM via `loop.add_signal_handler` -> readiness false -> `future.cancel()` -> `result(timeout)` with `await_callbacks_on_shutdown=True` -> cancel in-flight handlers (their callbacks nack) -> `subscriber.close()` -> explicit telemetry flush (`python-observability.md` §3.1; signal exits skip `atexit`); drain + grace finish inside the platform's kill window (Cloud Run: SIGKILL 10 s after SIGTERM)
+- [ ] `FlowControl` set deliberately for streaming pull (`max_messages` default 1000, `max_lease_duration` default 3600 s: cap it near 2x the handler timeout)
+- [ ] HTTP requests never wait on a long job: enqueue (Pub/Sub, outbox, Temporal) and return 202 with a status resource
+- [ ] Workers on a different Python runtime than the service (e.g. an OCR worker pinned to 3.13 because its wheels have no cp314 build) are separate uv projects with their own `uv.lock`, and the message contract is a versioned JSON Schema tested from BOTH runtimes
 - [ ] Job completion/failure status written to the canonical status store
 
 ### Medium (P2 — fix within sprint)

@@ -100,7 +100,7 @@ class SubscriptionState extends _$SubscriptionState {
 
 **Steps**:
 1. Create webhook endpoint in FastAPI
-2. Verify authorization header
+2. Verify the HMAC signature (`X-RevenueCat-Webhook-Signature`) on the raw body
 3. Handle subscription lifecycle events:
 
 | Event | Action |
@@ -114,7 +114,7 @@ class SubscriptionState extends _$SubscriptionState {
 
 4. Sync subscription state to database
 
-**Gate**: Webhook handler processes all event types, authorization verified
+**Gate**: Webhook handler processes all event types; HMAC signature (X-RevenueCat-Webhook-Signature) verified on the raw body
 
 ---
 
@@ -125,10 +125,10 @@ class SubscriptionState extends _$SubscriptionState {
 - Use App Store Sandbox / Google Play test tracks for integration tests
 
 **Python tests**:
-- Mock RevenueCat API responses with `httpx_mock`
+- Mock RevenueCat API responses by injecting an `httpx.AsyncClient` with `httpx.MockTransport` (no plugin; see `revenuecat` skill)
 - Test entitlement verification (active, expired, missing)
 - Test webhook handler for each event type
-- Test authorization header verification
+- Test HMAC signature verification (valid, tampered body, empty secret refused at boot)
 
 **Gate**: All tests pass across Flutter and Python
 
@@ -141,7 +141,7 @@ class SubscriptionState extends _$SubscriptionState {
 - [ ] API keys in environment variables only
 - [ ] Dedicated API v2 secret key for MCP server
 - [ ] Server-side entitlement verification for all gated features
-- [ ] Webhook authorization header verified
+- [ ] HMAC signing enabled; X-RevenueCat-Webhook-Signature verified on the raw body; signing secret is SecretStr with min_length=16 (rejects empty or placeholder values)
 - [ ] `Purchases.logIn()` after authentication
 - [ ] `Purchases.logOut()` on sign-out
 - [ ] Sandbox keys in dev/staging, production keys in production only

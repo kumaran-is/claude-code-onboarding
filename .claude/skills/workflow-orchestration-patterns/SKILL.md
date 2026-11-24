@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -31,7 +31,7 @@ docker run -d --name temporal \
 # io.temporal:temporal-spring-boot-autoconfigure-alpha:0.6.0
 
 # Python 3.14 — uv add
-uv add temporalio==1.7.0 fastapi uvicorn
+uv add "temporalio==1.36.1"   # executed: reference/implementation-playbook.md (Python 3.14.10)
 
 # NestJS 11.x — npm
 npm install @temporalio/client @temporalio/worker @temporalio/workflow @temporalio/activity
@@ -58,9 +58,9 @@ npm install @temporalio/client @temporalio/worker @temporalio/workflow @temporal
 | Entity Workflow (Actor) | One workflow per entity lifecycle (cart, account, order) | `reference/implementation-playbook.md#entity` |
 | Fan-Out / Fan-In | Parallel execution of N tasks with result aggregation | `reference/implementation-playbook.md#fanout` |
 | Async Callback / Signal | Waiting for external event or human approval | `reference/implementation-playbook.md#signals` |
-| Activity Heartbeat | Long-running activities (>30s) with progress tracking | `reference/implementation-playbook.md#heartbeat` |
-| Workflow Versioning | Safe code changes while old executions still running | `reference/implementation-playbook.md#versioning` |
-| Child Workflows | Decompose large workflows for scalability (1M tasks = 1K x 1K) | `reference/implementation-playbook.md#child` |
+| Activity Heartbeat | Long-running activities (>30s) with progress tracking | `reference/implementation-playbook-operations.md#heartbeat` |
+| Workflow Versioning | Safe code changes while old executions still running | `reference/implementation-playbook-operations.md#versioning` |
+| Child Workflows | Decompose large workflows for scalability (1M tasks = 1K x 1K) | `reference/implementation-playbook-operations.md#child` |
 
 ## Workflow vs Activity Decision Rule
 
@@ -90,7 +90,7 @@ Agent-side patterns: `agentic-ai-dev/reference/tool-execution-safety.md` (§2 au
 
 ## Conventions & Rules
 
-> For per-SDK implementation templates (Java, Python, NestJS), read `reference/implementation-playbook.md`
+> For per-SDK implementation templates (Java, Python, NestJS), read `reference/implementation-playbook.md` and `reference/implementation-playbook-operations.md`
 
 ## Documentation Sources
 
@@ -108,7 +108,8 @@ Before generating code, consult these sources for current SDK APIs:
 
 | File | Content | When to Use |
 |------|---------|-------------|
-| `reference/implementation-playbook.md` | Full workflow + activity code for Java, Python, NestJS; Saga, Entity, Fan-out, Signal, Heartbeat, Versioning, Child Workflow patterns | Any Temporal implementation |
+| `reference/implementation-playbook-operations.md` | Heartbeat, Versioning, Child Workflow, retry policies, client code, common pitfalls (Java, Python, NestJS) | Long-running activities, deploys, retries, starting workflows |
+| `reference/implementation-playbook.md` | SDK setup + Saga, Entity, Fan-out, Signal patterns for Java, Python, NestJS | Any Temporal implementation |
 
 ## Common Commands
 
@@ -134,7 +135,7 @@ npm run start:worker   # defined in package.json scripts
 
 ## Error Handling
 
-> For retry policy templates and non-retryable error classification per SDK, read `reference/implementation-playbook.md#retry`
+> For retry policy templates and non-retryable error classification per SDK, read `reference/implementation-playbook-operations.md#retry`
 
 **Activity retry rule:** classify every exception before throwing. Validation errors and business rule violations -> `ApplicationFailure.newNonRetryableFailure()`. Transient network/timeout errors -> retryable (default).
 

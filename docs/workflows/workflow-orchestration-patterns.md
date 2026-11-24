@@ -80,12 +80,12 @@ Activities = all external interactions. Define and test these before the workflo
 # Python example — activity with idempotency + error classification
 @activity.defn
 async def charge_payment(order_id: str, amount_cents: int) -> None:
-    # Idempotency: check if already processed
-    if await payment_db.is_processed(order_id):
-        return  # safe to skip — already done
-    result = await gateway.charge(order_id, amount_cents)
+    # Idempotency: the gateway key is derived from order_id, so a retried attempt is not a second charge
+    # (a check-then-charge on your own table races between attempts)
+    result = await gateway.charge(order_id, amount_cents, idempotency_key=f"charge-{order_id}")
     if result.code == "INSUFFICIENT_FUNDS":
-        raise ApplicationError("Declined", "InsufficientFundsError", non_retryable=True)
+        # type= is keyword-only: a positional 2nd argument becomes a detail and never matches the retry policy
+        raise ApplicationError("Declined", type="InsufficientFundsError", non_retryable=True)
 ```
 
 ---
@@ -130,8 +130,8 @@ For Saga pattern with compensation, see `implementation-playbook.md#saga`.
 Worker binds workflow + activity implementations to a task queue. Run as a separate process from your API server.
 
 ```bash
-# Python — separate worker process
-python -m src.worker &
+# Python — separate worker process (SIGTERM drains via graceful_shutdown_timeout: implementation-playbook.md)
+uv run python -m src.worker
 
 # Java — Spring Boot auto-registers via application.yml
 mvn spring-boot:run
@@ -149,19 +149,20 @@ Worker must be running BEFORE any workflow is started. Workers pull tasks from T
 Expose workflow start as a POST endpoint. Workflow ID must be deterministic (use entity ID).
 
 ```python
-# Python / FastAPI
-@app.post("/orders")
-async def create_order(input: OrderInput):
-    handle = await temporal_client.start_workflow(
+# Python / FastAPI (client on app.state from the lifespan)
+@app.post("/orders", status_code=202)
+async def create_order(order: OrderInput, request: Request) -> dict[str, str]:
+    handle = await request.app.state.temporal.start_workflow(
         OrderSagaWorkflow.run,
-        input,
-        id=f"order-{input.order_id}",      # idempotent workflow ID
+        order,
+        id=f"order-{order.order_id}",      # business key
         task_queue="order-processing",
+        id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,  # client retry -> same execution
     )
-    return {"workflow_id": handle.id}
+    return {"workflow_id": handle.id}      # never await handle.result() in the request
 ```
 
-**Workflow ID rule:** Use the entity's natural key (`order-{order_id}`, `cart-{user_id}`). Temporal prevents duplicate workflow IDs by default — starting with the same ID returns the existing execution.
+**Workflow ID rule:** Use the entity's natural key (`order-{order_id}`, `cart-{user_id}`). By default a second start with the ID of a running workflow raises `WorkflowAlreadyStartedError`; pass `id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING` to get the existing execution instead (both executed on temporalio 1.36.1).
 
 ---
 
@@ -170,33 +171,33 @@ async def create_order(input: OrderInput):
 Temporal provides a test environment with time-skipping. Use it for all workflow tests.
 
 ```python
-# Python — workflow test with time-skipping
+# Python — workflow test with time-skipping (temporalio 1.36.1; pytest-asyncio module loop scope)
+import uuid
+from collections.abc import AsyncIterator
+
 import pytest
+from temporalio.client import WorkflowFailureError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
-@pytest.mark.asyncio
-async def test_order_saga_happy_path():
-    async with await WorkflowEnvironment.start_time_skipping() as env:
-        async with Worker(
-            env.client,
-            task_queue="test",
-            workflows=[OrderSagaWorkflow],
-            activities=[reserve_inventory, charge_payment, fulfill_order],
-        ):
-            result = await env.client.execute_workflow(
-                OrderSagaWorkflow.run,
-                OrderInput(order_id="test-1", amount_cents=1000, product_id="sku-1"),
-                id="test-order-1",
-                task_queue="test",
-            )
-            assert result == "Order test-1 fulfilled"
 
-@pytest.mark.asyncio
-async def test_order_saga_payment_failure_triggers_compensation():
-    # Mock charge_payment to raise InsufficientFundsError
-    # Verify release_inventory compensation was called
-    ...
+@pytest.fixture(scope="module")
+async def env() -> AsyncIterator[WorkflowEnvironment]:
+    async with await WorkflowEnvironment.start_time_skipping() as e:
+        yield e
+
+
+async def test_declined_payment_compensates(env: WorkflowEnvironment) -> None:
+    ledger = Ledger(decline_payment=True)  # activity object with recorded calls
+    queue = f"q-{uuid.uuid4()}"
+    async with Worker(env.client, task_queue=queue, workflows=[OrderSagaWorkflow],
+                      activities=[ledger.reserve_inventory, ledger.release_inventory, ledger.charge_payment,
+                                  ledger.refund_payment, ledger.fulfil_order]):
+        with pytest.raises(WorkflowFailureError):
+            await env.client.execute_workflow(OrderSagaWorkflow.run, ORDER, id=f"order-{uuid.uuid4()}",
+                                              task_queue=queue)
+    assert ledger.calls.count("charge") == 1          # non-retryable: one attempt
+    assert ledger.calls[-2:] == ["refund", "release"]  # LIFO compensation
 ```
 
 ---

@@ -53,51 +53,7 @@ uv run pip-audit -r requirements.audit.txt --no-deps --disable-pip > audit.log 2
 
 A mutable tag can be re-pointed after review (tag hijack of a CI action is a known supply-chain pattern); a SHA cannot. Enable update tooling (Dependabot/Renovate) for each pinned file type, otherwise pins rot silently. Replace `COPY --from=<image-ref>` with a pinned `FROM ... AS stage`.
 
-Gate (executed with controls: self-test, good file exit 0, tag-pinned action exit 1, undigested `FROM`/`COPY --from=<image>` exit 1, zero files exit 2):
-
-```bash
-#!/usr/bin/env bash
-# usage: check-pins.sh <file>...   |   check-pins.sh --selftest
-set -u
-
-scan() {  # prints violations; returns 1 if any
-  local f=$1 hits
-  case "$f" in
-    *.yml|*.yaml)
-      hits=$(grep -nE '^[[:space:]-]*uses:[[:space:]]+[^./[:space:]]' "$f" | grep -vE '@[0-9a-f]{40}([[:space:]]|$)') ;;
-    *)
-      hits=$(grep -nE '^FROM[[:space:]]' "$f" | grep -vE '@sha256:[0-9a-f]{64}|FROM[[:space:]]+scratch'
-             grep -nE '^COPY[[:space:]]+--from=[^[:space:]]*[:/.]|:latest' "$f") ;;
-  esac
-  [ -z "$hits" ] && return 0
-  printf '%s\n' "$hits" | sed "s|^|$f: |"
-  return 1
-}
-
-selftest() {
-  d=$(mktemp -d)   # global on purpose: the EXIT trap runs after this function returns
-  trap 'rm -rf "$d"' EXIT INT TERM
-  sha40=$(printf '0%.0s' $(seq 40)); sha64=$(printf 'a%.0s' $(seq 64))
-  printf 'steps:\n  - uses: actions/checkout@%s # v4\n' "$sha40" > "$d/good.yml"
-  printf 'steps:\n  - uses: actions/checkout@v4\n' > "$d/bad.yml"
-  printf 'FROM python:3.14-slim@sha256:%s AS b\n' "$sha64" > "$d/Dockerfile.good"
-  printf 'FROM python:3.14-slim\nCOPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv\n' > "$d/Dockerfile.bad"
-  scan "$d/good.yml" >/dev/null || { echo "SELFTEST FAIL: good workflow flagged"; return 1; }
-  scan "$d/Dockerfile.good" >/dev/null || { echo "SELFTEST FAIL: good Dockerfile flagged"; return 1; }
-  scan "$d/bad.yml" >/dev/null && { echo "SELFTEST FAIL: tag-pinned action not flagged"; return 1; }
-  scan "$d/Dockerfile.bad" >/dev/null && { echo "SELFTEST FAIL: undigested FROM/COPY --from not flagged"; return 1; }
-  echo "selftest ok"
-}
-
-if [ "${1:-}" = "--selftest" ]; then selftest; exit $?; fi
-[ "$#" -gt 0 ] || { echo "no files given: scanning nothing is a failure"; exit 2; }
-rc=0
-for f in "$@"; do
-  [ -f "$f" ] || { echo "missing file: $f"; exit 2; }
-  scan "$f" || rc=1
-done
-exit $rc
-```
+Gate: `bash .claude/scripts/check-pins.sh <workflow and Dockerfile paths>` (copy it into a consuming repo's `scripts/`). Exit 0 clean, 1 violations with `file:line`, 2 when given no files (scanning nothing is a failure). `--selftest` covers a SHA-pinned and a local action (clean), a tag-pinned action, an undigested `FROM` and a `COPY --from=<image>` (flagged), and zero files (exit 2); the toolkit's own CI runs it on `.github/workflows/*.yml`.
 
 Runs on macOS bash 3.2. Limit: a multi-stage `FROM builder AS runtime` (stage reference, no image) is flagged; allow-list it by name if you use it. Run `--selftest` in CI before the real scan.
 

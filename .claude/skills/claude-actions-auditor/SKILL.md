@@ -306,3 +306,64 @@ When analyzing a remote repo:
 - **Header:** `## Remote Analysis: owner/repo (@ref)`
 - **File links:** `https://github.com/owner/repo/blob/{ref}/.github/workflows/{filename}`
 - **Summary:** "Analyzed N workflows, M Claude Code Action instances, P findings in owner/repo"
+
+## Secure Baseline Workflow (start here instead of the README example)
+
+A review-on-mention workflow that passes all 9 vectors. Verified 2026-11-24: actionlint 1.7.12 exit 0 and `.claude/scripts/check-pins.sh` exit 0 on this exact YAML; inputs (`anthropic_api_key`, `claude_args`) and the trigger rules read from the action's `action.yml` and `docs/security.md` at v1.0.289. It has not run on GitHub-hosted runners from this repo. Re-resolve the SHA before copying: `git ls-remote https://github.com/anthropics/claude-code-action 'refs/tags/<tag>^{}'` (annotated tags: pin the `^{}` commit).
+
+```yaml
+name: Claude (review on mention)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write # default Claude GitHub App auth (no github_token input) exchanges an OIDC token
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Claude
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --max-turns 12
+            --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*)"
+            --disallowedTools "Write,Edit,WebFetch,WebSearch"
+```
+
+Why each line is there:
+
+- **Triggers:** comment and review events only. No `pull_request_target` or `workflow_run`: both run with the base repository's secrets (Vector D). The action itself only runs for users with write access and skips bots and fork PRs by default (`allowed_bots` and `allow_fork_prs` stay unset; `allowed_bots: '*'` is Vector I).
+- **No event text in `prompt`, `env:` or `claude_args`:** the action reads the triggering comment itself. Interpolating `${{ github.event.comment.body }}` anywhere Claude reads it is Vectors A and B. The `if:` uses `contains(...)`, which is evaluated by the runner, not passed to Claude.
+- **Least privilege:** `permissions: {}` at the top, then the job grants only what a review needs. `contents: write` is added only for a workflow that is meant to push commits, and then only behind a protected branch rule.
+- **Tools:** `claude_args` with `--allowedTools` and `--disallowedTools`, since the `allowed_tools` / `disallowed_tools` inputs are deprecated. No `Bash(*)` or unscoped `Bash` (Vectors H and I); never feed Claude's output to `eval` or a later `run:` step (Vector G). No web access in a job that holds secrets.
+- **Bounds:** `--max-turns`, `timeout-minutes` and a per-PR `concurrency` group cap cost and runaway loops.
+- **Pins:** every `uses:` is a 40-hex SHA with its version comment. `.github/dependabot.yml` (`github-actions`) keeps the pins current, and `check-pins.sh` plus actionlint run in CI.
+

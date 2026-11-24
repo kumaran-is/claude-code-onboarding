@@ -67,6 +67,11 @@ selftest() {
   }
   mk yamlbad.md 'tools: Read\n' 'Body.'; sed -i.bak 's/^description: .*/description: Use when: the lint selftest runs/' "$tmp/yamlbad.md"; rm -f "$tmp/yamlbad.md.bak"
   check "advisory: invalid YAML frontmatter warns, exit stays 0" 0 "WARN yaml (yamlbad.md): invalid YAML"
+  mk exdesc.md 'tools: Read\n' 'Body.'; sed -i.bak 's/^description: .*/description: Use for fixtures.\\n\\n<example>\\nUser: hi\\n<\/example>/' "$tmp/exdesc.md"; rm -f "$tmp/exdesc.md.bak"
+  check "positive: <example> inside the description -> fail" 1 "description embeds <example> blocks"
+  mk longdesc.md 'tools: Read\n' 'Body.'; out=$(AGENT_DESC_WARN_CHARS=30 bash "$self" --dir "$tmp" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -qF "WARN description size (longdesc.md)"; then echo "  ok   warning: description over the size threshold warns, exit 0"; else echo "  FAIL long description (rc=$rc out=$out)"; fail=1; fi
+  rm -f "$tmp"/*.md
   mk yamlok.md 'tools: Read\n' 'Body.'; check "negative: valid frontmatter -> 0 strict-parse failures" 0 "0 of 1 agent file(s) fail a strict parse"
   check "no agent files -> fail" 1 "no agent files"
   mk good.md 'tools: Read, Grep\n' 'Body.'; check "negative: tools: grant passes" 0 "1 passed, 0 failed"
@@ -107,6 +112,7 @@ AGENTS_DIR="$(cd "$AGENTS_DIR" && pwd)"
 
 VALID_COLORS="green blue red orange yellow purple"
 REQUIRED_FIELDS="name description model vibe color emoji"
+DESC_WARN_CHARS="${AGENT_DESC_WARN_CHARS:-1000}"
 
 passed=0
 failed=0
@@ -201,6 +207,15 @@ for agent_file in "$AGENTS_DIR"/*.md; do
   if [[ "$desc_len" -le 20 ]]; then
     agent_errors+=("description too short (${desc_len} chars, need > 20)")
   fi
+  # Descriptions are loaded into every session's agent list: examples go in the body, size stays bounded.
+  if [[ "$desc_value" == *"<example>"* ]]; then
+    agent_errors+=("description embeds <example> blocks; move them to a '## Dispatch examples' body section")
+  fi
+  if [[ "$desc_len" -gt "$DESC_WARN_CHARS" ]]; then
+    agent_desc_warn="description is ${desc_len} chars (> ${DESC_WARN_CHARS}); keep triggers, move detail to the body"
+  else
+    agent_desc_warn=""
+  fi
 
   # ── 7. reviewer/auditor filenames must have ## Success Metrics ────────────
   base_noext="${filename%.md}"
@@ -232,6 +247,7 @@ for agent_file in "$AGENTS_DIR"/*.md; do
     for w in ${agent_warnings[@]+"${agent_warnings[@]}"}; do
       echo "   WARN reviewer least-privilege ($filename): $w"
     done
+    [[ -n "$agent_desc_warn" ]] && echo "   WARN description size ($filename): $agent_desc_warn"
   else
     failed=$((failed + 1))
     echo "❌ $filename"

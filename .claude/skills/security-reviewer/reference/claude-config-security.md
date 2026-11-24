@@ -85,7 +85,7 @@ checks:
 - [ ] Write-capable servers (cloud, payments, stores, containers) start with the narrowest tool
       set or a read-only endpoint, and are not wildcard-allowed in `settings.json`.
 - [ ] Remote HTTP servers prefer OAuth over a static `Authorization` header.
-- [ ] Every server in `.mcp.json` is listed with its risk in `.claude/rules/skill-triggers.md` §P0;
+- [ ] Every server in `.mcp.json` is listed with its risk in `mcp-security.md` §7 (`check-mcp-register.sh`);
       `.claude/mcp-config.sha256` is refreshed only after that review.
 - [ ] A new MCP server, plugin or skill from outside the repo passes third-party intake first
       (provenance, pin, data handling, permissions, tool-surface review for hidden instructions,

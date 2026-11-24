@@ -1,0 +1,16 @@
+# Keeps the SHA-pinned actions in .github/workflows/ current: a pin without update tooling rots silently
+# (.claude/skills/deployment-ci-cd/reference/python-ci-supply-chain.md section 3). Dependabot rewrites the SHA
+# and the `# vX.Y.Z` comment together; the toolkit-lint `workflows` job re-checks pins and actionlint on its PR.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

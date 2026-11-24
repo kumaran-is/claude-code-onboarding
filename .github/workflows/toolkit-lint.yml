@@ -12,7 +12,9 @@ on:
       - 'README.md'
       - '.claude/**'
       - 'docs/**'
-      - '.github/workflows/toolkit-lint.yml'
+      - '.mcp.json'
+      - '.github/workflows/**'
+      - '.github/dependabot.yml'
   workflow_dispatch:
 
 permissions:
@@ -45,6 +47,9 @@ jobs:
 
       - name: Testing-tool routing
         run: bash .claude/scripts/lint-testing-tools.sh
+
+      - name: MCP risk register matches .mcp.json (both directions)
+        run: bash .claude/scripts/check-mcp-register.sh
 
       - name: Documentation references (links, anchors and toolkit paths resolve; line suffixes in range)
         run: |
@@ -152,20 +157,58 @@ jobs:
           [ "$checked" -gt 0 ] || { echo "::error::no shell files found"; exit 1; }
           [ "$failed" -eq 0 ]
 
+      - name: Every hook declares --selftest
+        run: |
+          missing=0
+          checked=0
+          for f in .claude/hooks/*.sh .claude/hooks/*.py; do
+            [ -f "$f" ] || continue
+            checked=$((checked + 1))
+            if ! grep -q -- '--selftest' "$f"; then echo "::error file=$f::hook has no --selftest (hook-and-gate-authoring.md)"; missing=$((missing + 1)); fi
+          done
+          echo "checked=$checked missing=$missing"
+          [ "$checked" -gt 0 ] || { echo "::error::no hooks found"; exit 1; }
+          [ "$missing" -eq 0 ]
+
       - name: Selftests (every hook/script that declares --selftest)
         run: |
           failed=0
           ran=0
-          for f in $(grep -l -- '--selftest' .claude/hooks/* .claude/scripts/*); do
+          grep -l -- '--selftest' .claude/hooks/* .claude/scripts/* > selftest-files.txt || true
+          while IFS= read -r f; do
             ran=$((ran + 1))
             rc=0
             case "$f" in
-              *.py) python3 "$f" --selftest > selftest.log 2>&1 || rc=$? ;;
-              *)    bash "$f" --selftest > selftest.log 2>&1 || rc=$? ;;
+              *.py) python3 "$f" --selftest < /dev/null > selftest.log 2>&1 || rc=$? ;;
+              *)    bash "$f" --selftest < /dev/null > selftest.log 2>&1 || rc=$? ;;
             esac
+            # exit 0 alone is not proof: a hook that ignores the flag reads empty stdin and exits 0
+            if [ "$rc" -eq 0 ] && ! grep -q 'selftest PASS' selftest.log; then rc=99; echo "::error file=$f::no 'selftest PASS' line"; fi
             echo "$f exit=$rc"
             if [ "$rc" -ne 0 ]; then cat selftest.log; echo "::error file=$f::selftest exit $rc"; failed=$((failed + 1)); fi
-          done
+          done < selftest-files.txt
           echo "ran=$ran failed=$failed"
           [ "$ran" -gt 0 ] || { echo "::error::no selftests discovered"; exit 1; }
           [ "$failed" -eq 0 ]
+
+  workflows:
+    name: Workflow lint (actionlint) and content pins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: actionlint (1.7.12, image pinned by index digest)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+
+      - name: Every uses is SHA-pinned
+        run: |
+          bash .claude/scripts/check-pins.sh --selftest
+          shopt -s nullglob
+          bash .claude/scripts/check-pins.sh .github/workflows/*.yml .github/workflows/*.yaml .github/actions/*/action.yml .github/actions/*/action.yaml

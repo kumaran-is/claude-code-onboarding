@@ -49,7 +49,7 @@ New projects must come from the scaffold command. In the MAIN session run the Sk
 The scaffold command itself runs the raw creator with an explicit marker:
     CC_SCAFFOLD=$2 $1 ...
 Sub-agents cannot invoke slash commands: run the scaffold first, then hand them the scaffolded path.
-See .claude/rules/leverage-patterns.md (Orchestrator Pre-Flight).
+See .claude/skills/subagent-driven-development/reference/orchestration-and-context.md (Orchestrator Pre-Flight).
 EOF
   exit 2
 }

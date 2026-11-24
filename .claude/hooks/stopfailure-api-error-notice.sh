@@ -14,6 +14,23 @@
 # here (the stdin field name varies by version, so we read both `error_type` and `error`).
 set -uo pipefail
 
+if [ "${1:-}" = "--selftest" ]; then
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"; fail=0
+  check() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2: $3"; fail=1; fi; }
+  bash -n "$self"; check $? "parses (bash -n)" ""
+  tmp=$(mktemp -d); mkdir -p "$tmp/.claude"
+  err=$(printf '{"error_type":"rate_limit","error_message":"429 too many"}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1 >/dev/null)
+  case "$err" in *"rate limit hit"*) r=0 ;; *) r=1 ;; esac; check $r "positive: rate_limit gets specific advice" "$err"
+  grep -q "StopFailure: rate_limit | 429 too many" "$tmp/.claude/api-error-detected.log" 2>/dev/null
+  check $? "positive: the audit line is written" "$(cat "$tmp/.claude/api-error-detected.log" 2>/dev/null)"
+  rm -f "$tmp/.claude/api-error-detected.log"
+  err=$(printf '' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1)
+  [ -z "$err" ] && [ ! -f "$tmp/.claude/api-error-detected.log" ]; check $? "negative: an empty payload writes nothing" "$err"
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  exit "$fail"
+fi
+
 input=$(cat 2>/dev/null || true)
 [ -z "$input" ] && exit 0
 

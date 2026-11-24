@@ -2,7 +2,7 @@
 # session-mcp-governance.sh — SessionStart: MCP supply-chain / tamper guard.
 #
 # WHY: .mcp.json wires MCP servers that can reach your DB, cloud, browser, payments, network,
-# etc. skill-triggers.md §P0 ("Scan Before Trust") + its trusted-MCP table say to vet a newly
+# etc. skill-triggers.md §P0 ("Scan Before Trust") and the risk register in security-reviewer/reference/mcp-security.md §7 say to vet a newly
 # added server before trusting it — but that was PROSE, not enforced. This hook enforces it:
 # it warns at session start if the active MCP set drifts from the approved allowlist, or if
 # .mcp.json changed since it was last approved (the CVE-2025-54135/54136 post-approval-tamper

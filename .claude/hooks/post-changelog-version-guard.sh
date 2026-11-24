@@ -10,6 +10,26 @@
 # Always exits 0 — this is a warning hook, not a blocker.
 set -o pipefail
 
+if [ "${1:-}" = "--selftest" ]; then
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"; fail=0
+  check() { if [ "$1" = 0 ]; then echo "  ok   $2"; else echo "  FAIL $2: $3"; fail=1; fi; }
+  bash -n "$self"; check $? "parses (bash -n)" ""
+  tmp=$(mktemp -d)
+  printf '# Changelog\n\n## [Unreleased]\n### Added\n- x\n' > "$tmp/CHANGELOG.md"
+  out=$(jq -n --arg f "$tmp/CHANGELOG.md" '{tool_input:{file_path:$f}}' | "$BASH" "$self")
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("CHANGELOG VERSION MISSING")' >/dev/null 2>&1
+  check $? "positive: an Unreleased-only CHANGELOG.md is flagged" "$out"
+  printf '## [Unreleased]\n\n## [1.2.3] - 2026-11-24\n- x\n' > "$tmp/CHANGELOG.md"
+  out=$(jq -n --arg f "$tmp/CHANGELOG.md" '{tool_input:{file_path:$f}}' | "$BASH" "$self")
+  [ -z "$out" ]; check $? "negative: a versioned CHANGELOG.md is silent" "$out"
+  printf '## [Unreleased]\n' > "$tmp/NOTES.md"
+  out=$(jq -n --arg f "$tmp/NOTES.md" '{tool_input:{file_path:$f}}' | "$BASH" "$self")
+  [ -z "$out" ]; check $? "negative: other files are ignored" "$out"
+  rm -rf "$tmp"
+  if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
+  exit "$fail"
+fi
+
 input=$(cat)
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // ""' 2>/dev/null) || file_path=""
 

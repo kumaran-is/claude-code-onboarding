@@ -101,7 +101,7 @@ If risk score ≥ 7 and PR has >20 files or >1000 lines → **split the PR** bef
 |-------|-----------------|
 | Java/Spring | `./mvnw test`, `mvn compile`, CVE audit |
 | NestJS | `npm test`, `npm run build`, `npm audit` |
-| Python | `pytest`, `ruff check`, `mypy`, `pip audit` |
+| Python | `/verify` Python block: `uv lock --check`, `uv sync --locked`, ruff, mypy, pytest, `pip-audit` on the exported lock |
 | Angular | `ng test --watch=false`, `ng build` |
 | Flutter | `flutter test`, `flutter analyze` |
 

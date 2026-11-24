@@ -140,8 +140,7 @@ npx vitest run                      # Full suite
 #### Python / FastAPI
 
 ```python
-# Skill: python-dev — pytest + httpx AsyncClient + real DB
-@pytest.mark.asyncio
+# Skill: python-dev — pytest + httpx2 AsyncClient + real DB (asyncio_mode = "auto": no marker needed)
 async def test_create_order_returns_201(client: AsyncClient, auth_headers: dict):
     response = await client.post(
         "/orders",
@@ -153,7 +152,6 @@ async def test_create_order_returns_201(client: AsyncClient, auth_headers: dict)
     assert "id" in data
     assert data["status"] == "pending"
 
-@pytest.mark.asyncio
 async def test_create_order_missing_field_returns_422(client: AsyncClient, auth_headers: dict):
     response = await client.post(
         "/orders",
@@ -162,7 +160,6 @@ async def test_create_order_missing_field_returns_422(client: AsyncClient, auth_
     )
     assert response.status_code == 422
 
-@pytest.mark.asyncio
 async def test_create_order_unauthorized_returns_401(client: AsyncClient):
     response = await client.post("/orders", json={"item_id": "item-1", "quantity": 2})
     assert response.status_code == 401

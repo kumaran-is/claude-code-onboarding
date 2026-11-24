@@ -14,25 +14,15 @@ Full Python/FastAPI feature lifecycle from scaffold through TDD to reviewed, sec
 
 **Trigger**: No existing FastAPI project
 **Command**: `/scaffold-python-api [project-name]`
-**15-step process** (from `commands/scaffold-python-api.md`):
-1. Create `.gitignore` first
-2. Initialize project with `pyproject.toml`
-3. Set up virtual environment with `uv` — see `uv-package-manager` skill for lockfile setup (`uv lock` + `uv sync --frozen`)
-4. Create folder structure
-5. Create `main.py` with FastAPI app
-6. Create `config.py` with `pydantic-settings`
-7. Create sample Pydantic model
-8. Create sample route, service, repository
-9. Add health check endpoint
-10. Create test `conftest.py`
-11. Add pytest test
-12. Configure `ruff` and `mypy`
-13. Create Dockerfile
-14. Create `.env.example`
-15. Run `pip audit` and print summary
+**What it does** (details in `commands/scaffold-python-api.md`):
+1. `uv init --package` on Python 3.14 with exact `==` pins and a committed `uv.lock`
+2. `src/<package>/` layout: fail-fast `Settings` (`hide_input_in_errors=True`), structlog, one error envelope, request-id middleware, JWT auth dependency, a sample resource (route → service → repository), `/api/v1/health` and `/api/v1/ready`
+3. Alembic with config in `pyproject.toml` and a first revision
+4. Tests (happy path, 422, 401 negatives, owner isolation, route order, 500 envelope), OpenAPI snapshot script
+5. Digest-pinned multi-stage Dockerfile (non-root, read-only friendly) and a GitHub Actions workflow
 
-**Produces**: Production-ready FastAPI service scaffold
-**Gate**: `pytest` passes, `ruff check .` clean, `mypy .` clean
+**Produces**: FastAPI service scaffold that passes its own gates
+**Gate**: the `/verify` Python block exits 0 line by line (lock, sync, ruff, format, mypy, pytest with a database, pip-audit, `alembic check`), plus the command's negative controls
 
 ---
 
@@ -61,10 +51,10 @@ Full Python/FastAPI feature lifecycle from scaffold through TDD to reviewed, sec
 - **Async by default** — `async def` for all route handlers and services
 - **Validation** — Pydantic v2 models at all API boundaries
 - **Config** — `pydantic-settings` with `BaseSettings`, env var injection
-- **Dependency injection** — FastAPI `Depends()` for services, DB sessions
-- **Error handling** — `HTTPException` with structured detail; never return raw strings
+- **Dependency injection** — `Annotated[..., Depends(...)]` aliases for services, DB sessions and the principal
+- **Error handling** — domain exceptions mapped to one error envelope with `requestId` (`fastapi-error-handling.md`); never return raw strings
 - **Database** — async SQLAlchemy with `AsyncSession`, or repository pattern
-- **Testing** — `pytest-asyncio`, `httpx.AsyncClient` for E2E, `pytest-cov`
+- **Testing** — `pytest-asyncio`, `httpx2.AsyncClient` + `ASGITransport` for app tests (httpx stays for outbound clients), `pytest-cov`
 
 **Gate**: Skill loaded, MCP queried for any API signatures being used
 
@@ -78,7 +68,7 @@ Full Python/FastAPI feature lifecycle from scaffold through TDD to reviewed, sec
 
 **For Python** (from `skills/test-driven-development/references/tdd-patterns-python.md`):
 - `pytest-asyncio` for async test functions
-- `httpx.AsyncClient` with `ASGITransport` for endpoint tests
+- `httpx2.AsyncClient` with `ASGITransport` for endpoint tests, inside `app.router.lifespan_context(app)`
 - `pytest.fixture` for shared setup
 - `unittest.mock.AsyncMock` for mocking async dependencies
 
@@ -109,23 +99,23 @@ Full Python/FastAPI feature lifecycle from scaffold through TDD to reviewed, sec
 ### Phase 4 — Implement Feature
 
 **Build order**:
-1. Pydantic model → `src/<service>/models/<name>.py`
-2. Request/Response schemas → `src/<service>/schemas/<name>.py`
+1. ORM model → `src/<package>/models/db/<name>.py`; Alembic revision in the same change (`alembic check` must pass)
+2. Request/Response models → `src/<package>/models/<name>.py`
    - Use `pydantic-models-py` skill for Base/Create/Update/Response model pattern
-3. Repository → `src/<service>/repositories/<name>_repository.py`
-4. Service → `src/<service>/services/<name>_service.py`
-5. Router → `src/<service>/routers/<name>.py`
-6. Register router in `main.py`
+3. Repository → `src/<package>/repositories/<name>_repository.py` (flush only)
+4. Service → `src/<package>/services/<name>_service.py` (owns the commit)
+5. Routes → `src/<package>/api/routes/<name>.py`
+6. Register the router in `create_app()` (`main.py`) and regenerate the OpenAPI snapshot
 
 **Standards**:
-- No `print()` — use `logging.getLogger(__name__)` with structured context
+- No `print()` — use the project's structlog logger with structured context; log caught exceptions with `log_exception` (type only)
 - No bare `except:` — always catch specific exceptions, log, and either rethrow or raise a domain exception (see `reference/fastapi-error-handling.md`)
 - All secrets via environment variables — never hardcoded
 - Pydantic v2 `model_validator` for cross-field validation
 - Async database sessions via `AsyncSession` context manager
 
 **Produces**: Working feature, `pytest` passes
-**Gate**: `pytest` green, `ruff check .` clean, `mypy .` clean
+**Gate**: `/verify full` Python block exits 0 line by line (ruff, format, mypy strict, pytest)
 
 ---
 
@@ -151,32 +141,27 @@ Third-party login (Google, GitHub)?
 2. Create auth Pydantic schemas: `TokenResponse`, `LoginRequest`, `UserCreate`
 3. Implement `/auth/register` endpoint — hash password with `bcrypt` (cost ≥ 12)
 4. Implement `/auth/login` endpoint — verify password, return JWT access + refresh tokens
-5. Create `get_current_user` dependency — decode JWT, load user from DB
-6. Create `get_current_user_required` dependency — raises HTTP 401 if not authenticated
-7. Apply dependencies to protected routes via `Depends(get_current_user_required)`
+5. Create `get_current_subject` (verify the JWT: pinned algorithms, `exp`/`iss`/`aud`/`sub`) and `get_current_user` (load the account; disabled or deleted → 401)
+6. Apply them to protected routes through an `Annotated` alias (`CurrentUser`); never take the user id from the body
+7. Tests: missing token, wrong key, `none` algorithm, expired, wrong audience → 401; another user's object → 404
 
 **Standards** (from `code-standards.md`):
 - Passwords MUST be hashed with bcrypt (cost ≥ 12) or argon2 — never store plaintext
 - JWT secrets via environment variable — never hardcoded
 - Access tokens: short-lived (15 min); refresh tokens: longer-lived (7 days), rotated on use
-- `get_current_user` → optional auth; `get_current_user_required` → raises 401
 
 ```python
-# Dependency pattern — see reference/fastapi-auth-security.md §4 "OAuth2 Bearer"
-from typing import Optional
+# get_current_subject: reference/fastapi-auth-security.md §4 (401 + WWW-Authenticate on any token failure)
+from typing import Annotated
+
 from fastapi import Depends
-from app.core.security import get_current_user, get_current_user_required
 
-# Protected endpoint
-async def create_item(
-    request: ItemCreate,
-    current_user: User = Depends(get_current_user_required),
-) -> ItemResponse: ...
+from my_service.api.deps import get_current_subject, get_current_user  # get_current_user loads the account by subject
 
-# Optional auth endpoint
-async def list_public_items(
-    current_user: Optional[User] = Depends(get_current_user),
-) -> list[ItemResponse]: ...
+CurrentUser = Annotated[User, Depends(get_current_user)]  # 401 for a deleted or disabled account too
+
+
+async def create_item(request: ItemCreate, current_user: CurrentUser) -> ItemResponse: ...
 ```
 
 **Gate**: `pytest` passes for auth endpoints, `security-reviewer` agent run — zero CRITICAL/HIGH on auth code
@@ -205,10 +190,10 @@ async def list_public_items(
 
 **Command**: `/validate-changes`
 **Agent**: `output-evaluator`
-**Also run**: `pip audit` — zero high/critical CVEs
+**Also run**: the `/verify pre-pr` EXPORT + AUDIT lines (`pip-audit` on the exported `uv.lock`; gate on its exit code, it prints no severity)
 
 **Verdicts**: APPROVE → proceed | NEEDS_REVIEW / REJECT → fix and re-run
-**Gate**: APPROVE + zero high CVEs
+**Gate**: APPROVE + `pip-audit` exit 0 (or every ignored ID listed with a reason)
 
 ---
 
@@ -242,8 +227,9 @@ async def list_public_items(
 - **Pydantic v1 syntax** — this stack uses Pydantic v2; `@validator` is replaced by `@field_validator`, `orm_mode` by `model_config = ConfigDict(from_attributes=True)`
 - **Missing `await`** — async SQLAlchemy calls without `await` return coroutines, not results
 - **Bare `except`** — catches `KeyboardInterrupt` and `SystemExit`; always be specific
-- **`print()` in production code** — bypasses log aggregation; use `logging`
-- **Hardcoded secrets** — always `os.getenv()` or `pydantic-settings`
+- **`print()` in production code** — bypasses log aggregation; use structlog
+- **Hardcoded secrets or env fallbacks** — required settings have no defaults (`pydantic-settings`, `SecretStr`); never `os.getenv("X", "literal")`
+- **Secrets in a boot traceback** — a settings `ValidationError` prints `input_value`; set `hide_input_in_errors=True` on `Settings`
 
 ## Related Workflows
 

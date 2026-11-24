@@ -62,13 +62,13 @@ class UserControllerTest {
 ### Python (pytest / FastAPI)
 ```bash
 # Run with coverage
-pytest --cov=src --cov-report=term-missing -q
+uv run --no-sync pytest --cov --cov-report=term-missing -q
 
 # Run single test file
-pytest tests/test_user_service.py -v
+uv run --no-sync pytest tests/test_user_service.py -v
 
 # Run tests matching name pattern
-pytest -k "test_create" -v
+uv run --no-sync pytest -k "test_create" -v
 ```
 
 ```python
@@ -81,7 +81,7 @@ async def test_create_user_returns_201(client: AsyncClient):
 
 Python test rules (details and executed fixtures: `.claude/skills/python-testing-patterns/reference/postgres-integration-testing.md`):
 - ORM/SQL behaviour runs on real PostgreSQL (outer transaction + SAVEPOINT); SQLite only for pure logic. A missing database SKIPS locally with an actionable message and FAILS when `REQUIRE_DB_TESTS=1` (CI). Assert executed count > 0: an all-skipped run exits 0.
-- `httpx.ASGITransport` does not run lifespan (wrap with `LifespanManager`); clear `app.dependency_overrides` in teardown.
+- `ASGITransport` does not run lifespan: wrap with `app.router.lifespan_context(app)`; use `httpx2` (Starlette 1.10 deprecates httpx for TestClient); clear `app.dependency_overrides` in teardown.
 - Commit boundaries and races need two real connections plus a remove-the-guard control; the savepoint fixture cannot see a missing `commit()`.
 - Deterministic: inject clocks and id factories, explicit `ORDER BY`, no `sleep`, no real network. Restore module globals with `monkeypatch`.
 - Assert the outcome (one side effect, same status on replay), not that a mechanism was called.
@@ -265,7 +265,7 @@ Every non-trivial test suite MUST cover these:
 If the test runner fails to start (build error before tests execute):
 ```
 BLOCKED: Test runner failed to start — fix build errors first.
-Run: ./mvnw compile (Spring) | python -m py_compile src/ (Python) | npm run build (NestJS) | npx ng build (Angular) | npx tsc -b (React/Vite) | flutter analyze (Flutter)
+Run: ./mvnw compile (Spring) | uv run --no-sync python -m compileall -q src (Python) | npm run build (NestJS) | npx ng build (Angular) | npx tsc -b (React/Vite) | flutter analyze (Flutter)
 Do NOT write tests until the build is green.
 ```
 

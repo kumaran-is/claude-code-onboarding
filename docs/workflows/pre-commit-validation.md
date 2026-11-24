@@ -117,7 +117,7 @@ A 4-step gate that catches issues before they enter the PR review cycle. Uses au
 
 **Runs per ecosystem detected**:
 - `npm audit --audit-level=high` (Node/NestJS/Angular)
-- `pip audit` (Python)
+- `pip-audit` on the exported `uv.lock` (Python; `pip audit` is not a command)
 - `mvn dependency-check:check` (Java)
 - `flutter pub audit` (Flutter)
 

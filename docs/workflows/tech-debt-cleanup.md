@@ -150,8 +150,8 @@ export function validateItemId(itemId: unknown): void {
 # Node.js — find unused packages
 npx depcheck
 
-# Python — find unused imports
-uv run autoflake --remove-all-unused-imports --check src/
+# Python — unused imports, redefinitions, unused variables (check only, no --fix)
+uv run --no-sync ruff check --select F401,F811,F841 src/
 
 # Java — find unused dependencies
 ./mvnw dependency:analyze | grep "Unused declared"

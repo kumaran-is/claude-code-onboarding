@@ -21,7 +21,7 @@ Expert deployment engineer specializing in CI/CD pipelines, Docker containers, G
 - **Backend (Node.js)**: Node.js 24.14.x, NestJS 11.2.x (Fastify adapter), Prisma ORM, TypeScript 5.9.x — npm, Cloud Run
 - **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.1), TypeScript 6.0.3, MCP SDK v2 (`@modelcontextprotocol/server` 2.4.0), stdio or Streamable HTTP on Fastify 5 — Docker + Cloud Run; scaffold with `/scaffold-mcp-server`, container rules in `mcp-builder/reference/production-deployment-docker.md`
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async — `uv` for dependency management, Alembic migrations, Cloud Run
-- **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2 — Docker + Cloud Run, requires higher memory (2–4Gi) and longer startup timeout
+- **Agentic AI (Python)**: Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0 (ADK services: google-adk 2.15.0 with google-genai 2.34.x in their own lock) — Docker + Cloud Run, requires higher memory (2–4Gi) and longer startup timeout
 - **Frontend**: Angular 22.3.x (TypeScript 6.0.x, Node 26 LTS, RxJS, SCSS) — npm build, Firebase Hosting
 - **Mobile**: Flutter 3.50.x (Dart 3.14.0), iOS + Android — Firebase App Distribution for QA, Fastlane for store releases
 - **Database**: PostgreSQL (Cloud SQL) + Firestore — migrations run before Cloud Run revision, rules/indexes auto-deployed
@@ -131,7 +131,7 @@ Canonical detail: `.claude/skills/deployment-ci-cd/reference/web-frontend-delive
 
 ### Security & Compliance
 - Container vulnerability scanning: Trivy (`exit-code: 1` on CRITICAL CVEs — blocks deploy)
-- Dependency scanning: `npm audit`, `pip audit`, `mvn dependency:check`
+- Dependency scanning: `npm audit`, `pip-audit` on the exported `uv.lock` (`pip audit` is not a command), `mvn dependency:check`
 - Secret scanning: GitLeaks in pipeline prevents secrets reaching registry
 - Supply chain: image signing with Cosign (Sigstore), SLSA provenance
 - SBOM generation for compliance (CycloneDX format)

@@ -85,7 +85,7 @@ Create:
 |-------|--------------------|
 | Java/Spring | `./mvnw spring-boot:run`, `./mvnw test`, Docker health checks |
 | NestJS | `npm run start:dev`, `npx prisma generate`, `npx prisma migrate dev` |
-| Python | `uv venv`, `uv pip install -r requirements.txt`, `pytest` |
+| Python | `uv sync --locked`, `uv run --no-sync pytest`, `uv run --no-sync uvicorn <pkg>.main:create_app --factory --reload` |
 | Angular | `ng serve`, `ng test`, `ng build --configuration=production` |
 | Flutter | `flutter pub get`, `flutter run`, `flutter test`, `flutter build apk` |
 

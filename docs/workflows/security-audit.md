@@ -90,8 +90,8 @@ Before running any scanner, define:
 # Semgrep (all stacks)
 semgrep scan --config p/owasp-top-ten --config p/secrets .
 
-# Bandit (Python)
-uv run bandit -r src/ -ll
+# Bandit (Python): pinned, on the project's interpreter (an older one skips 3.14 files and exits 0)
+uvx --python "$(cat .python-version)" --from bandit==1.9.4 bandit -r src/ -ll
 
 # ESLint security (TypeScript)
 npx eslint --plugin security src/
@@ -122,8 +122,9 @@ npx eslint --plugin security src/
 # Node.js / NestJS / Angular
 npm audit --audit-level=high
 
-# Python
-uv run pip-audit
+# Python: audit the locked set, not the interpreter pip-audit runs in
+uv export --locked --no-dev --no-hashes --no-emit-project -o /tmp/req.audit.txt
+uvx --from pip-audit==2.10.1 pip-audit -r /tmp/req.audit.txt --no-deps --disable-pip
 
 # Java
 ./mvnw dependency-check:check

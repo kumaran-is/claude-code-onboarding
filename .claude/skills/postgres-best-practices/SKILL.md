@@ -100,8 +100,8 @@ NEVER TUNE WHAT YOU HAVEN'T MEASURED — CHECK `pg_stat_statements` AND `pg_stat
 - Idempotency keys, advisory locks, outbox, retries: `python-dev/reference/reliability-idempotency-retries-outbox.md`
 
 ### NestJS / Prisma
-- Connection pooling: `DATABASE_URL=...?connection_limit=10&pool_timeout=20` (see `rules/conn-pooling.md`)
-- Prepared statements: Prisma uses prepared statements — use session mode or `pgbouncer=true` parameter
+- Connection pooling (Prisma 7 + `@prisma/adapter-pg`): the pool belongs to `pg`, so size it on the adapter, not in the URL: `new PrismaPg({ connectionString, max: 10, connectionTimeoutMillis: 5_000 })` (`connection_limit` → `max`, `pool_timeout` → `connectionTimeoutMillis`; `pg` defaults to no acquire timeout). Code: `nestjs-api/reference/nestjs-config-prisma7.md`; sizing: `rules/conn-pooling.md`
+- PgBouncer: transaction mode, PgBouncer >= 1.21 with `max_prepared_statements` > 0 (Prisma uses prepared statements); do **not** add `pgbouncer=true` on 1.21+. Prisma CLI / migrations use a direct (unpooled) URL in `prisma.config.ts`
 - SKIP LOCKED: use `prisma.$queryRaw` for queue worker queries
 
 ### Java / Spring Boot WebFlux (R2DBC)

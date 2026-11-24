@@ -1,6 +1,6 @@
 # GCP Terraform Module Reference
 
-> GCP-primary module patterns for this workspace. All modules target `google` provider `~> 6.0` and Terraform `~> 1.9.0`. Use mock providers in tests — no real GCP calls needed.
+> GCP-primary module patterns for this workspace. All modules target `google` provider `~> 8.12` (8.12.0 latest at review; no 7.0/8.0 breaking change touches the arguments used here) and Terraform `~> 1.9.0`. Use mock providers in tests — no real GCP calls needed.
 
 ---
 
@@ -63,6 +63,12 @@ variable "allow_unauthenticated" {
   default     = false
 }
 
+variable "cloud_sql_connection_name" {
+  description = "Cloud SQL instance connection name (project:region:instance) to mount at /cloudsql; null = no mount"
+  type        = string
+  default     = null
+}
+
 variable "labels" {
   description = "Labels applied to the Cloud Run service"
   type        = map(string)
@@ -82,8 +88,35 @@ resource "google_cloud_run_v2_service" "this" {
   template {
     service_account = var.service_account_email
 
+    # Cloud SQL unix socket: Cloud Run runs the connector; the app dials /cloudsql/<connection_name>
+    dynamic "volumes" {
+      for_each = var.cloud_sql_connection_name == null ? [] : [var.cloud_sql_connection_name]
+      content {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [volumes.value]
+        }
+      }
+    }
+
     containers {
       image = var.image_url
+
+      dynamic "volume_mounts" {
+        for_each = var.cloud_sql_connection_name == null ? [] : [var.cloud_sql_connection_name]
+        content {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.cloud_sql_connection_name == null ? [] : [var.cloud_sql_connection_name]
+        content {
+          name  = "INSTANCE_UNIX_SOCKET" # the app builds its DSN from this + DB_USER + DB_PASSWORD (secret)
+          value = "/cloudsql/${env.value}"
+        }
+      }
 
       dynamic "env" {
         for_each = var.secrets
@@ -211,17 +244,18 @@ run "verify_name_too_long_fails_validation" {
 module "api_service" {
   source = "../../modules/cloud-run"
 
-  service_name          = "my-api-staging"
-  project_id            = var.project_id
-  region                = "us-central1"
-  image_url             = "${module.artifact_registry.repository_url}/api:latest"
-  service_account_email = google_service_account.api.email
-  min_instances         = 0   # Scale to zero in staging
-  max_instances         = 5
-  labels                = { environment = "staging", team = "platform" }
+  service_name              = "my-api-staging"
+  project_id                = var.project_id
+  region                    = "us-central1"
+  image_url                 = "${module.artifact_registry.repository_url}/api:${var.initial_image_tag}" # CI owns later tags
+  service_account_email     = google_service_account.api.email
+  min_instances             = 0 # Scale to zero in staging
+  max_instances             = 5
+  cloud_sql_connection_name = module.cloud_sql.connection_name
+  labels                    = { environment = "staging", team = "platform" }
   secrets = {
-    DATABASE_URL = google_secret_manager_secret.db_url.secret_id
-    JWT_SECRET   = google_secret_manager_secret.jwt.secret_id
+    DB_PASSWORD = module.cloud_sql.db_password_secret_id   # never a password literal in a URL
+    JWT_SECRET  = google_secret_manager_secret.jwt.secret_id
   }
 }
 ```
@@ -252,15 +286,25 @@ variable "region" {
 variable "database_version" {
   description = "PostgreSQL version to use"
   type        = string
-  default     = "POSTGRES_16"
+  default     = "POSTGRES_18"
   validation {
     condition     = startswith(var.database_version, "POSTGRES_")
-    error_message = "database_version must be a POSTGRES_* value (e.g. POSTGRES_16)."
+    error_message = "database_version must be a POSTGRES_* value (e.g. POSTGRES_18)."
+  }
+}
+
+variable "edition" {
+  description = "ENTERPRISE or ENTERPRISE_PLUS. POSTGRES_16+ defaults to ENTERPRISE_PLUS, which rejects shared-core and db-custom-* tiers"
+  type        = string
+  default     = "ENTERPRISE"
+  validation {
+    condition     = contains(["ENTERPRISE", "ENTERPRISE_PLUS"], var.edition)
+    error_message = "edition must be ENTERPRISE or ENTERPRISE_PLUS."
   }
 }
 
 variable "machine_type" {
-  description = "Cloud SQL machine type (db-f1-micro for dev, db-n1-standard-2 for prod)"
+  description = "Cloud SQL tier: db-f1-micro (dev) or db-custom-<vCPU>-<MB> (prod) on ENTERPRISE; db-perf-optimized-N-* on ENTERPRISE_PLUS"
   type        = string
   default     = "db-f1-micro"
 }
@@ -310,6 +354,7 @@ resource "google_sql_database_instance" "this" {
 
   settings {
     tier              = var.machine_type
+    edition           = var.edition
     availability_type = var.ha_enabled ? "REGIONAL" : "ZONAL"
 
     backup_configuration {
@@ -353,7 +398,9 @@ resource "google_sql_user" "app" {
 resource "google_secret_manager_secret" "db_password" {
   secret_id = "${var.instance_name}-db-password"
   project   = var.project_id
-  replication { auto {} }
+  replication {
+    auto {}
+  }
 }
 
 resource "google_secret_manager_secret_version" "db_password" {
@@ -616,11 +663,50 @@ output "subnet_ids" {
 
 ---
 
+## Bootstrap Outside Terraform
+
+### Remote-state bucket (once per environment, before `terraform init`)
+
+```bash
+gcloud storage buckets create gs://PROJECT_ID-tfstate-staging \
+  --project=PROJECT_ID --location=us-central1 \
+  --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets update gs://PROJECT_ID-tfstate-staging --versioning   # state rollback
+```
+
+```hcl
+# environments/staging/backend.tf
+terraform {
+  backend "gcs" {
+    bucket = "PROJECT_ID-tfstate-staging"
+    prefix = "staging"
+  }
+}
+```
+
+State holds resource IDs and any secret a resource returns: never commit it, and grant the bucket
+only to the CI service account and platform admins.
+
+### Secret values
+
+Terraform creates the secret *container* and its IAM; values that a human or another system owns
+(API keys, third-party tokens) are added out of band so they never reach `.tfvars` or state:
+
+```bash
+# reads from stdin: nothing in shell history or argv
+gcloud secrets versions add staging-jwt-secret --project=PROJECT_ID --data-file=-
+```
+
+Reference a pinned version number from Cloud Run when rollouts must be reproducible; `latest` picks up a
+new value on the next revision.
+
+---
+
 ## Best Practices Summary
 
 | Rule | Why |
 |------|-----|
-| Pin `google` provider `~> 6.0` | Prevents breaking changes from provider updates |
+| Pin `google` provider `~> 8.12` | Allows 8.x fixes, blocks the next major; read its upgrade guide before raising |
 | `deletion_protection = true` in prod | Prevents accidental destruction of stateful resources |
 | `ipv4_enabled = false` on Cloud SQL | No public IP; access via private IP or Auth Proxy only |
 | `ssl_mode = "ENCRYPTED_ONLY"` on Cloud SQL | Encrypts all database connections |
@@ -630,4 +716,5 @@ output "subnet_ids" {
 | WIF `attribute_condition` scoped to org | Prevents cross-org OIDC token impersonation |
 | `random_password` + Secret Manager for DB | Never hardcode or commit database passwords |
 | `private_ip_google_access = true` on subnets | Required for Cloud Run to reach Cloud SQL private IP |
+| Set `edition` explicitly on Cloud SQL | POSTGRES_16+ defaults to ENTERPRISE_PLUS, which fails on `db-f1-micro` / `db-custom-*` |
 | Mock providers in all module tests | No GCP auth needed in CI — safe and free to run |

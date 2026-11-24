@@ -92,7 +92,8 @@ Before writing any Cloud Run Function code:
 - **Cloud Run Service (long-running)**: Dispatch `deployment-engineer` agent
 - **Terraform infrastructure**: Dispatch `terraform-specialist` agent
 - **ADK agent on Cloud Run**: Use `adk-deploy-guide` skill (has ADK-specific Cloud Run patterns)
-- **GitHub Actions pipeline**: `docs/workflows/deployment-ci-cd.md`
+- **GitHub Actions pipeline**: `deployment-ci-cd` skill (`.claude/skills/deployment-ci-cd/SKILL.md`)
+- **Presigned-URL upload endpoints**: `python-dev/reference/fastapi-auth-security.md` §12, `nestjs-api/reference/nestjs-rest-upload-errors.md` §5, `java-spring-api/reference/spring-boot-rest-service-guide.md`; bucket setup below
 - **Security review (WIF, secrets)**: Dispatch `security-reviewer` agent after implementation
 
 ---
@@ -148,3 +149,48 @@ jobs:
 ```
 
 > For cold start flags (`--cpu-boost`, `--min-instances`, memory/CPU ratio), see `reference/cold-start-optimization.md`.
+
+---
+
+## Direct-to-Storage Uploads: Bucket Setup
+
+The upload endpoints sign a V4 PUT URL; the browser uploads straight to the bucket; `confirm`
+reads the object's metadata and deletes it when it breaks the size or type rule. So the runtime
+service account needs object **create, get and delete** on that bucket, and the right to sign as itself.
+
+```bash
+BUCKET=gs://YOUR_UPLOAD_BUCKET
+SA=YOUR_RUNTIME_SA@YOUR_PROJECT.iam.gserviceaccount.com
+
+gcloud storage buckets create "$BUCKET" --location=us-central1 \
+  --uniform-bucket-level-access --public-access-prevention
+
+# CORS: browsers block the cross-origin PUT without it
+cat > cors.json <<'EOF'
+[{"origin": ["https://app.example.com"], "method": ["PUT"],
+  "responseHeader": ["Content-Type"], "maxAgeSeconds": 3600}]
+EOF
+gcloud storage buckets update "$BUCKET" --cors-file=cors.json
+gcloud storage buckets describe "$BUCKET" --format="default(cors_config)"
+
+# Object create + get + delete, bucket-scoped. objectCreator alone has only storage.objects.create,
+# so confirm would fail on the metadata read and on the delete. objectUser covers all three
+# without objectAdmin's setIamPolicy; a custom role with exactly those three permissions is tighter.
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member="serviceAccount:$SA" --role="roles/storage.objectUser"
+
+# Keyless signing on Cloud Run: the SA signs through IAM signBlob as itself
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --member="serviceAccount:$SA" --role="roles/iam.serviceAccountTokenCreator"
+```
+
+| Pitfall | Impact | Fix |
+|---------|--------|-----|
+| PUT `Content-Type` differs from the signed one | GCS answers 403 | Sign the exact allowlisted type; the client sends the same header |
+| Client filename used as the object key | Path traversal, overwrite of other objects | Server-chosen `uploads/<owner>/<uuid><ext>` |
+| Confirm accepts any key | User A confirms or deletes user B's object | Exact owner-directory match; foreign key answers 404 like a missing one |
+| No CORS on the bucket | Browser blocks the response; the upload looks hung | `gcloud storage buckets update --cors-file` |
+| Signed URL logged or issued without auth | The URL is a 15-minute write credential | Auth on the endpoint; log the object key, never the URL |
+| Size checked only in the request DTO | The signature does not bound the body size | Re-check `size` and content type at confirm; delete violators |
+| Runtime SA has `objectCreator` only | Confirm fails with 403 on read/delete | `objectUser` (or a create/get/delete custom role) on the bucket |
+| No `serviceAccountTokenCreator` on itself | Signing fails on Cloud Run (no key in the container) | Grant it to the runtime SA on its own identity |

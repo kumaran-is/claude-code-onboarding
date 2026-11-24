@@ -57,6 +57,16 @@ ORDER BY mean_exec_time DESC
 LIMIT 10;
 ```
 
+No `pg_stat_statements`? Turn on the slow-query log server-wide. A session `SET` only logs your own
+session, and the parameter needs superuser (or `GRANT SET`/`ALTER SYSTEM ON PARAMETER`):
+```sql
+ALTER SYSTEM SET log_min_duration_statement = '100ms';  -- persisted to postgresql.auto.conf
+SELECT pg_reload_conf();                                 -- applies without a restart
+-- revert: ALTER SYSTEM RESET log_min_duration_statement; SELECT pg_reload_conf();
+```
+Cloud SQL: set the database flag instead (`gcloud sql instances patch INSTANCE --database-flags=log_min_duration_statement=100`;
+the call replaces **all** existing flags, so list every flag you keep).
+
 ### Step 2 — Profile with EXPLAIN
 ```sql
 -- Always use ANALYZE + BUFFERS for real data

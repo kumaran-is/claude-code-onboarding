@@ -498,3 +498,126 @@ async def test_login_unknown_and_wrong_password_are_identical(client, seed_user)
 
 Also cover: expired token, wrong audience, missing `type`, no token (401). Authorization-specific
 tests (every non-pass state, inert control): `fastapi-authorization-boundaries.md` §9.
+
+---
+
+## 12. Direct-to-storage uploads (presigned URL + confirm)
+
+Large files go browser → Cloud Storage on a short-lived V4 signed PUT URL; the API only issues the
+URL and confirms the result. Same contract in NestJS (`nestjs-api/reference/nestjs-rest-upload-errors.md`
+§5) and Spring (`java-spring-api/reference/spring-boot-rest-service-guide.md`); bucket CORS and IAM:
+`gcp-cloud-run/SKILL.md`.
+
+Executed (google-cloud-storage 3.17.2, FastAPI 0.165.0, Python 3.14; fake bucket and signer, no GCS
+call): unauthenticated → 401; camelCase body in, camelCase `uploadUrl`/`objectKey`/`expiresAt` out, the
+client `filename` ignored; bad type → 422; confirm of another user's key, or of a key nested under the
+caller's directory, → 404 (control: a bare `startswith` check fails that test); an oversized object is
+deleted → 422. Earlier runs with a real V4 signer confirmed a `GOOG4-RSA-SHA256` PUT URL, 900 s, with
+`content-type` in the signed headers. Storage calls block, so they run in `asyncio.to_thread`.
+
+```python
+# src/my_service/api/upload.py   (uv add "google-cloud-storage==3.17.2")
+import asyncio
+import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Protocol
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from google.api_core.exceptions import NotFound
+from google.cloud import storage
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+from my_service.api.deps import get_current_subject  # §4: 401 when the token is missing
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/upload", tags=["upload"])
+
+ALLOWED_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
+MAX_BYTES = 100 * 1024 * 1024
+URL_TTL = timedelta(minutes=15)
+
+
+class Signer(Protocol):
+    def __call__(self, blob: storage.Blob, *, content_type: str) -> str: ...
+
+
+def get_bucket(request: Request) -> storage.Bucket:
+    return request.app.state.upload_bucket  # ONE storage.Client built in lifespan; bucket name from settings
+
+
+def get_signer(request: Request) -> Signer:
+    return request.app.state.upload_signer  # see "Signing on Cloud Run" below
+
+
+class CamelModel(BaseModel):
+    # wire format is camelCase, like the Angular client (angular-ui-form-components.md Section F)
+    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, validate_by_alias=True)
+
+
+class PresignedUrlRequest(CamelModel):
+    content_type: str = Field(json_schema_extra={"enum": sorted(ALLOWED_TYPES)})
+    size: int = Field(ge=1, le=MAX_BYTES)
+
+
+class PresignedUrlResponse(CamelModel):
+    upload_url: str
+    object_key: str
+    expires_at: datetime
+
+
+class ConfirmRequest(CamelModel):
+    object_key: str = Field(max_length=200)
+
+
+@router.post("/presigned-url", response_model=PresignedUrlResponse)
+async def get_presigned_url(
+    body: PresignedUrlRequest,
+    user_id: Annotated[str, Depends(get_current_subject)],
+    bucket: Annotated[storage.Bucket, Depends(get_bucket)],
+    sign: Annotated[Signer, Depends(get_signer)],
+) -> PresignedUrlResponse:
+    suffix = ALLOWED_TYPES.get(body.content_type)
+    if suffix is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "content_type not allowed")
+    # server-chosen key under the caller's prefix: the client filename never reaches the key
+    object_key = f"uploads/{user_id}/{uuid.uuid4()}{suffix}"
+    upload_url = await asyncio.to_thread(sign, bucket.blob(object_key), content_type=body.content_type)
+    logger.info("upload_url_issued", extra={"object_key": object_key})  # never log the URL itself
+    return PresignedUrlResponse(
+        upload_url=upload_url, object_key=object_key, expires_at=datetime.now(UTC) + URL_TTL
+    )
+
+
+@router.post("/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_upload(
+    body: ConfirmRequest,
+    user_id: Annotated[str, Depends(get_current_subject)],
+    bucket: Annotated[storage.Bucket, Depends(get_bucket)],
+) -> None:
+    # exact owner-directory match (a bare startswith lets subject "a" claim keys of subject "a/b")
+    if body.object_key.rpartition("/")[0] != f"uploads/{user_id}":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found")  # foreign key == missing key
+    blob = bucket.blob(body.object_key)
+    try:
+        await asyncio.to_thread(blob.reload, timeout=10)  # loads size + content type
+    except NotFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Upload not found") from None
+    # the signed PUT fixes the content type, not the size: enforce it after the fact
+    if blob.size is None or blob.size > MAX_BYTES or blob.content_type not in ALLOWED_TYPES:
+        await asyncio.to_thread(blob.delete, timeout=10)
+        logger.warning("upload_rejected", extra={"object_key": body.object_key, "size": blob.size})
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Upload rejected")
+    logger.info("upload_confirmed", extra={"object_key": body.object_key, "size": blob.size})
+    # persist object_key + owner in this request; malware scan / content sniffing runs async
+```
+
+**Signing on Cloud Run:** the container has no private key. `app.state.upload_signer` refreshes the
+default credentials (`creds.refresh(google.auth.transport.requests.Request())`, which also fills
+`creds.service_account_email`) and calls `blob.generate_signed_url(version="v4", expiration=URL_TTL,
+method="PUT", content_type=content_type, service_account_email=creds.service_account_email,
+access_token=creds.token)`; the library then signs through IAM `signBlob`. The runtime service account
+needs `roles/iam.serviceAccountTokenCreator` **on itself** (it holds `iam.serviceAccounts.signBlob`)
+plus object create/get/delete on the bucket. The keyless path needs a real project to execute: the
+tests above used key-file credentials.

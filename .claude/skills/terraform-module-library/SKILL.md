@@ -72,7 +72,7 @@ Which GCP resource are you modularizing?
 
 Before submitting any module:
 
-- [ ] `versions.tf` present with `google` provider pinned to `~> 6.0`
+- [ ] `versions.tf` present with `google` provider pinned to `~> 8.12`
 - [ ] All variables have `description` and `type` declared
 - [ ] All sensitive outputs marked `sensitive = true`
 - [ ] `deletion_protection` variable present for stateful resources (Cloud SQL, Artifact Registry)
@@ -102,6 +102,6 @@ Before submitting any module:
 
 - **Naming and testing conventions**: Load `terraform-skill` skill (load it first)
 - **GCP provisioning**: Dispatch `terraform-specialist` agent
-- **Provisioning workflow**: `docs/workflows/cloud-run-terraform.md`
-- **Module development workflow**: `docs/workflows/terraform-module-development.md`
+- **GCP module patterns, state bootstrap, secret values**: `references/gcp-modules.md`
+- **Module testing and Terraform CI/CD**: `terraform-skill` skill (`terraform-skill/reference/cicd-github-actions.md`)
 - **Security review post-apply**: Dispatch `security-reviewer` agent

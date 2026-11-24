@@ -70,7 +70,7 @@ What do you need?
     |
     +-- Choosing module or environment structure?
         -> See § Code Structure Philosophy
-        -> See docs/workflows/cloud-run-terraform.md for GCP-specific layout
+        -> See terraform-module-library/references/gcp-modules.md for the GCP layout, state bootstrap and secrets
         -> See terraform-module-library skill for GCP module patterns
 ```
 
@@ -320,8 +320,8 @@ resource "google_artifact_registry_repository_iam_member" "readers" {
 | Component | Constraint | Example |
 |-----------|-----------|---------|
 | Terraform binary | Pin minor | `~> 1.9.0` |
-| `google` provider | Pin minor | `~> 6.0` |
-| `google-beta` provider | Pin minor | `~> 6.0` |
+| `google` provider | Pin major, floor at tested minor (8.12.0 latest at review) | `~> 8.12` |
+| `google-beta` provider | Same as `google` | `~> 8.12` |
 | Internal modules | Pin exact | `= 1.2.3` |
 | Registry modules | Pin minor | `~> 2.1` |
 
@@ -333,11 +333,11 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 6.0"
+      version = "~> 8.12"
     }
     google-beta = {
       source  = "hashicorp/google-beta"
-      version = "~> 6.0"
+      version = "~> 8.12"
     }
   }
 }
@@ -380,7 +380,7 @@ Key jobs: `validate` (fmt + tflint + tfsec), `test` (native terraform test with 
 
 - **GCP Infrastructure provisioning**: Dispatch `terraform-specialist` agent
 - **GCP module patterns (Cloud Run, Cloud SQL, VPC, WIF)**: Load `terraform-module-library` skill
-- **Provisioning workflow**: `docs/workflows/cloud-run-terraform.md`
-- **Module development workflow**: `docs/workflows/terraform-module-development.md`
+- **GCP modules, state bootstrap, secret values**: `terraform-module-library/references/gcp-modules.md`
+- **Terraform CI/CD (plan on PR, apply on merge)**: `reference/cicd-github-actions.md`
 - **Security scanning post-apply**: Dispatch `security-reviewer` agent
-- **CI/CD application pipeline**: `docs/workflows/deployment-ci-cd.md`
+- **CI/CD application pipeline**: `deployment-ci-cd` skill (`.claude/skills/deployment-ci-cd/SKILL.md`)

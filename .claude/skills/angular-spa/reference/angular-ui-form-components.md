@@ -436,7 +436,7 @@ Two patterns depending on file destination:
 | **Direct multipart POST** | Files ≤ 10 MB, backend stores or processes the file |
 | **GCS presigned URL** | Files > 10 MB, or you want to bypass server bandwidth — backend issues URL, client uploads directly to GCS |
 
-See `docs/workflows/file-uploads.md` for backend presigned URL endpoint implementations (NestJS, FastAPI, Spring Boot).
+Backend presigned-URL + confirm endpoints: FastAPI `python-dev/reference/fastapi-auth-security.md` §12, NestJS `nestjs-api/reference/nestjs-rest-upload-errors.md` §5, Spring `java-spring-api/reference/spring-boot-rest-service-guide.md` (Direct-to-Storage Uploads); bucket CORS and IAM in `gcp-cloud-run/SKILL.md`.
 
 ---
 

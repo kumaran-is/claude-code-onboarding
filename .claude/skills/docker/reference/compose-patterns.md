@@ -4,9 +4,12 @@ Compose configurations for development, production, and testing. Covers: Postgre
 
 ---
 
-## Development Compose (PostgreSQL 17 + Redis 7)
+## Development Compose (PostgreSQL 18 + Redis 7)
 
 Standard dev compose for all backend stacks. Credentials must match the service's `.env` / `DATABASE_URL`.
+The `postgres` image 18+ refuses to start with a volume at `/var/lib/postgresql/data`: mount
+`/var/lib/postgresql` (data lands in `18/docker`). An existing 17 volume needs dump/restore or
+`pg_upgrade`, not a tag bump. For pgvector use `pgvector/pgvector:0.8.7-pg18-trixie` with the same mount.
 
 ```yaml
 # docker-compose.dev.yml — Local Development Environment
@@ -15,7 +18,7 @@ Standard dev compose for all backend stacks. Credentials must match the service'
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18.7-alpine
     container_name: ${PROJECT_NAME:-myservice}-postgres
     ports:
       - "5432:5432"
@@ -24,7 +27,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ${PROJECT_NAME:-myservice}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -137,7 +140,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18.7-alpine
     environment:
       # _FILE variants read credentials from Docker secrets — not plain env
       POSTGRES_DB_FILE: /run/secrets/db_name
@@ -148,7 +151,7 @@ services:
       - db_user
       - db_password
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     networks:
       - backend
     healthcheck:
@@ -203,8 +206,9 @@ secrets:
 
 **Create secrets for local testing:**
 ```bash
-echo -n "postgresql://appuser:s3cr3t@postgres:5432/myservice" | docker secret create database_url -
-echo -n "redis://:r3dis@redis:6379" | docker secret create redis_url -
+# Values come from your shell environment (or a local .env that is never committed); no literal credentials here.
+printf '%s' "$DATABASE_URL" | docker secret create database_url -
+printf '%s' "$REDIS_URL" | docker secret create redis_url -
 ```
 
 ---
@@ -217,7 +221,7 @@ Spring Boot needs slightly different configuration (R2DBC, Actuator health check
 # docker-compose.dev.yml — Spring Boot WebFlux Development
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18.7-alpine
     ports:
       - "5432:5432"
     environment:
@@ -225,7 +229,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: myservice
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

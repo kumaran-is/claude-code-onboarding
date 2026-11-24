@@ -57,7 +57,7 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 ### Step 2: Set Up Docker Compose
 
 Read `reference/compose-patterns.md` for:
-- Development compose (PostgreSQL 17 + Redis 7)
+- Development compose (PostgreSQL 18 + Redis 7; 18+ volumes mount at `/var/lib/postgresql`)
 - Production compose with Docker secrets (`_FILE` env pattern)
 - Health check dependency ordering (`condition: service_healthy`)
 - Network isolation (internal backend network)

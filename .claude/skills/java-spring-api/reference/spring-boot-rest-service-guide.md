@@ -188,6 +188,119 @@ resilience4j:
         timeout-duration: 5s
 ```
 
+## Direct-to-Storage Uploads (Presigned URL)
+
+Large files go browser → Cloud Storage on a 15-minute V4 signed PUT URL; the API issues the URL and
+confirms the result. Same contract as FastAPI (`python-dev/reference/fastapi-auth-security.md` §12,
+which also covers keyless signing) and NestJS (`nestjs-api/reference/nestjs-rest-upload-errors.md`);
+bucket CORS and IAM: `gcp-cloud-run/SKILL.md`. The storage client blocks, so every call runs on
+`Schedulers.boundedElastic()`. On Cloud Run the default credentials sign through IAM `signBlob`: the
+runtime service account needs `roles/iam.serviceAccountTokenCreator` on itself.
+
+```xml
+<dependency>
+    <groupId>com.google.cloud</groupId>
+    <artifactId>google-cloud-storage</artifactId>
+    <version>2.69.0</version> <!-- or manage it with com.google.cloud:libraries-bom -->
+</dependency>
+```
+
+```java
+public record PresignedUrlRequest(@NotBlank String contentType, @Min(1) @Max(104_857_600) long size) {}
+public record PresignedUrlResponse(String uploadUrl, String objectKey, Instant expiresAt) {}
+public record ConfirmUploadRequest(@NotBlank @Size(max = 200) String objectKey) {}
+```
+
+```java
+import jakarta.validation.Valid;
+import java.security.Principal;
+
+@RestController
+@RequestMapping("/api/v1/upload")
+@RequiredArgsConstructor
+public class UploadController {
+    private final UploadService uploadService;
+
+    @PostMapping("/presigned-url")
+    public Mono<PresignedUrlResponse> presignedUrl(Principal principal,
+                                                   @RequestBody @Valid PresignedUrlRequest request) {
+        return uploadService.createPresignedUrl(principal.getName(), request);
+    }
+
+    @PostMapping("/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> confirm(Principal principal, @RequestBody @Valid ConfirmUploadRequest request) {
+        return uploadService.confirmUpload(principal.getName(), request.objectKey());
+    }
+}
+```
+
+```java
+@Service
+@Slf4j
+public class UploadService {
+    private static final Map<String, String> ALLOWED_TYPES = Map.of(
+        "image/jpeg", ".jpg", "image/png", ".png", "image/webp", ".webp", "application/pdf", ".pdf");
+    private static final long MAX_BYTES = 100L * 1024 * 1024;
+    private static final Duration URL_TTL = Duration.ofMinutes(15);
+
+    private final Storage storage;       // one StorageOptions.getDefaultInstance().getService() bean
+    private final String bucket;
+
+    public UploadService(Storage storage, @Value("${upload.gcs-bucket}") String bucket) {
+        this.storage = storage;
+        this.bucket = bucket;
+    }
+
+    public Mono<PresignedUrlResponse> createPresignedUrl(String ownerId, PresignedUrlRequest request) {
+        String suffix = ALLOWED_TYPES.get(request.contentType());
+        if (suffix == null) {
+            return Mono.error(new InvalidInputException("Content type not allowed"));
+        }
+        // Server-chosen key under the owner's directory: the client filename never reaches the key
+        String objectKey = "uploads/" + ownerId + "/" + UUID.randomUUID() + suffix;
+        return Mono.fromCallable(() -> {
+            BlobInfo info = BlobInfo.newBuilder(BlobId.of(bucket, objectKey))
+                .setContentType(request.contentType()).build();
+            URL url = storage.signUrl(info, URL_TTL.toSeconds(), TimeUnit.SECONDS,
+                Storage.SignUrlOption.httpMethod(HttpMethod.PUT),
+                Storage.SignUrlOption.withV4Signature(),
+                Storage.SignUrlOption.withExtHeaders(Map.of("Content-Type", request.contentType())));
+            log.info("upload_url_issued objectKey={}", objectKey); // never log the URL: it is a credential
+            return new PresignedUrlResponse(url.toString(), objectKey, Instant.now().plus(URL_TTL));
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    public Mono<Void> confirmUpload(String ownerId, String objectKey) {
+        int slash = objectKey.lastIndexOf('/');
+        // Exact owner-directory match; a foreign key gets the same 404 as a missing one
+        if (slash < 0 || !objectKey.substring(0, slash).equals("uploads/" + ownerId)) {
+            return Mono.error(new ResourceNotFoundException("Upload not found"));
+        }
+        return Mono.fromCallable(() -> Optional.ofNullable(storage.get(BlobId.of(bucket, objectKey))))
+            .subscribeOn(Schedulers.boundedElastic())
+            .flatMap(found -> found.map(Mono::just)
+                .orElseGet(() -> Mono.error(new ResourceNotFoundException("Upload not found"))))
+            .flatMap(blob -> {
+                Long size = blob.getSize();
+                // The signature fixes the content type, not the size: enforce both after the fact
+                if (size == null || size > MAX_BYTES || !ALLOWED_TYPES.containsKey(blob.getContentType())) {
+                    log.warn("upload_rejected objectKey={} size={}", objectKey, size);
+                    return Mono.fromCallable(blob::delete)
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .then(Mono.error(new InvalidInputException("Upload rejected")));
+                }
+                log.info("upload_confirmed objectKey={} size={}", objectKey, size);
+                return Mono.empty(); // persist objectKey + owner here; scan content asynchronously
+            })
+            .then();
+    }
+}
+```
+
+`StorageException` from the client propagates to the global error handler, which logs it and answers
+5xx. In a multi-tenant service add the tenant to the key and to the ownership check.
+
 ## Testing Patterns
 
 ### Controller Test (WebFluxTest)

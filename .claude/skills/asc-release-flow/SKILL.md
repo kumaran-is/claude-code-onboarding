@@ -30,6 +30,10 @@ Run `asc-submission-health` preflight checks before any App Store submission. Us
 
 ## iOS Release
 
+### Build gate (Flutter apps)
+Build the IPA with the export options Xcode produced (Distribute App writes an `ExportOptions.plist` next to the IPA):
+`flutter build ipa --release --export-options-plist=<path/to/ExportOptions.plist>` must exit 0 before any upload.
+
 ### Preferred end-to-end commands
 - TestFlight:
   - `asc publish testflight --app <APP_ID> --ipa <PATH> --group <GROUP_ID>[,<GROUP_ID>]`
@@ -120,6 +124,13 @@ Before submitting, verify:
 - [ ] Screenshots present
 
 See `asc-submission-health` skill for detailed preflight checks.
+
+## Post-release monitoring gate
+
+Team defaults (ADAPT per app): watch crashes for 48h after release, using the `asc-crash-triage` skill scoped to the released build plus your crash reporter. If a P0 crash affects >1% of users, stop the rollout and prepare a fix (`bugfix/` branch, new build number).
+- Release with **Phased Release for Automatic Updates** (7 days: 1% → 2% → 5% → 10% → 20% → 50% → 100%) so there is a rollout to stop.
+- To stop it: App Store Connect → the version under Ready for Distribution → Phased Release for Automatic Updates → **Pause Phased Release** → Save. Pauses total at most 30 days; resume the same way. Pausing affects only automatic updates: anyone can still download the version manually.
+- The native asc skills expose no phased-release command; do this step in App Store Connect.
 
 ## Notes
 - Always use `--help` to verify flags for the exact command.

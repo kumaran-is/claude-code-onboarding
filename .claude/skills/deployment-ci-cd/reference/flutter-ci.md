@@ -136,8 +136,8 @@ what turns them into a gate; it stops on an unreadable lockfile first because th
   that same artifact; never rebuild per stage.
 - **Signing secrets** (keystore, App Store Connect key) belong only in the release workflow, from GitHub
   environment secrets with required reviewers — never in the PR job. Store upload: `gpd-release-flow` (Google Play),
-  `asc-release-flow` (App Store); end-to-end runbooks: `docs/workflows/android-google-play-release.md`,
-  `docs/workflows/ios-app-store-release.md`.
+  `asc-release-flow` (App Store), which also hold the rollout and post-release monitoring gates
+  (`../../gpd-release-flow/SKILL.md`, `../../asc-release-flow/SKILL.md`).
 - **Maestro device job:** separate job that boots an emulator or simulator, installs the built app and runs
   `maestro test -e APP_ID=<id> --format junit --output report.xml .maestro/`, uploading the report and `~/.maestro/tests`
   on failure. Android on `ubuntu-latest` (KVM) can use `ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0`

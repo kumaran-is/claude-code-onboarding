@@ -57,6 +57,14 @@ gpd publish edit commit $EDIT_ID --package com.example.app
 ```
 
 ## Staged rollout
+
+Gates before production (team defaults, ADAPT per app):
+- The AAB was built once with symbols (`--obfuscate --split-debug-info`) and that same artifact is promoted from internal; never rebuild per track (`deployment-ci-cd/reference/flutter-ci.md`).
+- At least 3 internal testers confirm the build works on their own devices.
+- `gpd-submission-health` preflight passes.
+
+Between rollout steps, check the user-perceived crash rate and ANR rate for the new version code (Play Console → Android vitals, or the Play Developer Reporting API). Halt with `gpd publish halt` (below) when the crash rate rises more than 0.5 percentage points above the previous release's baseline. Google Play's own bad-behavior thresholds, which can reduce store visibility (28-day average; checked 2026-11-24 at developer.android.com/topic/performance/vitals): user-perceived crash rate 1.09% overall / 8% per phone model; user-perceived ANR rate 0.47% overall / 8% per phone model.
+
 ```bash
 gpd publish release --package com.example.app --track production --status inProgress --version-code 123
 gpd publish rollout --package com.example.app --track production --percentage 5

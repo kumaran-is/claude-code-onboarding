@@ -85,6 +85,10 @@ Before creating or modifying any widget, screen, or visual component:
 
 ## Process
 
+**Feature phase order:** `mobile-design` checkpoint (MFRI) → plan → scaffold (new apps only: `/scaffold-flutter-app`) → TDD (failing widget/provider test first) → implement (steps below) → `/lint-design-system` → parallel reviewers (`riverpod-reviewer`, `flutter-security-expert`, `accessibility-auditor`) → Maestro flows in `<app>/.maestro/` ([reference/flutter-e2e-maestro.md](reference/flutter-e2e-maestro.md)) on iOS simulator and Android emulator.
+
+**Plan gate:** no implementation until `docs/plans/YYYY-MM-DD-<feature>.md` exists and records the Riverpod provider type per piece of state (and why), the MFRI score, the exact file paths to create or modify, and the Firebase collections or packages it depends on. A stale or vague plan ("add a screen") is updated first.
+
 1. **Read templates** - Use Read tool on `reference/flutter-templates.md` for all code templates (Freezed models, Riverpod providers, screens, GoRouter, tests, Firebase integration)
 2. **Create feature structure** - Build `lib/features/<feature>/data/`, `domain/`, `presentation/` directories
 3. **Define models** - Create Freezed data models in `data/models/` with Firestore serialization
@@ -291,7 +295,7 @@ final class SuccessState<T> extends LoadState<T> {
 Widget build(BuildContext context) {
   return switch (state) {
     LoadingState() => const CircularProgressIndicator(),
-    ErrorState(:final error) => ErrorWidget(error.toString()),
+    ErrorState(:final error) => ErrorView(error: error), // app widget, not Flutter's ErrorWidget
     EmptyState() => const Text('No items'),
     SuccessState(:final data) => ItemList(data),
   };

@@ -162,8 +162,8 @@ export class [Name]Component {
 
 ### Interaction Rules
 ```html
-<!-- Hover states — use Tailwind hover: prefix -->
-<button class="btn btn-primary hover:btn-primary-focus transition-colors">
+<!-- Hover states — the daisyUI 5 color class styles hover itself; there are no *-focus color classes in v5 -->
+<button class="btn btn-primary">
 
 <!-- Focus states — always include for accessibility -->
 <input class="input focus:input-primary focus:outline-none">
@@ -202,12 +202,17 @@ export class [Name]Component {
 
 ## Quality Gates (check before reporting done)
 
+- [ ] `mcp__angular-cli__get_best_practices` queried with `workspacePath` (the folder holding `angular.json`) before coding; without it the tool returns generic v22 guidance
 - [ ] Zero raw hex values in template or component
 - [ ] Zero hardcoded `px`/`rem` spacing values — all Tailwind scale
 - [ ] Standalone component — no `NgModule`
 - [ ] `@if`/`@for` used — no `*ngIf`/`*ngFor`
 - [ ] `signal()` for any reactive state — no `BehaviorSubject`
 - [ ] Every interactive element has hover + focus state
+- [ ] Target size ≥ 24×24 CSS px (WCAG 2.2 AA minimum); house standard 44px
+- [ ] No daisyUI 4 classes (`input-bordered`, `*-focus` color variants); see `angular-spa/reference/daisyui-v5-components.md`
+- [ ] `/lint-design-system` run with zero violations
+- [ ] Reviewers dispatched: `ui-standards-expert` (token compliance) and `accessibility-auditor` (WCAG 2.2 AA)
 - [ ] Images use `placeholder` or `aspect-ratio` to prevent layout shift
 - [ ] Component placed in correct directory (`pages/` vs `features/` vs `shared/`)
 - [ ] Scope confirmed: this is marketing-site content, not app functionality

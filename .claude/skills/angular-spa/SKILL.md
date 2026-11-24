@@ -56,7 +56,7 @@ Do not run `npx @angular/cli@latest` — pin the CLI to the workspace major
 ## Process
 
 1. **Understand requirements** — scope, endpoints, data models, states, roles (401 vs 403 UX).
-2. **Generate, don't hand-write, the skeleton** — `npm exec --no -- ng generate component|service|guard|interceptor|interface features/<feature>/<name>` (CLI-first rule in `.claude/rules/web-frontend.md`); then fill in the logic.
+2. **Generate, don't hand-write, the skeleton** — `npm exec --no -- ng generate component|service|guard|interceptor|interface features/<feature>/<name>` (CLI-first rule in `.claude/rules/web-frontend.md`); then fill in the logic. Check the target paths do not exist first: generating over an existing file fails with "A merge conflicted" and exit 1. Never pass `--force`.
 3. **Service** — `@Service()` singleton with typed `HttpClient` calls that let errors propagate (`reference/angular-templates.md`).
 4. **Component** — signals + resource or `toSignal` (OnPush is the default), load-state union (`angular-ui-patterns`).
 5. **Route** — lazy `loadComponent`/`loadChildren`; guards are UX only (`reference/web-security.md`).

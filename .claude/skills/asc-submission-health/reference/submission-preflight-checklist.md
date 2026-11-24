@@ -1,6 +1,6 @@
 # Submission Preflight Checklist
 
-Complete all 7 steps before submitting to App Store review.
+Complete all 8 steps before submitting to App Store review.
 
 ## Step 1: Verify Build Status
 
@@ -81,3 +81,7 @@ asc localizations list --app "APP_ID" --type app-info --app-info "APP_INFO_ID"
 ```
 
 Each locale must have a privacy policy URL set.
+
+## Step 8: Privacy Manifest
+
+The app bundle must include a `PrivacyInfo.xcprivacy` (Flutter: `ios/Runner/PrivacyInfo.xcprivacy`, added to the Runner target) that declares an approved reason for every required-reason API the app's code uses (for example UserDefaults, file timestamp, system boot time, disk space), any tracking domains, and collected data types. Since 1 May 2024 App Store Connect rejects uploads of new or updated apps that use a listed API without an approved reason. Third-party SDKs on Apple's commonly used SDK list must ship their own privacy manifest (and a signature when added as a binary dependency): use a version that does. Keep the manifest consistent with the App Privacy details in App Store Connect.

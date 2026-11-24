@@ -28,9 +28,9 @@ Read `reference/submission-preflight-checklist.md` and complete every item befor
 
 ## Pre-submission Checklist
 
-The full 7-step checklist with commands is in `reference/submission-preflight-checklist.md`.
+The full 8-step checklist with commands is in `reference/submission-preflight-checklist.md`.
 
-**Quick reference — all 7 steps must pass before submitting:**
+**Quick reference — all 8 steps must pass before submitting:**
 1. Verify build status — build must be `VALID`, not `PROCESSING`
 2. Encryption compliance — declaration must exist and be assigned to build
 3. Content rights declaration — must be set on the app
@@ -38,6 +38,7 @@ The full 7-step checklist with commands is in `reference/submission-preflight-ch
 5. Localizations complete — all required locales have content
 6. Screenshots present — all required device sizes uploaded
 7. App info localizations — privacy policy URL set for all locales
+8. Privacy manifest — `PrivacyInfo.xcprivacy` declares approved reasons for required-reason APIs
 
 > For full commands for each step: Read `reference/submission-preflight-checklist.md`
 

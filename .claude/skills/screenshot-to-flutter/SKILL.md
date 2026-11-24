@@ -182,14 +182,17 @@ AppSpacing.xxl // 48
 
 ## Quality Gates (check before reporting done)
 
-- [ ] Zero raw hex color values in output
-- [ ] Zero hardcoded `fontSize`, `padding`, or spacing numbers
+- [ ] Zero raw hex color values in output (`grep -rn "0x[0-9a-fA-F]\|Color(0" lib/` returns no hits in new code)
+- [ ] Zero hardcoded `fontSize`, `padding`, or spacing numbers (`grep -rn "fontSize:" lib/` returns no hits in new code; spacing only via `AppSpacing.*`)
+- [ ] Touch targets ≥ 48dp for every interactive element (house standard; WCAG 2.2 AA minimum is 24×24)
+- [ ] `/lint-design-system` run with zero violations
 - [ ] Every interactive element has a pressed state (`InkWell` / `GestureDetector`)
 - [ ] Images use `placeholder` pattern (not missing or broken)
 - [ ] `flutter analyze` would pass (no obvious type errors, no unused imports)
 - [ ] Navigation bar / AppBar replicated if present in screenshot
 - [ ] Widget file placed in correct feature directory
 - [ ] `ConsumerWidget` used only if Riverpod state is actually needed
+- [ ] Reviewers dispatched: `riverpod-reviewer` (if providers were added), `accessibility-auditor` (Semantics, contrast, touch targets), `ui-standards-expert` (token compliance)
 
 ---
 

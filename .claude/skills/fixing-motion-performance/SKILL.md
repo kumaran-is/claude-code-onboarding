@@ -59,6 +59,28 @@ Understanding which browser rendering step an animation triggers determines its 
 
 ---
 
+## Diagnose, Scan, Verify
+
+Profile before changing code; fix only what the profile confirms.
+
+1. **Diagnose** in Chrome DevTools (or the Chrome DevTools MCP performance trace): **Performance** — record while reproducing the jank, look for long frames and Layout/Paint tasks; **Rendering → Paint flashing** — animated elements must not flash green every frame; **Layers** — check promoted layers (too many = GPU memory pressure).
+2. **Scan** for Critical never-patterns; each hit is fixed first:
+
+```bash
+grep -rn "@HostListener.*scroll\|window:scroll\|scrollTop\|scrollY" src/app --include="*.ts"
+grep -rn "transition.*width\|transition.*height\|transition.*top\|transition.*left\|transition.*margin" src/app --include="*.scss" --include="*.css"
+grep -rn "will-change" src/app --include="*.scss" --include="*.css"   # flag static (non-hover/focus) use
+```
+
+3. **Verify** after each fix, re-profiling:
+   - [ ] Performance: no Layout or Paint tasks during the animation
+   - [ ] Paint flashing: no green flashes on the animated element during motion
+   - [ ] Frame rate holds 60fps with 4x CPU throttling
+   - [ ] Layers: no unexpected layer explosion
+   - [ ] `prefers-reduced-motion: reduce` disables or reduces the motion (§8b)
+
+---
+
 ## Rule Categories by Priority
 
 | Priority | Category | Impact |

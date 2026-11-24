@@ -1,6 +1,6 @@
 # Google Play Submission Preflight Checklist
 
-Complete all 5 steps before releasing to production track.
+Complete all 6 steps before releasing to production track.
 
 ## Step 1: Validate Edit (if using edit lifecycle)
 
@@ -72,3 +72,13 @@ gpd publish deobfuscation upload mapping.txt \
 ```
 
 Only needed if obfuscation is enabled. Skip if your build does not use ProGuard/R8.
+
+## Step 6: Build and Policy Requirements
+
+Confirm in the release build and Play Console (no single gpd command covers these):
+- Release build is not debuggable: `flutter build appbundle --release` (never `--debug`); no `android:debuggable="true"` in the merged manifest.
+- Target API level meets Play's current requirement. Checked 2026-11-24 (developer.android.com/google/play/requirements/target-sdk): since 31 Aug 2026, new apps and updates must target Android 16 (API 36) or higher (Wear OS / Automotive: API 35; TV / XR: API 34); extension available to 1 Nov 2026. Re-check the page before each release; the requirement moves yearly.
+- Play App Signing enrolled (upload key separate from the app signing key).
+- Privacy policy URL set (App content).
+- Content rating questionnaire completed.
+- The AAB was built once with `--obfuscate --split-debug-info=build/symbols`, the symbols are kept with that artifact for reading stack traces, and the R8 mapping is uploaded (Step 5); see `deployment-ci-cd/reference/flutter-ci.md`.

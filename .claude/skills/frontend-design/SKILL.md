@@ -114,6 +114,7 @@ If you cannot complete this sentence, the design is not distinctive enough.
 - [ ] Code matches design ambition (maximalist = complex code; minimalist = precise spacing)
 - [ ] Accessible and performant (contrast ≥ 4.5:1, focus states, keyboard nav)
 - [ ] Required Output Structure: all 4 sections present
+- [ ] Three-layer review passed: tokens (`/lint-design-system`: hardcoded colors, raw spacing, inline typography), WCAG 2.2 AA (`accessibility-auditor`: contrast, ARIA, keyboard, semantics), patterns (`web-design-guidelines` skill, web targets: loading/error/empty states, focus management, interaction)
 - [ ] No design should look like a previous one — vary light/dark, font choices, layout personality
 
 ---

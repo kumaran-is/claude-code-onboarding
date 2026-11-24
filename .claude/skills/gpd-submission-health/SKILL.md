@@ -27,14 +27,15 @@ Read `reference/submission-preflight-checklist.md` and complete every item befor
 
 ## Pre-submission Checklist
 
-The full 5-step checklist with commands is in `reference/submission-preflight-checklist.md`.
+The full 6-step checklist with commands is in `reference/submission-preflight-checklist.md`.
 
-**Quick reference — all 5 steps must pass before releasing to production:**
+**Quick reference — all 6 steps must pass before releasing to production:**
 1. Validate edit — `gpd publish edit validate` must return no errors
 2. Confirm release status — version code matches uploaded build
 3. Verify store listing metadata — title, description, contact email present
 4. Verify screenshots and assets — required device types uploaded per locale
 5. Upload deobfuscation mapping — required if ProGuard/R8 is enabled
+6. Build and policy requirements — not debuggable, target API level current, Play App Signing, privacy policy URL, content rating
 
 > For full commands for each step: Read `reference/submission-preflight-checklist.md`
 
@@ -69,5 +70,5 @@ Some policy/compliance items must be completed in Play Console UI. Confirm in th
 | Source | How to Access | Purpose |
 |--------|--------------|---------|
 | gpd CLI help | `gpd publish edit --help`, `gpd publish release --help` | Current validation and release flags |
-| Preflight checklist | Read `reference/submission-preflight-checklist.md` | Full 5-step pre-release commands |
+| Preflight checklist | Read `reference/submission-preflight-checklist.md` | Full 6-step pre-release checklist |
 | gpd-id-resolver skill | Load skill | Resolve package name and track before submitting |

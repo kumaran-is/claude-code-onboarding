@@ -50,7 +50,7 @@ Work from the outside in. Each step names the signal and what it rules out.
 
 1. **Scope.** Which SLO is burning; one tool, all tools, one replica, one region? Histogram by `gen_ai.tool.name` and `error.type`; replica from the resource attributes.
 2. **Recent change.** Deploy, config, flag, upstream deploy, model/prompt version (`deployment-ci-cd/reference/llmops-release-and-rollout.md`). If a change lines up with the start, roll back first and investigate after.
-3. **Dependency or self?** Breaker state and `UpstreamHttpError`/`TaskCancelledError` share → upstream. Event-loop delay, CPU, memory (RSS growth, GC) → this process. Bulkhead `queued` > 0 or `BulkheadRejectedError` → saturation: capacity or a slow upstream holding slots.
+3. **Dependency or self?** Breaker state and `UpstreamHttpError`/`TaskCancelledError` share → upstream. Event-loop delay, CPU, memory (RSS growth, GC) → this process. Bulkhead `queued` > 0 or `BulkheadRejectedError` → saturation: capacity or a slow upstream holding slots. `app.upstream.retries` rising before errors do → the upstream is degrading. `app.mcp.auth.denials` jumping → a rotated key, an expired client token or probing (check `app.auth.reason`; the token itself is never recorded).
 4. **Exemplar trace.** Pick a failing span (`status=ERROR`, filter by `gen_ai.tool.name`), follow parent and links: the client's trace (via `_meta`), the HTTP span, the outbound HTTP/DB spans. The slowest child is the suspect.
 5. **Logs for that trace.** Query by `trace_id`. Logs give the event names and error types; they must not give you the arguments (§4).
 6. **Readiness and shutdown.** Spikes of 503 `shutting_down` during deploys mean the readiness drain is shorter than the load balancer's deregistration delay ([production-runtime-shutdown-health.md](production-runtime-shutdown-health.md)). `shutdown_drain_timeout` logs mean in-flight work exceeds the drain budget.
@@ -74,4 +74,4 @@ Work from the outside in. Each step names the signal and what it rules out.
 
 ## 6. Dashboard
 
-Top row (page-worthy): SLO burn, error ratio, p99 per tool group, readiness across replicas. Middle: per-tool rate and errors by `error.type`, breaker state, bulkhead occupancy/queue, event-loop delay. Bottom: cache hit ratio, loops blocked, token usage and derived cost, export health.
+Top row (page-worthy): SLO burn, error ratio, p99 per tool group, readiness across replicas. Middle: per-tool rate and errors by `error.type`, breaker state, bulkhead occupancy/queue, event-loop delay. Bottom: cache hit ratio, retries, auth denials, loops blocked, token usage and derived cost, export health.

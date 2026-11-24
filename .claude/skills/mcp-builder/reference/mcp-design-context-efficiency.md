@@ -131,6 +131,11 @@ server.registerResource(
   new ResourceTemplate('tool-def://{category}/{name}', { list: undefined }),
   { title: 'Tool Definition', description: 'Get full definition for a specific tool' },
   async (uri, { category, name }) => {
+    // Template variables are client-controlled `string | string[]`: allowlist before building a path.
+    const safe = /^[a-z0-9_-]+$/;
+    if (typeof category !== 'string' || typeof name !== 'string' || !safe.test(category) || !safe.test(name)) {
+      throw new ResourceNotFoundError(uri.href);
+    }
     const defPath = path.join(TOOLS_DIR, category, `${name}.json`);
     const def = await fs.readFile(defPath, 'utf8');
     return { contents: [{ uri: uri.href, text: def }] };

@@ -255,3 +255,58 @@ results = evaluate(eval_cases, metrics=[
 ```
 
 **Minimum bar:** 7 test cases (3 happy path + 4 edge case categories). Add workflow tests when your server supports multi-step operations.
+
+## Deterministic Gate Before LLM Evals (TypeScript servers)
+
+LLM evals are slow and probabilistic; run them only after the deterministic layer is green. Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3, vitest 5.1.1, @vitest/coverage-v8 5.1.1, eslint 10.15.0, typescript-eslint 8.74.0 and prettier 3.10.1 (every row also failed on a planted violation: see [production-deployment-docker.md](production-deployment-docker.md) §0).
+
+```typescript
+// vitest.config.ts: tests call the server through a real @modelcontextprotocol/client Client (no mocked transport)
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    include: ['test/**/*.test.ts'],
+    environment: 'node',
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/stdio.ts', 'src/http.ts'], // process entry points: covered by the /verify MCP block and the image smoke test
+      reporter: ['text', 'json-summary'],
+      thresholds: { lines: 80, functions: 80, branches: 70, statements: 80 },
+    },
+  },
+});
+```
+
+```javascript
+// eslint.config.js (flat config)
+// @ts-check
+import js from '@eslint/js';
+import prettier from 'eslint-config-prettier';
+import { defineConfig } from 'eslint/config';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+export default defineConfig(
+  { ignores: ['dist/', 'coverage/'] },
+  js.configs.recommended,
+  tseslint.configs.strictTypeChecked,
+  {
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      'no-console': 'error', // stdout belongs to the stdio transport; log with pino to stderr
+      '@typescript-eslint/no-floating-promises': 'error',
+    },
+  },
+  { files: ['**/*.js'], extends: [tseslint.configs.disableTypeChecked] },
+  prettier,
+);
+```
+
+- `vitest run` exits 0 when every test is skipped: gate on the executed count (`--reporter=json` + the count check in `node-ci-and-observability.md` §4, or `/verify full`, which fails "executed 0").
+- Under `exactOptionalPropertyTypes: true`, passing Fastify's `req.raw` to `toNodeHandler` (`@modelcontextprotocol/node` 2.1.2) fails with TS2379 (`method?: string` vs `string | undefined`); leave the flag off or cast at that one call.
+- Inspector 2.16.0 CLI as a scripted check (no browser): `npx -y @modelcontextprotocol/inspector@2.16.0 --cli node dist/stdio.js --method tools/call --tool-name <tool> --tool-arg key=value` exits 0 on success and 5 when the result has `isError: true` (`--method tools/list` lists tools). An ad-hoc command writes no catalog file; `--catalog` is rejected in that mode (it is for named `--server` entries).

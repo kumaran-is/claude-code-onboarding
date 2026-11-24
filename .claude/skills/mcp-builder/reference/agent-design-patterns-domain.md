@@ -165,7 +165,7 @@ server.registerTool(
     description: "Escalate decision to human operator",
     inputSchema: {
       reason: z.string().describe("Why escalation is needed"),
-      context: z.record(z.unknown()).describe("Relevant context for human reviewer"),
+      context: z.record(z.string(), z.unknown()).describe("Relevant context for human reviewer"),
       urgency: z.enum(["low", "medium", "high", "critical"]),
       suggested_action: z.string().optional()
     },

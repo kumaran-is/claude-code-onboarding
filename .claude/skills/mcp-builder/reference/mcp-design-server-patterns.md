@@ -53,7 +53,7 @@ tools: ["manageUser", "searchUsers"]
   inputSchema: z.object({
     action: z.enum(["create", "read", "update", "delete"]),
     userId: z.string().optional(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.unknown()).optional(),
   }),
 }
 ```
@@ -82,7 +82,7 @@ server.registerTool(
     inputSchema: {
       reason: z.string().describe("Why human review is needed"),
       severity: z.enum(["low", "medium", "high", "critical"]),
-      context: z.record(z.any()).describe("Relevant context for the human reviewer"),
+      context: z.record(z.string(), z.unknown()).describe("Relevant context for the human reviewer"),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   },

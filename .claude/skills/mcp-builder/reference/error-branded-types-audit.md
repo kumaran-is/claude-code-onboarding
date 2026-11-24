@@ -209,7 +209,7 @@ async function getOrderTool(
   const parseResult = orderInputSchema.safeParse(input);
   if (!parseResult.success) {
     const error = MCPErrorFactory.create(MCPErrorCode.VALIDATION_FAILED, 'Invalid input parameters', {
-      details: { errors: parseResult.error.errors },
+      details: { issues: parseResult.error.issues },
       correlation_id: correlationId,
     });
 

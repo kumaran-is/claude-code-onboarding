@@ -1,14 +1,17 @@
-# MCP Server Tracing (OpenTelemetry, Node 24)
+# MCP Server Tracing (OpenTelemetry, Node 26)
 
 Request-level and tool-level spans for a Node MCP server, trace context from the client's `params._meta`, and logs joined to traces. The SDK bootstrap, the ESM loader hook, structured logs and the CI gates live in one place: [node-ci-and-observability.md](../../deployment-ci-cd/reference/node-ci-and-observability.md) §1–3. Read it first; this file only adds the MCP layer.
 
-Verified 2026-11-23: `@modelcontextprotocol/server@2.4.0` + `@modelcontextprotocol/node@2.1.2` (`createMcpHandler`, stateless), `@opentelemetry/sdk-node@0.301.2`, `@opentelemetry/api@1.10.0`, Node 24.13.1, TypeScript 5.9.3 strict. The tests started the real server with `node --import ./dist/instrumentation.js`, exported to a fake OTLP/HTTP collector and asserted on the received spans and histograms (6 end-to-end tests; every claim marked *executed* below had a planted defect that made a test fail).
+Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3 strict, `@modelcontextprotocol/server@2.4.0` + `@modelcontextprotocol/node@2.1.2` (`createMcpHandler`, stateless) behind Fastify 5.12.8, `@fastify/otel@1.0.1`, `@opentelemetry/sdk-node@0.301.2` + SDK 3.1.1, `@opentelemetry/api@1.10.0`. The tests started the real server with `node --import ./dist/instrumentation.js`, called it with a real SDK v2 `Client` over Streamable HTTP, exported to a fake OTLP/HTTP collector and asserted on the received spans and metrics (every claim marked *executed* below has a negative control that made a test fail).
 
 ## 1. What to emit
 
 | Signal | Name | Kind / unit | Source |
 |--------|------|-------------|--------|
-| HTTP server span per request | `POST` (from `@opentelemetry/instrumentation-http`) | SERVER | automatic, needs the ESM hook |
+| HTTP server span per request | `POST` (from `@opentelemetry/instrumentation-http`) | SERVER | automatic (ESM hook for plain `node:http`; Fastify is patched via `require`) |
+| Fastify request/hook spans | from `@fastify/otel` (not the deprecated `@opentelemetry/instrumentation-fastify`) | INTERNAL | automatic, Fastify servers only |
+| Auth decision | `mcp.auth`, attribute `app.auth.result` = `allow`/`deny`, never the token | INTERNAL | manual, in the auth hook |
+| Downstream call | `upstream {name} {route}` with a `retry` event per retry; `fetch()` CLIENT spans as children | INTERNAL + CLIENT | manual + `@opentelemetry/instrumentation-undici` |
 | Tool span per call | `tools/call {gen_ai.tool.name}`, e.g. `tools/call echo` | SERVER | `withToolTelemetry` (§3) |
 | Operation duration | `mcp.server.operation.duration` | histogram, `s` | §3 + [observability-metrics.md](observability-metrics.md) |
 | Logs | pino JSON with `trace_id`, `span_id` | stdout (HTTP) / stderr (stdio) | node-ci-and-observability.md §2 |
@@ -18,6 +21,8 @@ Verified 2026-11-23: `@modelcontextprotocol/server@2.4.0` + `@modelcontextprotoc
 The MCP conventions are **Development** status. They moved from the main semantic-conventions repository to [semantic-conventions-genai](https://github.com/open-telemetry/semantic-conventions-genai) (RECOMMENDED PRACTICE: follow them, expect renames). In `@opentelemetry/semantic-conventions@1.45.0` the `ATTR_MCP_*`, `ATTR_GEN_AI_TOOL_*` and `METRIC_MCP_*` constants still exist under `/incubating` but are marked `@deprecated` ("moved"), so declare the strings locally:
 
 ```typescript
+// `_meta` trace-context keys come from the SDK (SEP-414), not hand-typed strings.
+export { TRACEPARENT_META_KEY, TRACESTATE_META_KEY, BAGGAGE_META_KEY } from "@modelcontextprotocol/server";
 // MCP / GenAI attribute names from the OpenTelemetry GenAI semantic conventions (status: Development).
 // @opentelemetry/semantic-conventions 1.45.0 still exports ATTR_MCP_* / ATTR_GEN_AI_* from
 // "/incubating", but marks them @deprecated ("moved to the semantic-conventions-genai repository"),
@@ -60,6 +65,7 @@ import {
   type Link,
 } from "@opentelemetry/api";
 import {
+  BAGGAGE_META_KEY,
   GEN_AI_OPERATION_NAME,
   GEN_AI_TOOL_NAME,
   JSONRPC_REQUEST_ID,
@@ -67,6 +73,8 @@ import {
   MCP_SERVER_OPERATION_DURATION,
   MCP_SERVER_OPERATION_DURATION_BUCKETS,
   MCP_SESSION_ID,
+  TRACEPARENT_META_KEY,
+  TRACESTATE_META_KEY,
 } from "./semconv.js";
 
 const tracer = trace.getTracer("orders-mcp");
@@ -91,7 +99,7 @@ export interface ToolCallContext {
 /** W3C trace context a client put in `params._meta` (semconv-genai MCP; keys unprefixed). */
 function metaCarrier(meta: Record<string, unknown> | undefined): Record<string, string> {
   const carrier: Record<string, string> = {};
-  for (const key of ["traceparent", "tracestate", "baggage"]) {
+  for (const key of [TRACEPARENT_META_KEY, TRACESTATE_META_KEY, BAGGAGE_META_KEY]) {
     const value = meta?.[key];
     if (typeof value === "string") carrier[key] = value;
   }
@@ -118,7 +126,7 @@ export async function withToolTelemetry<T>(
   const carrier = metaCarrier(ctx.mcpReq._meta);
   const ambient = context.active();
   const ambientSpan = trace.getSpan(ambient);
-  const hasMetaParent = carrier["traceparent"] !== undefined;
+  const hasMetaParent = carrier[TRACEPARENT_META_KEY] !== undefined;
   const parent = hasMetaParent ? propagation.extract(ambient, carrier) : ambient;
   const links: Link[] =
     hasMetaParent && ambientSpan !== undefined ? [{ context: ambientSpan.spanContext() }] : [];
@@ -174,21 +182,23 @@ mcp.registerTool(
 
 Executed results:
 
-- One HTTP `POST` span per request and one `tools/call <tool>` SERVER span per call, with the attributes above. The plain call's tool span is a child of the HTTP span (`parentSpanId` = the HTTP span id).
+- HTTP (`@opentelemetry/instrumentation-http`), Fastify (`@fastify/otel`) and undici scopes all exported, plus one `tools/call <tool>` SERVER span per call, with the attributes above. The plain call's tool span is a child of the HTTP span (`parentSpanId` = the HTTP span id).
 - The failing tool's span had status ERROR, `error.type=RangeError`, and the status message was the type, not the error text. Its argument `token` value appeared in no span attribute and no log line.
 - The log line written inside the tool carried the same `trace_id` as the tool span.
 - Histogram points carried only `mcp.method.name`, `gen_ai.tool.name` (+ `error.type`) and the advised bucket bounds. A planted `mcp.session.id` metric attribute failed the test: session and request ids are unbounded and belong on spans, never on metrics.
-- A planted `gen_ai.tool.call.arguments` span attribute holding the arguments failed the secret-leak assertion.
+- A planted `gen_ai.tool.call.arguments` span attribute holding the arguments failed the secret-leak assertion (the test searches every exported OTLP body for a planted secret).
+- Auth: a wrong bearer token got 401 + `WWW-Authenticate`, an `mcp.auth` span with `app.auth.result=deny`, an `app.mcp.auth.denials` count, and no tool span.
+- Downstream: an idempotent call that got 503, 503, 200 produced one `upstream orders GET /orders/{id}` span with 2 `retry` events and 3 undici CLIENT children; every upstream request carried a `traceparent` with that span's trace id. The second identical call was a cache hit and made no upstream span.
 
 ## 4. Propagation through `params._meta`
 
-An MCP client that is itself traced (an agent framework, a gateway) should inject W3C trace context into the request's `params._meta` using **unprefixed** `traceparent` / `tracestate` / `baggage` keys (semconv-genai MCP spec; the SEP it references is UNVERIFIED). The MCP specification reserves `_meta` and reserves key prefixes whose second label is `modelcontextprotocol` or `mcp`; unprefixed keys are allowed, and the base spec does not itself define `traceparent` (MCP spec 2025-11-25, *General fields: `_meta`*).
+An MCP client that is itself traced (an agent framework, a gateway) should inject W3C trace context into the request's `params._meta` using **unprefixed** `traceparent` / `tracestate` / `baggage` keys (SEP-414; the SDK exports them as `TRACEPARENT_META_KEY`, `TRACESTATE_META_KEY`, `BAGGAGE_META_KEY`, and its typings require the W3C `traceparent` format). The MCP specification reserves `_meta` and reserves key prefixes whose second label is `modelcontextprotocol` or `mcp`; unprefixed keys are allowed, and the base spec does not itself define `traceparent` (MCP spec 2025-11-25, *General fields: `_meta`*).
 
 Server rule (implemented above): if `_meta.traceparent` is present, it becomes the tool span's **parent**, and the ambient HTTP span is attached as a **link**. Otherwise the HTTP span is the parent.
 
 - Executed: a call with `_meta.traceparent = 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01` produced a tool span with that trace id and parent span id `00f067aa0ba902b7`, plus a link to the HTTP span. Forcing the wrapper to ignore `_meta` failed the test.
 - Why `_meta` and not only the HTTP `traceparent` header: stdio has no headers, and an HTTP client library's own instrumentation may start a different trace for the transport request than the one the agent is in (SOURCE-PROVEN in an agent-to-MCP integration).
-- Client side, inject explicitly: `const meta: Record<string, string> = {}; propagation.inject(context.active(), meta);` then pass `_meta: meta` in the request params.
+- Client side, inject explicitly: `const meta: Record<string, string> = {}; propagation.inject(context.active(), meta);` then pass it as `_meta` (SDK v2: `client.callTool({ name, arguments, _meta: meta })`, executed).
 - Validate before trusting: `propagation.extract` ignores a malformed `traceparent`; never echo `_meta` content into logs.
 - Outbound: inject `traceparent` and request-id headers only into clients for your own internal services. Third-party model, cloud and payment SDK clients get none: the ids correlate your traffic for an outside party and some APIs reject unknown headers. Build the internal-auth headers and the trace headers in one helper so a new internal client gets both and an external one gets neither (RECOMMENDED PRACTICE; SOURCE-PROVEN pattern).
 
@@ -204,7 +214,9 @@ Tool arguments, tool results, prompts, bearer tokens, cookies, `Mcp-Session-Id` 
 
 ## 7. Checklist
 
-- [ ] Bootstrap and ESM hook as in node-ci-and-observability.md §1; a test proves HTTP spans exist
+- [ ] Bootstrap and sync ESM hook as in node-ci-and-observability.md §1; a test proves HTTP server spans and a CLIENT span per outbound client exist
+- [ ] Fastify servers use `@fastify/otel` (`registerOnInitialization: true`), not `@opentelemetry/instrumentation-fastify`
+- [ ] Auth, downstream (with `retry` events) and cache outcomes visible as spans or metrics; no tokens in attributes
 - [ ] Every tool wrapped: SERVER span `tools/call {tool}`, `error.type` on failure, args/results not recorded
 - [ ] `_meta` trace context honoured as parent, ambient span linked
 - [ ] Duration histogram with semconv buckets and low-cardinality attributes only

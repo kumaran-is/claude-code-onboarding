@@ -62,6 +62,18 @@ uv run python scripts/evaluation.py \
   evaluation.xml
 ```
 
+TypeScript server (build first; `-c` takes the Node binary, `-a` the compiled ESM entry):
+```bash
+npm run build
+uv run python scripts/evaluation.py \
+  -t stdio \
+  -c node \
+  -a dist/stdio.js \
+  evaluation.xml
+```
+
+Verified 2026-11-23: the connection layer (`connections.create_connection`, Python SDK v2 `mcp==2.3.0`) spawned a Node 26.13.1 TypeScript SDK v2 server over stdio and listed its tools (exit 0); a missing entry file exited 1. The full model-driven run needs `ANTHROPIC_API_KEY` and was not run here.
+
 ### 2. Streamable HTTP
 
 ```bash

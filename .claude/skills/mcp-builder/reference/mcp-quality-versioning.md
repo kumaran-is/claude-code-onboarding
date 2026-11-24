@@ -85,7 +85,7 @@ inputSchema: {
 // ✅ CORRECT — mark as deprecated, keep for 2 release cycles
 inputSchema: {
   query: z.string(),
-  filters: z.record(z.any()).optional().describe("DEPRECATED — use filter_v2 instead"),
+  filters: z.record(z.string(), z.unknown()).optional().describe("DEPRECATED — use filter_v2 instead"),
   filter_v2: z.object({ ... }).optional(),
 }
 ```

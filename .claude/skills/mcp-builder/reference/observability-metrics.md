@@ -2,7 +2,7 @@
 
 Which metrics a Node MCP server exports, how they are named, and which attributes are allowed on them. Spans and `_meta` propagation are in [observability-tracing.md](observability-tracing.md). SLOs and alerts built on these metrics are in [observability-monitoring.md](observability-monitoring.md).
 
-Verified 2026-11-23 with `@opentelemetry/api@1.10.0`, `@opentelemetry/sdk-metrics@3.1.1`, `cockatiel@4.0.0`, `lru-cache@11.5.3`, Node 24.13.1. The code below compiles under strict TypeScript and ESLint `strictTypeChecked`. The duration histogram was asserted end to end through a fake OTLP collector.
+Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3 strict, `@opentelemetry/api@1.10.0`, `@opentelemetry/sdk-metrics@3.1.1`, `cockatiel@4.0.0`, `lru-cache@11.5.3`, `@prometheus-io/client@0.16.1`. The duration histogram, auth denials, retries and cache hit/miss counters were asserted end to end through a fake OTLP collector; the §3 snippet was compiled, not run, on this toolchain (its slot arithmetic was executed earlier on Node 24.13.1).
 
 ## 1. The set
 
@@ -14,6 +14,9 @@ Verified 2026-11-23 with `@opentelemetry/api@1.10.0`, `@opentelemetry/sdk-metric
 | Upstream bulkhead occupancy and queue depth | `app.upstream.bulkhead.in_use`, `.queued` | ObservableUpDownCounter | `app.upstream` |
 | Breaker state | `app.upstream.breaker.open` | ObservableGauge (0/1) | `app.upstream` |
 | Cache effectiveness | `app.cache.lookups` | Counter | `app.cache.name`, `app.cache.result` = `hit`/`miss` |
+| Auth denials (no tool ran) | `app.mcp.auth.denials` | Counter | `app.auth.reason` (fixed enum: `invalid_token`, `expired`, `scope`) |
+| Upstream retries | `app.upstream.retries` | Counter | `app.upstream` |
+| Upstream timeouts | `error.type` = `TaskCancelledError` on the duration histogram (cockatiel timeout) or `TimeoutError` (native `AbortSignal.timeout`) | (histogram) | as above |
 | Agent loops refused | `app.mcp.tool_loops_blocked` | Counter | `gen_ai.tool.name` |
 | Open sessions (legacy sessionful transports only) | `app.mcp.active_sessions` | UpDownCounter | none |
 | Model token usage (if the server calls an LLM) | `gen_ai.client.token.usage` or its successor | Histogram/Counter, `{token}` | see §4 |
@@ -78,5 +81,7 @@ When the server calls a model or a metered API, count usage where the call retur
 ## 5. Export and test
 
 - Export interval: `PeriodicExportingMetricReader` default 60 s; set `OTEL_METRIC_EXPORT_INTERVAL` lower only in tests. Graceful shutdown flushes the last interval (`sdk.shutdown()`); a `process.exit` before it loses up to one interval of metrics.
-- Pull-based Prometheus scraping: `@opentelemetry/exporter-prometheus` instead of OTLP; do not expose both on the same port as `/mcp`.
+- **Pick one metrics API: OpenTelemetry.** One SDK feeds traces and metrics, exemplars link the two, and OTLP reaches any backend (a Collector can expose Prometheus). Pull-based scraping without a Collector: `@opentelemetry/exporter-prometheus@0.301.2` as the metric reader (not executed here).
+- `prom-client` is deprecated on npm ("prom-client has been replaced by @prometheus-io/client"). OPTIONAL, for services that already instrument with the Prometheus client API: `@prometheus-io/client@0.16.1` (pre-1.0, pin exactly; engines `^22 || ^24 || >=26`). *Executed* on Node 26.13.1 / TS 6.0.3 (ESM named import of the CJS package compiles): a separate `Registry` with a Counter, a Histogram and `collectDefaultMetrics` served `/metrics` as `text/plain; version=0.0.4`; an undeclared label name threw. Do not run both APIs for the same metric.
+- Serve `/metrics` on an internal port, never on the public `/mcp` listener.
 - Test the contract, not the library: assert metric name, unit, bucket bounds and the exact attribute keys a dashboard or alert depends on (pattern: node-ci-and-observability.md §3).

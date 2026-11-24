@@ -1,6 +1,6 @@
 # ADK Structured Output and Session State
 
-> Split from `adk-core-patterns.md`: session state access, structured output, `UserContent` construction. Executed with `google-adk==1.29.0` and a scripted fake model.
+> Split from `adk-core-patterns.md`: session state access, structured output, `UserContent` construction. Executed with `google-adk==1.29.0` and re-checked on `2.15.0` with a scripted fake model (invalid output still raises `ValidationError` inside `run_async`). Since 2.14 an agent with both `output_schema` and transfer targets returns its answer through a `set_model_response` tool call (changelog).
 
 ## 1. Session state access
 

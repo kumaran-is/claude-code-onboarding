@@ -85,6 +85,8 @@ async def fetch_report(report_id: str, tool_context: ToolContext) -> dict:
     return {"report_id": report_id, "data": {}, "source": "api"}
 ```
 
+**Enum parameters (2.14+):** an `enum.Enum`-typed argument now arrives as the enum member, not its raw string (executed on 2.15). With a plain `Enum` (not `StrEnum`), 1.x code that compares the argument with `== "value"` silently stops matching; compare with the member or use `Literal[...]`.
+
 ---
 
 ## 4. Pydantic Input Tool
@@ -147,7 +149,7 @@ def archive_document(document_id: str, tool_context: ToolContext) -> dict:
 archive_tool = FunctionTool(archive_document, require_confirmation=True)
 ```
 
-Round trip (executed on 1.29 with a scripted model): the first run does **not** execute the
+Round trip (executed on 1.29 and 2.15 with a scripted model): the first run does **not** execute the
 tool; it emits a function call named `adk_request_confirmation` (args `originalFunctionCall`,
 `toolConfirmation`). Show it to the user, then send the decision as the next message:
 
@@ -187,7 +189,7 @@ on shutdown — MCP sessions hold open connections.
 
 **`tool_filter` is an allowlist you must enforce yourself.** ADK treats `None` AND an empty
 list as "expose every tool" (`base_toolset.py` `_is_tool_selected`: `if not self.tool_filter:
-return True`; `McpToolset(..., tool_filter=[])` constructs without error — executed on 1.29).
+return True`; `McpToolset(..., tool_filter=[])` constructs without error — executed on 1.29 and 2.15; 2.x needs the `google-adk[mcp]` extra to import `McpToolset`).
 Build toolsets through one project factory that raises on a missing/empty filter, and add a
 startup or CI check that every allowlisted name exists on the server (a typo silently leaves
 the agent with fewer tools).

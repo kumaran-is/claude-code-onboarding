@@ -1,6 +1,6 @@
 # ADK Testing Patterns
 
-Every snippet here was executed with `google-adk==1.29.0`, pytest and `asyncio_mode = "auto"` (12 tests passed; no network, no credentials). Eval sets, judges and golden cases: `adk-eval-guide` and `eval-guide`. Live end-to-end replay against the running service before merge: `agentic-ai-dev/reference/agentic-testing.md`.
+Every snippet here was executed with `google-adk==1.29.0`; the behaviours they assert were re-checked on `google-adk==2.15.0` (36 behaviour tests, fixture model, not live), pytest and `asyncio_mode = "auto"` (12 tests passed; no network, no credentials). Eval sets, judges and golden cases: `adk-eval-guide` and `eval-guide`. Live end-to-end replay against the running service before merge: `agentic-ai-dev/reference/agentic-testing.md`.
 
 ## 1. InMemoryRunner does NOT fake the model
 
@@ -9,10 +9,11 @@ Every snippet here was executed with `google-adk==1.29.0`, pytest and `asyncio_m
 ```toml
 # pyproject.toml
 [dependency-groups]
-dev = ["pytest==<pin>", "pytest-asyncio==<pin>", "httpx==<pin>", "aiosqlite==<pin>"]
+dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "httpx2==2.16.2", "aiosqlite==0.22.1"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 ```
 
 ## 2. Scripted fake model
@@ -138,7 +139,7 @@ def test_stateful_tool_writes_state():
     assert ctx.state["cart"] == [{"item": "apple", "quantity": 2}]
 ```
 
-Assert callback wiring with an identity check (a docstring claiming "guarded" proves nothing), and exercise the behaviour with the fake model. Callback parameter names must be ADK's keyword names (`callback_context`, `llm_request`) — `(ctx, request)` raises `TypeError` at run time (executed).
+Assert callback wiring with an identity check (a docstring claiming "guarded" proves nothing), and exercise the behaviour with the fake model. Callback parameter names must be ADK's canonical names (`callback_context`, `llm_request`); 1.29 raised `TypeError` for `(ctx, request)`, 2.15 adapts them positionally without error, so only a test that runs the callback proves the wiring (executed on both).
 
 ```python
 def test_callback_is_wired():
@@ -153,14 +154,14 @@ async def test_callback_short_circuits_model():
 
 ## 5. FastAPI tests (contract from `adk-fastapi-integration.md`)
 
-Run the real lifespan with a real session service (SQLite via `aiosqlite` in tests, Postgres in integration), the fake model, and an overridden principal dependency.
+Run the real lifespan with a real session service (SQLite via `aiosqlite` in tests, Postgres in integration), the fake model, and an overridden principal dependency. Drive the app with `httpx2` (`ASGITransport` + `AsyncClient`); outbound HTTP clients in the service stay on `httpx`. `ASGITransport` does **not** run the lifespan, so enter it yourself (`main.lifespan(app)` or `app.router.lifespan_context(app)`). Executed on google-adk 2.15.0 with httpx2 2.16.2 (fixture model): without the lifespan context, state set in the lifespan was missing; with it, present; SSE lines stream through `client.stream(...).aiter_lines()`; ADK's own `get_fast_api_app(agents_dir=..., session_service_uri="sqlite+aiosqlite:///...", web=False)` served `/list-apps`, created a session and answered `/run`, and a different `user_id` presenting that session id got 404.
 
 ```python
 import json
 
 import pytest
 from google.genai import errors
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient   # Starlette 1.10 deprecates httpx for driving the app
 
 from src import main
 from src.api import routes

@@ -1,6 +1,6 @@
 # ADK Gemini Prompt Templates
 
-Instruction templates for ADK `LlmAgent(instruction=...)`. General prompt design (instruction hierarchy, trust levels, cache-friendly ordering): `prompt-engineering-patterns` skill. Templates below executed in `google-adk==1.29.0` with a scripted fake model (they run; output quality against a live model is not claimed).
+Instruction templates for ADK `LlmAgent(instruction=...)`. General prompt design (instruction hierarchy, trust levels, cache-friendly ordering): `prompt-engineering-patterns` skill. Templates below executed in `google-adk==1.29.0` with a scripted fake model (state templating — `{key}`, `{key?}`, callable instructions — re-checked on 2.15.0) (they run; output quality against a live model is not claimed).
 
 ## 0. ADK templating rules (read first)
 

@@ -8,10 +8,11 @@ Pin `google-adk` exactly and commit `uv.lock`; CI and Docker install with `uv sy
 [project]
 name = "my-adk-service"
 version = "0.1.0"
-requires-python = "==3.14.*"        # the interpreter you deploy; google-adk 1.29 declares >=3.10
+requires-python = ">=3.14"          # interpreter patch pinned in .python-version (3.14.10) and the Docker base
 dependencies = [
-    "google-adk==1.29.0",
-    "fastapi==<pin>",
+    "google-adk[db,mcp,otel]==2.15.0", # mcp extra: McpToolset; db: DatabaseSessionService; otel: tracing
+    "google-genai==2.34.0",           # google-adk 2.15 requires google-genai>=2.34,<3
+    "fastapi[standard-no-fastapi-cloud-cli]==0.165.0",  # what google-adk 2.15 resolves; no fastapi-cloud-cli deps
     "uvicorn[standard]==<pin>",
     "pydantic-settings==<pin>",
     "structlog==<pin>",
@@ -20,20 +21,30 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest==<pin>", "pytest-asyncio==<pin>", "httpx==<pin>", "aiosqlite==<pin>", "ruff==<pin>", "mypy==<pin>"]
+dev = ["pytest==9.2.0", "pytest-asyncio==1.5.0", "httpx2==2.16.2", "aiosqlite==0.22.1", "ruff==0.17.6", "mypy==2.4.1"]
+# httpx2 drives the FastAPI app in tests (Starlette 1.10 deprecates httpx for TestClient/ASGITransport)
+
+[tool.ruff]
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
+python_version = "3.14"
 strict = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = ["google.adk.*"]
+implicit_reexport = true   # google.adk.tools builds __all__ dynamically; strict mode otherwise rejects its imports
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 ```
 
-`google-adk` brings `google-genai`; do not add a second, looser `google-genai` constraint. Fill `<pin>` with the versions `uv lock` resolves and you have tested. Verify `uv sync --locked` on your target Python before adopting a new interpreter (the references here were executed on Python 3.12 with google-adk 1.29.0). Supply-chain gates (lock check, audit): `deployment-ci-cd/reference/python-ci-supply-chain.md`.
+Pin `google-genai` to the 2.x line ADK accepts: `google-adk==2.15.0` declares `google-genai>=2.34,<3` and `websockets>=15.0.1,<16` in its PyPI `requires_dist` (uv resolves websockets 15.0.1; a project-wide websockets 17 pin conflicts), so a service that also wants genai 3.x for direct Gemini calls must run that code in a separate environment (`uv lock` is unsatisfiable otherwise, executed). Fill `<pin>` with the versions `uv lock` resolves and you have tested (2.15.0 resolved fastapi 0.165.0, starlette 1.10.0, pydantic 2.14.4, opentelemetry 1.45.2 on Python 3.14.10). Verify `uv sync --locked` on your target Python before adopting a new interpreter. Supply-chain gates (lock check, audit): `deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ## 2. Environment and auth per environment
 
@@ -41,7 +52,7 @@ asyncio_mode = "auto"
 |---|---|---|
 | local | developer API (Google AI Studio) or Vertex | `GOOGLE_API_KEY` in a local, git-ignored `.env` — or ADC via `gcloud auth application-default login` |
 | test / CI | none — scripted fake model (`adk-testing.md`) | none |
-| staging / production | Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=true`) | workload identity / ADC: **no API key exists**; startup fails if one is set |
+| staging / production | Vertex AI (`GOOGLE_GENAI_USE_ENTERPRISE=true`; the older `GOOGLE_GENAI_USE_VERTEXAI` is deprecated but still read) | workload identity / ADC: **no API key exists**; startup fails if one is set |
 
 ```
 # .env (local only, never committed)

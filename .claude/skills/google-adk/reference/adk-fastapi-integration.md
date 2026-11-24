@@ -1,6 +1,6 @@
 # ADK FastAPI Integration
 
-Verified against `google-adk==1.29.0` + FastAPI with a scripted fake model (no live Gemini call): the module below and the tests in `adk-testing.md` §5 pass (`pytest`: 6 passed), `ruff` and `mypy --strict` (pydantic plugin) are clean. Generic FastAPI rules (auth dependency, error envelope, request id) live in `python-dev/reference/fastapi-auth-security.md`, `fastapi-authorization-boundaries.md` and `fastapi-error-handling.md` — this file covers only what ADK adds.
+Verified against `google-adk==1.29.0` + FastAPI with a scripted fake model (no live Gemini call); session ownership, SSE partial + aggregated events and cancellation re-checked on `google-adk==2.15.0` (fixture model, not live): the module below and the tests in `adk-testing.md` §5 pass (`pytest`: 6 passed), `ruff` and `mypy --strict` (pydantic plugin) are clean. Generic FastAPI rules (auth dependency, error envelope, request id) live in `python-dev/reference/fastapi-auth-security.md`, `fastapi-authorization-boundaries.md` and `fastapi-error-handling.md` — this file covers only what ADK adds.
 
 ## 1. Project structure
 
@@ -72,13 +72,13 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(router, prefix="/api")
 ```
 
-Session backends (verified on 1.29):
+Session backends (verified on 1.29 and 2.15):
 
 | Backend | Construct | Notes |
 |---|---|---|
 | Tests / local | `InMemorySessionService()` | Lost on restart; never in production |
-| Self-hosted Postgres (Cloud SQL) | `DatabaseSessionService(db_url="postgresql+asyncpg://...")` | Needs `sqlalchemy[asyncio]` (greenlet) and an async driver (`asyncpg`); without greenlet the import fails. Executed against PostgreSQL 16. |
-| Managed Agent Engine | `VertexAiSessionService(project=..., location=..., agent_engine_id=...)` | `project_id=` raises `TypeError` |
+| Self-hosted Postgres (Cloud SQL) | `DatabaseSessionService(db_url="postgresql+asyncpg://...")` | Needs `google-adk[db]`, `sqlalchemy[asyncio]` (greenlet) and an async driver (`asyncpg`). Executed against PostgreSQL 16 on 1.29 and against `sqlite+aiosqlite` on 2.15. ADK 2.14 changelog: new tables use `json` instead of `jsonb` on Postgres; existing databases move with `adk migrate session` (not executed here — run it on a copy first). |
+| Managed Agent Engine | `VertexAiSessionService(project=..., location=..., agent_engine_id=...)` | `project_id=` raises `TypeError`; since 2.14 `create_session` accepts only `display_name`, `ttl`, `expire_time`, `labels` as extra kwargs (changelog) |
 
 ## 4. Session ownership: ids come from the principal
 
@@ -222,7 +222,9 @@ async def stream(body: ChatRequest, request: Request, principal: PrincipalDep) -
     return StreamingResponse(events(), media_type="text/event-stream")
 ```
 
-`CancelledError` (client disconnect) is not an `Exception`, so it propagates and cancels the agent run. Executed on google-adk 1.29.0 with a slow fake `BaseLlm`: both `asyncio.Task.cancel()` and an anyio cancel scope (what Starlette uses on disconnect) cancelled the in-flight model call (completed=0, cancelled=1). LangGraph differs: see `agentic-ai-dev/reference/agentic-streaming-hitl.md`. Re-check after an ADK upgrade. Never retry a stream after the first byte; the client re-requests. Partial-event behaviour against a live Gemini endpoint was not executed here (fake model reproduces the documented partial + aggregated shape).
+`CancelledError` (client disconnect) is not an `Exception`, so it propagates and cancels the agent run. Executed on google-adk 1.29.0 and 2.15.0 with a slow fake `BaseLlm`: both `asyncio.Task.cancel()` and an anyio cancel scope (what Starlette uses on disconnect) cancelled the in-flight model call (completed=0, cancelled=1). LangGraph differs: see `agentic-ai-dev/reference/agentic-streaming-hitl.md`. Re-check after an ADK upgrade. Never retry a stream after the first byte; the client re-requests. Partial-event behaviour against a live Gemini endpoint was not executed here (fake model reproduces the documented partial + aggregated shape).
+
+2.x additions (executed on 2.15.0, fixture model): `runner.run_async(..., abort_signal=event)` takes an `asyncio.Event`; setting it stops the run between steps, so a route can stop a run without cancelling the task. A model error now first yields an `Event(error_code=...)` (e.g. `"ServerError"`) and then raises: decide retries from the raised exception and from whether a tool already ran, not from "no events were produced". A tool exception with no `on_tool_error_callback` propagates out of `run_async`; map it to a typed status at the route.
 
 ## 7. Memory
 

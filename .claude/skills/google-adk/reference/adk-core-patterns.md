@@ -1,6 +1,6 @@
 # ADK Core Patterns
 
-Executed with `google-adk==1.29.0` and a scripted fake model (`adk-testing.md` §2) — no live Gemini call. Decide first whether the capability needs an agent at all (`ai-playbook` skill: deterministic code when rules are fixed; the model proposes, code authorizes).
+Executed with `google-adk==1.29.0` and re-checked on `2.15.0` with a scripted fake model (`adk-testing.md` §2) — no live Gemini call. Decide first whether the capability needs an agent at all (`ai-playbook` skill: deterministic code when rules are fixed; the model proposes, code authorizes).
 
 ## 1. Agent configuration
 
@@ -40,7 +40,7 @@ analysis_agent = Agent(
     description="Analyzes usage metrics and recommends actions.",
     instruction="Use lookup_usage for every number you cite. Return a summary and recommendations.",
     tools=[lookup_usage],
-    output_schema=AnalysisResult,   # validated; works together with tools in 1.29
+    output_schema=AnalysisResult,   # validated; works together with tools (1.29 and 2.15)
     output_key="analysis_result",   # stores the validated dict in session state
     generate_content_config=types.GenerateContentConfig(max_output_tokens=2048),
 )
@@ -85,7 +85,7 @@ service_runner = Runner(app_name="my_app", agent=analysis_agent, session_service
 
 ## 3. App class
 
-Use `App` when you need plugins, context caching, events compaction or resumability (fields in 1.29: `name`, `root_agent`, `plugins`, `events_compaction_config`, `context_cache_config`, `resumability_config`):
+Use `App` when you need plugins, context caching, events compaction or resumability (fields unchanged in 2.15: `name`, `root_agent`, `plugins`, `events_compaction_config`, `context_cache_config`, `resumability_config`; in 2.x `root_agent` also accepts a `Workflow`):
 
 ```python
 from google.adk.apps.app import App

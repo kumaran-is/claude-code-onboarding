@@ -2,11 +2,11 @@
 
 > Tool definitions, `ToolContext`, confirmation and `McpToolset`: `adk-tools-basic.md`. Framework-neutral tool rules (scope injection, typed results, idempotency, approvals): `agentic-ai-dev/reference/tool-execution-safety.md`.
 
-Executed with `google-adk==1.29.0` and a scripted fake model (`adk-testing.md` §2): all six callbacks below fire, `ruff` and `mypy --strict` are clean, and neither the tool's nor the model's exception text appears in the logs.
+Executed with `google-adk==1.29.0` and re-checked on `2.15.0` with a scripted fake model (`adk-testing.md` §2): all six callbacks below fire, `ruff` and `mypy --strict` are clean, and neither the tool's nor the model's exception text appears in the logs.
 
 ## 0. Rules that break at run time
 
-- **ADK calls callbacks with keyword arguments.** The parameter names are part of the contract; `async def cb(ctx, request)` raises `TypeError: got an unexpected keyword argument 'callback_context'` on the first model call (executed).
+- **Use ADK's canonical parameter names and order.** On 1.29 `async def cb(ctx, request)` raised `TypeError: got an unexpected keyword argument 'callback_context'`. On 2.15 misnamed parameters are adapted **positionally** in canonical order (executed: no error, `ctx` received the `Context`), so a wrong *order* now passes silently. Annotate the parameters and let `mypy --strict` plus a fake-model test catch mistakes. `CallbackContext` and `ToolContext` are aliases of `google.adk.Context` in 2.x.
 
 | Callback | Signature | Return to override |
 |---|---|---|

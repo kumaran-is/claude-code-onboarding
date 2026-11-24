@@ -1,22 +1,22 @@
 ---
 name: google-adk
-description: "Google ADK (Agent Development Kit) Python skill. Use when building AI agents with google-adk, Gemini models, SequentialAgent, ParallelAgent, LoopAgent, FunctionTool, McpToolset, session management, memory services, artifact storage, callbacks, or FastAPI integration for ADK agents."
+description: "Google ADK (Agent Development Kit) Python skill. Use when building AI agents with google-adk 2.x, Gemini models, Workflow graphs (and the deprecated SequentialAgent, ParallelAgent, LoopAgent), FunctionTool, McpToolset, session management, memory services, artifact storage, callbacks, or FastAPI integration for ADK agents."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: google-adk, ADK, gemini agent, SequentialAgent, ParallelAgent, LoopAgent, FunctionTool, McpToolset, google genai, adk agent, vertex ai agent
+  triggers: google-adk, ADK, ADK 2, ADK Workflow, FunctionNode, gemini agent, SequentialAgent, ParallelAgent, LoopAgent, FunctionTool, McpToolset, google genai, adk agent, vertex ai agent
   related-skills: python-dev, agentic-ai-dev, mcp-builder
   domain: backend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 # Google ADK Development Skill — Python + Gemini + FastAPI
 
 ## Iron Law
 
-**NEVER call the real Gemini API in unit tests.** `InMemoryRunner` only swaps in in-memory services — it still calls the configured model (verified on 1.29). Tests register a scripted `BaseLlm` (`reference/adk-testing.md` §2). Production agents use `Runner` with persistent session services, created once per process.
+**NEVER call the real Gemini API in unit tests.** `InMemoryRunner` only swaps in in-memory services — it still calls the configured model (verified on 2.15.0: a real model id with no key raises `ValueError`). Tests register a scripted `BaseLlm` (`reference/adk-testing.md` §2). Production agents use `Runner` with persistent session services, created once per process.
 
 **Every run is bounded and every id is owned.** `RunConfig(max_llm_calls=N)` (default 500) + `asyncio.timeout(...)` on each `run_async`; `user_id` is the authenticated principal; scope such as `org_id` lives in session state and is injected into tool args by code, never chosen by the model (`reference/adk-tools-callbacks.md` §5). The model proposes; deterministic code authorizes (`.claude/rules/ai-engineering.md`).
 
@@ -45,8 +45,10 @@ Generates project with Terraform, Dockerfile, CI/CD, eval harness. Use `enhance`
 
 ```bash
 uv init my-adk-service && cd my-adk-service
-uv add "google-adk==1.29.0" fastapi "uvicorn[standard]" pydantic-settings structlog "sqlalchemy[asyncio]" asyncpg
-uv add --dev pytest pytest-asyncio httpx aiosqlite ruff mypy
+uv add "google-adk[db,mcp,otel]==2.15.0" "google-genai==2.34.0" "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "uvicorn[standard]==0.54.0" "pydantic-settings==2.16.3" "structlog==26.1.0" "sqlalchemy[asyncio]==2.1.9" "asyncpg==0.32.0"
+uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "httpx2==2.16.2" "aiosqlite==0.22.1" "ruff==0.17.6" "mypy==2.4.1"
+# google-adk 2.15 requires google-genai>=2.34,<3 and websockets>=15.0.1,<16 (PyPI requires_dist):
+# never "upgrade" genai to 3.x under ADK; genai 3.x code lives in its own lock (gemini-api-dev skill)
 # then pin every dependency exactly (==) and commit uv.lock — reference/adk-project-config.md §1
 ```
 
@@ -61,12 +63,12 @@ Choose deployment target when prompted: `cloud_run` or `agent_engine`.
 ## Process
 
 0. **Write DESIGN_SPEC.md** — Before any code, write a spec covering: purpose, example use cases, required tools, safety constraints, success criteria, edge cases. Save as `DESIGN_SPEC.md` in the project root. This is your contract — all implementation must align with it.
-1. **Scaffold** — `uv init` + `google-adk==1.29.0` (exact pin, committed `uv.lock`, `uv sync --locked`); `google-adk` brings `google-genai`
+1. **Scaffold** — `uv init` + `google-adk[db,mcp,otel]==2.15.0` and `google-genai==2.34.0` (exact pins, committed `uv.lock`, `uv sync --locked`). `McpToolset` needs the `mcp` extra (`ModuleNotFoundError: mcp` without it); `bigquery-analytics` carries pyarrow since 2.7
 2. **Configure** — `Settings(BaseSettings)` with a required `agent_model` and the per-environment auth matrix: developer key locally only, keyless ADC on Vertex when deployed (`reference/adk-project-config.md` §2-3)
 3. **Define Agent** — `Agent(name, model=settings.agent_model, instruction, tools)`; no model id literal in code; docstrings on every tool; on Gemini 3.x leave sampling params at defaults and size `max_output_tokens` for thinking tokens (`gemini-api-dev` skill)
-4. **Compose Agents** — use `SequentialAgent`, `ParallelAgent`, or `LoopAgent` for multi-step workflows; set `output_key` on each sub-agent that passes state downstream
+4. **Compose Agents** — new multi-step flows use a `Workflow` graph run with `Runner(node=...)` (`reference/adk-agent-types.md` §0). `SequentialAgent`/`ParallelAgent`/`LoopAgent` still run on 2.15 but emit `DeprecationWarning` ("deprecated in favor of Workflow"); keep them only where a workflow must sit under an `LlmAgent` (Workflow cannot yet be an LlmAgent sub-agent). Set `output_key` on each sub-agent that passes state downstream
 5. **Define Tools** — plain Python functions with type hints and docstrings; use `pydantic.BaseModel` for complex inputs; accept `tool_context: ToolContext` to read/write session state
-6. **Add Callbacks** — on `LlmAgent`s only (orchestrators reject them); ADK calls them with **keyword** args (`callback_context`, `llm_request`, `tool`, `args`, `tool_context`, ...) — wrong names raise `TypeError` (`reference/adk-tools-callbacks.md` §0). Rate limiting belongs in the API layer, not a callback
+6. **Add Callbacks** — on `LlmAgent`s only (orchestrators reject them); use the canonical parameter names (`callback_context`, `llm_request`, `tool`, `args`, `tool_context`, ...). On 2.x misnamed parameters are adapted **positionally** instead of raising `TypeError` as 1.29 did, so a swapped order passes silently: type-annotate and test them (`reference/adk-tools-callbacks.md` §0). Rate limiting belongs in the API layer, not a callback
 7. **Session Management** — `InMemorySessionService()` for tests; `DatabaseSessionService(db_url="postgresql+asyncpg://...")` for self-hosted Postgres/Cloud SQL; `VertexAiSessionService(project=..., location=..., agent_engine_id=...)` for Agent Engine (`project_id=` is a `TypeError`). `await` every session call (`create_session` is a coroutine); mint session ids server-side
 8. **Add Memory** — pass `memory_service` to `Runner`; prefer `load_memory` (tool result). `preload_memory` injects recalled text into the **system instruction** — a stored injection gains system authority (`reference/adk-memory-artifacts.md` §2, §4)
 9. **Expose API** — POST routes using `runner.run_async()` under a timeout and call cap; typed failure statuses; SSE per the `streaming-protocols` skill §6a; one `Runner` per process (`reference/adk-fastapi-integration.md`)
@@ -78,9 +80,8 @@ Choose deployment target when prompted: `cloud_run` or `agent_engine`.
 | Pattern | Implementation | Reference |
 |---------|---------------|-----------|
 | Single Agent | `Agent(name, model, instruction, tools)` | `adk-core-patterns.md` |
-| Sequential Pipeline | `SequentialAgent(sub_agents=[a, b, c])` + `output_key` per agent | `adk-agent-types.md` |
-| Parallel Analysis | `ParallelAgent(sub_agents=[...])` + `output_key` per agent | `adk-agent-types.md` |
-| Iterative Refinement | `LoopAgent(sub_agents=[...], max_iterations=N)` + `exit_loop` | `adk-agent-types.md` |
+| Workflow graph (2.x) | `Workflow(name=..., edges=[("START", agent, fn, agent)])` + `Runner(node=...)`; `FunctionNode(retry_config=..., timeout=...)` | `adk-agent-types.md` §0 |
+| Sequential / Parallel / Loop (deprecated) | `SequentialAgent` / `ParallelAgent` / `LoopAgent(max_iterations=N)` + `output_key` | `adk-agent-types.md` |
 | Agent Handoff | `transfer_to_agent` built-in + `sub_agents=[...]` on root | `adk-agent-handoff.md` |
 | Custom Tools | Plain function with docstring + `ToolContext` for state | `adk-tools-basic.md` |
 | MCP Integration | `McpToolset(connection_params=StdioConnectionParams(...))` | `adk-tools-basic.md` |

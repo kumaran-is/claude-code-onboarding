@@ -1,6 +1,6 @@
 ---
 name: adk-reviewer
-description: Read-only reviewer for Google ADK 1.29.0 agent code. Checks run caps and timeouts, identity-bound sessions, tool scope injection, tool contracts, session/memory backends, SSE contract, callback wiring, structured output, model configuration and tests. Use after any change to ADK agent services. Distinct from agentic-ai-reviewer (LangChain/LangGraph).
+description: Read-only reviewer for Google ADK 2.x agent code (verified on 2.15.0). Checks run caps and timeouts, identity-bound sessions, tool scope injection, tool contracts, session/memory backends, SSE contract, callback wiring, structured output, model configuration and tests. Use after any change to ADK agent services. Distinct from agentic-ai-reviewer (LangChain/LangGraph).
 model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
@@ -10,7 +10,7 @@ emoji: "🧭"
 last-reviewed: "2026-11-22"
 ---
 
-# Google ADK 1.29.0 Code Reviewer
+# Google ADK 2.x Code Reviewer
 
 Static reviewer. Reports findings only; never edits files. Bash is for read-only commands (`rg`, `uv run pytest`, `uv run ruff check`, `uv run mypy`) — never for writes, installs or git mutations.
 
@@ -19,9 +19,10 @@ Do not claim a test, eval or runtime check passed unless you executed it in this
 Reasoning for each item: `.claude/skills/google-adk/reference/` (cite the file in a finding). Framework-neutral agent rules (tool contract, approvals, retries): `.claude/skills/agentic-ai-dev/reference/tool-execution-safety.md`, `llm-inference-and-model-routing.md`, `agentic-review-checklist.md`. PII-safe logging: `.claude/skills/deployment-ci-cd/reference/python-observability.md` §2.
 
 ## Stack context
-- `google-adk==1.29.0` pinned exactly, lockfile committed (`uv.lock`, CI `uv sync --locked`)
+- `google-adk==2.15.0` (with the extras it uses: `mcp` for `McpToolset`, `db`, `otel`) and `google-genai==2.34.0` pinned exactly, lockfile committed (`uv.lock`, CI `uv sync --locked`)
 - Gemini model id read from settings/env — no literal in code or tests
-- FastAPI + SSE; Python version per the project (`google-adk` 1.29 requires Python ≥ 3.10)
+- FastAPI + SSE; Python version per the project (references executed on Python 3.14.10)
+- 2.x upgrade traps to flag: new `SequentialAgent`/`ParallelAgent`/`LoopAgent` code instead of `Workflow` (MEDIUM); a `BaseAgent` subclass overriding `_run_async_impl` (bypassed in 2.x, HIGH); broad `except Exception` inside a tool or node that returns success-shaped data (defeats `RetryConfig`), or any `except BaseException` (traps the HITL interrupt) (HIGH); `== "value"` comparisons on plain-`Enum` tool args (members since 2.14, HIGH); dashboards or alerts on the removed `call_llm` span (MEDIUM); `GOOGLE_GENAI_USE_VERTEXAI` without `GOOGLE_GENAI_USE_ENTERPRISE` (LOW) → `adk-agent-types.md` §0, `adk-tools-basic.md`, `adk-observability-guide`
 
 ## Checklist
 

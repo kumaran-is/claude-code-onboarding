@@ -1,6 +1,6 @@
 # ADK Agent Handoff and output_key Rules
 
-Executed with `google-adk==1.29.0` and a scripted fake model. `MODEL` = `settings.agent_model`.
+Executed with `google-adk==1.29.0` and re-checked on `2.15.0` (`transfer_to_agent`) with a scripted fake model. `MODEL` = `settings.agent_model`.
 
 ## 1. Handoff (transfer) vs agent-as-tool
 

@@ -1,6 +1,6 @@
 # ADK Memory and Artifact Services
 
-Executed with `google-adk==1.29.0`, in-memory services and a scripted fake model. Framework-neutral memory rules (authority order, provenance, TTL, erasure): `agentic-ai-dev/reference/agentic-memory-systems.md` and the `ai-playbook` skill — this file covers the ADK mechanics.
+Executed with `google-adk==1.29.0` (imports and memory scoping re-checked on 2.15.0), in-memory services and a scripted fake model. Framework-neutral memory rules (authority order, provenance, TTL, erasure): `agentic-ai-dev/reference/agentic-memory-systems.md` and the `ai-playbook` skill — this file covers the ADK mechanics.
 
 ## 1. Memory service setup
 
@@ -16,7 +16,7 @@ runner = Runner(
 )
 ```
 
-| Environment | Memory service (1.29) |
+| Environment | Memory service (2.15) |
 |---|---|
 | Tests / local | `InMemoryMemoryService()` (keyword match, lost on restart) |
 | Managed | `VertexAiMemoryBankService(project=..., location=..., agent_engine_id=...)` — consolidated memories extracted from sessions |

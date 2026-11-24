@@ -66,7 +66,7 @@ Test the pattern against a bad and a good sample (`python3 -c "import re; print(
 
 ## Step 2: Consolidate and prune agent memory
 
-If `.claude/agent-memory/` exists, read each `MEMORY.md` or `*.md` file and route every item through the Step 1 table (mistake → lesson, reusable pattern → skill reference, coordinates or per-issue notes → drop). Then delete the processed files and remove empty directories. For the user's auto-memory (outside the repo), only report: index over 200 lines, entries that name files or flags that no longer exist (grep them), and duplicates.
+If `.claude/agent-memory/` exists, read each agent's `MEMORY.md` (agents with `memory: project` in their frontmatter load it on every run, so it is their working memory, not an orphan). Route every item through the Step 1 table: mistake → lesson, reusable pattern → skill reference, coordinates or per-issue notes → drop. Rewrite the file keeping only agent-specific items that are still true (grep the files and flags they name) and keep it under 200 lines. Delete a directory only when its agent no longer exists or no longer declares `memory:`. Finish with `touch .claude/agent-memory/.last-consolidated` so `stop-lessons-reminder.sh` only reports memory written after this pass. For the user's auto-memory (outside the repo), only report: index over 200 lines, entries that name files or flags that no longer exist (grep them), and duplicates.
 
 ## Step 3: Enforce the cap
 

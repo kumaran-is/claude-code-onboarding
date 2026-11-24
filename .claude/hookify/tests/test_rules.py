@@ -5,7 +5,8 @@ Fails (exit 1) when:
   1. any rule file cannot be parsed, has no conditions, or has a regex that Python `re` rejects
      (the engine would otherwise never fire that rule);
   2. a web design rule misses a positive control or fires on a negative control;
-  3. the engine stops reporting invalid-regex rules loudly.
+  3. the engine stops reporting invalid-regex rules loudly;
+  4. load_rules() stops finding the rules when the hook's cwd is not the project root.
 
 Run from anywhere: python3 .claude/hookify/tests/test_rules.py
 """
@@ -17,7 +18,7 @@ import sys
 CLAUDE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, CLAUDE_DIR)
 
-from hookify.core.config_loader import Condition, Rule, load_rule_file  # noqa: E402
+from hookify.core.config_loader import Condition, Rule, load_rule_file, load_rules  # noqa: E402
 from hookify.core.rule_engine import RuleEngine, invalid_regex_conditions  # noqa: E402
 
 NG = "/w/web/admin/src/app/features/orders"
@@ -151,6 +152,25 @@ def main() -> int:
         print("  ok   engine reports an invalid-regex rule as NOT enforced (additionalContext)")
     else:
         print(f"  FAIL engine silent on invalid regex (got: {result})")
+        failures += 1
+
+    # cwd control: hooks run in whatever directory the session cd'ed to; rules must still load.
+    saved_cwd, saved_env = os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR")
+    try:
+        os.environ["CLAUDE_PROJECT_DIR"] = os.path.dirname(CLAUDE_DIR)
+        os.chdir(os.path.dirname(os.path.dirname(CLAUDE_DIR)) or "/")
+        loaded = len(load_rules())
+    finally:
+        os.chdir(saved_cwd)
+        if saved_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = saved_env
+    enabled = sum(1 for r in rules.values() if r.enabled)
+    if loaded == enabled and loaded > 0:
+        print(f"  ok   load_rules() finds {loaded} rule(s) from a cwd outside the project")
+    else:
+        print(f"  FAIL load_rules() from a foreign cwd found {loaded}, expected {enabled}")
         failures += 1
 
     print("hookify rule selftest " + ("PASS" if failures == 0 else f"FAIL ({failures})"))

@@ -4,6 +4,9 @@
 # .claude/rules/*.md file (any 4-word window of the new Rule found verbatim, case-insensitive).
 # A promoted rule that was violated should be cited, not re-added as a lesson, or lessons.md
 # fills with duplicates of rules that already apply.
+# It also checks the entries already in lessons.md (Rule and Mistake lines, same 4-word windows) and names
+# the entry whose [xN] counter to increment instead (hygiene rule 1). An edit that keeps an entry's Rule
+# text unchanged (an [xN] increment) is not a duplicate of itself.
 # Also enforces the lessons.md hygiene cap: an Edit/Write that would leave more than 15 dated entries
 # (`## [YYYY-MM-DD] ...`, the fenced template excluded) is DENIED (permissionDecision) with the
 # remedy: promote or prune first (/promote-lessons). Cap override for the selftest: LESSONS_CAP.
@@ -20,6 +23,33 @@ find_duplicate() { # $1 rule text, $2 rules dir
     if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
   done <<EOF_WINDOWS
 $(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -d '.,;:!?()`*"[]' | awk '{ for (i = 1; i + 3 <= NF; i++) print $i " " $(i + 1) " " $(i + 2) " " $(i + 3) }')
+EOF_WINDOWS
+  return 1
+}
+
+# Prints the heading of an existing lessons.md entry whose Rule/Mistake shares a 4-word window with $1.
+lesson_duplicate() { # $1 rule text, $2 lessons.md
+  local norm entries window hit
+  [ -f "$2" ] || return 1
+  norm=$(printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -d '.,;:!?()`*"[]' | tr -s ' ' | sed 's/^ //; s/ $//')
+  entries=$(awk '
+    /^## \[[0-9][0-9][0-9][0-9]-/ { h = $0; next }
+    h != "" && /^\*\*(Rule|Mistake):\*\*/ {
+      t = $0; sub(/^\*\*(Rule|Mistake):\*\*[ \t]*/, "", t); t = tolower(t)
+      # BSD awk rejects "]" first in a bracket expression: strip [ and ] separately
+      gsub(/[.,;:!?()`*"]/, "", t); gsub(/\[/, "", t); gsub(/\]/, "", t)
+      gsub(/[ \t]+/, " ", t); sub(/^ /, "", t); sub(/ $/, "", t)
+      print h "\t" t
+    }' "$2")
+  # the entry being incremented carries the same Rule text: drop it so it never matches itself
+  entries=$(printf '%s\n' "$entries" | awk -F '\t' -v n="$norm" '$2 != n' )
+  [ -n "$entries" ] || return 1
+  while IFS= read -r window; do
+    [ "${#window}" -ge 15 ] || continue
+    hit=$(printf '%s\n' "$entries" | grep -F -e "$window" | head -n 1 | cut -f1)
+    if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
+  done <<EOF_WINDOWS
+$(printf '%s' "$norm" | awk '{ for (i = 1; i + 3 <= NF; i++) print $i " " $(i + 1) " " $(i + 2) " " $(i + 3) }')
 EOF_WINDOWS
   return 1
 }
@@ -70,6 +100,11 @@ run_hook() {
     return 0
   fi
   [ -n "$rule" ] || return 0
+  if hit=$(lesson_duplicate "$rule" "$file"); then
+    jq -n --arg h "$hit" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:
+      ("This lesson may repeat the existing entry \"" + $h + "\". If it is the same mistake, increment that entry'"'"'s [xN] counter instead of adding a new one (lessons.md hygiene rule 1); promote it at [x3].")}}'
+    return 0
+  fi
   hit=$(find_duplicate "$rule" "$root/.claude/rules") || return 0
   jq -n --arg f "${hit#"$root"/}" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:
     ("This lesson may duplicate a rule already promoted to " + $f + ". If so, do not add a lesson: cite the rule that was violated.")}}'
@@ -101,6 +136,20 @@ selftest() {
   else echo "  FAIL cap not enforced: $out"; fail=1; fi
   out=$(LESSONS_CAP=3 probe "$tmp/.claude/rules/lessons.md" "Pin the emulator API level in the Maestro flow header")
   if [ -z "$out" ]; then echo "  ok   negative: an edit that stays within the cap passes"; else echo "  FAIL within-cap edit: $out"; fail=1; fi
+ { printf '# Lessons\n'; printf '## [2026-01-05] Tech:Flutter [x1]\n**Mistake:** Flow ran on a random emulator.\n**Rule:**    Always pin the emulator API level in every Maestro flow header.\n**Applies:** Flutter\n'; } > "$tmp/.claude/rules/lessons.md"
+  out=$(probe "$tmp/.claude/rules/lessons.md" "Pin the emulator API level in the Maestro flow header")
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | (contains("[2026-01-05] Tech:Flutter [x1]") and contains("increment"))' >/dev/null 2>&1; then
+    echo "  ok   positive: a lesson repeating an existing entry names that entry to increment"
+  else echo "  FAIL in-file duplicate not flagged: $out"; fail=1; fi
+  out=$(probe "$tmp/.claude/rules/lessons.md" "Always pin the emulator API level in every Maestro flow header.")
+  if [ -z "$out" ]; then echo "  ok   negative: an [xN] increment keeping the same Rule text is not its own duplicate"; else echo "  FAIL increment flagged: $out"; fail=1; fi
+  printf '## [2026-01-06] Scope [x1]\n**Mistake:** m\n**Rule:**    Keep  the   changelog   entry   with every   release tag.  \n**Applies:** all\n' >> "$tmp/.claude/rules/lessons.md"
+  out=$(probe "$tmp/.claude/rules/lessons.md" "Always keep the changelog entry next to the tag")
+  if printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("[2026-01-06] Scope [x1]")' >/dev/null 2>&1; then
+    echo "  ok   positive: an existing entry with irregular spacing is still matched (whitespace normalised)"
+  else echo "  FAIL spacing not normalised: $out"; fail=1; fi
+  out=$(probe "$tmp/.claude/rules/lessons.md" "Run the migration round-trip before merging any Alembic revision")
+  if [ -z "$out" ]; then echo "  ok   negative: a novel Rule next to existing entries is silent"; else echo "  FAIL novel rule flagged: $out"; fail=1; fi
   out=$(probe "$tmp/docs/notes.md" "Always touch only what you're asked to touch, nothing else.")
   if [ -z "$out" ]; then echo "  ok   negative: non-lessons file ignored"; else echo "  FAIL non-lessons file: $out"; fail=1; fi
   rm -rf "$tmp"

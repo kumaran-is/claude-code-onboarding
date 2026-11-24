@@ -11,6 +11,7 @@ on:
       - 'CLAUDE.md'
       - 'README.md'
       - '.claude/**'
+      - 'git-hooks/**'
       - 'docs/**'
       - '.mcp.json'
       - '.github/workflows/**'
@@ -149,7 +150,7 @@ jobs:
         run: |
           failed=0
           checked=0
-          for f in .claude/hooks/*.sh .claude/scripts/*.sh; do
+          for f in .claude/hooks/*.sh .claude/scripts/*.sh git-hooks/*.sh; do
             checked=$((checked + 1))
             if ! bash -n "$f"; then echo "::error file=$f::bash -n failed"; failed=$((failed + 1)); fi
           done
@@ -161,7 +162,7 @@ jobs:
         run: |
           missing=0
           checked=0
-          for f in .claude/hooks/*.sh .claude/hooks/*.py; do
+          for f in .claude/hooks/*.sh .claude/hooks/*.py git-hooks/*.sh; do
             [ -f "$f" ] || continue
             checked=$((checked + 1))
             if ! grep -q -- '--selftest' "$f"; then echo "::error file=$f::hook has no --selftest (hook-and-gate-authoring.md)"; missing=$((missing + 1)); fi
@@ -174,7 +175,7 @@ jobs:
         run: |
           failed=0
           ran=0
-          grep -l -- '--selftest' .claude/hooks/* .claude/scripts/* > selftest-files.txt || true
+          grep -l -- '--selftest' .claude/hooks/* .claude/scripts/* git-hooks/* > selftest-files.txt || true
           while IFS= read -r f; do
             ran=$((ran + 1))
             rc=0
@@ -190,6 +191,13 @@ jobs:
           echo "ran=$ran failed=$failed"
           [ "$ran" -gt 0 ] || { echo "::error::no selftests discovered"; exit 1; }
           [ "$failed" -eq 0 ]
+
+      - name: Hookify rule tests
+        run: |
+          python3 .claude/hookify/tests/test_rules.py > hookify.log 2>&1; rc=$?
+          cat hookify.log
+          if [ "$rc" -eq 0 ] && ! grep -q 'selftest PASS' hookify.log; then echo "::error::no 'selftest PASS' line"; rc=99; fi
+          exit "$rc"
 
   workflows:
     name: Workflow lint (actionlint) and content pins

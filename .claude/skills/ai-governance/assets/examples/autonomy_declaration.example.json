@@ -1,0 +1,110 @@
+{
+  "$schema": "../schemas/autonomy_declaration.schema.json",
+  "record_type": "autonomy_declaration",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "system_id": "refund-agent",
+  "declared_on": "2026-11-15",
+  "declared_level": "A3",
+  "previous_level": "A2",
+  "risk_tier": "Medium",
+  "kill_switch_ref": "flags/refund-agent-enabled (tested 2026-11-10)",
+  "human_takeover_ref": "runbooks/refund-agent-takeover.md",
+  "quantitative_evidence": {
+    "sample_size": 1200,
+    "window_days": 31,
+    "success_metric": "task_success",
+    "success_rate": 0.9967,
+    "confidence_interval": {
+      "level": 0.95,
+      "lower": 0.9915,
+      "upper": 0.9987,
+      "method": "Wilson score interval"
+    },
+    "unauthorized_actions_observed": 0,
+    "unresolved_critical_incidents": 0,
+    "thresholds_source": "risk-owner-approved",
+    "threshold_approved_by": {
+      "name": "Riley Example",
+      "role": "Risk owner"
+    },
+    "evidence_refs": [
+      "evidence/AI-AUTO-001/refund-agent-a3-window.json"
+    ]
+  },
+  "additional_criteria": {
+    "zero_unauthorized_actions": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/zero_unauthorized_actions.json"
+    },
+    "no_unresolved_critical_incidents": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/no_unresolved_critical_incidents.json"
+    },
+    "red_team_passed": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/red_team_passed.json"
+    },
+    "tool_authorization_verified": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/tool_authorization_verified.json"
+    },
+    "failure_injection_passed": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/failure_injection_passed.json"
+    },
+    "recovery_success_threshold_defined": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/recovery_success_threshold_defined.json"
+    },
+    "audit_evidence_reliable": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/audit_evidence_reliable.json"
+    },
+    "human_takeover_capability": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/human_takeover_capability.json"
+    },
+    "business_value_evidence": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/business_value_evidence.json"
+    },
+    "sample_size_statistically_justified": {
+      "status": "met",
+      "evidence_ref": "evidence/refund-agent/sample_size_statistically_justified.json"
+    }
+  },
+  "demotion_triggers_monitored": [
+    "unauthorized_agent_action",
+    "critical_authorization_bypass",
+    "cross_tenant_data_exposure",
+    "recovery_control_failure",
+    "kill_switch_or_approval_boundary_failure"
+  ],
+  "approvals": [
+    {
+      "approval_role": "owner",
+      "approver": {
+        "name": "Alex Example",
+        "role": "Business owner"
+      },
+      "date": "2026-11-14"
+    },
+    {
+      "approval_role": "risk_owner",
+      "approver": {
+        "name": "Riley Example",
+        "role": "Risk owner"
+      },
+      "date": "2026-11-14"
+    },
+    {
+      "approval_role": "independent_risk",
+      "approver": {
+        "name": "Jordan Example",
+        "role": "Independent model risk reviewer"
+      },
+      "date": "2026-11-15"
+    }
+  ]
+}

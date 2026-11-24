@@ -1,0 +1,866 @@
+{
+ "description": "Negative fixtures for validate_governance_record.py --selftest. Each case applies 'changes' (dotted path, value; \"__DELETE__\" removes the key or list item) to assets/examples/<record_type>.example.json and expects an error message containing 'expect'; a null 'expect' marks a positive variant that must validate clean.",
+ "cases": [
+  {
+   "record_type": "risk_assessment",
+   "label": "unknown tier",
+   "changes": [
+    [
+     "risk_tier",
+     "Severe"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "risk_assessment",
+   "label": "T-tier in risk_tier slot",
+   "changes": [
+    [
+     "risk_tier",
+     "T2"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "risk_assessment",
+   "label": "placeholder owner",
+   "changes": [
+    [
+     "owners.business_owner.name",
+     "unassigned"
+    ]
+   ],
+   "expect": "placeholder"
+  },
+  {
+   "record_type": "risk_assessment",
+   "label": "Critical without independent review",
+   "changes": [
+    [
+     "risk_tier",
+     "Critical"
+    ],
+    [
+     "independent_review.required",
+     false
+    ]
+   ],
+   "expect": "Critical risk"
+  },
+  {
+   "record_type": "risk_assessment",
+   "label": "multi-tenant High without isolation evidence",
+   "changes": [
+    [
+     "tenant_isolation_validation_ref",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "above Medium"
+  },
+  {
+   "record_type": "risk_assessment",
+   "label": "extra property",
+   "changes": [
+    [
+     "notes",
+     "free text"
+    ]
+   ],
+   "expect": "not an allowed property"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "skip a level",
+   "changes": [
+    [
+     "previous_level",
+     "A1"
+    ]
+   ],
+   "expect": "one step"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "unauthorized action observed",
+   "changes": [
+    [
+     "quantitative_evidence.unauthorized_actions_observed",
+     1
+    ]
+   ],
+   "expect": "must be 0"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "criterion not met",
+   "changes": [
+    [
+     "additional_criteria.red_team_passed.status",
+     "not_met"
+    ]
+   ],
+   "expect": "task count alone"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "A3 without independent risk approval",
+   "changes": [
+    [
+     "approvals",
+     [
+      {
+       "approval_role": "owner",
+       "approver": {
+        "name": "Dana Example",
+        "role": "Product owner"
+       },
+       "date": "2026-11-01"
+      }
+     ]
+    ]
+   ],
+   "expect": "approval roles"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "A2+ without quantitative evidence",
+   "changes": [
+    [
+     "quantitative_evidence",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "mandatory for A2+"
+  },
+  {
+   "record_type": "autonomy_declaration",
+   "label": "illustrative thresholds in a final record",
+   "changes": [
+    [
+     "record_status",
+     "final"
+    ],
+    [
+     "quantitative_evidence.thresholds_source",
+     "illustrative-default-ADAPT"
+    ]
+   ],
+   "expect": "illustrative"
+  },
+  {
+   "record_type": "approval_record",
+   "label": "stale approval after expiry",
+   "changes": [
+    [
+     "decided_at",
+     "2026-11-20T12:00:00Z"
+    ]
+   ],
+   "expect": "stale approval"
+  },
+  {
+   "record_type": "approval_record",
+   "label": "timeout auto-approves",
+   "changes": [
+    [
+     "timeout_policy",
+     "approve"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "approval_record",
+   "label": "irreversible without acknowledgment",
+   "changes": [
+    [
+     "risk_acknowledged",
+     false
+    ]
+   ],
+   "expect": "irreversible"
+  },
+  {
+   "record_type": "approval_record",
+   "label": "silent bulk approval",
+   "changes": [
+    [
+     "bulk",
+     true
+    ]
+   ],
+   "expect": "no silent bulk"
+  },
+  {
+   "record_type": "approval_record",
+   "label": "digest not sha256",
+   "changes": [
+    [
+     "action_digest",
+     "abc"
+    ]
+   ],
+   "expect": "does not match"
+  },
+  {
+   "record_type": "control_register_entry",
+   "label": "untested but effective",
+   "changes": [
+    [
+     "result",
+     "Not tested"
+    ],
+    [
+     "last_tested",
+     null
+    ]
+   ],
+   "expect": "presumed effective"
+  },
+  {
+   "record_type": "control_register_entry",
+   "label": "fail without remediation",
+   "changes": [
+    [
+     "result",
+     "Fail"
+    ],
+    [
+     "effectiveness_status",
+     "ineffective"
+    ],
+    [
+     "remediation",
+     null
+    ]
+   ],
+   "expect": "Fail or Partial"
+  },
+  {
+   "record_type": "control_register_entry",
+   "label": "bad control id",
+   "changes": [
+    [
+     "control_id",
+     "sec1"
+    ]
+   ],
+   "expect": "does not match"
+  },
+  {
+   "record_type": "control_register_entry",
+   "label": "exception without expiry",
+   "changes": [
+    [
+     "exceptions.0.expires",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "is required"
+  },
+  {
+   "record_type": "control_evidence",
+   "label": "seeded scenario expected allowed",
+   "changes": [
+    [
+     "expected_outcome",
+     "allowed"
+    ],
+    [
+     "observed_outcome",
+     "allowed"
+    ]
+   ],
+   "expect": "must expect blocked"
+  },
+  {
+   "record_type": "control_evidence",
+   "label": "pass but outcome differs",
+   "changes": [
+    [
+     "observed_outcome",
+     "allowed"
+    ]
+   ],
+   "expect": "pass requires"
+  },
+  {
+   "record_type": "control_evidence",
+   "label": "pass without exit code",
+   "changes": [
+    [
+     "exit_code",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "own exit code"
+  },
+  {
+   "record_type": "control_evidence",
+   "label": "date-time without offset",
+   "changes": [
+    [
+     "executed_at",
+     "2026-11-23T10:00:00"
+    ]
+   ],
+   "expect": "date-time"
+  },
+  {
+   "record_type": "ai_bom",
+   "label": "floating version",
+   "changes": [
+    [
+     "components.0.version",
+     "latest"
+    ]
+   ],
+   "expect": "not pinned"
+  },
+  {
+   "record_type": "ai_bom",
+   "label": "container without digest",
+   "changes": [
+    [
+     "components.2.digest",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "cryptographic hash"
+  },
+  {
+   "record_type": "ai_bom",
+   "label": "managed model without visibility limits",
+   "changes": [
+    [
+     "components.0.visibility_limitations",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "visibility_limitations"
+  },
+  {
+   "record_type": "ai_bom",
+   "label": "durable memory without deletion tests",
+   "changes": [
+    [
+     "deletion_propagation_tests",
+     []
+    ]
+   ],
+   "expect": "deletion-propagation"
+  },
+  {
+   "record_type": "ai_bom",
+   "label": "missing prompt template",
+   "changes": [
+    [
+     "components.1",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "prompt_template"
+  },
+  {
+   "record_type": "production_readiness",
+   "label": "READY with open item",
+   "changes": [
+    [
+     "sections.agentic_ai.kill_switch_tested.status",
+     "not_done"
+    ]
+   ],
+   "expect": "READY contradicts"
+  },
+  {
+   "record_type": "production_readiness",
+   "label": "done without evidence",
+   "changes": [
+    [
+     "sections.security_data.tool_authorization_tested.evidence_ref",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "not evidence"
+  },
+  {
+   "record_type": "production_readiness",
+   "label": "owner marked not applicable",
+   "changes": [
+    [
+     "sections.strategy_accountability.business_owner_assigned",
+     {
+      "status": "not_applicable",
+      "justification": "internal tool"
+     }
+    ]
+   ],
+   "expect": "cannot be not_applicable"
+  },
+  {
+   "record_type": "production_readiness",
+   "label": "missing checklist item",
+   "changes": [
+    [
+     "sections.model_evaluation.protected_canary_evaluated",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "is required"
+  },
+  {
+   "record_type": "regulatory_register_row",
+   "label": "proposed date treated as binding",
+   "changes": [
+    [
+     "date_legal_status",
+     "proposed"
+    ],
+    [
+     "treated_as_binding",
+     true
+    ]
+   ],
+   "expect": "must not be treated as binding"
+  },
+  {
+   "record_type": "regulatory_register_row",
+   "label": "compliant with undetermined role",
+   "changes": [
+    [
+     "role",
+     "undetermined"
+    ],
+    [
+     "compliance_status",
+     "compliant"
+    ]
+   ],
+   "expect": "undetermined"
+  },
+  {
+   "record_type": "regulatory_register_row",
+   "label": "non-https source",
+   "changes": [
+    [
+     "source_url",
+     "http://example.org"
+    ]
+   ],
+   "expect": "does not match"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "unknown category",
+   "changes": [
+    [
+     "category",
+     "AI-OTHER"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "closed without preventive tests",
+   "changes": [
+    [
+     "preventive_test_cases",
+     []
+    ]
+   ],
+   "expect": "preventive test cases"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "contained before detected",
+   "changes": [
+    [
+     "contained_at",
+     "2026-11-01T00:00:00Z"
+    ]
+   ],
+   "expect": "before detected_at"
+  },
+  {
+   "record_type": "kpi_definition",
+   "label": "zero blocks without independent test",
+   "changes": [
+    [
+     "independent_control_test_ref",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "zero count"
+  },
+  {
+   "record_type": "kpi_definition",
+   "label": "unknown domain",
+   "changes": [
+    [
+     "domain",
+     "Marketing"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "security_severity contradicts severity",
+   "changes": [
+    [
+     "security_severity",
+     "SEV-2"
+    ]
+   ],
+   "expect": "contradicts severity"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "unblocked cross-tenant exposure below S0",
+   "changes": [
+    [
+     "severity",
+     "S1"
+    ],
+    [
+     "security_severity",
+     "SEV-2"
+    ]
+   ],
+   "expect": "always S0"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "unknown playbook severity",
+   "changes": [
+    [
+     "security_severity",
+     "SEV-0"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "unsafe_release_exercise",
+   "label": "one scenario missing",
+   "changes": [
+    [
+     "scenarios.4",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "at least 8 item(s)"
+  },
+  {
+   "record_type": "unsafe_release_exercise",
+   "label": "scenario listed twice",
+   "changes": [
+    [
+     "scenarios.1.scenario",
+     "cross_tenant_retrieval"
+    ]
+   ],
+   "expect": "must appear exactly once"
+  },
+  {
+   "record_type": "unsafe_release_exercise",
+   "label": "two scenarios share one evidence record",
+   "changes": [
+    [
+     "scenarios.1.evidence_id",
+     "ev-2026-11-10-ure-01"
+    ]
+   ],
+   "expect": "duplicate evidence_id"
+  },
+  {
+   "record_type": "unsafe_release_exercise",
+   "label": "unknown verdict",
+   "changes": [
+    [
+     "verdict",
+     "operational"
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "closed without a regression case",
+   "changes": [
+    [
+     "regression_case",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "never closes without a regression case"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "resolved without I1-I11 incident types",
+   "changes": [
+    [
+     "incident_types",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "names its I1-I11 playbooks"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "unknown runbook incident type",
+   "changes": [
+    [
+     "incident_types",
+     [
+      "I12"
+     ]
+    ]
+   ],
+   "expect": "is not one of"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "resolved with zero lever pulls",
+   "changes": [
+    [
+     "containment_levers",
+     []
+    ]
+   ],
+   "expect": "at least one lever pull"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "platform kill switch without IC authorization",
+   "changes": [
+    [
+     "containment_levers.0.lever",
+     "platform_kill_switch"
+    ]
+   ],
+   "expect": "needs incident-commander authorization"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "lever pulled before detection",
+   "changes": [
+    [
+     "containment_levers.0.pulled_at",
+     "2026-11-01T00:00:00Z"
+    ]
+   ],
+   "expect": "must not be before detected_at"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "lever neither restored nor left in place at closure",
+   "changes": [
+    [
+     "containment_levers.0.restored_at",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "restored or left in place"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "lever both restored and left in place",
+   "changes": [
+    [
+     "containment_levers.0.left_in_place",
+     {
+      "owner": {
+       "name": "Robin Example",
+       "role": "AI on-call"
+      },
+      "review_date": "2026-12-01"
+     }
+    ]
+   ],
+   "expect": "not both"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "lever restored while a recovery check failed",
+   "changes": [
+    [
+     "status",
+     "contained"
+    ],
+    [
+     "recovery_verification.canaries_clean.result",
+     "fail"
+    ]
+   ],
+   "expect": "a rung is lowered only after recovery verification"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "closed with a failed recovery check",
+   "changes": [
+    [
+     "recovery_verification.canaries_clean.result",
+     "fail"
+    ]
+   ],
+   "expect": "contradicts a failed recovery check"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "recovery check pass without evidence",
+   "changes": [
+    [
+     "recovery_verification.r1_gates_green.evidence",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "pass needs an evidence reference"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "recovery check not_applicable without reason",
+   "changes": [
+    [
+     "recovery_verification.online_eval_within_tolerance.reason",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "not_applicable needs a reason"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "fail-before/pass-after not proven for a regression file",
+   "changes": [
+    [
+     "recovery_verification.regression_fail_before_pass_after",
+     {
+      "result": "not_applicable",
+      "reason": "could not reproduce"
+     }
+    ]
+   ],
+   "expect": "must pass: the regression case"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "regression file outside production_regressions",
+   "changes": [
+    [
+     "regression_case.ref",
+     "tests/golden/INC-2026-031.yaml"
+    ]
+   ],
+   "expect": "must be production_regressions/"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "same run for fail-before and pass-after",
+   "changes": [
+    [
+     "regression_case.post_fix_run_id",
+     "eval run 88102"
+    ]
+   ],
+   "expect": "two different runs"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "regression file not listed in preventive_test_cases",
+   "changes": [
+    [
+     "preventive_test_cases",
+     [
+      "tests/governance/test_cache_tenant_isolation.py::test_cross_tenant_cache_miss"
+     ]
+    ]
+   ],
+   "expect": "must also be listed in preventive_test_cases"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "regression incident id outside the INC-YYYY-NNN pattern",
+   "changes": [
+    [
+     "regression_case.regression_incident_id",
+     "AIINC-2026-031"
+    ]
+   ],
+   "expect": "does not match"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "monitored detector without reason and sign-off",
+   "changes": [
+    [
+     "regression_case",
+     {
+      "kind": "monitored_detector",
+      "ref": "detector:isolation-canary-hourly"
+     }
+    ]
+   ],
+   "expect": "documented reason and owner sign-off"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "unblocked I3 leak below S0",
+   "changes": [
+    [
+     "category",
+     "AI-DATA"
+    ],
+    [
+     "severity",
+     "S1"
+    ],
+    [
+     "security_severity",
+     "SEV-2"
+    ]
+   ],
+   "expect": "unblocked I3"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "lever pull without a reason",
+   "changes": [
+    [
+     "containment_levers.1.reason",
+     "__DELETE__"
+    ]
+   ],
+   "expect": "is required"
+  },
+  {
+   "record_type": "incident_record",
+   "label": "positive: monitored detector with reason and sign-off replaces a non-reproducible case",
+   "changes": [
+    [
+     "regression_case",
+     {
+      "kind": "monitored_detector",
+      "ref": "detector:isolation-canary-hourly",
+      "reason": "Race not reproducible deterministically; hourly canary probes the channel",
+      "signed_off_by": {
+       "name": "Sam Example",
+       "role": "AI quality owner"
+      }
+     }
+    ],
+    [
+     "recovery_verification.regression_fail_before_pass_after",
+     {
+      "result": "not_applicable",
+      "reason": "Monitored detector instead of a regression file"
+     }
+    ]
+   ],
+   "expect": null
+  }
+ ]
+}

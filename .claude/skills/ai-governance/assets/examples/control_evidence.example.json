@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/control_evidence.schema.json",
+  "record_type": "control_evidence",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "evidence_id": "ev-2026-11-10-ai-data-001",
+  "control_id": "AI-DATA-001",
+  "executed_at": "2026-11-10T14:02:11Z",
+  "executed_by": "ci:governance-exercise",
+  "environment": "ci",
+  "method": "seeded_unsafe_scenario",
+  "scenario": "cross_tenant_retrieval",
+  "command": "pytest tests/governance/test_cross_tenant.py -q",
+  "exit_code": 0,
+  "expected_outcome": "blocked",
+  "observed_outcome": "blocked",
+  "control_decision": "Retrieval filter denied tenant-b document for tenant-a principal",
+  "artifact_refs": [
+    "artifacts/ci/run-123/cross-tenant.log"
+  ],
+  "negative_control": {
+    "performed": true,
+    "description": "Tenant filter removed in a scratch branch; the same test failed",
+    "observed_failure": true
+  },
+  "result": "pass",
+  "mocked": true
+}

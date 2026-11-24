@@ -1,0 +1,194 @@
+{
+  "$schema": "../schemas/production_readiness.schema.json",
+  "record_type": "production_readiness",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "system_id": "support-rag-assistant",
+  "assessed_on": "2026-11-20",
+  "assessed_by": {
+    "name": "Sam Example",
+    "role": "Technical owner"
+  },
+  "risk_tier": "High",
+  "autonomy_level": "A1",
+  "sections": {
+    "strategy_accountability": {
+      "business_owner_assigned": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/strategy_accountability/business_owner_assigned.json"
+      },
+      "technical_owner_assigned": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/strategy_accountability/technical_owner_assigned.json"
+      },
+      "risk_classification_approved": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/strategy_accountability/risk_classification_approved.json"
+      },
+      "business_value_baseline_established": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/strategy_accountability/business_value_baseline_established.json"
+      },
+      "control_owners_named": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/strategy_accountability/control_owners_named.json"
+      }
+    },
+    "security_data": {
+      "approved_model_provider": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/approved_model_provider.json"
+      },
+      "gateway_enforcement_validated": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/gateway_enforcement_validated.json"
+      },
+      "tool_authorization_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/tool_authorization_tested.json"
+      },
+      "tenant_isolation_verified": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/tenant_isolation_verified.json"
+      },
+      "data_privacy_assessment_completed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/data_privacy_assessment_completed.json"
+      },
+      "memory_data_lineage_documented": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/security_data/memory_data_lineage_documented.json"
+      },
+      "deletion_tests_passed": {
+        "status": "done",
+        "evidence_ref": "evidence/AI-MEM-001/2026-10-28.json"
+      }
+    },
+    "model_evaluation": {
+      "model_prompt_versions_recorded": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/model_prompt_versions_recorded.json"
+      },
+      "ai_bom_completed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/ai_bom_completed.json"
+      },
+      "artifact_integrity_verified": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/artifact_integrity_verified.json"
+      },
+      "golden_dataset_evaluated": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/golden_dataset_evaluated.json"
+      },
+      "protected_canary_evaluated": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/protected_canary_evaluated.json"
+      },
+      "safety_tests_passed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/safety_tests_passed.json"
+      },
+      "cicd_release_gates_passed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/cicd_release_gates_passed.json"
+      },
+      "known_bad_release_exercise_passed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/model_evaluation/known_bad_release_exercise_passed.json"
+      }
+    },
+    "agentic_ai": {
+      "autonomy_level_approved": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/autonomy_level_approved.json"
+      },
+      "quantitative_gates_satisfied": {
+        "status": "not_applicable",
+        "justification": "A1 system: quantitative gates apply from A2 (s6.3)"
+      },
+      "state_changing_actions_scoped": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/state_changing_actions_scoped.json"
+      },
+      "human_approval_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/human_approval_tested.json"
+      },
+      "idempotency_implemented": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/idempotency_implemented.json"
+      },
+      "recovery_compensation_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/recovery_compensation_tested.json"
+      },
+      "kill_switch_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/kill_switch_tested.json"
+      },
+      "cross_agent_trust_validated": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/agentic_ai/cross_agent_trust_validated.json"
+      }
+    },
+    "production_operations": {
+      "slos_established": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/slos_established.json"
+      },
+      "policy_latency_measured": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/policy_latency_measured.json"
+      },
+      "observability_enabled": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/observability_enabled.json"
+      },
+      "budget_rate_controls_active": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/budget_rate_controls_active.json"
+      },
+      "incident_runbooks_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/incident_runbooks_tested.json"
+      },
+      "provider_fallback_assessed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/provider_fallback_assessed.json"
+      },
+      "required_approvals_recorded": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/production_operations/required_approvals_recorded.json"
+      }
+    },
+    "governance_compliance": {
+      "regulatory_obligations_mapped": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/regulatory_obligations_mapped.json"
+      },
+      "vendor_review_completed": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/vendor_review_completed.json"
+      },
+      "evidence_repository_populated": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/evidence_repository_populated.json"
+      },
+      "control_effectiveness_tested": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/control_effectiveness_tested.json"
+      },
+      "exceptions_time_bound": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/exceptions_time_bound.json"
+      },
+      "next_review_scheduled": {
+        "status": "done",
+        "evidence_ref": "evidence/readiness/governance_compliance/next_review_scheduled.json"
+      }
+    }
+  },
+  "verdict": "READY",
+  "next_review": "2027-02-20"
+}

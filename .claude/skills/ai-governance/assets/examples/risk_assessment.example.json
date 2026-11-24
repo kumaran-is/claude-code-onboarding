@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/risk_assessment.schema.json",
+  "record_type": "risk_assessment",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "system_id": "support-rag-assistant",
+  "system_name": "Customer support RAG assistant (fictional)",
+  "assessed_on": "2026-11-01",
+  "next_reassessment": "2027-02-01",
+  "owners": {
+    "business_owner": {
+      "name": "Alex Example",
+      "role": "Business owner"
+    },
+    "technical_owner": {
+      "name": "Sam Example",
+      "role": "Technical owner"
+    },
+    "risk_owner": {
+      "name": "Riley Example",
+      "role": "Risk owner"
+    }
+  },
+  "use_case": {
+    "problem": "Agents search five knowledge bases per ticket",
+    "why_ai_over_deterministic": "Keyword search misses paraphrased questions; measured in a 2-week pilot",
+    "value_metric": "Median handle time per ticket",
+    "value_baseline": "11.5 minutes over 30 days"
+  },
+  "risk_tier": "High",
+  "autonomy_level": "A1",
+  "engineering_risk_tier": "T2",
+  "factors": {
+    "data_sensitivity": "confidential",
+    "customer_impact": "direct",
+    "likelihood": "possible",
+    "severity": "major",
+    "reversibility": "compensatable",
+    "tenancy": "multi_tenant",
+    "state_changing": false,
+    "durable_memory": true,
+    "fine_tuning": false
+  },
+  "threat_model_ref": "docs/threat-models/support-rag-assistant.md",
+  "minimum_controls": [
+    "Grounding with citations",
+    "Tenant-filtered retrieval",
+    "Golden and canary evaluations",
+    "PII redaction in traces"
+  ],
+  "tenant_isolation_validation_ref": "evidence/AI-DATA-001/2026-10-30-cross-tenant-retrieval.json",
+  "lineage_manifest_ref": "docs/ai-bom/support-rag-assistant.json",
+  "independent_review": {
+    "required": true
+  },
+  "approval_status": "pending"
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/unsafe_release_exercise.schema.json",
+  "record_type": "unsafe_release_exercise",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "exercise_id": "ure-2026-11-support-rag",
+  "system_id": "support-rag-assistant",
+  "executed_on": "2026-11-10",
+  "executed_by": "ci:governance-exercise",
+  "scenarios": [
+    {
+      "scenario": "known_bad_model_output",
+      "evidence_id": "ev-2026-11-10-ure-01"
+    },
+    {
+      "scenario": "unauthorized_tool_access",
+      "evidence_id": "ev-2026-11-10-ure-02"
+    },
+    {
+      "scenario": "cross_tenant_retrieval",
+      "evidence_id": "ev-2026-11-10-ai-data-001"
+    },
+    {
+      "scenario": "stale_human_approval",
+      "evidence_id": "ev-2026-11-10-ure-04"
+    },
+    {
+      "scenario": "prohibited_sensitive_data_transfer",
+      "evidence_id": "ev-2026-11-10-ure-05"
+    },
+    {
+      "scenario": "duplicate_financial_mutation",
+      "evidence_id": "ev-2026-11-10-ure-06"
+    },
+    {
+      "scenario": "prompt_injection_in_retrieved_content",
+      "evidence_id": "ev-2026-11-10-ure-07"
+    },
+    {
+      "scenario": "invalid_artifact_manifest",
+      "evidence_id": "ev-2026-11-10-ure-08"
+    }
+  ],
+  "verdict": "passed",
+  "notes": "Fictional example; each evidence_id names one control_evidence record validated in the same run."
+}

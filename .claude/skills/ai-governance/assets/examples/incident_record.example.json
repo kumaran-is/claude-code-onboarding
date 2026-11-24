@@ -1,0 +1,143 @@
+{
+  "$schema": "../schemas/incident_record.schema.json",
+  "record_type": "incident_record",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "incident_id": "AIINC-2026-031",
+  "category": "AI-TENANT",
+  "severity": "S0",
+  "security_severity": "SEV-1",
+  "status": "closed",
+  "detected_at": "2026-11-12T10:05:00Z",
+  "contained_at": "2026-11-12T10:22:00Z",
+  "severity_factors": {
+    "actual_impact": "Two snippets from tenant-b shown to one tenant-a user",
+    "potential_impact": "Any tenant sharing the cache key",
+    "blocked_by_deterministic_control": false,
+    "data_sensitivity": "confidential",
+    "customer_exposure": "limited",
+    "financial_impact": "None identified",
+    "regulatory_consequence": true,
+    "duration_minutes": 17,
+    "recoverability": "irreversible",
+    "control_failure": true,
+    "repeated_blocked_attempts": 0
+  },
+  "affected": {
+    "system_id": "support-rag-assistant",
+    "model_or_agent": "support-answer pipeline",
+    "model_versions": [
+      "example-model-2026-09-01"
+    ],
+    "tool_versions": [],
+    "prompt_versions": [
+      "support-answer@14"
+    ]
+  },
+  "policy_decision": "Retrieval filter applied; response cache keyed without tenant id served a cached answer",
+  "data_scope": "Two knowledge-base snippets",
+  "tenant_scope": [
+    "tenant-a",
+    "tenant-b"
+  ],
+  "action_history": [
+    "10:05 alert from canary tenant probe",
+    "10:22 response cache disabled"
+  ],
+  "customer_impact": "One user saw another tenant's content",
+  "containment_actions": [
+    "Disabled response cache",
+    "Purged cache entries"
+  ],
+  "recovery_outcome": "Cache re-enabled with tenant-scoped keys after test passed",
+  "root_cause": "Cache key omitted tenant id",
+  "corrective_actions": [
+    "Tenant id added to cache key",
+    "Cache isolation added to multi-tenant checklist"
+  ],
+  "preventive_test_cases": [
+    "tests/governance/test_cache_tenant_isolation.py::test_cross_tenant_cache_miss",
+    "tests/golden/production_regressions/INC-2026-031.yaml"
+  ],
+  "incident_types": [
+    "I3"
+  ],
+  "containment_levers": [
+    {
+      "lever": "capability_flag",
+      "scope": "support-answer capability, all tenants",
+      "pulled_at": "2026-11-12T10:12:00Z",
+      "pulled_by": {
+        "name": "Robin Example",
+        "role": "AI on-call"
+      },
+      "reason": "Cross-tenant snippets in answers; harm ongoing",
+      "restored_at": "2026-11-14T09:00:00Z"
+    },
+    {
+      "lever": "supplementary",
+      "scope": "Response cache for support-rag-assistant (disabled and purged after evidence capture)",
+      "pulled_at": "2026-11-12T10:22:00Z",
+      "pulled_by": {
+        "name": "Robin Example",
+        "role": "AI on-call"
+      },
+      "authorized_by": {
+        "name": "Casey Example",
+        "role": "Incident commander"
+      },
+      "reason": "Shared cache identified as the leak channel",
+      "restored_at": "2026-11-14T09:00:00Z"
+    }
+  ],
+  "recovery_verification": {
+    "fix_merged_via_pipeline": {
+      "result": "pass",
+      "evidence": "PR 1432 merged via release pipeline"
+    },
+    "r1_gates_green": {
+      "result": "pass",
+      "evidence": "ci run 88121"
+    },
+    "r2_suite_green": {
+      "result": "pass",
+      "evidence": "nightly run 88140"
+    },
+    "regression_fail_before_pass_after": {
+      "result": "pass",
+      "evidence": "eval runs 88102 (fail) and 88121 (pass)"
+    },
+    "canaries_clean": {
+      "result": "pass",
+      "evidence": "isolation canary green 24 h, run 88177"
+    },
+    "online_eval_within_tolerance": {
+      "result": "not_applicable",
+      "reason": "Retrieval-only leak channel; answer quality unaffected"
+    },
+    "metrics_at_baseline": {
+      "result": "pass",
+      "evidence": "dashboard snapshot 2026-11-14"
+    },
+    "progressive_reenable": {
+      "result": "pass",
+      "evidence": "internal, 5%, 25%, 100% with 4 h holds"
+    },
+    "owner_and_engaged_approvals": {
+      "result": "pass",
+      "evidence": "capability owner, security and legal approvals on ticket AIINC-2026-031"
+    },
+    "degraded_messaging_removed": {
+      "result": "pass",
+      "evidence": "status page updated 2026-11-14"
+    }
+  },
+  "regression_case": {
+    "kind": "regression_file",
+    "ref": "tests/golden/production_regressions/INC-2026-031.yaml",
+    "regression_incident_id": "INC-2026-031",
+    "pre_fix_run_id": "eval run 88102",
+    "post_fix_run_id": "eval run 88121"
+  },
+  "postmortem_ref": "docs/post-mortems/2026-11-12-cache-tenant-leak.md"
+}

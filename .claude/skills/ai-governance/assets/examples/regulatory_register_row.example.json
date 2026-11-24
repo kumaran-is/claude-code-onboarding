@@ -1,0 +1,44 @@
+{
+  "$schema": "../schemas/regulatory_register_row.schema.json",
+  "record_type": "regulatory_register_row",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "row_id": "REG-EU-AIA-050",
+  "jurisdiction": "EU",
+  "regulation": "Regulation (EU) 2024/1689 (AI Act)",
+  "article": "50",
+  "role": "deployer",
+  "affected_systems": [
+    "support-rag-assistant"
+  ],
+  "effective_date": "2026-08-02",
+  "date_legal_status": "enacted",
+  "treated_as_binding": true,
+  "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+  "compliance_owner": {
+    "name": "Taylor Example",
+    "role": "Privacy and legal counsel"
+  },
+  "business_owner": {
+    "name": "Alex Example",
+    "role": "Business owner"
+  },
+  "technical_owner": {
+    "name": "Sam Example",
+    "role": "Technical owner"
+  },
+  "required_controls": [
+    "AI interaction disclosure in chat UI"
+  ],
+  "evidence_links": [
+    "evidence/REG-EU-AIA-050/ui-disclosure.png"
+  ],
+  "compliance_status": "partially_compliant",
+  "last_verification": "2026-11-05",
+  "verified_by": {
+    "name": "Taylor Example",
+    "role": "Privacy and legal counsel"
+  },
+  "next_review": "2026-12-05",
+  "change_trigger": "Commission guidance or amendment affecting Article 50"
+}

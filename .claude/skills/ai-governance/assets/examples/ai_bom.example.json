@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/ai_bom.schema.json",
+  "record_type": "ai_bom",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "bom_id": "bom-support-rag-2026-11",
+  "system_id": "support-rag-assistant",
+  "generated_at": "2026-11-01T08:00:00Z",
+  "system_profile": {
+    "fine_tunes": false,
+    "durable_memory": true
+  },
+  "components": [
+    {
+      "component_type": "foundation_model",
+      "name": "managed-llm (fictional)",
+      "version": "2026-09-01",
+      "provider": "Example provider",
+      "vendor_model_id": "example-model-2026-09-01",
+      "region": "eu-west",
+      "license": "Provider terms of service",
+      "provenance": {
+        "source": "Provider model catalog",
+        "attestation_ref": "vendor/attestations/2026-q3.pdf"
+      },
+      "visibility_limitations": "Weights, training data and tokenizer are not inspectable; identified by vendor model id only"
+    },
+    {
+      "component_type": "prompt_template",
+      "name": "support-answer",
+      "version": "14",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "license": "Internal",
+      "provenance": {
+        "source": "Prompt registry",
+        "registry": "prompts/support-answer"
+      }
+    },
+    {
+      "component_type": "container_image",
+      "name": "support-rag-api",
+      "version": "1.8.2",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "license": "Internal",
+      "provenance": {
+        "source": "CI build",
+        "registry": "artifact-registry/support-rag-api"
+      }
+    },
+    {
+      "component_type": "embedding_model",
+      "name": "managed-embedding (fictional)",
+      "version": "3",
+      "vendor_model_id": "example-embed-3",
+      "license": "Provider terms of service",
+      "provenance": {
+        "source": "Provider model catalog"
+      },
+      "visibility_limitations": "Managed API; dimensionality 1024 recorded, weights not accessible"
+    }
+  ],
+  "lineage": {
+    "memory_lineage_ref": "docs/lineage/support-rag-memory.md",
+    "source_to_derived_map_ref": "docs/lineage/source-to-derived.json"
+  },
+  "deletion_propagation_tests": [
+    "evidence/AI-MEM-001/2026-10-28.json"
+  ],
+  "vulnerability_scan_ref": "artifacts/ci/run-123/image-scan.json",
+  "deployment_manifest_ref": "deploy/support-rag-api/1.8.2.yaml",
+  "exceptions": []
+}

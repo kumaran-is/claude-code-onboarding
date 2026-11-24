@@ -1,0 +1,24 @@
+{
+  "$schema": "../schemas/kpi_definition.schema.json",
+  "record_type": "kpi_definition",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "kpi_id": "KPI-SEC-01",
+  "domain": "Security",
+  "name": "Successful unauthorized tool actions",
+  "numerator": "State-changing tool calls executed without a matching allow decision",
+  "denominator": "All state-changing tool calls",
+  "measurement_window": "Rolling 30 days",
+  "data_source": "Tool gateway audit log",
+  "instrumentation_owner": {
+    "name": "Sam Example",
+    "role": "Technical owner"
+  },
+  "target_threshold": "0",
+  "escalation_threshold": ">= 1",
+  "last_measurement_date": "2026-11-20",
+  "last_value": 0,
+  "counts_violations_or_blocks": true,
+  "independent_control_test_ref": "evidence/AI-SEC-002/2026-11-10.json",
+  "detection_coverage_ref": "docs/observability/tool-gateway-audit-coverage.md"
+}

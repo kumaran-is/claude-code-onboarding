@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/approval_record.schema.json",
+  "record_type": "approval_record",
+  "schema_version": "1.0",
+  "record_status": "example",
+  "approval_id": "apr-20261120-0042",
+  "system_id": "refund-agent",
+  "operation_id": "op-7f3c",
+  "proposed_action": {
+    "summary": "Refund order 1001 in full",
+    "action_type": "payments.refund",
+    "resource_id": "order:1001",
+    "impact": "Customer receives 120.00 EUR; ledger entry created",
+    "side_effects": [
+      "Customer email sent",
+      "Inventory restock flag set"
+    ],
+    "reversibility": "irreversible",
+    "alternatives": [
+      "Partial refund",
+      "Store credit"
+    ]
+  },
+  "action_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "authoritative_state": {
+    "source": "orders-service",
+    "version": "etag-55",
+    "read_at": "2026-11-20T09:30:00Z"
+  },
+  "source_evidence": [
+    "tickets/88213",
+    "orders-service:order:1001@etag-55"
+  ],
+  "uncertainty": "Delivery scan missing; carrier status unknown",
+  "policy_warnings": [
+    "Refund above 100 EUR requires approval"
+  ],
+  "requested_at": "2026-11-20T09:00:00Z",
+  "expires_at": "2026-11-20T10:00:00Z",
+  "timeout_policy": "hold",
+  "decision": "approve",
+  "decided_by": {
+    "name": "Casey Example",
+    "role": "Support supervisor"
+  },
+  "decided_at": "2026-11-20T09:45:00Z",
+  "risk_acknowledged": true,
+  "bulk": false
+}

@@ -19,6 +19,7 @@ Expert deployment engineer specializing in CI/CD pipelines, Docker containers, G
 
 - **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux/Reactive) — Maven build, Spring Boot Buildpacks, Cloud Run with `--cpu-boost` for JVM warmup
 - **Backend (Node.js)**: Node.js 24.14.x, NestJS 11.2.x (Fastify adapter), Prisma ORM, TypeScript 5.9.x — npm, Cloud Run
+- **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.1), TypeScript 6.0.3, MCP SDK v2 (`@modelcontextprotocol/server` 2.4.0), stdio or Streamable HTTP on Fastify 5 — Docker + Cloud Run; scaffold with `/scaffold-mcp-server`, container rules in `mcp-builder/reference/production-deployment-docker.md`
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async — `uv` for dependency management, Alembic migrations, Cloud Run
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2 — Docker + Cloud Run, requires higher memory (2–4Gi) and longer startup timeout
 - **Frontend**: Angular 22.3.x (TypeScript 6.0.x, Node 26 LTS, RxJS, SCSS) — npm build, Firebase Hosting

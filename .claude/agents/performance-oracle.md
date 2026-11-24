@@ -111,6 +111,7 @@ Measure with `node --cpu-prof` (CPU), `perf_hooks.monitorEventLoopDelay` / the `
 | Retry storm: retries at several layers, retries without jitter, retries on non-idempotent calls | Upstream load × (attempts per layer)^layers during an incident; duplicate side effects | `retry`/loops in client and server; no jitter; POST retried without an idempotency key |
 | High-cardinality metric attributes (session, request, user, trace id, raw URL) | Memory and backend cost grow with traffic; exporter CPU | `.record(` / `.add(` with ids in attributes |
 | Synchronous or verbose logging on the hot path (pretty-printing in production, logging whole payloads) | Serialisation cost per request; event-loop time | `pino-pretty` transport in production config; `logger.info({ body })` / `{ args }` in handlers |
+| Container memory limit without a heap cap (`--max-old-space-size`) | V8 grows the heap past the cgroup limit and the container is OOM-killed instead of failing fast; for 512 MiB use 320 (measured `heap_size_limit` 332 MiB on Node 26.13.1) | Dockerfile/`NODE_OPTIONS` without `--max-old-space-size` while the deploy sets a memory limit |
 | Server `keepAliveTimeout` below the load balancer idle timeout | Intermittent 502s on reused connections | `keepAliveTimeout` unset (Node default 5 s) behind an LB with a 60 s idle timeout |
 | No load-test evidence for a latency claim | Unknown | Ask for an autocannon/k6 run with a p99 budget as the exit code; label estimates LOW confidence |
 

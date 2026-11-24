@@ -1933,6 +1933,7 @@ claude-code-onboarding/
     │   │  # — Scaffolding —
     │   ├── scaffold-spring-api.md        # /scaffold-spring-api <name>
     │   ├── scaffold-nestjs-api.md        # /scaffold-nestjs-api <name>
+    │   ├── scaffold-mcp-server.md        # /scaffold-mcp-server <name> [stdio|http|both]
     │   ├── scaffold-python-api.md        # /scaffold-python-api <name>
     │   ├── scaffold-agentic-ai.md        # /scaffold-agentic-ai <name>
     │   ├── scaffold-google-adk.md        # /scaffold-google-adk <name>
@@ -4067,6 +4068,7 @@ claude --resume <name>              # Resume named session
 ```
 /scaffold-spring-api <name>         # Java Spring Boot API
 /scaffold-nestjs-api <name>         # NestJS API
+/scaffold-mcp-server <name> [stdio|http|both]  # TypeScript MCP server (SDK v2, Node 26, TS 6.0.3)
 /scaffold-python-api <name>         # Python FastAPI
 /scaffold-angular-app <name>        # Angular SPA
 /scaffold-flutter-app <name>        # Flutter mobile app

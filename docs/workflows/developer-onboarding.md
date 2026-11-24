@@ -27,8 +27,9 @@ npm install -g @anthropic-ai/claude-code
 
 **3. Configure Claude Code with MCP servers**:
 ```bash
-# Check MCP servers configured in the project
-cat .claude/settings.json | jq '.mcpServers'
+# Project MCP servers live in .mcp.json (not settings.json)
+jq '.mcpServers | keys' .mcp.json
+claude mcp list            # connection status; unapproved .mcp.json servers show as pending
 
 # Required MCPs for this project:
 # - context7 (library documentation)
@@ -109,12 +110,20 @@ java --version  # Should be 21.x
 
 **NestJS / Node.js**:
 ```bash
-# Verify Node.js 24.x (NestJS stack; Angular 22 and React use Node 26 LTS)
+# Verify Node.js 24.x (NestJS stack; Angular 22, React and MCP servers use Node 26 LTS)
 node --version  # Should be 24.x
 
 # Install dependencies and test
 npm ci
 npx vitest run
+```
+
+**MCP server (TypeScript)**:
+```bash
+# Node 26 LTS (26.13.1), TypeScript 6.0.3, MCP SDK v2; new servers come from /scaffold-mcp-server
+node --version  # Should be 26.x
+npm ci
+npm run typecheck && npm run build && npx vitest run   # tests drive the built server with a real MCP Client
 ```
 
 **Python / FastAPI**:
@@ -256,7 +265,7 @@ Accounts and Access:
 Local Setup:
 [ ] Claude Code installed (claude --version)
 [ ] MCP servers configured (context7, angular-cli, etc.)
-[ ] All stack runtimes installed (Java 21, Node 24 for NestJS / Node 26 for Angular and React, Python 3.14, Flutter 3.50)
+[ ] All stack runtimes installed (Java 21, Node 24 for NestJS / Node 26 for Angular, React and MCP servers, Python 3.14, Flutter 3.50)
 [ ] Docker running (docker-compose up -d succeeds)
 [ ] All tests passing (run test suite for your stack)
 

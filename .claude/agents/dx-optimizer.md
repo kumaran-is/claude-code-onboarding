@@ -35,7 +35,7 @@ tasks, and improves developer workflow efficiency across the team's tech stack.
 Verify prerequisites are installed at correct versions:
 
 - Java 21 (`java -version`)
-- Node.js 24.14.x for NestJS; Node.js 26 LTS (26.13.1) for Angular 22 and React (`node -v`)
+- Node.js 24.14.x for NestJS; Node.js 26 LTS (26.13.1) for Angular 22, React and TypeScript MCP servers (`node -v`)
 - Flutter 3.50.x (`flutter --version`)
 - Python 3.14 (`python3 --version`)
 - Docker + Docker Compose (`docker --version`)

@@ -107,6 +107,9 @@ Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/m
 |-------|--------|
 | HTTP server with tools on user/tenant data and no auth, or an auth-disable flag that does not refuse to start in production | CRITICAL |
 | Token verifier without an audience check (`aud` = this server's canonical URI) or the inbound token forwarded to an upstream API | CRITICAL |
+| Verifier sets `AuthInfo.resource` from configuration instead of the token's `aud`, so `expectedResource` compares a constant | HIGH (CRITICAL if it is the only audience check) |
+| Gate built by hand (Fastify, `node:http`): bearer check after the MCP handler or not on every method of the route; no framework body limit when the body is pre-parsed (the SDK limit skips `parsedBody`) | CRITICAL / MEDIUM |
+| Per-principal tool allowlist enforced only in the tool description or the client, not before the handler runs | HIGH |
 | Tenant/user id read from tool arguments, client headers or model text instead of the verified token | CRITICAL |
 | URL-fetching tool without an SSRF guard, a hostname-prefix guard, or redirects followed without re-validation | HIGH |
 | No `Origin` validation; local bind 0.0.0.0; remote bind without allowed hosts/origins | HIGH |

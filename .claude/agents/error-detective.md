@@ -38,6 +38,7 @@ Parse and annotate stack traces across all stack layers:
 
 - **Java/Spring**: Caused-by chains, Spring proxy frames (filter vs application code)
 - **NestJS/Node.js**: Async stack traces, Promise rejection chains, Fastify error context
+- **MCP servers (SDK v2)**: tool failures arrive as `isError: true` results, not exceptions (`Input validation error` = schema rejected the arguments before the handler ran); HTTP `401` + `WWW-Authenticate: Bearer … resource_metadata=` = token rejected (the server logs the reason code, e.g. `ERR_JWT_CLAIM_VALIDATION_FAILED`); a stdio client that times out on every request usually means the server wrote to stdout (logs must go to stderr)
 - **Python/FastAPI**: Traceback chains, uvicorn request context, Pydantic validation errors
 - **Flutter/Dart**: Dart stack traces, Flutter framework frames vs application frames
 
@@ -69,6 +70,12 @@ Search: `Grep pattern: '"level":"ERROR"'` or `'"level":"WARN"'`
     at UserService.findOne (/app/src/user/user.service.ts:42:15)
 ```
 Search: `Grep pattern: 'ERROR \[.*\]'`
+
+### MCP server (pino JSON on stderr)
+```json
+{"level":40,"time":1795475668715,"pid":60887,"reason":"ERR_JWT_CLAIM_VALIDATION_FAILED","msg":"auth.token_rejected"}
+```
+Search: `Grep pattern: '"level":(40|50|60)'` (pino levels: 40 warn, 50 error, 60 fatal)
 
 ### Python FastAPI (uvicorn)
 ```

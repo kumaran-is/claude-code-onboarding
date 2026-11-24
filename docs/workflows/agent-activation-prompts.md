@@ -105,6 +105,17 @@ Follow patterns from the skill's reference files.
 Check NestJS docs via Context7 MCP before using any decorator.
 ```
 
+### Scaffold MCP Server (TypeScript)
+```
+Run /scaffold-mcp-server [name] [stdio|http|both] in the main session, then
+load the mcp-builder skill and add [tool names] to src/tools.ts.
+
+Requirements:
+- Each tool: zod inputSchema + outputSchema, annotations, a scope in TOOL_SCOPES
+- Read-only unless a side effect is approved
+- Tests drive the built server with a real MCP Client (stdio and HTTP)
+```
+
 ### Scaffold Python FastAPI Endpoint
 ```
 Load the python-dev skill. Add a [endpoint description] endpoint to

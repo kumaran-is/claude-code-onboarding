@@ -22,6 +22,7 @@ Generates codemaps for detected services:
 |---|---|---|
 | `docs/CODEMAPS/spring-api.md` | `pom.xml` with `spring-boot` | Java 21 / Spring Boot 3.5.x / WebFlux / R2DBC |
 | `docs/CODEMAPS/nestjs-api.md` | `package.json` with `@nestjs/core` | NestJS 11.2.x / Fastify / Prisma / TypeScript 5.9.x |
+| `docs/CODEMAPS/mcp-server.md` | `package.json` with `@modelcontextprotocol/server` | Node 26 LTS / TypeScript 6.0.3 / MCP SDK v2 / Fastify 5 (HTTP) |
 | `docs/CODEMAPS/angular-spa.md` | `angular.json` | Angular 22.3.x / daisyUI 5.8.2 / Tailwind CSS 4.3.5 |
 | `docs/CODEMAPS/flutter-mobile.md` | `pubspec.yaml` with `flutter:` | Flutter 3.50.x / Dart 3.14.0 / Riverpod |
 | `docs/CODEMAPS/python-api.md` | `pyproject.toml` with `fastapi` | Python 3.14 / FastAPI 0.135.2 / Pydantic v2 |

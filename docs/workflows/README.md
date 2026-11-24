@@ -125,7 +125,7 @@ Multi-phase workflow guides for every development process in this workspace. Eac
 | [developer-onboarding.md](developer-onboarding.md) | New developer setup — Claude Code, MCP, stacks |
 | [new-skill-creation.md](new-skill-creation.md) | Adding a new skill to `.claude/skills/` |
 | [hookify-management.md](hookify-management.md) | Creating and managing Hookify enforcement rules |
-| [mcp-server-setup.md](mcp-server-setup.md) | Configuring or building a custom MCP server |
+| [mcp-server-setup.md](mcp-server-setup.md) | Configuring (`.mcp.json`) or building a custom MCP server (SDK v2) |
 | [subagent-driven-development.md](subagent-driven-development.md) | 3-role SDD pipeline for plan-driven multi-agent work |
 | [ralph-loop-autonomous.md](ralph-loop-autonomous.md) | Autonomous iteration loop until completion |
 | [build-error-resolution.md](build-error-resolution.md) | Maven/Spring Boot 3.5.x build failures — `java-build-resolver` agent |

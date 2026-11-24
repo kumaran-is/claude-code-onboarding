@@ -11,6 +11,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 ## Tech Stack
 - **Backend (Java)**: Java 21, Spring Boot 3.5.x (WebFlux / Reactive), REST APIs
 - **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
+- **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.x), TypeScript 6.0.3, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, protocol 2026-07-28), Fastify 5.12.8, Zod 4.6.7, OpenTelemetry JS SDK 3.x: see `/scaffold-mcp-server`
 - **Backend (Python)**: Python 3.14, FastAPI (backend references verified on 0.165.x; the agentic stack pins 0.135.2), Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, FastAPI 0.135.2
 - **Frontend**: Angular 22.3.x (SPA, CLI-first scaffolding), TypeScript 6.0.x (Angular 22 requires >=6.0 <6.1), Node 26 LTS, RxJS 7.8, Tailwind CSS 4.3.5 + daisyUI 5.8.2
@@ -64,6 +65,7 @@ Consult official docs via MCP before writing ANY code. Zero tolerance for deprec
 |------------|-------|-------|---------|
 | Java / Spring Boot | `.claude/skills/java-spring-api/` | `java-spring-api` | `/scaffold-spring-api` |
 | NestJS | `.claude/skills/nestjs-api/` | `nestjs-api` | `/scaffold-nestjs-api` |
+| MCP servers (TypeScript, SDK v2, Node 26 LTS) | `.claude/skills/mcp-builder/` | — | `/scaffold-mcp-server` |
 | Python / FastAPI | `.claude/skills/python-dev/` | `python-dev` | `/scaffold-python-api` |
 | Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |

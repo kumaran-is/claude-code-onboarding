@@ -35,6 +35,7 @@ Pick the matching stack:
 | Spring Boot WebFlux 3.5.x | `maven:3.9-eclipse-temurin-21-alpine` | `eclipse-temurin:21-jre-alpine` | 8080 |
 | Python FastAPI 3.14 | `python:3.14-slim` | `python:3.14-slim` | 8000 |
 | TypeScript/Fastify / Node 24 | `node:24-alpine` | `node:24-alpine` | 3000 |
+| TypeScript MCP server / Node 26 | `node:26.13.1-trixie-slim` (digest-pinned) | same | 3000 — template in `/scaffold-mcp-server` |
 
 All patterns include: 4-stage multi-stage build, non-root user (UID 1001), HEALTHCHECK, .dockerignore.
 

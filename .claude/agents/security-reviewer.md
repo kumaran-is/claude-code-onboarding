@@ -57,7 +57,7 @@ Principles first, products are examples (the architecture may use any provider):
 
 ## API Authorization Review (Python/FastAPI and any HTTP API)
 
-Authenticated is not authorised. Check each of these explicitly; a green pattern gate or a clean linter does not prove them. Details and executed examples: `.claude/skills/python-dev/reference/fastapi-authorization-boundaries.md`, `fastapi-auth-security.md`, `fastapi-rate-limiting.md`.
+Authenticated is not authorised. Check each of these explicitly; a green pattern gate or a clean linter does not prove them. Details and executed examples: `.claude/skills/python-dev/reference/fastapi-authorization-boundaries.md` (incl. SSRF, CORS/CSRF, machine callers), `fastapi-auth-security.md` (JWT, JWKS, Firebase), `fastapi-rate-limiting.md`, `deployment-ci-cd/reference/env-config-validation.md` (settings, KMS envelope), `stripe` skill (webhooks).
 
 | Check | Fail = |
 |-------|--------|
@@ -66,10 +66,17 @@ Authenticated is not authorised. Check each of these explicitly; a green pattern
 | **Side-effect endpoints** (send, charge, metered call) require a service credential; recipient resolved server-side; consent gate on every path | CRITICAL if an end-user JWT suffices |
 | **Eligibility:** granting a privilege to a third party checks the grantor's approval status, fail closed, re-checked at use | HIGH |
 | **Existence oracles:** register/login/reset/fetch answer identically for known and unknown accounts | MEDIUM |
-| **JWT:** `algorithms` pinned, `exp`/`sub`/`iat` required, `aud`/`iss` checked; PyJWT + pwdlib (no `python-jose`/`passlib`); hashing off the event loop | HIGH (no `require`) |
+| **JWT:** `algorithms` pinned (asymmetric only for IdP tokens), `exp`/`sub`/`iat` required, `aud`/`iss` checked (`strict_aud` for single-audience APIs), `typ` checked for access tokens, leeway ≤ 60 s; JWKS over https fetched async with a single-flight refresh, a refetch cooldown and bounded stale grace (not `PyJWKClient` in the shared thread pool); PyJWT + pwdlib | HIGH (no `require`, alg from header, `http` JWKS) |
+| **`python-jose` or `passlib` imported** (`python-jose` ≤ 3.5.0: unpatched critical GHSA-3qf3-8w2g-rqmx; `passlib` 1.7.4 breaks on bcrypt 5; 1.9.x publishes from a different repository, vet it as a new dependency; default is `pwdlib`) | HIGH |
+| **Firebase:** multi-tenant apps verify through `tenant_mgt.auth_for_tenant` (project-level `verify_id_token` ignores the tenant); `FIREBASE_AUTH_EMULATOR_HOST` refused outside local/test (it disables signature checks) | CRITICAL (emulator var reachable in production), HIGH (tenant) |
+| **Machine callers** (Pub/Sub push, Scheduler, service-to-service): Google OIDC token verified with the exact `audience` **and** the caller `email` pinned, `email_verified` true; certificates cached (a bare `google_requests.Request()` re-downloads them per call, 120 s default timeout) | HIGH (any Google-signed token admitted) |
 | **Secret guards:** empty expected secret refused at construction; `hmac.compare_digest` on encoded bytes | CRITICAL (admit-all) |
 | **New identities** start role-less; roles are sets from the database; dependency results are copied before narrowing | MEDIUM |
-| **Rate limits:** `shared_limit(scope=...)` on routes with path parameters; enumeration/spend keyed on user id, per-IP only as an outer layer with explicit trusted proxies; shared storage wired in deployment | HIGH |
+| **Rate limits:** one constant scope per abuse surface (never the concrete URL on routes with path parameters — SlowAPI's default `key_style="url"`); enumeration/spend keyed through the auth dependency (a key reading `request.state` set "later" silently falls back to the IP), login counting failures per (email, client) — never a per-email lockout — per-IP only as an outer layer with explicit trusted proxies; shared async storage wired in deployment; 429 carries `Retry-After`; no synchronous limiter storage in async handlers | HIGH |
+| **Webhooks** (Stripe and similar): signature verified on the raw body with a replay window (`tolerance` > 0; `0` disables it), event-id row and handler writes in one transaction (claim, then effects, then release-on-`Exception` strands the claim on cancellation), failure logs carry the exception type only | CRITICAL (unverified), HIGH (no dedupe / tolerance 0) |
+| **Outbound fetch of user-supplied URLs:** resolve, classify every answer (incl. NAT64 `64:ff9b::/96`), pin the vetted IP, re-validate each redirect, size/time caps | HIGH (CRITICAL on a cloud workload with a metadata server) |
+| **CORS/CSRF:** exact origin strings (`["*"]` + `allow_credentials=True` echoes any origin in Starlette; `list[HttpUrl]` appends "/" and matches nothing); credentials only for cookie sessions, which add an `Origin` check and a double-submit token compared as bytes | HIGH |
+| **Field encryption:** envelope with a fresh AES-GCM key per record, `aad` bound to tenant/record/field, KMS CRC32C checks | HIGH (static key in code or config) |
 | **Logging:** no `str(exc)`, `exc_info=True` or connection URLs on request paths (validation/DB errors contain submitted values); 422 bodies do not echo `input` | HIGH |
 | **Settings:** secrets have no defaults, are `SecretStr`, and the service fails at startup when missing | HIGH |
 

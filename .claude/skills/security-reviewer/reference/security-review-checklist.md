@@ -43,6 +43,8 @@
 
 ### 6. Dependencies (HIGH)
 - **Verify every package before installing:** Check npm/PyPI download count (>1K weekly), last publish date (<12 months), verify package name matches intended (typosquatting defense: `lodash` not `lodash-utils`). For AI-suggested packages, verify the package actually exists on the registry before running `npm install` / `pip install`.
+- **Placeholder and look-alike names:** a package that exists is not proof it is real. Check the release has code and a source link before adding it (example: `opentelemetry-instrumentation-httpx2` on PyPI is a `0.0.0` placeholder; instrument `httpx`, which the OpenTelemetry project ships, and keep outbound clients on it).
+- **Dormant package, new source:** a long-dormant package that suddenly publishes from a different repository is a **new dependency to vet** (maintainers, repository history, provenance/attestations), not an upgrade. Example: `passlib` went from 1.7.4 (2020-10-08) to 1.9.5 (2026-11-23) with project URLs on a different GitHub repository; the toolkit default for password hashing stays `pwdlib`.
 - `npm audit` / `pip-audit` / dependency-check clean of critical/high CVEs, judged by the tool's own exit code (pip-audit prints no severity, `pip audit` is not a command; see `deployment-ci-cd/reference/python-ci-supply-chain.md`)
 - No deprecated or unmaintained packages in critical paths
 - Lock files committed; dependencies pinned
@@ -71,8 +73,8 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-  # Python (pip)
-  - package-ecosystem: "pip"
+  # Python: "uv" for uv.lock projects, "pip" for requirements.txt
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"

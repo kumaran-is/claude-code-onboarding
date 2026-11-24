@@ -99,42 +99,134 @@ Spring Boot validates all `@ConfigurationProperties` at startup — missing requ
 
 ---
 
-## Python FastAPI 3.14 — Pydantic Settings Startup Validation
+## Python FastAPI — Pydantic Settings Startup Validation
+
+Executed on Python 3.14.10, pydantic-settings 2.16.3 (15 tests): unset `APP_ENV`, `http` JWKS URL,
+`async+memory://` limiter, the Firebase emulator variable, an empty webhook-secret list, `[""]`,
+`["whsec_"]`, an `sk_live_…` key in the webhook list, three webhook secrets, and CORS origins `*`,
+`https://app.example.test/` and (in production) `http://…` each fail at construction. Typing the list
+`list[SecretStr]` accepted `[""]` and the API key (three tests red); dropping `max_length=2`, the
+https-origin rule or the deployed-environment check each turned tests red. stripe 17.1.0 itself
+refuses an empty or whitespace secret at verification, so the boot check catches misconfiguration
+(a wrong or truncated value) before the first webhook fails, rather than closing a forgery hole. Without
+`hide_input_in_errors`, a `missing` error prints `input_value={'database_url': 'pg://hu...` — pydantic
+shortens the dict to its first and last characters, so the first and last settings leak (whole, when
+short) into boot logs; the flag removes `input_value`, and a test asserting the DSN prefix is absent
+went red when the flag was removed.
 
 ```python
-# src/core/config.py
+# src/my_service/core/config.py
+import os
+from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
+
+from pydantic import AfterValidator, AnyUrl, Field, HttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyUrl, field_validator
-from typing import Literal
+
+
+def _webhook_secret(value: SecretStr) -> SecretStr:
+    raw = value.get_secret_value()
+    if not raw.startswith("whsec_") or len(raw) < len("whsec_") + 24:
+        raise ValueError("expected a Stripe webhook signing secret (whsec_...)")
+    return value
+
+
+def _origin(value: str) -> str:
+    # exactly what browsers send in Origin; HttpUrl would append "/" and never match
+    parts = urlsplit(value)
+    if parts.scheme not in {"https", "http"} or not parts.hostname or value != f"{parts.scheme}://{parts.netloc}":
+        raise ValueError("CORS origin must be scheme://host[:port] (no path, no wildcard)")
+    return value
+
+
+WebhookSecret = Annotated[SecretStr, AfterValidator(_webhook_secret)]
+Origin = Annotated[str, AfterValidator(_origin)]
 
 
 class Settings(BaseSettings):
+    # .env only for local runs: deployments inject real environment variables
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
+        env_file=".env", env_file_encoding="utf-8", extra="ignore",
+        hide_input_in_errors=True,  # otherwise a startup ValidationError prints the env values it read
     )
 
-    # Required — no default = fails startup if missing
-    DATABASE_URL: AnyUrl
-    JWT_SECRET: str
+    app_env: Literal["local", "test", "staging", "production"]  # no default: unset fails startup
+    database_url: SecretStr                                      # DSNs carry passwords
+    jwks_url: HttpUrl
+    jwt_issuer: str
+    jwt_audience: str
+    stripe_webhook_secrets: list[WebhookSecret] = Field(min_length=1, max_length=2)  # current, previous
+    rate_limit_storage_uri: AnyUrl
+    cors_origins: list[Origin] = []
+    cookie_sessions: bool = False         # CORS allow_credentials and CSRF checks only when True
+    port: int = 8000
 
-    # Optional with defaults
-    PORT: int = 8000
-    APP_ENV: Literal["development", "staging", "production"] = "production"
-    APP_VERSION: str = "unknown"
+    @model_validator(mode="after")
+    def deployed_invariants(self) -> Self:
+        if self.app_env in {"staging", "production"}:
+            if self.jwks_url.scheme != "https":
+                raise ValueError("jwks_url must use https outside local/test")
+            if not str(self.rate_limit_storage_uri).startswith("async+redis"):
+                raise ValueError("rate limiter needs shared storage outside local/test")
+            if any(not o.startswith("https://") for o in self.cors_origins):
+                raise ValueError("CORS origins must be https outside local/test")
+            if os.environ.get("FIREBASE_AUTH_EMULATOR_HOST"):
+                raise ValueError("FIREBASE_AUTH_EMULATOR_HOST disables token signature checks")
+        return self
 
-    @field_validator("JWT_SECRET")
-    @classmethod
-    def jwt_secret_min_length(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError("JWT_SECRET must be at least 32 characters")
-        return v
 
-
-# Instantiate at module load — raises ValidationError at startup if invalid
-settings = Settings()
+settings = Settings()  # module load: a ValidationError stops the process before it serves traffic
 ```
+
+**Secrets never reach logs.** `SecretStr` prints as `**********` in `repr`, `str` and `model_dump()`
+(executed: the DSN password and webhook secrets were absent from all three); call
+`.get_secret_value()` only at the point of use. Never log `settings`, a DSN, a token, a
+`Stripe-Signature` header or `str(exc)` from a client library (it can embed the request). Log the
+exception type and a correlation id.
+
+### Field-level encryption with Cloud KMS (envelope)
+
+For values that must stay encrypted at rest beyond disk encryption (national ids, OAuth refresh
+tokens of third parties): a fresh AES-256-GCM data key (DEK) per record, wrapped by a Cloud KMS key
+(KEK). Only the wrapped DEK is stored; KMS never sees the data. google-cloud-kms 3.19, cryptography 50.
+
+```python
+import os
+import google_crc32c
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from google.cloud import kms
+
+def _crc(b: bytes) -> int:
+    return google_crc32c.value(b)
+
+async def seal(client: kms.KeyManagementServiceAsyncClient, key_name: str, plaintext: bytes, aad: bytes) -> Sealed:
+    """aad binds the record to its context, e.g. b"tenant:t1|user:u1|field:national_id"."""
+    dek, nonce = AESGCM.generate_key(bit_length=256), os.urandom(12)
+    ciphertext = AESGCM(dek).encrypt(nonce, plaintext, aad)
+    resp = await client.encrypt(request={
+        "name": key_name, "plaintext": dek, "plaintext_crc32c": _crc(dek),
+        "additional_authenticated_data": aad, "additional_authenticated_data_crc32c": _crc(aad)})
+    if not (resp.verified_plaintext_crc32c and resp.verified_additional_authenticated_data_crc32c
+            and resp.ciphertext_crc32c == _crc(resp.ciphertext)):
+        raise KmsIntegrityError("encrypt response corrupted in transit")   # retry; never store
+    return Sealed(key_name, resp.ciphertext, nonce, ciphertext)
+
+async def open_sealed(client, sealed: Sealed, aad: bytes) -> bytes:
+    resp = await client.decrypt(request={
+        "name": sealed.key_name, "ciphertext": sealed.wrapped_dek, "ciphertext_crc32c": _crc(sealed.wrapped_dek),
+        "additional_authenticated_data": aad, "additional_authenticated_data_crc32c": _crc(aad)})
+    if resp.plaintext_crc32c != _crc(resp.plaintext):
+        raise KmsIntegrityError("decrypt response corrupted in transit")
+    return AESGCM(resp.plaintext).decrypt(sealed.nonce, sealed.ciphertext, aad)  # InvalidTag on tamper/wrong aad
+```
+
+Store `key_name` with the record so a re-wrap job can move DEKs to a new key version without
+touching data. Grant the runtime service account `roles/cloudkms.cryptoKeyEncrypterDecrypter` on
+that key only. Executed against a **fake** KMS client (local AES-GCM wrap returning the real
+`EncryptResponse`/`DecryptResponse` types; not live KMS): round trip, a fresh DEK per call, wrong
+`aad` and a flipped ciphertext bit raise `InvalidTag`, a corrupted CRC raises `KmsIntegrityError`;
+removing the CRC check or the `aad` binding turned the matching test red. Live KMS: NOT RUN (no
+non-production project available to the test environment).
 
 ---
 

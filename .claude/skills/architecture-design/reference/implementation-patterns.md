@@ -305,8 +305,8 @@ class StripePaymentAdapter(PaymentGatewayPort):
                 customer=customer_id
             )
             return PaymentResult(success=True, transaction_id=charge.id)
-        except self.stripe.error.CardError as e:
-            return PaymentResult(success=False, error=str(e))
+        except self.stripe.CardError as e:  # top-level in stripe 17; stripe.error is only an alias
+            return PaymentResult(success=False, error=e.code)  # provider code, not provider message
 
 
 # Test adapter: Mock (no external dependencies — use in unit tests)

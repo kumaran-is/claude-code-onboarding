@@ -313,17 +313,13 @@ X-RateLimit-Reset: 1640000000    # Unix timestamp when window resets
 Retry-After: 3600                # Seconds (on 429 only)
 ```
 
-**Python FastAPI** — use `slowapi` or `fastapi-limiter` (rules and executed examples: `python-dev/reference/fastapi-rate-limiting.md`):
+**Python FastAPI** — use `limits` 5.x async strategies as a dependency (rules and executed examples: `python-dev/reference/fastapi-rate-limiting.md`; SlowAPI calls its storage synchronously from async handlers):
 ```python
-limiter = Limiter(key_func=get_remote_address, storage_uri=settings.rate_limit_storage_uri)  # shared store
+@router.get("/users", dependencies=[Depends(rate_limit("100/minute", scope="users-list", key=user_key))])
+async def list_users(): ...
 
-@router.get("/users")
-@limiter.limit("100/minute")                      # fine: no path parameter
-async def list_users(request: Request): ...
-
-@router.get("/invites/{code}")                    # path parameter: .limit() would bucket per code
-@limiter.shared_limit("10/hour", scope="invite-lookup", key_func=user_id_key)  # key on user id, not IP
-async def lookup_invite(request: Request, code: str): ...
+@router.get("/invites/{code}", dependencies=[Depends(rate_limit("10/hour", scope="invite-lookup", key=user_key))])
+async def lookup_invite(code: str): ...       # constant scope: one bucket across all codes
 ```
 
 **NestJS** — use `@nestjs/throttler`:

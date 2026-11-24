@@ -1,0 +1,17 @@
+[project]
+name = "msr-reference-router"
+version = "0.1.0"
+description = "Reference model router and LiteLLM fallback tests for reference/agentic-llm-routing.md (MOCKED PROVIDER)"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "pydantic==2.14.4",
+    "litellm==1.110.2",
+    "pytest==9.2.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::UserWarning:pydantic.*"]

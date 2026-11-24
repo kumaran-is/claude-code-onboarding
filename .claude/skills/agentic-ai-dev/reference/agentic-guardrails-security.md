@@ -17,6 +17,7 @@ Threat model and the full AI security review: `ai-security-reviewer` agent and `
 |---|---|---|---|
 | Input size/emptiness, control-char strip | Deterministic | Route, before the graph | Reject `INPUT_REJECTED` |
 | Prohibited data classes (e.g. government ids) to the provider | Deterministic | Before **every** model call, on user, tool, retrieved and memory text | Block `PROHIBITED_DATA` |
+| Provider/region policy per capability (`allowed_data_classes`, `prohibited_data_classes`, `approved_providers`, region, retention/training terms) | Deterministic | Before every model call, including fallback calls | Block `EGRESS_BLOCKED`; reading data internally never authorizes sending it to a provider (guardrails G9) |
 | Best-effort PII redaction | Deterministic transform | Same channels; also before logging and storage | Redact and continue; count by class |
 | Injection screening | Signal | All untrusted channels | Log count; raise risk (narrower tools, human review) |
 | Scope, allowlist, approval, budgets | Deterministic | Tool layer / graph config | Deny / typed status |
@@ -24,6 +25,8 @@ Threat model and the full AI security review: `ai-security-reviewer` agent and `
 | Grounding/evidence | Deterministic gate + optional signal | After the run | `INSUFFICIENT_EVIDENCE` |
 | Toxicity/policy classifiers | Signal | Output | Block or route to review per policy; classifier outage → fail closed for high-risk features |
 | Audit | Deterministic | Every decision | Ids, codes and counts only; never raw text |
+
+Guardrail ids (`.claude/skills/ai-playbook/reference/engineering-guardrails.md`): input/egress rows → G9; scope/allowlist/approval → G2; budgets → G5; schema → G3; grounding → G14/G17; audit → G8. Negative tests for each: `ai-launch-check/assets/guardrail_contract_tests.py`.
 
 ## Fail-closed pipeline (executed)
 

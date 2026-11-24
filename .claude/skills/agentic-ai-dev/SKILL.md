@@ -95,7 +95,9 @@ Before generating code, consult these sources for current syntax and APIs:
 | `llm-inference-and-model-routing.md` | Model ids/lifecycle, sampling + reasoning, structured output, deadlines/retries/429, failover vs escalation, cache scoping, token budgets, multimodal limits (canonical, framework-neutral) | Any model call |
 | `agentic-templates-tools.md` | Typed scoped tool template, external APIs, retries, MCP consumption | Defining agent tools |
 | `agentic-guardrails-security.md` | Boundary vs signal, fail-closed screening of all channels | Adding safety layers |
+| `../ai-playbook/reference/engineering-guardrails.md` | G1–G24 map: implementation, reviewer, gate, contract test per guardrail | Checking a capability against the guardrails standard |
 | `agentic-memory-systems.md` | Checkpointer + principal-scoped Store memory, write pipeline, erasure, trimming | Adding memory to agents |
+| `agent-memory-lifecycle.md` | Memory types, item contract + `scripts/validate_memory_item.py`, write policy, isolation, freshness/conflicts, erasure propagation, user controls, memory evals, metrics, cost (framework-neutral) | Designing or auditing any agent memory |
 | `agentic-streaming-hitl.md` | Streaming + Human-in-the-Loop patterns | Real-time responses, approval flows |
 | `agentic-llm-routing.md` | LangChain wiring: `init_chat_model`, failover, complexity router, prompt caching | Multi-model setups |
 | `agentic-observability.md` | LangSmith, Prometheus, structured logging | Monitoring and debugging |
@@ -110,6 +112,8 @@ Before generating code, consult these sources for current syntax and APIs:
 | `llm-judge-advanced.md` | Production LLM-as-Judge: bias taxonomy (position, length, self-enhancement), position swap protocol, rubric generation, PoLL ensemble, hierarchical eval | Evaluating agent outputs with reliability; high-stakes eval decisions |
 | `agentic-caching-patterns.md` | Scoped tiered answer cache, safety bypass, tool-result cache, required tests | Adding caching to agents |
 | `agentic-makefile-patterns.md` | 40+ Makefile commands for setup, testing, RAG, memory, evaluation, Docker, observability — reference patterns for agentic AI services | Setting up developer workflow automation |
+
+Model selection and routing (FAST/STANDARD/STRONG, approved-model registry, policy gate, escalation vs failover, LiteLLM Router settings): `reference/agentic-llm-routing.md`; registry schema `assets/model-registry.schema.json`, validator `python3 scripts/validate_model_registry.py [--json] FILE` (exit 0/1/2, `--selftest`).
 
 ## Common Commands
 

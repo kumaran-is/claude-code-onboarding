@@ -114,7 +114,7 @@ Cap images per request and actual bytes per item; charge image tokens to the bud
 | Per principal / org per day | Shared atomic counter (Redis `INCRBYFLOAT` with TTL, or a DB row) checked before the run | `429`-style typed refusal with retry-after |
 | Global | Provider console spend caps + alerts; gateway quota | Alert; degrade non-critical features first |
 
-Per-process dictionaries are not budgets: each replica counts separately and restarts reset them. Provider-side caps and alerts are the hard stop; code budgets are defense in depth. Session-cost projections must model context growth per turn (input grows with history unless trimmed).
+On budget exhaustion stop further model calls and return a visible degraded or human-review outcome; never drop to a cheaper unevaluated model to stay within budget (`agentic-llm-routing.md` §16). No universal targets ("all calls < 10 s"): each capability records its own latency and cost SLO in the Decision Record and uses the cheapest model that passes its eval and safety gates (guardrails G12). Per-process dictionaries are not budgets: each replica counts separately and restarts reset them. Provider-side caps and alerts are the hard stop; code budgets are defense in depth. Session-cost projections must model context growth per turn (input grows with history unless trimmed).
 
 ## Key Rules
 

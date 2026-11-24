@@ -1,0 +1,509 @@
+{
+  "registry_version": "2026-11-23.3",
+  "routing_policy_version": "2026-11-24.1",
+  "non_ai_fallbacks": [
+    "invoice_extraction"
+  ],
+  "entries": [
+    {
+      "config_id": "invoice-extract-fast-a",
+      "provider": "example-provider-a",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-fast",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "FAST",
+      "capabilities_approved": [
+        {
+          "capability": "invoice_extraction",
+          "eval_run_id": "eval-invoice_extraction-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 2048
+      }
+    },
+    {
+      "config_id": "invoice-extract-standard-a",
+      "provider": "example-provider-a",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-standard",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "STANDARD",
+      "capabilities_approved": [
+        {
+          "capability": "invoice_extraction",
+          "eval_run_id": "eval-invoice_extraction-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 4096,
+        "reasoning_level": "low"
+      }
+    },
+    {
+      "config_id": "invoice-extract-standard-b",
+      "provider": "example-provider-b",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-standard",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "STANDARD",
+      "capabilities_approved": [
+        {
+          "capability": "invoice_extraction",
+          "eval_run_id": "eval-invoice_extraction-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 4096
+      }
+    },
+    {
+      "config_id": "invoice-extract-strong-a",
+      "provider": "example-provider-a",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-strong",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "STRONG",
+      "capabilities_approved": [
+        {
+          "capability": "invoice_extraction",
+          "eval_run_id": "eval-invoice_extraction-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "context_window": 1000000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 8192,
+        "reasoning_level": "high"
+      }
+    },
+    {
+      "config_id": "invoice-extract-fast-a-old",
+      "provider": "example-provider-a",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-fast",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "FAST",
+      "capabilities_approved": [
+        {
+          "capability": "invoice_extraction",
+          "eval_run_id": "eval-invoice_extraction-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deprecated",
+      "deprecation_date": "2026-11-15",
+      "retirement_date": null,
+      "successor": "invoice-extract-fast-a",
+      "generation_params": {
+        "max_output_tokens": 2048
+      }
+    },
+    {
+      "config_id": "invoice-extract-fast-c",
+      "provider": "example-provider-c",
+      "hosting": "cloud_managed",
+      "model_id": "example-generation-fast",
+      "pinned_version": "2026-10-01",
+      "model_class": "generation",
+      "tier": "FAST",
+      "capabilities_approved": [],
+      "modalities": [
+        "text"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": true,
+      "tool_calling": true,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": null,
+      "owner": "Jordan Example (AI platform)",
+      "state": "evaluating",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 2048
+      }
+    },
+    {
+      "config_id": "docs-embedding-a",
+      "provider": "example-provider-a",
+      "hosting": "cloud_managed",
+      "model_id": "example-embedding-na",
+      "pinned_version": "2026-10-01",
+      "model_class": "embedding",
+      "tier": "n.a.",
+      "capabilities_approved": [
+        {
+          "capability": "docs_retrieval",
+          "eval_run_id": "eval-docs_retrieval-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text"
+      ],
+      "context_window": 8192,
+      "max_output": 1,
+      "structured_output": false,
+      "tool_calling": false,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "output_dimensionality": 768
+      }
+    },
+    {
+      "config_id": "eval-judge-a",
+      "provider": "example-provider-b",
+      "hosting": "cloud_managed",
+      "model_id": "example-judge-na",
+      "pinned_version": "2026-10-01",
+      "model_class": "judge",
+      "tier": "n.a.",
+      "capabilities_approved": [
+        {
+          "capability": "faithfulness_judge",
+          "eval_run_id": "eval-faithfulness_judge-2026-10-28-01",
+          "date": "2026-10-28"
+        }
+      ],
+      "modalities": [
+        "text"
+      ],
+      "context_window": 128000,
+      "max_output": 8192,
+      "structured_output": false,
+      "tool_calling": false,
+      "regions": [
+        "europe-west4"
+      ],
+      "data_terms": {
+        "training_use": "none",
+        "retention": "0 days (zero-retention addendum)",
+        "zero_retention": true,
+        "abuse_monitoring_access": false,
+        "terms_ref": "contracts/ai-vendors/example-provider-dpa-2026.pdf"
+      },
+      "allowed_data_classes": "confidential",
+      "cost_profile": {
+        "as_of": "2026-10-28",
+        "source": "provider pricing page, checked 2026-10-28",
+        "currency": "USD",
+        "input_per_mtok": 0.3,
+        "output_per_mtok": 1.2,
+        "cached_input_per_mtok": 0.03
+      },
+      "latency_profile": {
+        "p50_ms": 420,
+        "p95_ms": 1300,
+        "measured_on": "2026-11-02"
+      },
+      "rate_limits": {
+        "requests_per_min": 600,
+        "tokens_per_min": 2000000
+      },
+      "safety_eval": {
+        "run_id": "redteam-r3-2026-10-30-04",
+        "date": "2026-10-30"
+      },
+      "owner": "Jordan Example (AI platform)",
+      "state": "deployed",
+      "deprecation_date": null,
+      "retirement_date": null,
+      "successor": null,
+      "generation_params": {
+        "max_output_tokens": 1024
+      }
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approved-model registry (MSR §5; home: agentic-ai-dev/reference/agentic-llm-routing.md §2, §13)",
+  "description": "One file per service or platform. Routing chooses only among entries in state deployed. Cross-field rules (aliases, lifecycle entry criteria, same-tier equivalents, successors) live in scripts/validate_model_registry.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["registry_version", "routing_policy_version", "entries"],
+  "properties": {
+    "registry_version": {"type": "string", "minLength": 1},
+    "routing_policy_version": {"type": "string", "minLength": 1},
+    "non_ai_fallbacks": {
+      "type": "array",
+      "uniqueItems": true,
+      "description": "Capabilities whose documented resilience path is a non-AI fallback instead of a second same-tier config (§12).",
+      "items": {"type": "string", "minLength": 3}
+    },
+    "entries": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date"},
+    "nullable_date": {"oneOf": [{"type": "null"}, {"type": "string", "format": "date"}]},
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "eval_run_id", "date"],
+      "properties": {
+        "capability": {"type": "string", "minLength": 3},
+        "eval_run_id": {"type": "string", "minLength": 3},
+        "date": {"$ref": "#/$defs/date"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_id", "provider", "hosting", "model_id", "pinned_version", "model_class", "tier",
+        "capabilities_approved", "modalities", "context_window", "max_output", "structured_output",
+        "tool_calling", "regions", "data_terms", "allowed_data_classes", "cost_profile", "latency_profile",
+        "rate_limits", "safety_eval", "owner", "state", "deprecation_date", "retirement_date", "successor",
+        "generation_params"
+      ],
+      "properties": {
+        "config_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"},
+        "provider": {"type": "string", "minLength": 2},
+        "hosting": {"enum": ["vendor_api", "cloud_managed", "self_hosted"]},
+        "model_id": {"type": "string", "minLength": 2},
+        "pinned_version": {"type": "string", "minLength": 1, "description": "Exact version or dated snapshot; aliases are rejected by the validator."},
+        "model_class": {"enum": ["generation", "embedding", "reranker", "classifier", "vision", "speech", "judge"]},
+        "tier": {"enum": ["FAST", "STANDARD", "STRONG", "n.a."]},
+        "capabilities_approved": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/approval"}},
+        "modalities": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"enum": ["text", "image", "audio", "video", "documents"]}
+        },
+        "context_window": {"type": "integer", "minimum": 1, "description": "As validated, not as advertised."},
+        "max_output": {"type": "integer", "minimum": 1},
+        "structured_output": {"type": "boolean"},
+        "tool_calling": {"type": "boolean"},
+        "regions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 2}},
+        "data_terms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["training_use", "retention", "zero_retention", "abuse_monitoring_access", "terms_ref"],
+          "properties": {
+            "training_use": {"enum": ["none", "opt_out_contracted", "allowed"]},
+            "retention": {"type": "string", "minLength": 2},
+            "zero_retention": {"type": "boolean"},
+            "abuse_monitoring_access": {"type": "boolean"},
+            "terms_ref": {"type": "string", "minLength": 3}
+          }
+        },
+        "allowed_data_classes": {"enum": ["public", "internal", "confidential", "restricted", "regulated"], "description": "Highest class this config may receive. regulated only when declared, with Legal/Privacy approval and pinned residency (agentic-llm-routing.md §11)."},
+        "cost_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["as_of", "source", "currency", "input_per_mtok", "output_per_mtok"],
+          "properties": {
+            "as_of": {"$ref": "#/$defs/date"},
+            "source": {"type": "string", "minLength": 3},
+            "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+            "input_per_mtok": {"type": "number", "minimum": 0},
+            "output_per_mtok": {"type": "number", "minimum": 0},
+            "cached_input_per_mtok": {"type": "number", "minimum": 0}
+          }
+        },
+        "latency_profile": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["p50_ms", "p95_ms", "measured_on"],
+              "properties": {
+                "p50_ms": {"type": "number", "minimum": 0},
+                "p95_ms": {"type": "number", "minimum": 0},
+                "measured_on": {"$ref": "#/$defs/date"}
+              }
+            }
+          ]
+        },
+        "rate_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requests_per_min", "tokens_per_min"],
+          "properties": {
+            "requests_per_min": {"type": "integer", "minimum": 1},
+            "tokens_per_min": {"type": "integer", "minimum": 1}
+          }
+        },
+        "safety_eval": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["run_id", "date"],
+              "properties": {"run_id": {"type": "string", "minLength": 3}, "date": {"$ref": "#/$defs/date"}}
+            }
+          ]
+        },
+        "owner": {"type": "string", "minLength": 3, "description": "Named person, not a team alias."},
+        "state": {"enum": ["proposed", "evaluating", "approved", "deployed", "deprecated", "suspended", "retired", "rejected"]},
+        "deprecation_date": {"$ref": "#/$defs/nullable_date"},
+        "retirement_date": {"$ref": "#/$defs/nullable_date"},
+        "successor": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"}]},
+        "generation_params": {"type": "object", "description": "Pinned sampling/reasoning/safety settings; part of the configuration (§11.1)."}
+      }
+    }
+  }
+}

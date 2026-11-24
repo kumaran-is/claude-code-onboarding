@@ -17,6 +17,7 @@ REMOVED from the previous version (verified wrong or unverifiable): a shared tie
 | 5 | Exact → exact backfill (shared store → local LRU, same key) is safe. |
 | 6 | Bumping the model, prompt or corpus version changes the key prefix: old entries become unreachable and expire. No manual flush needed. When an answer may draw on retrieval or on records a tool reads, `corpus_version` is the `index_version` of those corpora (`rag-architect/references/rag-operations-guide.md` §1 Caching Strategies): an ingest, update or **erasure** bumps it, so a cached answer quoting a deleted document is no longer served. Use the constant `"none"` only for answers that use no retrieval and no stored records. |
 | 7 | Tool-result caches key on tool name + scope + canonical args, only for read-only tools, with TTLs shorter than the data's change rate. Never cache write tools. |
+| 8 | An answer that used recalled agent memory is per-principal (`user_id` in `acl_scope`), and `corpus_version` includes that principal's memory version, bumped on every memory write, correction, invalidation and erasure. A corrected, superseded or forgotten memory must stop being served from cache at once, not after the TTL (`agent-memory-lifecycle.md` §6, §7, §10). Cached memory never stands in for the canonical fallback when the item is missing or stale. |
 
 ## Scoped keys
 
@@ -111,3 +112,4 @@ Count per tier: `cache_requests_total{cache,tier}` with `tier` in {local, shared
 4. Semantic hit is not written back under the exact key; non-FAQ intents never use the semantic tier.
 5. Negation pair evaluated against the semantic threshold before enabling the tier.
 6. Erasure: keys are opaque hashes, so a principal's entries cannot be looked up by principal. Either bump `corpus_version` (all answers over that corpus miss and expire) and assert the old answer is no longer served, or keep a secondary index `principal → keys` (Redis set with the same TTL) and assert it deletes every key. Without one of the two, document the TTL as the erasure bound.
+7. Memory correction or erasure bumps the principal's memory version: the next identical query misses and the corrected/forgotten value is not returned.

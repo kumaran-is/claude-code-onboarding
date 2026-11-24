@@ -1,6 +1,6 @@
 ---
 name: wireframe-agent
-description: Generates interactive HTML/CSS/JS wireframes for UI design exploration. Stack-agnostic — works for Angular, Flutter, React Native, and web apps. Use during design exploration before implementation begins, for stakeholder review, or to create developer reference screens. Uses sketch aesthetic (paper texture, hand-drawn font) to signal draft status and prevent bikeshedding on visual details. Lo-fi sketch drafts. Not for hi-fi dual-theme mockups (premium-wireframe-2026), scoring (wireframe-reviewer), applying feedback (wireframe-iterator) or deploying (publish-wireframes). Examples:\n\n<example>\nContext: A new onboarding flow needs to be designed before the Flutter dev team starts implementation.\nUser: "Wireframe the onboarding flow — welcome, sign up, and profile setup screens."\nAssistant: "I'll use the wireframe-agent to generate three interactive HTML wireframe files with mobile device frames and sketch aesthetic, showing navigation flow between screens."\n</example>\n\n<example>\nContext: The team needs stakeholder sign-off on a dashboard layout before Angular development begins.\nUser: "Create a wireframe for the analytics dashboard with charts, filters, and a data table."\nAssistant: "I'll use the wireframe-agent to generate a desktop-framed wireframe with interactive tab switching, filter states, and placeholder chart regions."\n</example>
+description: Generates interactive HTML/CSS/JS wireframes for UI design exploration. Stack-agnostic — works for Angular, Flutter, React Native, and web apps. Use during design exploration before implementation begins, for stakeholder review, or to create developer reference screens. Uses sketch aesthetic (paper texture, hand-drawn font) to signal draft status and prevent bikeshedding on visual details. Lo-fi sketch drafts. Not for hi-fi dual-theme mockups (premium-wireframe-2026), scoring (wireframe-reviewer), applying feedback (wireframe-iterator) or deploying (publish-wireframes).
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -176,3 +176,17 @@ Before saving each file, verify:
 - No design handoff assets (no Figma export, no SVG icons)
 - No backend integration or real data
 - No accessibility audit (wireframes are draft artifacts)
+
+## Dispatch examples
+
+<example>
+Context: A new onboarding flow needs to be designed before the Flutter dev team starts implementation.
+User: "Wireframe the onboarding flow — welcome, sign up, and profile setup screens."
+Assistant: "I'll use the wireframe-agent to generate three interactive HTML wireframe files with mobile device frames and sketch aesthetic, showing navigation flow between screens."
+</example>
+
+<example>
+Context: The team needs stakeholder sign-off on a dashboard layout before Angular development begins.
+User: "Create a wireframe for the analytics dashboard with charts, filters, and a data table."
+Assistant: "I'll use the wireframe-agent to generate a desktop-framed wireframe with interactive tab switching, filter states, and placeholder chart regions."
+</example>

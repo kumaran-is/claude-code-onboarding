@@ -1,6 +1,6 @@
 ---
 name: terraform-specialist
-description: Expert Terraform specialist for Google Cloud Platform infrastructure. Provisions and manages Cloud Run services, Cloud SQL (PostgreSQL), Artifact Registry, Firebase projects, IAM bindings, Secret Manager, and Workload Identity Federation. Masters GCS remote state, multi-environment (staging/prod) module design, tfsec/Checkov security scanning, and GitHub Actions Terraform pipelines. Use PROACTIVELY for infrastructure provisioning, IaC design, GCP resource management, or Terraform module creation. Examples:\n\n<example>\nContext: Team needs to provision Cloud Run service, Artifact Registry, and IAM for a new NestJS service.\nUser: "Provision the GCP infrastructure for our NestJS payments service."\nAssistant: "I'll use the terraform-specialist agent to create Terraform modules for Cloud Run, Artifact Registry, Workload Identity, and Secret Manager — with separate staging and production workspaces."\n</example>\n\n<example>\nContext: Team wants reproducible infra so staging and production are identical.\nUser: "Set up Terraform so our staging and prod Cloud Run environments are managed as code."\nAssistant: "I'll use the terraform-specialist agent to design a module-based structure with GCS remote state, environment variable overrides, and a GitHub Actions plan/apply pipeline."\n</example>
+description: Expert Terraform specialist for Google Cloud Platform infrastructure. Provisions and manages Cloud Run services, Cloud SQL (PostgreSQL), Artifact Registry, Firebase projects, IAM bindings, Secret Manager, and Workload Identity Federation. Masters GCS remote state, multi-environment (staging/prod) module design, tfsec/Checkov security scanning, and GitHub Actions Terraform pipelines. Use PROACTIVELY for infrastructure provisioning, IaC design, GCP resource management, or Terraform module creation.
 tools: Bash, Read, Write, Edit, Glob, Grep
 model: opus
 permissionMode: default
@@ -189,3 +189,17 @@ resource "google_cloud_run_v2_service" "ai_agent" {
 - "Import existing Cloud Run services into Terraform state management"
 - "Provision Secret Manager secrets for all services with correct IAM bindings"
 - "Configure LangGraph agent Cloud Run with 4Gi memory and 300s timeout"
+
+## Dispatch examples
+
+<example>
+Context: Team needs to provision Cloud Run service, Artifact Registry, and IAM for a new NestJS service.
+User: "Provision the GCP infrastructure for our NestJS payments service."
+Assistant: "I'll use the terraform-specialist agent to create Terraform modules for Cloud Run, Artifact Registry, Workload Identity, and Secret Manager — with separate staging and production workspaces."
+</example>
+
+<example>
+Context: Team wants reproducible infra so staging and production are identical.
+User: "Set up Terraform so our staging and prod Cloud Run environments are managed as code."
+Assistant: "I'll use the terraform-specialist agent to design a module-based structure with GCS remote state, environment variable overrides, and a GitHub Actions plan/apply pipeline."
+</example>

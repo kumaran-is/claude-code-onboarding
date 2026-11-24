@@ -1,6 +1,6 @@
 ---
 name: silent-failure-hunter
-description: Use when reviewing code that contains error handling, catch blocks, fallback logic, or any code that could suppress errors. Proactively invoke after implementing features with API calls, database operations, external service integrations, or any I/O that can fail. Enforces code-standards.md "No Silent Failures" rule across all stack layers. Not for investigating runtime logs or stack traces after a failure (error-detective). Examples:\n\n<example>\nContext: A new service method was added with try-catch blocks and a fallback return value.\nUser: "I've added error handling to the payment processing service. Can you review it?"\nAssistant: "I'll use the silent-failure-hunter agent to check for swallowed exceptions, inadequate logging, and unjustified fallbacks in the error handling code."\n</example>\n\n<example>\nContext: A PR was opened that includes catch blocks returning empty arrays on failure.\nUser: "Review PR #87 — it touches the data fetch layer."\nAssistant: "I'll use the silent-failure-hunter agent proactively to check for silent failures in the fetch and error handling code."\n</example>\n\n<example>\nContext: An API integration was refactored with new exception handling.\nUser: "I refactored the Stripe integration error handling."\nAssistant: "Let me use the silent-failure-hunter agent to ensure the refactored error handling doesn't introduce silent failures or hidden fallbacks."\n</example>
+description: Use when reviewing code that contains error handling, catch blocks, fallback logic, or any code that could suppress errors. Proactively invoke after implementing features with API calls, database operations, external service integrations, or any I/O that can fail. Enforces code-standards.md "No Silent Failures" rule across all stack layers. Not for investigating runtime logs or stack traces after a failure (error-detective).
 model: sonnet
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
@@ -131,3 +131,23 @@ Call out every instance of inadequate error handling, no matter how minor. Expla
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new service method was added with try-catch blocks and a fallback return value.
+User: "I've added error handling to the payment processing service. Can you review it?"
+Assistant: "I'll use the silent-failure-hunter agent to check for swallowed exceptions, inadequate logging, and unjustified fallbacks in the error handling code."
+</example>
+
+<example>
+Context: A PR was opened that includes catch blocks returning empty arrays on failure.
+User: "Review PR #87 — it touches the data fetch layer."
+Assistant: "I'll use the silent-failure-hunter agent proactively to check for silent failures in the fetch and error handling code."
+</example>
+
+<example>
+Context: An API integration was refactored with new exception handling.
+User: "I refactored the Stripe integration error handling."
+Assistant: "Let me use the silent-failure-hunter agent to ensure the refactored error handling doesn't introduce silent failures or hidden fallbacks."
+</example>

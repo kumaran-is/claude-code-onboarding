@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Security vulnerability detection and remediation specialist. Flags secrets, SSRF, injection, unsafe crypto, and OWASP Top 10 vulnerabilities. Not for AI/LLM/RAG/agent code (ai-security-reviewer), Flutter storage, pinning and privacy (flutter-security-expert), or design-time threat models before code exists (threat-modeling-expert). Examples:\n\n<example>\nContext: New authentication endpoints and input handling code were just implemented.\nUser: "Check the new auth endpoints for security vulnerabilities."\nAssistant: "I'll use the security-reviewer agent to scan for injection, SSRF, unsafe crypto, hardcoded secrets, and OWASP Top 10 violations."\n</example>
+description: Security vulnerability detection and remediation specialist. Flags secrets, SSRF, injection, unsafe crypto, and OWASP Top 10 vulnerabilities. Not for AI/LLM/RAG/agent code (ai-security-reviewer), Flutter storage, pinning and privacy (flutter-security-expert), or design-time threat models before code exists (threat-modeling-expert).
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit
 model: opus
@@ -126,3 +126,11 @@ Trigger: `@modelcontextprotocol/*`, `mcp`/`FastMCP` imports, `registerTool`, `/m
 | No committed tool-surface lock checked in CI (S16); a tool shipped without evidence for all five tool-eval layers | MEDIUM / NEEDS_REVIEW (layer NOT RUN) |
 
 For each guard you mark PASS, cite the guard's `file:line` and every call path that must pass through it, and the test that fails when the guard is removed; without that test, say "guard present, negative control NOT FOUND".
+
+## Dispatch examples
+
+<example>
+Context: New authentication endpoints and input handling code were just implemented.
+User: "Check the new auth endpoints for security vulnerabilities."
+Assistant: "I'll use the security-reviewer agent to scan for injection, SSRF, unsafe crypto, hardcoded secrets, and OWASP Top 10 violations."
+</example>

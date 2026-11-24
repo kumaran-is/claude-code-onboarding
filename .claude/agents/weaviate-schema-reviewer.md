@@ -1,6 +1,6 @@
 ---
 name: weaviate-schema-reviewer
-description: Weaviate collection definition reviewer. Use when any Python code creates or modifies a Weaviate collection schema. Checks vectorizer validity, multi-tenancy flag, distance metric, no hardcoded API keys, named vector consistency, and client v4 API correctness. Examples:\n\n<example>\nContext: A new Weaviate collection was defined for storing scraped product reviews.\nUser: "Review the Weaviate collection schema before we deploy."\nAssistant: "I'll use the weaviate-schema-reviewer agent to check vectorizer config, multi-tenancy flag, distance metric, named vectors, and API key handling."\n</example>\n\n<example>\nContext: A collection is being updated to add named vectors for multi-modal search.\nUser: "Check my Weaviate named vectors setup."\nAssistant: "I'll use the weaviate-schema-reviewer agent to verify named vector config, source property mapping, and that multi-tenancy is declared at creation."\n</example>
+description: Weaviate collection definition reviewer. Use when any Python code creates or modifies a Weaviate collection schema. Checks vectorizer validity, multi-tenancy flag, distance metric, no hardcoded API keys, named vector consistency, and client v4 API correctness.
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
 model: sonnet
@@ -130,3 +130,17 @@ Do not claim a test, eval or runtime check passed unless you executed it in this
 
 If no Weaviate collection code found, report "No Weaviate collection definitions found in [scope]".
 If the `vector-database` skill reference cannot be read, continue with this checklist only.
+
+## Dispatch examples
+
+<example>
+Context: A new Weaviate collection was defined for storing scraped product reviews.
+User: "Review the Weaviate collection schema before we deploy."
+Assistant: "I'll use the weaviate-schema-reviewer agent to check vectorizer config, multi-tenancy flag, distance metric, named vectors, and API key handling."
+</example>
+
+<example>
+Context: A collection is being updated to add named vectors for multi-modal search.
+User: "Check my Weaviate named vectors setup."
+Assistant: "I'll use the weaviate-schema-reviewer agent to verify named vector config, source property mapping, and that multi-tenancy is declared at creation."
+</example>

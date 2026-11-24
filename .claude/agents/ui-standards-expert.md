@@ -1,6 +1,6 @@
 ---
 name: ui-standards-expert
-description: Read-only reviewer for design tokens, theming (light/dark), visual consistency, async-state coverage, responsive layout and motion in Flutter and web (Angular, React). Gives no accessibility verdicts; accessibility goes to accessibility-auditor (WCAG 2.2 AA). Shared-component tier and slot rules go to design-system-reviewer. Examples:\n\n<example>\nContext: New Flutter dashboard widgets were built and need design system compliance review.\nUser: "Make sure the new dashboard widgets follow our design system."\nAssistant: "I'll use the ui-standards-expert agent to audit design token usage, Material 3 theming, state coverage and responsive layout. For accessibility (WCAG 2.2 AA) I'll dispatch accessibility-auditor."\n</example>\n\n<example>\nContext: New Angular components were built with daisyUI and need design compliance review.\nUser: "Review the Angular components for design system compliance."\nAssistant: "I'll use the ui-standards-expert agent to audit daisyUI token usage, Tailwind spacing, typography, and interaction contract compliance."\n</example>
+description: Read-only reviewer for design tokens, theming (light/dark), visual consistency, async-state coverage, responsive layout and motion in Flutter and web (Angular, React). Gives no accessibility verdicts; accessibility goes to accessibility-auditor (WCAG 2.2 AA). Shared-component tier and slot rules go to design-system-reviewer.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: sonnet
@@ -98,3 +98,17 @@ Emit these as the **final two lines** of your report:
 Token violations: N | State-coverage violations: N | Exception markers: N | A11y hand-offs: N
 VERDICT: [NO VIOLATIONS|VIOLATIONS FOUND|BLOCK]
 ```
+
+## Dispatch examples
+
+<example>
+Context: New Flutter dashboard widgets were built and need design system compliance review.
+User: "Make sure the new dashboard widgets follow our design system."
+Assistant: "I'll use the ui-standards-expert agent to audit design token usage, Material 3 theming, state coverage and responsive layout. For accessibility (WCAG 2.2 AA) I'll dispatch accessibility-auditor."
+</example>
+
+<example>
+Context: New Angular components were built with daisyUI and need design compliance review.
+User: "Review the Angular components for design system compliance."
+Assistant: "I'll use the ui-standards-expert agent to audit daisyUI token usage, Tailwind spacing, typography, and interaction contract compliance."
+</example>

@@ -24,7 +24,7 @@ From the one Zod `inputSchema` the SDK (a) derives the JSON Schema advertised in
 
 Verified in the sandbox: `limit: 999` against `.max(10)` → `isError: true` on stdio and HTTP; a planted `structuredContent` that violated `outputSchema` turned every call into `isError: true`.
 
-> **Compile-time output check is not a gate.** The SDK docs say a handler whose `structuredContent` does not match `outputSchema` is a compile error. With 2.4.0 + TypeScript 5.9.3 a planted mismatch (`structuredContent: { total: 'NaN' }` against `z.object({ total: z.number() })`) compiled cleanly (exit 0): the result type is an open record. Rely on the runtime validation and on tests that assert `structuredContent`.
+> **Compile-time output check is not a gate.** The SDK docs say a handler whose `structuredContent` does not match `outputSchema` is a compile error. With 2.4.0 on TypeScript 5.9.3 and 6.0.3 a planted mismatch (`structuredContent: { total: 'NaN' }` against `z.object({ total: z.number() })`) compiled cleanly (exit 0): the result type is an open record. Rely on the runtime validation and on tests that assert `structuredContent`.
 
 ---
 
@@ -171,7 +171,7 @@ export const CreateUser = z.strictObject({
 
 ## Typed upstream client (fetch + AbortSignal)
 
-No axios needed on Node 24. Cancellation and a deadline compose with `AbortSignal.any`.
+No axios needed on Node 24 or 26. Cancellation and a deadline compose with `AbortSignal.any`.
 
 ```typescript
 import * as z from 'zod/v4';

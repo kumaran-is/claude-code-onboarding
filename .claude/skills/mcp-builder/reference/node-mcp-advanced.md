@@ -1,6 +1,6 @@
 # Node/TypeScript MCP Server — Resources, Prompts, User Input, Transports, Protocol Versions, Testing
 
-SDK v2 (`@modelcontextprotocol/server@2.4.0`, `@modelcontextprotocol/client@2.4.0`). Every `typescript` block type-checks under `strict`; behaviours marked *verified* were exercised with a real SDK `Client`. Setup: [node-mcp-setup.md](node-mcp-setup.md) · tools: [node-mcp-patterns.md](node-mcp-patterns.md) · pagination/progress/cancellation: [node-mcp-patterns-advanced.md](node-mcp-patterns-advanced.md).
+SDK v2 (`@modelcontextprotocol/server@2.4.0`, `@modelcontextprotocol/client@2.4.0`, `@modelcontextprotocol/node@2.1.2`, `@modelcontextprotocol/fastify@2.0.1`). Every `typescript` block type-checks under `strict` + `exactOptionalPropertyTypes`; behaviours marked *verified* were exercised with a real SDK `Client`. Verified 2026-11-23 against Node 26.13.1, TypeScript 6.0.3, Fastify 5.12.8. Setup: [node-mcp-setup.md](node-mcp-setup.md) · tools: [node-mcp-patterns.md](node-mcp-patterns.md) · pagination/progress/cancellation: [node-mcp-patterns-advanced.md](node-mcp-patterns-advanced.md).
 
 ---
 
@@ -184,7 +184,74 @@ const era = client.getProtocolEra(); // 'modern' | 'legacy'
 
 ### Legacy sessions (2025-era only)
 
-Only if you must keep a sessionful 2025 deployment: `NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID(), eventStore })`, one transport per session in a map, `404` for unknown session ids, idle timeout and a cap on open sessions, shared `eventStore` (and sticky routing) across replicas. None of this exists in 2026-07-28; plan the migration rather than extending it. Recipe: https://ts.sdk.modelcontextprotocol.io/v2/serving/sessions-state-scaling.md
+Only if you must keep a sessionful 2025 deployment: `NodeStreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID(), eventStore })`, one transport per session in a map, `404` for unknown session ids, idle timeout and a cap on open sessions, shared `eventStore` (and sticky routing) across replicas. On Fastify, route with `isLegacyRequest(await toWebRequest(req, body), body)`: modern requests go to `createMcpHandler(factory, { legacy: 'reject' })`, legacy ones to the session's transport (verified: a legacy client got an `Mcp-Session-Id`, reused it, `DELETE` ended it, a modern client got none; an idle sweep closed an expired session and its id then got `404`; removing the sweep made that test fail). None of this exists in 2026-07-28; plan the migration rather than extending it. Recipe: https://ts.sdk.modelcontextprotocol.io/v2/serving/sessions-state-scaling.md
+
+### Streamable HTTP on Fastify
+
+`@modelcontextprotocol/fastify@2.0.1` (peer `fastify ^5.2.0`) exports `createMcpFastifyApp({ host, allowedHosts, allowedOrigins })` plus the `onRequest` hooks `hostHeaderValidation(hostnames)`, `originValidation(hostnames)`, `localhostHostValidation()` and `localhostOriginValidation()`. It has **no route handler**: the MCP request still goes through `createMcpHandler` + `toNodeHandler` from `@modelcontextprotocol/node`. `createMcpFastifyApp` accepts no Fastify options (no `bodyLimit`, no logger), so build the instance with `Fastify()` and register the hooks yourself. One `registerTools(server)` feeds both this app and `serveStdio`.
+
+```typescript
+import Fastify from 'fastify';
+import { hostHeaderValidation, originValidation } from '@modelcontextprotocol/fastify';
+import { toNodeHandler, type NodeIncomingMessageLike } from '@modelcontextprotocol/node';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
+import type { Logger } from 'pino';
+import { registerTools } from './tools.js'; // the same registry serveStdio uses
+
+export interface HttpAppOptions {
+  logger: Logger;
+  allowedHosts: string[]; // Host hostnames (port-agnostic): your public names behind the load balancer
+  allowedOrigins: string[]; // Origin hostnames; requests without Origin (non-browser clients) pass
+  bodyLimitBytes: number; // Fastify answers 413 above this, before any MCP code runs
+  legacy: 'stateless' | 'reject';
+}
+
+export function buildHttpApp(opts: HttpAppOptions) {
+  const handler = createMcpHandler(() => registerTools(new McpServer({ name: 'orders-mcp', version: '1.0.0' })), {
+    legacy: opts.legacy,
+    onerror: (err) => opts.logger.warn({ err }, 'mcp_handler_error'),
+  });
+  const node = toNodeHandler(handler, { onerror: (err) => opts.logger.error({ err }, 'mcp_adapter_error') });
+  const app = Fastify({ loggerInstance: opts.logger, bodyLimit: opts.bodyLimitBytes, return503OnClosing: true });
+  let ready = false;
+
+  app.get('/health/live', () => ({ status: 'ok' }));
+  app.get('/health/ready', (_request, reply) => (ready ? reply.send({ status: 'ok' }) : reply.code(503).send({ status: 'unavailable' })));
+
+  // Guards scoped to /mcp, so platform probes (Host = pod IP) still reach /health/*.
+  void app.register((mcp, _pluginOpts, done) => {
+    mcp.addHook('onRequest', hostHeaderValidation(opts.allowedHosts));
+    mcp.addHook('onRequest', originValidation(opts.allowedOrigins));
+    mcp.route({
+      method: ['POST', 'GET', 'DELETE'],
+      url: '/mcp',
+      handler: async (request, reply) => {
+        reply.hijack(); // the adapter writes reply.raw (JSON or SSE) itself
+        // Cast: IncomingMessage.method is `string | undefined`; NodeIncomingMessageLike.method is optional (TS2379 under exactOptionalPropertyTypes).
+        await node(request.raw as NodeIncomingMessageLike, reply.raw, request.body);
+      },
+    });
+    done();
+  });
+  return { app, handler, setReady: (value: boolean) => void (ready = value) };
+}
+```
+
+Verified with a real `Client` on Node 26.13.1 (vitest, 18/18):
+
+| Check | Result | Negative control (each made a test fail) |
+|---|---|---|
+| modern and legacy client list + call the shared tools | `structuredContent` `{ total: 350 }` | — |
+| `Origin: https://evil.example` | `403` before MCP code runs; `http://localhost:5173` → `200` | origin hook removed |
+| `Host: attacker.example` (DNS rebinding) | `403` | host hook removed |
+| 100 KiB body, `bodyLimit` 64 KiB | `413` from Fastify | limit raised to 1 MiB |
+| `content-type: text/plain` | `415` from Fastify | — |
+| socket destroyed mid-call (killed client) | handler's `ctx.mcpReq.signal` aborts; work stops | signal not forwarded to `delay()` |
+| client `AbortSignal` on a modern call | handler aborted | — |
+| same abort on a **legacy-stateless** call | handler **not** aborted, ran to completion (the limit above) | — |
+| `legacy: 'reject'` | default 2025 client's `connect()` rejects | — |
+
+Notes: `reply.hijack()` made no observable difference in these tests, but keep it so Fastify never tries to send a second reply. Fastify's `handlerTimeout` did not bound the hijacked `/mcp` route: put per-tool deadlines in the tool (`AbortSignal.any([ctx.mcpReq.signal, AbortSignal.timeout(ms)])`). Shutdown for this app: [production-runtime-shutdown-health.md](production-runtime-shutdown-health.md#8-fastify-variant).
 
 ---
 

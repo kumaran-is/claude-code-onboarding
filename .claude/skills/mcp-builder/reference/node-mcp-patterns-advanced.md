@@ -183,7 +183,7 @@ Consequences:
 2. Pass `signal` to `fetch`, DB drivers, and child work so the upstream call is cancelled too.
 3. If long-running tools must be cancellable for 2025-era HTTP clients, either serve them with a sessionful `NodeStreamableHTTPServerTransport` (legacy only) or `legacy: 'reject'` and require 2026-07-28 clients. A cancelled request gets no response; whatever the handler returns afterwards is discarded.
 
-For work that outlives one request, use the official **Tasks extension** (`io.modelcontextprotocol/tasks`, moved out of core in 2026-07-28: poll with `tasks/get`) rather than holding a stream open.
+For work that outlives one request, the protocol answer is the official **Tasks extension** (`io.modelcontextprotocol/tasks`): 2026-07-28 moved the experimental 2025-11-25 tasks out of core, replaced the blocking `tasks/result` with polling via `tasks/get` plus `tasks/update`, and removed `tasks/list`. The extension is **Beta** (stated destination: Core), and `@modelcontextprotocol/server@2.4.0` ships no Tasks runtime (its 2025-11-25 task helpers are `@deprecated`, interop only). Until the SDK supports it, return a job id from a tool and expose a separate status tool rather than holding a stream open.
 
 ---
 

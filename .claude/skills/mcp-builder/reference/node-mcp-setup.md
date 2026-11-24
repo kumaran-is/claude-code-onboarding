@@ -2,7 +2,7 @@
 
 Project setup for MCP servers on the **official MCP TypeScript SDK v2** (stable line, implements spec revision **2026-07-28** and still serves 2025-era clients). Covers packages, pinned versions, project layout, the two entry points (stdio and Streamable HTTP) and build/run.
 
-> Verified 2026-11-23 against `@modelcontextprotocol/server@2.4.0`, `@modelcontextprotocol/client@2.4.0`, `@modelcontextprotocol/node@2.1.2`, `zod@4.6.7`, TypeScript 5.9.3 strict, Node 24. Every `typescript` block in the `node-mcp-*` files was type-checked in a disposable project, and the behaviours described were exercised with a real SDK `Client` over stdio and Streamable HTTP. Re-check versions with `npm view <pkg> version` before you start.
+> Verified 2026-11-23 against `@modelcontextprotocol/server@2.4.0`, `@modelcontextprotocol/client@2.4.0`, `@modelcontextprotocol/node@2.1.2`, `zod@4.6.7`, TypeScript 6.0.3 strict on Node 26.13.1 (first verified on TypeScript 5.9.3 + Node 24). Every `typescript` block in the `node-mcp-*` files was type-checked in a disposable project, and the behaviours described were exercised with a real SDK `Client` over stdio and Streamable HTTP. TypeScript 7.0 is deferred: `typescript-eslint` 8.74.0 supports `typescript` `>=4.8.4 <6.1.0`. Re-check versions with `npm view <pkg> version` before you start.
 
 ---
 
@@ -16,7 +16,7 @@ Project setup for MCP servers on the **official MCP TypeScript SDK v2** (stable 
 | Errors | `ProtocolError` / `ProtocolErrorCode` | `McpError` / `ErrorCode` |
 | Tools | `registerTool(name, { inputSchema: z.object(...) }, handler)` | `registerTool` (the older `server.tool()` is `@deprecated`) |
 
-Migrating v1 code: run `npx @modelcontextprotocol/codemod@2.4.0 v1-to-v2 .` at the package root, then `grep -rn '@mcp-codemod-error' .` and `tsc --noEmit`. Guide: https://ts.sdk.modelcontextprotocol.io/v2/migration/upgrade-to-v2.md
+Migrating v1 code: run `npx @modelcontextprotocol/codemod@2.4.0 v1-to-v2 .` at the package root, then `grep -rn '@mcp-codemod-error' .` and `tsc --noEmit`. The codemod rewrites imports, `server.tool()` → `registerTool`, raw-shape schemas → `z.object()`, `McpError` → `ProtocolError` (it warns that `ErrorCode` split into `ProtocolErrorCode` and `SdkErrorCode`), and swaps the dependency to a caret range (`"^2.4.0"`): re-pin with `npm i -E @modelcontextprotocol/server@2.4.0`. It leaves `await server.connect(new StdioServerTransport())` in place, which only serves 2025-era clients: a client pinned to 2026-07-28 failed with `ERA_NEGOTIATION_FAILED` (no `server/discover`). Wrap the registrations in a `createServer()` factory and call `serveStdio(createServer)` (HTTP: `createMcpHandler`). Verified 2026-11-23 on a v1 fixture: after that change the migrated server answered both a 2026-07-28 and a 2025-11-25 `Client`. Guide: https://ts.sdk.modelcontextprotocol.io/v2/migration/upgrade-to-v2.md
 
 ---
 
@@ -26,12 +26,13 @@ Migrating v1 code: run `npx @modelcontextprotocol/codemod@2.4.0 v1-to-v2 .` at t
 npm pkg set type=module
 npm i -E @modelcontextprotocol/server@2.4.0 zod@4.6.7 pino@10.4.0
 npm i -E @modelcontextprotocol/node@2.1.2            # only if you serve HTTP on node:http
-npm i -E -D typescript@5.9.3 tsx@4.23.15 @types/node@24.19.2 vitest@5.1.1
+npm i -E -D typescript@6.0.3 tsx@4.23.15 @types/node@26.6.6 vitest@5.1.1
 npm i -E -D @modelcontextprotocol/client@2.4.0       # tests drive the server through a real Client
 ```
 
 - Import Zod as `import * as z from 'zod/v4'` — that is the form the SDK documents and the one these files were checked with.
-- TypeScript ≥ 6 no longer auto-includes `@types/*`: keep `"types": ["node"]` in `tsconfig.json` (harmless on 5.9).
+- TypeScript 6 no longer auto-includes `@types/*`: keep `"types": ["node"]` in `tsconfig.json`.
+- TypeScript 6 refuses `tsc file.ts` when a `tsconfig.json` is present (`TS5112`): type-check the project with `tsc -p .`, or add `--ignoreConfig` for a one-off file.
 
 ### tsconfig.json
 

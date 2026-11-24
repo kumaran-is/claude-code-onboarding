@@ -178,8 +178,8 @@ Blockers:      X/7 passed (AI release counts only when applicable)
 High priority: X/4 passed
 Recommended:   X/4 passed
 
-Evidence       verify stamp VALID  |  ⚠️ CHANGED / EXPIRED / MISSING — re-run /verify pre-pr (`review_state.py stamp check verify`)
-Lessons        reviewed: [N routed: lesson / rule / control / skill / note]  |  "no new lesson"  (/create-pr Step 2.3; never skipped)
+Evidence       verify stamp VALID (full/pre-pr)  |  ⚠️ INSUFFICIENT / CHANGED / EXPIRED / MISSING — re-run /verify pre-pr (`review_state.py stamp check verify --mode full,pre-pr`)
+Lessons        reviewed + `lessons` stamp VALID: [N routed: lesson / rule / control / skill / note]  |  "no new lesson"  (/create-pr Step 2.3; never skipped)
 
 Verdict: ✅ READY TO SHIP  |  ❌ NOT READY — fix blockers first
 ─────────────────────────────────────────────────
@@ -209,6 +209,7 @@ Action Items (if NOT READY):
 ## Tips
 
 - Run before opening a PR, not just before merging
+- After the PR opens, watch its CI: `gh pr checks <PR> --watch --fail-fast --interval 30; echo "CHECKS EXIT:$?"` (gh 2.87: 0 = every check passed, 1 = a check failed or none were reported (read the message), 8 = still pending because the watch was interrupted). Report that exit code; a failure goes to the `iterate-pr` skill. CI that was not watched is reported as NOT RUN, never as green. No hook polls CI for you.
 - `--quick` runs Step 2 only — fastest signal when iterating
 - A clean `/ship` does not replace `/audit-security` for major releases
 

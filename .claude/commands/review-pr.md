@@ -48,6 +48,8 @@ If security-sensitive files changed: also dispatch the `security-reviewer` agent
 
 Print the risk tier before dispatching agents so the user sees it.
 
+**Re-review rounds (enforcement kit ON, `.claude/state/ledger.json` exists):** a follow-up run after fixes dispatches only the reviewers `python3 .claude/scripts/review_state.py findings rereview` names (owners of open or newly closed findings), not the whole set again, plus a reviewer for a stack or concern that newly appears in the diff. Every reviewer report counts as a round (from round 3, MEDIUM/LOW findings stop blocking), and `/review-code` and `/review-pr` both dispatch `code-reviewer`: run one of them per round, never both, or the round count doubles.
+
 1. **Determine scope** — From `$ARGUMENTS`; if not specified use `git diff HEAD~1`
 2. **Determine roles** — Parse topic filter from `$ARGUMENTS` (see Topic Filters below); default: all 6 (adjusted by risk tier from Step 0)
 3. **Dispatch agents** — Run each selected agent against the scope; collect findings

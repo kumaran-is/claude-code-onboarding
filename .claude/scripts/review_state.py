@@ -12,8 +12,10 @@ opt-in marker `enabled`. Hooks import this file; humans and Claude use the CLI.
   review_state.py findings fail ID --note TEXT       (a close did not survive re-verification)
   review_state.py findings blocking                  (exit 1 when any finding blocks)
   review_state.py findings rereview                  (reviewers whose findings were closed since their last report)
-  review_state.py stamp write NAME [--note TEXT]     (after the check PASSED on the current tree)
-  review_state.py stamp check NAME                   (VALID | CHANGED | EXPIRED | MISSING | UNKNOWN; exit 0 only on VALID)
+  review_state.py stamp write NAME [--note TEXT] [--mode MODE]   (after the check PASSED on the current tree;
+                                                     /verify records its mode: quick | pre-commit | full | pre-pr)
+  review_state.py stamp check NAME [--mode M1,M2]    (VALID | INSUFFICIENT | CHANGED | EXPIRED | MISSING | UNKNOWN;
+                                                     exit 0 only on VALID; --mode requires one of those modes)
   review_state.py --selftest
 
 Rules (verification-before-completion/reference/verification-loop.md §4):
@@ -229,11 +231,11 @@ def fingerprint(root: Path, scope: list[str] | None = None) -> str:
     return digest.hexdigest()
 
 
-def stamp_write(root: Path, name: str, note: str = "") -> dict:
+def stamp_write(root: Path, name: str, note: str = "", mode: str = "") -> dict:
     d = state_dir(root) / "stamps"
     d.mkdir(parents=True, exist_ok=True)
     scope = SCOPES.get(name)
-    rec = {"name": name, "tree": fingerprint(root, scope), "scope": scope, "at": time.time(), "note": note}
+    rec = {"name": name, "tree": fingerprint(root, scope), "scope": scope, "at": time.time(), "note": note, "mode": mode}
     fd, tmp = tempfile.mkstemp(dir=d)
     with os.fdopen(fd, "w") as fh:
         json.dump(rec, fh, indent=2)
@@ -241,7 +243,9 @@ def stamp_write(root: Path, name: str, note: str = "") -> dict:
     return rec
 
 
-def stamp_check(root: Path, name: str) -> tuple[str, str]:
+def stamp_check(root: Path, name: str, modes: tuple[str, ...] = ()) -> tuple[str, str]:
+    """`modes`: the stamp must come from one of these runs (a quick /verify runs no tests, so it can never
+    stand in for a full one). A stamp without a recorded mode fails that requirement: fail closed."""
     path = state_dir(root) / "stamps" / f"{name}.json"
     if not path.is_file():
         return "MISSING", f"no '{name}' stamp for this branch"
@@ -250,6 +254,9 @@ def stamp_check(root: Path, name: str) -> tuple[str, str]:
         tree, at = rec["tree"], float(rec["at"])
     except (ValueError, KeyError, TypeError, OSError) as exc:
         return "UNKNOWN", f"unreadable '{name}' stamp ({type(exc).__name__}): write it again"
+    if modes and rec.get("mode") not in modes:
+        return "INSUFFICIENT", (f"'{name}' was recorded by a {rec.get('mode') or 'mode-less'} run; "
+                                f"this gate needs {' or '.join(modes)}")
     try:
         current = fingerprint(root, rec.get("scope"))
     except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
@@ -277,7 +284,8 @@ def cli(argv: list[str]) -> int:
     fp.add_parser("blocking"); fp.add_parser("rereview")
     sp = sub.add_parser("stamp").add_subparsers(dest="op", required=True)
     sw = sp.add_parser("write"); sw.add_argument("name"); sw.add_argument("--note", default="")
-    sc = sp.add_parser("check"); sc.add_argument("name")
+    sw.add_argument("--mode", default="", choices=["", "quick", "pre-commit", "full", "pre-pr"])
+    sc = sp.add_parser("check"); sc.add_argument("name"); sc.add_argument("--mode", default="")
     args = p.parse_args(argv)
     root = project_root()
     if args.cmd == "init":
@@ -289,8 +297,10 @@ def cli(argv: list[str]) -> int:
         on = is_enabled(root); print("on" if on else "off"); return 0 if on else 1
     if args.cmd == "stamp":
         if args.op == "write":
-            rec = stamp_write(root, args.name, args.note); print(f"stamp {args.name} = {rec['tree'][:12]}"); return 0
-        status, why = stamp_check(root, args.name); print(f"{status}: {why}"); return 0 if status == "VALID" else 1
+            rec = stamp_write(root, args.name, args.note, args.mode)
+            print(f"stamp {args.name} = {rec['tree'][:12]}" + (f" ({args.mode})" if args.mode else "")); return 0
+        modes = tuple(m for m in args.mode.split(",") if m)
+        status, why = stamp_check(root, args.name, modes); print(f"{status}: {why}"); return 0 if status == "VALID" else 1
     try:
         with ledger(root, write=args.op in ("add", "close", "dismiss", "fail")) as data:
             if args.op == "add":
@@ -363,6 +373,13 @@ def selftest() -> int:
             (root / ".gitignore").write_text(".claude/state/\nignored.log\n")
             os.environ.pop("REVIEW_STAMP_MAX_AGE_HOURS", None)
             ok(stamp_check(root, "verify")[0] == "MISSING", "stamp: MISSING before any write")
+            full = ("full", "pre-pr")
+            stamp_write(root, "verify", "lint only", mode="quick")
+            ok(stamp_check(root, "verify", full)[0] == "INSUFFICIENT", "positive: a quick-mode stamp never satisfies a full-mode gate")
+            stamp_write(root, "verify", "no mode recorded")
+            ok(stamp_check(root, "verify", full)[0] == "INSUFFICIENT", "positive: a mode-less stamp fails closed for a mode gate")
+            stamp_write(root, "verify", "pytest 12 passed", mode="pre-pr")
+            ok(stamp_check(root, "verify", full)[0] == "VALID", "negative: a pre-pr stamp satisfies the gate")
             stamp_write(root, "verify", "pytest 12 passed")
             ok(stamp_check(root, "verify")[0] == "VALID", "negative: unchanged tree -> VALID")
             (root / "ignored.log").write_text("noise")

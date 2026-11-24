@@ -13,7 +13,7 @@ Runs the fastest possible verification for changed stacks. Returns binary PASS/F
 | Mode | Runs |
 |---|---|
 | `/verify` (default: quick) | Compile + lint only. No test execution. Fastest feedback. |
-| `/verify full` | Compile + lint + all tests. Full confidence. |
+| `/verify full` | Compile + lint + all tests + parity checks (env, l10n, deprecations, Alembic). Full confidence. |
 | `/verify pre-commit` | Quick verify + check for TODO/FIXME/console.log in staged files. |
 | `/verify pre-pr` | Full verify + security scan + coverage check. |
 
@@ -456,6 +456,50 @@ uv run --no-sync pytest -m r1 -q --junit-xml=reports/pytest-r1.xml > r1.log 2>&1
 
 `check-ai-assets.py`: exit 0 = PASS, REVIEW (list each item for the human) or NOT_APPLICABLE · 1 = a BLOCK finding (missing dataset manifest, invalid manifest, prompt card or governance record, secret in a prompt, golden, notebook or eval-report file, prompt label `latest`) → FAIL; REVIEW includes unpinned model ids and LiteLLM fallback defaults · 3 = BLOCKED (a delegate validator is missing or crashed). ADVISORY lines are pattern-only and never count as pass or fail. R1: no `r1` marker → NOT RUN; executed count 0 → FAIL. Judged (R2), red-team and live-provider suites are NOT RUN here (`eval-guide/reference/ci-tiers.md`).
 
+### Parity checks (`full` and `pre-pr`; any stack)
+
+Four stdlib checkers (Python 3.10+) catch drift that compiles and tests clean: a config key read in code or compose but missing from `.env.example` (`check_env_parity.py`), an ARB locale missing template keys or placeholders (`check_l10n_parity.py`), a `REMOVE-BY: YYYY-MM-DD` deprecation past its date (`check_deprecations.py`), a model table no Alembic revision creates (`check_alembic_models.py`). Each runs per root it finds (`.env.example`, `l10n.yaml`, `alembic.ini`, up to 4 levels deep); exit 2 means no inputs and is NOT APPLICABLE, never PASS.
+
+```bash
+# Parity gate: env/config, l10n, deprecations, Alembic. MODE=full|pre-pr. Stdlib checkers; exit 2 = no inputs.
+PCK=".claude/scripts"; P_FAIL=0; P_BLOCKED=0; P_RAN=0
+parity() { # label cmd... -> PASS / WARN / FAIL / NOT APPLICABLE from the checker's OWN exit code
+  local label="$1" out rc; shift
+  out=$("$@" 2>&1); rc=$?
+  case "$rc" in
+    0) if printf '%s\n' "$out" | grep -q '^WARN'; then echo "PARITY $label: PASS with warnings"; printf '%s\n' "$out" | grep '^WARN' | head -5
+       else echo "PARITY $label: PASS"; fi; P_RAN=$((P_RAN + 1)) ;;
+    2) echo "PARITY $label: NOT APPLICABLE ($(printf '%s\n' "$out" | tail -1))" ;;
+    *) echo "PARITY $label: FAIL (exit $rc)"; printf '%s\n' "$out" | grep -E '^(FAIL|WARN)' | head -10; P_FAIL=1; P_RAN=$((P_RAN + 1)) ;;
+  esac
+}
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+  echo "PARITY: BLOCKED (the checkers need python3 >= 3.10; found $(python3 -V 2>&1))"; P_BLOCKED=1
+else
+  ROOTS=$(find . -maxdepth 4 \( -name node_modules -o -name .git -o -name .venv -o -name build -o -name dist \) -prune -o \
+          \( -name .env.example -o -name l10n.yaml -o -name alembic.ini \) -print)
+  [ -n "$(printf '%s' "$ROOTS" | grep '/.env.example$')" ] || echo "PARITY env: NOT APPLICABLE (no .env.example)"
+  [ -n "$(printf '%s' "$ROOTS" | grep '/l10n.yaml$')" ] || echo "PARITY l10n: NOT APPLICABLE (no l10n.yaml)"
+  [ -n "$(printf '%s' "$ROOTS" | grep '/alembic.ini$')" ] || echo "PARITY alembic: NOT APPLICABLE (no alembic.ini)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue; d=$(dirname "$f")
+    case "$f" in
+      */.env.example) parity "env $d" python3 "$PCK/check_env_parity.py" "$d" ;;
+      */l10n.yaml) dir=$(sed -n 's/^arb-dir:[[:space:]]*//p' "$f" | tr -d "\"'"); parity "l10n $d" python3 "$PCK/check_l10n_parity.py" "$d/${dir:-lib/l10n}" ;;
+      */alembic.ini) parity "alembic $d" python3 "$PCK/check_alembic_models.py" "$d" ;;
+    esac
+  done <<EOF_PARITY
+$ROOTS
+EOF_PARITY
+  parity "deprecations" python3 "$PCK/check_deprecations.py" .
+fi
+if [ "$P_FAIL" -ne 0 ]; then v=FAIL; elif [ "$P_BLOCKED" -ne 0 ]; then v=BLOCKED; elif [ "$P_RAN" -eq 0 ]; then v="NOT APPLICABLE"; else v=PASS; fi
+echo "PARITY VERDICT: $v"
+[ "$v" = PASS ] || [ "$v" = "NOT APPLICABLE" ]
+```
+
+Proven 2026-11-24 on fixtures: a clean API + Flutter tree → 4 PASS; an `os.environ` key missing from `.env.example`, a missing ARB key, an unmigrated model and an overdue `REMOVE-BY` → 4 FAIL with file:line; a repo with none of the inputs → NOT APPLICABLE (deprecations still scan); python3 3.9 → BLOCKED.
+
 **Status vocabulary** (per check, never blended): `PASS` ran and succeeded · `FAIL` ran and failed · `BLOCKED` could not run (say why: no device, tool missing, backend down) · `NOT RUN` skipped by choice (say why) · `NOT APPLICABLE` the change cannot affect it. Only `PASS` counts as a pass.
 
 ## Output Format
@@ -481,7 +525,7 @@ Python — 2 failures:
 ## Final Verdict: ❌ FAIL (2 of 6 stacks failing)
 ```
 
-**Evidence stamp:** when the verdict is PASS (every applicable check PASS, none BLOCKED), record it against the current content: `python3 .claude/scripts/review_state.py stamp write verify --note "<mode>: <stacks and executed counts>"`. Executed Playwright or Maestro runs that passed stamp `ui-web` / `ui-mobile` the same way. Never stamp a FAIL, BLOCKED or NOT RUN verdict. The stamp goes stale as soon as a file in its scope changes; `gh pr create` and `gh pr merge` check it (`verification-loop.md` §4, enforcement kit).
+**Evidence stamp:** when the verdict is PASS (every applicable check PASS, none BLOCKED), record it against the current content: `python3 .claude/scripts/review_state.py stamp write verify --mode <quick|pre-commit|full|pre-pr> --note "<stacks and executed counts>"`. Only a `full` or `pre-pr` stamp authorizes `gh pr create` / `gh pr merge`: quick and pre-commit run no tests, so the PR gate reports them INSUFFICIENT. Executed Playwright or Maestro runs that passed stamp `ui-web` / `ui-mobile` the same way. Never stamp a FAIL, BLOCKED or NOT RUN verdict. The stamp goes stale as soon as a file in its scope changes; `gh pr create` and `gh pr merge` check it (`verification-loop.md` §4, enforcement kit).
 
 **Binary rule:** If ANY stack fails → overall verdict is FAIL. No partial credit. `/verify` reports build/test PASS/FAIL only; review-finding severities (CRITICAL → BLOCK, HIGH → NEEDS_REVIEW) follow the Review Severity Policy in `.claude/rules/verification-and-reporting.md`.
 

@@ -26,9 +26,11 @@ git log --oneline $TARGET..HEAD
 ## Step 2 — Gate evidence, then risk assessment
 
 1. **Gate evidence (mandatory, not replaceable by this command):** `/verify pre-pr` must have run on this branch in this session with its own exit codes. If it has not run, or any stack is FAIL/BLOCKED, say so in the output and mark the PR body `Gate: NOT RUN` or `Gate: FAIL` — never write "CI is green" or tick a checklist item from reading the diff.
-2. **Fresh evidence:** `python3 .claude/scripts/review_state.py stamp check verify` must print VALID (the stamp `/verify` writes on PASS). CHANGED, EXPIRED or MISSING means the gate result no longer describes this tree: re-run `/verify pre-pr` or write `Gate: NOT RUN (stale)`. With the enforcement kit on, `gh pr create` is denied until it is VALID.
-3. **Lessons review (every PR; "no new lesson" is a valid outcome):** look back over this branch: user corrections, reviewer findings closed or dismissed (`review_state.py findings list` when the kit is on), fixes that took more than one attempt, and anything that worked unusually well. Route each through `/promote-lessons` Step 1 (avoid X, do Y, because Z → lesson, rule, deterministic control, skill reference or implementation note) and list the outcome in the PR body's Lessons section.
+2. **Fresh evidence:** `python3 .claude/scripts/review_state.py stamp check verify --mode full,pre-pr` must print VALID (the stamp `/verify full` or `/verify pre-pr` writes on PASS; a quick run prints INSUFFICIENT). CHANGED, EXPIRED or MISSING means the gate result no longer describes this tree: re-run `/verify pre-pr` or write `Gate: NOT RUN (stale)`. With the enforcement kit on, `gh pr create` is denied until it is VALID.
+3. **Lessons review (every PR; "no new lesson" is a valid outcome):** look back over this branch: user corrections, reviewer findings closed or dismissed (`review_state.py findings list` when the kit is on), fixes that took more than one attempt, and anything that worked unusually well. Route each through `/promote-lessons` Step 1 (avoid X, do Y, because Z → lesson, rule, deterministic control, skill reference or implementation note) and list the outcome in the PR body's Lessons section. Then record that the review ran: `python3 .claude/scripts/review_state.py stamp write lessons --note "<N routed | no new lesson>"`. `gh pr merge` checks it (advisory with the kit off, denied with it on); an edit after the review makes it stale, so review again before merging.
 4. **Risk score:** read `.claude/commands/pr-risk.md` and apply its Steps 2–6 (raw data, the five 0–10 factors, overall score, large-PR detection, context-aware checklist) to the range `$TARGET..HEAD`. That file is the single source of the rubric; do not restate or alter it here.
+
+5. **Phased work under one issue:** only the final PR may close the parent issue. GitHub closes it when a closing keyword (`close`, `fix` or `resolve` and their `-s`/`-d` forms) is followed by `#N` anywhere in a commit message or PR body, even mid-sentence, and when the PR's branch was created with `gh issue develop N` (a linked branch), whatever the body says. Intermediate phases: write `Refs #N`, never a closing keyword next to the number, and create the branch with plain `git checkout -b`. Final phase: `Closes #N`. If a phase closed it early, `gh issue reopen N`.
 
 ## Step 3 — Generate PR title
 
@@ -114,6 +116,8 @@ gh pr create \
 ```
 
 The title is single-quoted so backticks and `$` stay literal; an apostrophe inside it is written `'\''` (close the quote, an escaped quote, reopen).
+
+After the user has run it, watch CI on the new PR: `gh pr checks <PR> --watch --fail-fast --interval 30; echo "CHECKS EXIT:$?"` (gh 2.87: 0 = every check passed, 1 = a check failed or none were reported (read the message), 8 = still pending because the watch was interrupted). Report that exit code; a failure goes to the `iterate-pr` skill. CI that was not watched is reported as NOT RUN, never as green. No hook polls CI for you.
 
 ## Step 6 — Output
 

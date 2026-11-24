@@ -7,12 +7,16 @@ the kit is ON for the branch (`python3 .claude/scripts/review_state.py init`, or
   SubagentStart  reviewer agent -> inject the FINDING-line contract (additionalContext)
   SubagentStop   reviewer agent -> record its FINDING lines in the ledger; no contract line -> block once
                  (bounded by stop_hook_active), then record a MEDIUM "report unparsed" finding instead
-  PreToolUse     Agent: block re-dispatching a reviewer that still owns open findings
-                 Bash:  `gh pr create|merge` / `gh api .../pulls` need a VALID `verify` stamp
+  PreToolUse     Agent: block re-dispatching a reviewer that still owns open findings; before the first review
+                        round with no recorded `verify` run on this tree -> one notice (additionalContext)
+                 Bash:  `gh pr create|merge` / `gh api .../pulls` need a VALID `verify` stamp from a
+                        `full` or `pre-pr` run (a quick run executes no tests); a merge also needs a VALID
+                        `lessons` stamp (the end-of-PR lessons review ran on this tree, "no lesson" allowed)
                         (kit OFF: advisory only; kit ON: deny, unless REVIEW_GATE_OVERRIDE="<reason>")
   Stop           kit ON: block while findings block (bounded by stop_hook_active)
                  always: UI files changed without a VALID ui-web / ui-mobile stamp -> one reminder per
                          tree state (systemMessage; kit ON: one bounded block)
+                 always: branch changes more than 15 / 25 files -> one scope notice per threshold (systemMessage)
 
 Reviewer = a project agent whose frontmatter disallows Write and Edit (read-only analysis agents), so the
 set follows .claude/agents/ instead of a hard-coded list. Delivery follows the hooks reference: PreToolUse
@@ -167,32 +171,49 @@ def pr_segments(cmd: str) -> tuple[list[str], str]:
             writes = method in ("POST", "PUT", "PATCH") or (not method and fields)
             path = next((a for a in args[1:] if "/pulls" in a and not a.startswith("-")), "")
             if path and writes and PULLS_WRITE_RE.search(path.split("?")[0]):
-                hits.append("gh api .../pulls (create or merge)")
+                hits.append("gh api .../pulls/N/merge" if "/merge" in path else "gh api .../pulls (create)")
             elif "graphql" in args and GRAPHQL_RE.search(seg):
-                hits.append("gh api graphql (create or merge a PR)")
+                merges = re.search(r"\b(mergePullRequest|enablePullRequestAutoMerge)\b", seg)
+                hits.append("gh api graphql (merge a PR)" if merges else "gh api graphql (create a PR)")
         if len(hits) > before:
             overrides.append(seg_override)
     # every gated invocation needs its own override; one unprefixed gh means no override at all
     return hits, (overrides[0] if overrides and all(o == overrides[0] for o in overrides) and overrides[0] else "")
 
 
+VERIFY_MODES = ("full", "pre-pr")  # /verify quick and pre-commit run no tests: never PR evidence
+FIXES = {
+    "verify": "run `/verify full` or `/verify pre-pr` on the current tree (it writes the stamp with "
+              "`python3 .claude/scripts/review_state.py stamp write verify --mode <full|pre-pr> --note \"<checks and counts>\"` after every check PASSES)",
+    "lessons": "run the end-of-PR lessons review (/create-pr Step 2.3 or /ship) and record it with "
+               "`python3 .claude/scripts/review_state.py stamp write lessons --note \"<N routed | no new lesson>\"`",
+}
+
+
 def on_bash(root: Path, payload: dict) -> int:
     hits, override = pr_segments((payload.get("tool_input") or {}).get("command", ""))
     if not hits:
         return 0
-    status, why = rs.stamp_check(root, "verify")
-    if status == "VALID":
+    needs = [("verify", VERIFY_MODES)]
+    if any("merge" in h for h in hits):  # the lessons review is the backstop before the branch context is gone
+        needs.append(("lessons", ()))
+    missing = []
+    for name, modes in needs:
+        status, why = rs.stamp_check(root, name, modes)
+        if status != "VALID":
+            missing.append((name, status, why))
+    if not missing:
         return 0
     enabled = rs.is_enabled(root)
-    fix = ("Run /verify on the current tree (it writes the stamp with "
-           "`python3 .claude/scripts/review_state.py stamp write verify --note \"<checks and counts>\"` after every check PASSES).")
+    what = "; ".join(f"`{n}` stamp is {s} ({w})" for n, s, w in missing)
+    fix = "; ".join(FIXES[n] for n, _, _ in missing)
     if enabled and len(override.strip()) < 10:
         return emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                     "permissionDecisionReason": f"Enforcement kit: {hits[0]} needs fresh verification evidence; stamp is {status} ({why}). {fix} "
+                     "permissionDecisionReason": f"Enforcement kit: {hits[0]} needs fresh evidence: {what}. To fix: {fix}. "
                                                  "A deliberate exception: prefix REVIEW_GATE_OVERRIDE=\"<reason, 10+ chars>\" and state the reason in the PR."}})
     note = f"override: {override.strip()}" if enabled else "advisory (kit off)"
     return emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext":
-                 f"Verification evidence for {hits[0]} is {status} ({why}); {note}. Stale or missing evidence is not evidence: say so in the PR, or {fix}"}})
+                 f"Evidence for {hits[0]}: {what}; {note}. Stale or missing evidence is not evidence: say so in the PR, or {fix}."}})
 
 
 # ── reviewer contract, recording and dispatch gate ────────────────────────────────────────────────
@@ -223,13 +244,52 @@ def on_agent(root: Path, payload: dict) -> int:
         return 0
     with rs.ledger(root) as data:  # same rule as Stop: from round 3 MEDIUM/LOW no longer hold up a re-review
         owned = [f for f in rs.blocking(data) if f["reviewer"] == target]
+        first_round = not data["reports"]
     if not owned:
-        return 0
+        return first_review_notice(root, target) if first_round else 0
     ids = ", ".join(f"{f['id']} ({f['severity']}, {f['state']})" for f in owned[:8])
     return emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                  "permissionDecisionReason": f"Enforcement kit: {target} still owns open findings {ids}. Fix each and close it with evidence "
                                              "(`review_state.py findings close ID --class CONTROL|MECHANISM|STATIC|NOCONTROL --evidence ...`), "
                                              "record a failed fix (`findings fail ID --note ...`) or dismiss it with a reason; then re-dispatch for verification."}})
+
+
+def first_review_notice(root: Path, target: str) -> int:
+    """First review round on a tree no verify run backs: say so once per tree state (never blocks)."""
+    if rs.stamp_check(root, "verify")[0] == "VALID":  # any mode: quick is enough before a review round
+        return 0
+    marker = rs.state_dir(root) / f"review-noticed-{rs.fingerprint(root)[:16]}"
+    if marker.is_file():
+        return 0
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    for old in marker.parent.glob("review-noticed-*"):
+        old.unlink(missing_ok=True)
+    marker.write_text("noticed\n")
+    return emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext":
+                 f"Enforcement kit: first review round ({target}) on a tree with no recorded verify run. Run /verify (quick at least) "
+                 "and record its stamp first, so the review round is spent on design and logic, not compile or lint errors. Not blocking."}})
+
+
+SCOPE_THRESHOLDS = (15, 25)  # first-principles.md commit discipline: more than 15 files = split first
+
+
+def scope_notice(root: Path, files: list[str]) -> str:
+    """One notice each time the branch's changed-file count first exceeds a threshold."""
+    crossed = [n for n in SCOPE_THRESHOLDS if len(files) > n]
+    marker = rs.state_dir(root) / "scope-noticed.txt"
+    if not crossed:
+        marker.unlink(missing_ok=True)  # back under the limit: a later crossing is reported again
+        return ""
+    try:
+        last = int(marker.read_text().strip()) if marker.is_file() else 0
+    except ValueError:
+        last = 0
+    if crossed[-1] <= last:
+        return ""
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(f"{crossed[-1]}\n")
+    return (f"Scope check: {len(files)} files changed on this branch (more than {crossed[-1]}). first-principles.md caps a commit at 15 "
+            "files with no unrelated files: confirm every file traces to the request, then plan commits of at most 15.")
 
 
 # ── Stop: open findings + UI evidence ─────────────────────────────────────────────────────────────
@@ -264,9 +324,9 @@ def ui_targets(root: Path, files: list[str]) -> dict[str, list[str]]:
     return {k: v for k, v in out.items() if v}
 
 
-def ui_reminder(root: Path) -> tuple[str, str]:
+def ui_reminder(root: Path, files: list[str]) -> tuple[str, str]:
     """Return (message, marker path) when UI changed without a VALID stamp and this tree was not reminded yet."""
-    targets = ui_targets(root, changed_files(root))
+    targets = ui_targets(root, files)
     stale = {k: v for k, v in targets.items() if rs.stamp_check(root, k)[0] != "VALID"}
     if not stale:
         return "", ""
@@ -306,16 +366,20 @@ def on_stop(root: Path, payload: dict) -> int:
             reasons.append(f"{len(rows)} finding(s) still block (review round {rnd}): {listing}. Close each with evidence, "
                            "record a failed fix, or dismiss with a reason (`python3 .claude/scripts/review_state.py findings list`).")
     try:
-        ui_msg, marker = ui_reminder(root)
-    except (RuntimeError, OSError, subprocess.TimeoutExpired):
-        ui_msg, marker = "", ""
+        files = changed_files(root)
+        ui_msg, marker = ui_reminder(root, files)
+        scope_msg = scope_notice(root, files)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        ui_msg, marker, scope_msg = "", "", f"enforcement-kit: changed files not checked ({type(exc).__name__}); UI-evidence and scope notices skipped."
+    if scope_msg:
+        notices.append(scope_msg)
     if marker:
         Path(marker).parent.mkdir(parents=True, exist_ok=True)
         Path(marker).write_text("reminded\n")
     if ui_msg and enabled:
         reasons.append(ui_msg)
-    if reasons and not active:
-        return emit({"decision": "block", "reason": "Enforcement kit: " + " ".join(reasons)})
+    if reasons and not active:  # carry the notices too: their markers are already written
+        return emit({"decision": "block", "reason": "Enforcement kit: " + " ".join(reasons + notices)})
     if reasons:  # second stop in a row: never loop, surface it to the user instead
         return emit({"systemMessage": "Enforcement kit (not blocking again): " + " ".join(reasons)})
     if ui_msg or notices:
@@ -410,6 +474,11 @@ def selftest() -> int:
 
         # kit ON
         on = {"CLAUDE_ENFORCEMENT_KIT": "1"}
+        agent = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {"subagent_type": "x-reviewer"}}
+        rc, out = run(root, agent, on)
+        ok(not deny(out) and "first review round" in json.dumps(out), "positive: first reviewer dispatch with no verify run -> one notice", out)
+        rc, out = run(root, agent, on)
+        ok(out == {}, "negative: the same tree gets the first-review notice only once", out)
         rc, out = run(root, {"hook_event_name": "SubagentStart", "agent_type": "x-reviewer", "agent_id": "s1"}, on)
         ok("FINDING:" in json.dumps(out), "positive: reviewer gets the FINDING contract", out)
         rc, out = run(root, {"hook_event_name": "SubagentStart", "agent_type": "builder", "agent_id": "s2"}, on)
@@ -456,10 +525,30 @@ def selftest() -> int:
         rc, out = run(root, bash("gh api repos/o/r/pulls/7"), on)
         ok(out == {}, "negative: a read-only gh api call is not gated", out)
         rs_env = {**os.environ, "CLAUDE_PROJECT_DIR": str(root)}
-        subprocess.run([sys.executable, str(HERE.parent / "scripts" / "review_state.py"), "stamp", "write", "verify", "--note", "selftest"],
-                       cwd=root, env=rs_env, check=True, capture_output=True)
+        def stamp(*args: str) -> None:
+            subprocess.run([sys.executable, str(HERE.parent / "scripts" / "review_state.py"), "stamp", "write", *args],
+                           cwd=root, env=rs_env, check=True, capture_output=True)
+        stamp("verify", "--mode", "quick", "--note", "lint only")
+        rc, out = run(root, bash("gh pr create --fill"), on)
+        ok(deny(out) and "INSUFFICIENT" in json.dumps(out), "positive: a /verify quick stamp never authorizes gh pr create", out)
+        stamp("verify", "--note", "no mode")
+        rc, out = run(root, bash("gh pr create --fill"), on)
+        ok(deny(out) and "INSUFFICIENT" in json.dumps(out), "positive: a mode-less verify stamp fails closed", out)
+        stamp("verify", "--mode", "full", "--note", "selftest")
         rc, out = run(root, bash("cd sub && gh pr create --fill"), on)
-        ok(out == {}, "negative: VALID stamp -> gh pr create passes", out)
+        ok(out == {}, "negative: VALID full-mode stamp -> gh pr create passes (no lessons stamp needed to open a PR)", out)
+        rc, out = run(root, bash("gh pr merge 7 --squash"), on)
+        ok(deny(out) and "lessons" in json.dumps(out) and "verify" not in json.dumps(out).split("To fix")[0].replace("`lessons`", ""),
+           "positive: merge with verify VALID but no lessons review -> denied, naming only the lessons stamp", out)
+        rc, out = run(root, bash("gh api -X PUT repos/o/r/pulls/7/merge"))
+        ok(not deny(out) and "lessons" in json.dumps(out), "kit off: a merge without the lessons review is advisory", out)
+        rc, out = run(root, bash("gh api graphql -f query='mutation{createPullRequest(input:{}){clientMutationId}}'"), on)
+        ok(out == {}, "negative: a GraphQL PR create needs no lessons stamp", out)
+        rc, out = run(root, bash("gh api graphql -f query='mutation{mergePullRequest(input:{}){clientMutationId}}'"), on)
+        ok(deny(out) and "lessons" in json.dumps(out), "positive: a GraphQL merge needs the lessons stamp", out)
+        stamp("lessons", "--note", "no new lesson")
+        rc, out = run(root, bash("gh pr merge 7 --squash"), on)
+        ok(out == {}, "negative: verify (full) + lessons VALID -> merge passes", out)
         (root / "src").mkdir(); (root / "src" / "app.component.ts").write_text("export class A {}\n")
         rc, out = run(root, bash("gh pr merge 7 --squash"), on)
         ok(deny(out) and "CHANGED" in json.dumps(out), "positive: an edit after the stamp -> CHANGED -> merge denied", out)
@@ -489,6 +578,25 @@ def selftest() -> int:
         (root / "src" / "x.ts").write_text("1\n")
         rc, out = run(root, {"hook_event_name": "Stop", "stop_hook_active": False})
         ok("ui-web" not in json.dumps(out), "negative: a non-UI edit after a ui-web stamp does not re-trigger", out)
+        ok("Scope check" not in json.dumps(out), "negative: a few changed files -> no scope notice", out)
+        many = root / "src" / "many"; many.mkdir()
+        for i in range(16):
+            (many / f"m{i}.py").write_text(f"x = {i}\n")
+        rc, out = run(root, {"hook_event_name": "Stop", "stop_hook_active": False})
+        ok("Scope check" in out.get("systemMessage", "") and "more than 15" in out.get("systemMessage", ""),
+           "positive: more than 15 changed files -> scope notice", out)
+        rc, out = run(root, {"hook_event_name": "Stop", "stop_hook_active": False})
+        ok("Scope check" not in json.dumps(out), "negative: the scope notice is not repeated below the next threshold", out)
+        for i in range(16):
+            (many / f"m{i}.py").unlink()
+        run(root, {"hook_event_name": "Stop", "stop_hook_active": False})
+        for i in range(16):
+            (many / f"m{i}.py").write_text(f"y = {i}\n")
+        with rs.ledger(root, write=True) as data:
+            rs.add_finding(data, "x-reviewer", "CRITICAL", "blocker that makes this Stop a block", "src/q.ts:1")
+        rc, out = run(root, {"hook_event_name": "Stop", "stop_hook_active": False}, on)
+        ok(out.get("decision") == "block" and "Scope check" in out.get("reason", ""),
+           "positive: crossing again after dropping under re-notifies, carried inside a Stop block", out)
     rc = subprocess.run([sys.executable, __file__], input="not json", capture_output=True, text=True).returncode
     ok(rc == 0, "malformed stdin exits 0 (never wedges the session)", rc)
     print("selftest PASS" if fails == 0 else "selftest FAIL")

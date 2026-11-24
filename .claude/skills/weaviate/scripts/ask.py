@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # /// script
 # dependencies = [
-#   "weaviate-client>=4.19.2",
-#   "weaviate-agents>=1.2.0",
-#   "typer>=0.21.0",
+#   "weaviate-client==4.24.1",
+#   "weaviate-agents==1.9.1",
+#   "typer==0.29.2",
 # ]
 # ///
 """

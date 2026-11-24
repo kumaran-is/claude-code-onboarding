@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # /// script
 # dependencies = [
-#   "weaviate-client>=4.19.2",
-#   "typer>=0.21.0",
+#   "weaviate-client==4.24.1",
+#   "typer==0.29.2",
 # ]
 # ///
 """
@@ -44,9 +44,17 @@ def main(
             collection = client.collections.use(name)
             config = collection.config.get()
 
-            # Extract vectorizer config
+            # Extract vectorizer config. Collections created with `vector_config=` (current API)
+            # expose it per vector name in `config.vector_config`; `vectorizer_config` is legacy.
             vectorizer_config = None
-            if hasattr(config, "vectorizer_config") and config.vectorizer_config:
+            if config.vector_config:
+                vector_name, named = next(iter(config.vector_config.items()))
+                vectorizer_config = {
+                    "vector_name": vector_name,
+                    "vectorizer": str(getattr(named.vectorizer.vectorizer, "value", named.vectorizer.vectorizer)),
+                    "model": named.vectorizer.model,
+                }
+            elif config.vectorizer_config:
                 vc = config.vectorizer_config
                 if hasattr(vc, "vectorizer"):
                     vectorizer_config = {

@@ -84,6 +84,8 @@ Before generating code, consult these sources for current APIs:
 | Weaviate general docs | `weaviate-docs` MCP | Best practices, multi-tenancy, named vectors |
 | Python client fallback | `Context7` MCP | `weaviate-client` package, async patterns |
 
+Scripts pin `weaviate-client==4.24.1` (PEP 723 headers). weaviate-client 4.24.1 caps `grpcio<1.80` (resolves 1.78.2, which has no cp315 wheel); this is one of the blockers for Python 3.15, so Weaviate services stay on 3.14.
+
 ## Output Formats
 
 All scripts support `--json` flag. Default output is markdown tables.

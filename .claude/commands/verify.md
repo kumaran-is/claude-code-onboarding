@@ -320,7 +320,7 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 | Lint (quick+) | `ng lint` (the `lint` target in `angular.json`); none → **NOT RUN** (a new Angular 22 workspace has no linter until `ng add angular-eslint`) | `npm run lint` / `eslint.config.*`; none → **NOT RUN** |
 | Unit (full+) | `ng test --watch=false` (`@angular/build:unit-test`: Vitest + jsdom by default; no Karma `--browsers` flag) | `vitest run`, else `npm test` |
 | Build (full+) | `ng build` (production by default) | `npm run build` |
-| E2E (full+) | `playwright test` when `playwright.config.*` exists; missing browser/server → **BLOCKED** | same |
+| E2E (full+) | `playwright test --fail-on-flaky-tests` when `playwright.config.*` exists; PASS needs exit 0 **and** executed > 0 (an all-skipped run exits 0); missing browser/server → **BLOCKED** | same |
 | Audit (pre-pr) | `npm audit --audit-level=high` | same |
 
 ```bash
@@ -332,11 +332,20 @@ web_check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code;
   local root="$1" label="$2" log rc; shift 2; log=$(mktemp)
   (cd "$root" && CI=true NO_COLOR=1 FORCE_COLOR=0 "$@") > "$log" 2>&1; rc=$?
   if [ "$rc" -eq 0 ]; then echo "WEB $root | $label: PASS (exit 0)"; WEB_RAN=$((WEB_RAN + 1))
-  elif [ "$label" = e2e ] && grep -qE "Executable doesn't exist|browserType\.launch|ECONNREFUSED" "$log"; then echo "WEB $root | $label: BLOCKED (exit $rc: browser or server missing)"; tail -5 "$log"; WEB_BLOCKED=1
   else echo "WEB $root | $label: FAIL (exit $rc)"; tail -15 "$log"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1)); fi
   rm -f "$log"
 }
 not_run() { echo "WEB $1 | $2: NOT RUN ($3)"; WEB_NOTRUN=$((WEB_NOTRUN + 1)); }
+web_e2e() { # root -> Playwright Test; PASS = exit 0 AND executed > 0; flaky fails; missing browser/server = BLOCKED
+  local root="$1" log json rc ran; log=$(mktemp); json=$(mktemp)
+  (cd "$root" && CI=true NO_COLOR=1 FORCE_COLOR=0 PLAYWRIGHT_JSON_OUTPUT_FILE="$json" npm exec --no -- playwright test --reporter=line,json --fail-on-flaky-tests) > "$log" 2>&1; rc=$?
+  ran=$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).stats;console.log(s.expected+s.unexpected+s.flaky)' "$json" 2>/dev/null)
+  if [ "$rc" -eq 0 ] && [ "${ran:-0}" -gt 0 ]; then echo "WEB $root | e2e: PASS (exit 0, executed $ran)"; WEB_RAN=$((WEB_RAN + 1))
+  elif [ "$rc" -eq 0 ]; then echo "WEB $root | e2e: FAIL (exit 0 but executed ${ran:-0}: all skipped or filtered out)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1))
+  elif grep -qE "Executable doesn't exist|browserType\.launch|ECONNREFUSED" "$log"; then echo "WEB $root | e2e: BLOCKED (exit $rc: browser or server missing)"; tail -5 "$log"; WEB_BLOCKED=1
+  else echo "WEB $root | e2e: FAIL (exit $rc, executed ${ran:-?}; flaky counts as failure)"; tail -15 "$log"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1)); fi
+  rm -f "$log" "$json"
+}
 has_cfg() { local e; for e in js mjs cjs ts mts cts; do [ -f "$1/$2.$e" ] && return 0; done; return 1; } # real config names only: eslint.config.js.bak must not count
 FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git -o -name .angular \) -prune -o \( -name angular.json -o -name package.json \) -print)
 while IFS= read -r f; do
@@ -388,7 +397,7 @@ while IFS= read -r entry <&3; do
   elif has_script "$root" build; then web_check "$root" build npm run build
   else not_run "$root" build "no build script"; fi
   # 5. E2E (Playwright), when configured
-  if has_cfg "$root" playwright.config; then web_check "$root" e2e npm exec --no -- playwright test
+  if has_cfg "$root" playwright.config; then web_e2e "$root"
   else not_run "$root" e2e "no playwright.config.*"; fi
   [ "$MODE" = pre-pr ] && web_check "$root" "npm audit (high)" npm audit --audit-level=high
 done 3<<EOF_ROOTS

@@ -16,8 +16,10 @@
 #       are checked too (their web lines carry the "web" guard).
 #   R5  No stale browser-tool syntax in docs: `playwright-cli ... --output` (flag is --filename), `playwright-cli
 #       network` (command is `requests`), installing playwright-cli from @playwright/mcp (package is @playwright/cli),
-#       or any Browser-Use MCP tool or server reference (the server was removed from .mcp.json; use Chrome
-#       DevTools MCP or Playwright). Lines that say the old form no longer exists are allowed.
+#       any Browser-Use MCP tool or server reference, any Playwright MCP tool call (mcp__playwright__*), or a
+#       floating `@playwright/cli@latest` install (pin it). Neither MCP server is part of this toolkit: interactive
+#       automation is playwright-cli, regression is @playwright/test, diagnostics are Chrome DevTools MCP. Lines that
+#       say the old form no longer exists are allowed.
 #   R6  Flutter-context files (MOBILE_CONTEXT without the React Native skill/agent) must not recommend another device
 #       UI/E2E driver (Detox, Appium, Patrol, Espresso, XCUITest, flutter_driver) unless the line carries a guard word.
 #   R7  The scan set cannot shrink silently: every MOBILE_CONTEXT pattern matches at least one file and every
@@ -63,9 +65,11 @@ STALE = [
     (re.compile(r"playwright-cli\b[^\n|]*\s--output\b"), "playwright-cli has no --output flag; use --filename"),
     (re.compile(r"playwright-cli(\s+-s=\S+)?\s+network(?![-\w])"), "playwright-cli `network` was replaced by `requests` / `request <n>`"),
     (re.compile(r"(npm\s+(i|install)\s+(-g\s+)?|npx\s+(-y\s+)?)@playwright/mcp\b"), "playwright-cli comes from @playwright/cli (pinned), not @playwright/mcp"),
-    (re.compile(r"\bbrowser_(exec|screenshot|login|feedback|navigate|get_state|input|click|extract_content|scroll_down|scroll_up|go_back|list_tabs|switch_tab|close_tab|get_html|type)\b|mcp__browser-use__\w+|\bbrowser[-_ ]use\b", re.I), "Browser-Use MCP was removed from .mcp.json; use Chrome DevTools MCP (interactive debugging) or Playwright"),
+    (re.compile(r"\bbrowser_(exec|screenshot|login|feedback|navigate|get_state|input|click|extract_content|scroll_down|scroll_up|go_back|list_tabs|switch_tab|close_tab|get_html|type)\b|mcp__browser-use__\w+|\bbrowser[-_ ]use\b", re.I), "Browser-Use MCP is not part of this toolkit; use playwright-cli (interactive), @playwright/test (regression) or Chrome DevTools MCP (diagnostics)"),
+    (re.compile(r"\bmcp__playwright__\w+"), "Playwright MCP is not part of this toolkit; drive the browser with playwright-cli (Bash)"),
+    (re.compile(r"@playwright/cli@latest\b"), "pin @playwright/cli (or use the project's `npx playwright cli`); a floating @latest is not reproducible"),
 ]
-STALE_OK = re.compile(r"do(es)? not exist|not a command|no longer|older docs|was `|renamed|stale|lint-testing-tools", re.I)
+STALE_OK = re.compile(r"do(es)? not exist|not a command|no longer|older docs|was `|renamed|stale|lint-testing-tools|\b(no|never|not|without)\b[^.\n]{0,40}\b(browser[- ]?use|playwright mcp)\b", re.I)
 R5_SKIP = {".claude/scripts/lint-testing-tools.sh"}
 
 
@@ -177,6 +181,8 @@ def selftest():
             ("R5", "docs/r5e.md", "call mcp__browser-use__fill with the email\n"),
             ("R5", "docs/r5f.md", "Use mcp__browser-use__browser_exec for the exploratory flow\n"),
             ("R5", ".claude/agents/x2.md", "Exploratory flows use Browser-Use MCP\n"),
+            ("R5", "docs/r5g.md", "call mcp__playwright__browser_navigate to open the page\n"),
+            ("R5", "docs/r5h.md", "npm install -g @playwright/cli@latest\n"),
             ("R5", ".claude/skills/x/SKILL.md", "playwright-cli -s=qa network\n"),
             ("R4", ".claude/agents/x.md", "Drive the iOS simulator with Chrome DevTools\n"),
             ("R6", ".claude/skills/mobile-design/reference/z.md", "| Browser-based E2E | Cannot test native features | Maestro MCP or Detox |\n"),
@@ -206,6 +212,8 @@ def selftest():
             "docs/g4.md|If the iOS simulator is unavailable report BLOCKED, do not substitute Chrome DevTools.\n",
             "docs/g5.md|playwright-cli -s=qa screenshot --filename shot.png; playwright-cli -s=qa requests; playwright-cli -s=qa network-state-set offline\n",
             "docs/g6.md|Use mcp__chrome-devtools__navigate_page then mcp__chrome-devtools__take_snapshot; Browser-Use MCP no longer exists here.\n",
+            "docs/g7.md|npx --no-install playwright cli -s=qa open http://127.0.0.1:4200/ ; npm i -D -E @playwright/cli@0.1.25\n",
+            "docs/g8.md|Canonical routing: no Playwright MCP and no Browser Use MCP; never a Browser-Use server.\n",
             ".claude/skills/flutter-mobile/reference/w.md|Never use Patrol, Appium or Detox for Flutter device flows; Maestro only.\n",
             ".claude/skills/mobile-developer/SKILL.md|Detox drives the React Native E2E suite.\n",
         ]

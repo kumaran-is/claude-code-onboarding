@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tool_case.schema.json",
+  "title": "Tool contract / auth / isolation case (one JSONL line)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "tool", "tool_side_effect", "case_kind", "caller", "input", "expected", "risk_level", "tags"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*-[0-9]{3,}$"},
+    "tool": {"type": "string", "minLength": 1},
+    "tool_side_effect": {"enum": ["read", "write"]},
+    "case_kind": {"enum": ["happy", "auth_fail", "schema_invalid", "scope_mismatch", "downstream_timeout", "unsafe_call"]},
+    "owner": {"type": "string", "minLength": 1},
+    "caller": {"type": "object", "additionalProperties": false, "required": ["role", "scope_id"],
+               "properties": {"role": {"type": "string", "minLength": 1}, "scope_id": {"type": "string", "minLength": 1}}},
+    "input": {"type": "object", "description": "Isolation cases carry deliberately mismatched ids."},
+    "expected": {
+      "type": "object", "additionalProperties": false, "required": ["result", "audit_log_required"],
+      "properties": {
+        "result": {"enum": ["OK", "FORBIDDEN", "SCHEMA_INVALID", "NOT_FOUND", "DOWNSTREAM_ERROR"]},
+        "audit_log_required": {"type": "boolean"}
+      }
+    },
+    "risk_level": {"enum": ["critical", "high", "medium", "low"]},
+    "tags": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  },
+  "allOf": [
+    {"if": {"properties": {"case_kind": {"enum": ["auth_fail", "scope_mismatch"]}}},
+     "then": {"properties": {"expected": {"properties": {"result": {"enum": ["FORBIDDEN", "NOT_FOUND"]}}}}}},
+    {"if": {"properties": {"tool_side_effect": {"const": "write"}, "case_kind": {"const": "happy"}}},
+     "then": {"properties": {"expected": {"properties": {"audit_log_required": {"const": true}}}}}}
+  ]
+}

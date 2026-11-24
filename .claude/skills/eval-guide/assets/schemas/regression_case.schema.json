@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "regression_case.schema.json",
+  "title": "Production regression file (production_regressions/INC-YYYY-NNN.yaml)",
+  "description": "One file per incident. The incident closes only when the case is committed, sanitized, failed on pre-fix code, passes on post-fix code and runs in the area's CI matrix.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["incident_id", "severity", "area", "feature", "owner", "detected_at", "dataset_committed_at",
+               "versions", "sanitization", "pre_fix_ref", "post_fix_ref", "ci_matrix_area", "cases"],
+  "properties": {
+    "incident_id": {"type": "string", "pattern": "^INC-[0-9]{4}-[0-9]{3,}$"},
+    "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+    "area": {"type": "string", "minLength": 1},
+    "feature": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "owner": {"type": "string", "minLength": 1},
+    "detected_at": {"type": "string", "format": "date-time"},
+    "dataset_committed_at": {"type": "string", "format": "date-time"},
+    "ci_green_at": {"type": "string", "format": "date-time"},
+    "versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["prompt_name", "prompt_version", "model_name", "tool_surface_hash"],
+      "properties": {
+        "prompt_name": {"type": "string", "minLength": 1}, "prompt_version": {"type": "string", "minLength": 1},
+        "model_name": {"type": "string", "minLength": 1}, "tool_surface_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "sanitization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["names_aliased", "emails_example_domain", "phones_reserved_range", "addresses_fictitious",
+                   "ids_aliased", "payment_data_removed", "free_text_reworded", "images_synthetic", "signed_off_by"],
+      "properties": {
+        "names_aliased": {"const": true}, "emails_example_domain": {"const": true}, "phones_reserved_range": {"const": true},
+        "addresses_fictitious": {"const": true}, "ids_aliased": {"const": true}, "payment_data_removed": {"const": true},
+        "free_text_reworded": {"const": true}, "images_synthetic": {"enum": [true, "not_applicable"]},
+        "signed_off_by": {"type": "string", "minLength": 1}
+      }
+    },
+    "pre_fix_ref": {"type": "string", "pattern": "^[0-9a-f]{7,40}$", "description": "Commit on which the case FAILS."},
+    "post_fix_ref": {"type": "string", "pattern": "^[0-9a-f]{7,40}$", "description": "Commit on which the case PASSES."},
+    "ci_matrix_area": {"type": "string", "minLength": 1, "description": "Routing suite name that always runs this file when the area changes."},
+    "cases": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "risk_level", "tags", "input", "expected"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*-[0-9]{3,}$"},
+          "risk_level": {"enum": ["critical", "high", "medium", "low"]},
+          "tags": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "input": {"type": "object", "minProperties": 1},
+          "expected": {"type": "object", "minProperties": 1}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dataset_manifest.schema.json",
+  "title": "Golden dataset manifest (dataset_manifest.yaml)",
+  "description": "One manifest per dataset directory. Fields from reference/golden-dataset.md (manifest and versioning) plus file integrity and the protected-canary controls. Closed: unknown keys fail.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dataset_name", "version", "owner", "feature", "dataset_type", "source", "schema_version",
+               "minimum_required_cases", "tags", "splits", "files", "review"],
+  "properties": {
+    "dataset_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+                "description": "SemVer. PATCH = typo/metadata; MINOR = new cases only; MAJOR = schema/scoring change or an existing case's expected behaviour changed."},
+    "owner": {"type": "string", "minLength": 1, "description": "Team or role, never a personal address."},
+    "feature": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$", "description": "Feature id, or 'cross-cutting' for security/isolation sets."},
+    "dataset_type": {"enum": ["happy_path_trajectory", "edge_cases", "adversarial_security", "data_isolation",
+                              "domain_compliance", "rag_grounding", "tool_contract", "production_regressions", "multi_turn"]},
+    "source": {"enum": ["synthetic", "expert_authored", "sanitized_production", "incident_regression"]},
+    "synthetic_provenance": {
+      "type": "object", "additionalProperties": false,
+      "description": "Required when source is synthetic (data governance standard §13): generator and version, whether real data seeded it, the privacy review that cleared seeded output, and the human owner who reviewed the cases.",
+      "required": ["generator", "generator_version", "seeded_from_real_data", "reviewed_by"],
+      "properties": {
+        "generator": {"type": "string", "minLength": 1},
+        "generator_version": {"type": "string", "minLength": 1},
+        "seeded_from_real_data": {"type": "boolean"},
+        "privacy_review": {"type": "string", "minLength": 1, "description": "Reference to the nearest-neighbour / memorization check showing no real record is reproduced."},
+        "reviewed_by": {"type": "string", "minLength": 1}
+      },
+      "allOf": [{"if": {"properties": {"seeded_from_real_data": {"const": true}}}, "then": {"required": ["privacy_review"]}}]
+    },
+    "schema_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+    "minimum_required_cases": {"type": "integer", "minimum": 1},
+    "tags": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "splits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["smoke", "ci", "nightly", "release"]},
+               "description": "Run stages this dataset joins. The validator requires nightly + release for every dataset and ci for any dataset holding critical cases."},
+    "files": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "sha256", "cases", "case_schema"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^[^/][^\\\\]*$", "description": "Relative to the manifest directory."},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "cases": {"type": "integer", "minimum": 1},
+          "case_schema": {"enum": ["trajectory", "rag", "tool", "redteam", "regression"]}
+        }
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false, "required": ["requires_pr_review", "approvers"],
+      "properties": {
+        "requires_pr_review": {"const": true},
+        "approvers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "protection": {
+      "type": "object", "additionalProperties": false, "required": ["class"],
+      "properties": {
+        "class": {"enum": ["standard", "heldout", "protected_canary"]},
+        "access": {"enum": ["open", "restricted"]},
+        "labels_hidden": {"type": "boolean"},
+        "excluded_from_training": {"type": "boolean"},
+        "contamination_check": {
+          "type": "object", "additionalProperties": false, "required": ["method", "last_run"],
+          "properties": {"method": {"type": "string", "minLength": 1}, "last_run": {"type": "string", "format": "date"}}
+        },
+        "refresh_review_due": {"type": "string", "format": "date"},
+        "provenance": {"type": "string", "minLength": 1},
+        "access_review": {
+          "type": "object", "additionalProperties": false, "required": ["reviewer_role", "last_review"],
+          "properties": {"reviewer_role": {"type": "string", "minLength": 1}, "last_review": {"type": "string", "format": "date"}}
+        }
+      },
+      "allOf": [{
+        "if": {"properties": {"class": {"const": "protected_canary"}}},
+        "then": {
+          "required": ["access", "labels_hidden", "excluded_from_training", "contamination_check",
+                       "refresh_review_due", "provenance", "access_review"],
+          "properties": {"access": {"const": "restricted"}, "labels_hidden": {"const": true}, "excluded_from_training": {"const": true}}
+        }
+      }]
+    }
+  },
+  "allOf": [{"if": {"properties": {"source": {"const": "synthetic"}}, "required": ["source"]}, "then": {"required": ["synthetic_provenance"]}}]
+}

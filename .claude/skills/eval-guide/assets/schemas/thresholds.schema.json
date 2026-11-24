@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "thresholds.schema.json",
+  "title": "Per-feature eval thresholds and gate policy (thresholds.yaml)",
+  "description": "All numbers are project decisions (ADAPT). Only status: ratified rows gate merges; proposed rows are reported as advisories. Critical case classes are always gated at 100%, independent of the aggregate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "features", "baseline_policy"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "features": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["status", "metrics"],
+        "properties": {
+          "status": {"enum": ["proposed", "ratified"]},
+          "ratified_by": {"type": "string", "minLength": 1},
+          "ratified_on": {"type": "string", "format": "date"},
+          "decision_ref": {"type": "string", "minLength": 1, "description": "ADR or decision record that ratified the numbers."},
+          "metrics": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/bound"}}
+        },
+        "allOf": [{"if": {"properties": {"status": {"const": "ratified"}}},
+                   "then": {"required": ["ratified_by", "ratified_on", "decision_ref"]}}]
+      }
+    },
+    "baseline_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_drop", "latency_ratio_block", "cost_ratio_block", "anchor_alert_drop_pct"],
+      "properties": {
+        "max_drop": {"type": "number", "minimum": 0, "description": "Absolute tolerance vs baseline on every shared metric (0.02 = 2 pp)."},
+        "latency_ratio_block": {"type": "number", "exclusiveMinimum": 1},
+        "cost_ratio_block": {"type": "number", "exclusiveMinimum": 1},
+        "anchor_alert_drop_pct": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "release_gates": {
+      "type": "object", "additionalProperties": false,
+      "description": "Release dimension -> metric name. A dimension mapped here must be present and pass in every release run.",
+      "propertyNames": {"enum": ["correctness", "groundedness", "hallucination", "sensitive_data_leakage", "tool_authorization",
+                                 "agent_task_success", "idempotency", "recovery", "safety", "latency", "cost"]},
+      "additionalProperties": {"oneOf": [{"type": "string", "minLength": 1},
+                                         {"type": "object", "additionalProperties": false, "required": ["not_applicable"],
+                                          "properties": {"not_applicable": {"type": "string", "minLength": 10}}}]}
+    }
+  },
+  "$defs": {
+    "bound": {"type": "object", "additionalProperties": false, "minProperties": 1,
+              "properties": {"min": {"type": "number"}, "max": {"type": "number"}}}
+  }
+}

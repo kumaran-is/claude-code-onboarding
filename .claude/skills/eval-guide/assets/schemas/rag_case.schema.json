@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rag_case.schema.json",
+  "title": "RAG grounding case (one CSV row, after the validator splits '|' lists)",
+  "description": "CSV header: exactly case_id,feature,question,expected_answer,required_context_ids,forbidden_context_ids,risk_level,tags, optionally followed by any of query_type,scope,expected_outcome,high_stakes (each at most once; an empty cell means absent). List columns are '|' separated; high_stakes is true|false. forbidden_context_ids is what asserts isolation at retrieval time. query_type, expected_outcome and high_stakes follow the RAG reference architecture (17.2 golden-set slices, 13.3 outcomes).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_id",
+    "feature",
+    "question",
+    "expected_answer",
+    "required_context_ids",
+    "forbidden_context_ids",
+    "risk_level",
+    "tags"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*-[0-9]{3,}$"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_answer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "required_context_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "forbidden_context_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "risk_level": {
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "query_type": {
+      "enum": [
+        "factual",
+        "identifier",
+        "broad",
+        "multi-part",
+        "vague",
+        "temporal",
+        "comparison",
+        "high-stakes"
+      ],
+      "description": "Golden-set slice; metrics are reported per slice."
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Synthetic scope context the query runs under (e.g. a test tenant id)."
+    },
+    "expected_outcome": {
+      "enum": [
+        "ANSWERED",
+        "PARTIAL",
+        "NOT_FOUND",
+        "CONFLICTED",
+        "STALE",
+        "HUMAN_REVIEW"
+      ]
+    },
+    "high_stakes": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "query_type": {
+            "const": "high-stakes"
+          }
+        },
+        "required": [
+          "query_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "high_stakes"
+        ],
+        "properties": {
+          "high_stakes": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

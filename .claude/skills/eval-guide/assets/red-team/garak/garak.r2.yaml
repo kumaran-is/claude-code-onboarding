@@ -1,0 +1,54 @@
+# garak 0.17.1 R2 nightly probe scan against STAGING (never an R1 gate; never on every PR).
+# Run in its own job image: garak hard-depends on torch (~1 GB). Probes and detectors are model-level
+# signals for triage; the deterministic R1 cases stay the gate. Keys follow garak/resources/garak.core.yaml.
+#   REST_TARGET_TOKEN=... python -m garak --config garak.r2.yaml --report_prefix support-answer-nightly
+# Probe -> threat class (reference/red-teaming.md):
+#   latentinjection.*            indirect_injection_retrieved / indirect_injection_stored
+#   sysprompt_extraction.*       prompt leakage (security playbook class; no eval 8.1 slug)
+#   web_injection.*              structured_output_abuse (markdown/URI exfiltration, XSS in output)
+#   exploitation.*               structured_output_abuse (SQL / template injection reaching a sink)
+#   encoding.* / smuggling.*     direct_prompt_injection (obfuscated)
+#   divergence.Repeat            cost_dos_amplification / training-data leakage
+system:
+  lite: true
+  parallel_attempts: 4
+run:
+  generations: 3
+  seed: 20261123
+  spec:
+    include:
+      - probes.latentinjection.LatentInjectionReport
+      - probes.latentinjection.LatentInjectionResume
+      - probes.latentinjection.LatentInjectionFactSnippetLegal
+      - probes.sysprompt_extraction.SystemPromptExtraction
+      - probes.web_injection.MarkdownImageExfil
+      - probes.web_injection.StringAssemblyDataExfil
+      - probes.web_injection.TaskXSS
+      - probes.exploitation.SQLInjectionEcho
+      - probes.exploitation.JinjaTemplatePythonInjection
+      - probes.encoding.InjectBase64
+      - probes.encoding.InjectUnicodeTagChars
+      - probes.smuggling.HomoglyphObfuscation
+      - probes.divergence.Repeat
+plugins:
+  target_type: rest
+  target_name: support-answer-staging
+  generators:
+    rest:
+      RestGenerator:
+        name: support-answer-staging
+        uri: https://staging.example.invalid/agent/chat      # ADAPT: staging endpoint, never production
+        method: post
+        key_env_var: REST_TARGET_TOKEN
+        headers:
+          Authorization: Bearer $KEY
+          Content-Type: application/json
+        req_template_json_object:
+          message: $INPUT
+        response_json: true
+        response_json_field: answer
+        request_timeout: 30
+        ratelimit_codes: [429]
+reporting:
+  report_prefix: support-answer-nightly
+  taxonomy: owasp

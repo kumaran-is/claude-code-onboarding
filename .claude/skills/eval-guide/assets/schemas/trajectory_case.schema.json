@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trajectory_case.schema.json",
+  "title": "Trajectory / single- or multi-turn golden case (one JSONL line)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "feature", "risk_level", "tags", "input", "expected", "assertions"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*-[0-9]{3,}$", "description": "<feature>-<scenario>-NNN; stable forever."},
+    "feature": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "owner": {"type": "string", "minLength": 1, "description": "Optional; defaults to the manifest owner."},
+    "risk_level": {"enum": ["critical", "high", "medium", "low"]},
+    "case_class": {"enum": ["regular", "critical", "isolation", "compliance", "tool_auth", "security"], "default": "regular"},
+    "partition": {"enum": ["dev", "heldout", "restricted"], "default": "heldout"},
+    "tags": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "added_by": {"type": "string", "pattern": "^(human|synthetic|incident-INC-[0-9]{4}-[0-9]{3,})$"},
+    "input": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["user_message"],
+         "properties": {"user_message": {"type": "string"}, "caller": {"$ref": "#/$defs/caller"}}},
+        {"type": "object", "additionalProperties": false, "required": ["turns"],
+         "properties": {"turns": {"type": "array", "minItems": 2, "items": {"type": "string"}}, "caller": {"$ref": "#/$defs/caller"}}}
+      ]
+    },
+    "expected": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "required_tool_sequence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "forbidden_tools": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "output": {"type": "object"},
+        "abstain": {"type": "boolean"}
+      },
+      "minProperties": 1
+    },
+    "assertions": {
+      "type": "object", "additionalProperties": false, "minProperties": 1,
+      "properties": {
+        "schema_valid": {"type": "boolean"},
+        "must_not_expose_other_scope_data": {"type": "boolean"},
+        "persisted_rows_unchanged": {"type": "array", "items": {"type": "string"}},
+        "audit_record_required": {"type": "boolean"},
+        "must_not_claim": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  },
+  "$defs": {
+    "caller": {"type": "object", "additionalProperties": false, "required": ["role", "scope_id"],
+               "properties": {"role": {"type": "string"}, "scope_id": {"type": "string"}}}
+  }
+}

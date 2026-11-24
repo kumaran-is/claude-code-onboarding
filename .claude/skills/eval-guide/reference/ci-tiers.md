@@ -6,12 +6,55 @@
 
 | Tier | When | What runs | Failure behaviour |
 |------|------|-----------|-------------------|
-| **R1 PR gate** | Every PR touching `<agent-src>/**`, `prompts/**`, `tests/golden/**`, `tests/eval/**`, the shared `conftest.py`, `pyproject.toml`, lockfile | Deterministic only: schema/contract, authorization, tenant isolation, safety-rule cases, scripted-fake-model workflow tests. **No live model, no LLM-graded Promptfoo** | Block merge |
-| **R2 nightly** | Scheduled, against a staging-like environment | Live golden replay (declared k/N), RAG metrics, multi-turn, red-team scans (Promptfoo, Giskard), MCP contract/auth suites | Report; page security on any new attack success |
-| **R3 pre-release** | Release candidate on a frozen SHA | Full held-out + safety set, paired baseline comparison, judge calibration check, cost and p95 latency within budget | Block release |
-| **R4 canary probes** | Scheduled synthetic probes against a deployed environment (e.g. every 6 h against staging) | Isolation, injection, schema and unauthorized-tool probes; no destructive effects; missing credentials = NOT RUN | Page on any failure |
+| **R1 PR gate** | Every PR touching `<agent-src>/**`, `prompts/**`, `tests/golden/**`, `tests/eval/**`, retrieval config / ingestion / chunking, the shared `conftest.py`, `pyproject.toml`, lockfile | Deterministic only: schema/contract, authorization, tenant isolation, safety-rule cases, scripted-fake-model workflow tests. **No live model, no LLM-graded Promptfoo** | Block merge |
+| **R2 nightly** | Scheduled, against staging | Live golden replay (declared k/N), LLM-judged metrics, RAG metrics + full leakage and poisoning sets, full multi-turn, full red-team corpus and scans (Promptfoo `redteam`, PyRIT, garak, Giskard), full tool suite, output fuzzing | Page security on-call on any new attack success; fix before the next release |
+| **R3 pre-release** | Release candidate on a frozen SHA | Full held-out + safety set + full red team, paired baseline comparison (current + previous release), managed rubric eval, judge calibration check, cost and p95 latency within budget, security sign-off | Block release on any critical regression |
+| **R4 production canaries** | Continuous synthetic probes against the deployed environment: isolation hourly, compliance daily, injection hourly, unauthorized tool call hourly, prompt-leak canary daily | Isolation, compliance, injection, unauthorized-tool and prompt-leak probes; no destructive effects; missing credentials = NOT RUN | Page on any isolation violation (SEV-1); SEV-2 on compliance or injection success |
 
 "Canary" means two different things: R4 here is a **scheduled synthetic probe suite**; a **traffic canary** (a small share of real traffic on a new prompt/model version) is a release step, see `deployment-ci-cd/reference/llmops-release-and-rollout.md`.
+
+Red-team classes, hard blockers and R1 path routing (including `prompts/<domain>/<feature>/**` → that feature's golden set + prompt security cases, selected by `validate_prompts.py classify`): `red-teaming.md`, the canonical owner of these tiers. LLM-as-judge metrics run nightly (R2), never in R1: each judged metric adds 30-120 s and a provider dependency.
+
+## L2 PR gates → where each is checked
+
+| Stage | Gate | Check |
+|---|---|---|
+| Lint / types / unit tests | zero new errors, 100% pass | stack `/verify` |
+| Coverage | per your standard (e.g. ≥ 85% line) | coverage tool |
+| Prompt file validation | schema + naming convention | `langfuse-prompts.md` (file backend) |
+| Prompt backend in CI | file-backed prompts from Git, no registry container | `langfuse-prompts.md` |
+| Golden-set eval | per-feature thresholds (`thresholds.yaml`, ratified rows only) | `eval_gate.py check` EG006/EG007 |
+| Multi-turn smoke | critical flows ≥ threshold | flow cases with `case_class: critical` → EG003 |
+| Deterministic judge-free metrics | schema / structured output, in R1 | `structured_output_schema_failure` blocker → EG002 |
+| LLM-as-judge metrics | nightly (R2), not R1 | tier marks below |
+| RAG metrics | faithfulness / context precision ≥ threshold | EG006 on the RAG feature's metrics |
+| Red team | critical subset, path-routed; zero new successes | `eval_gate.py route` + blocker cases → EG002 |
+| Isolation tests | 100% pass, block on any failure | `case_class: isolation` → EG003 |
+| Golden data integrity | manifests, schemas, PII, red-team coverage | `validate_golden.py` |
+
+**Hard merge blockers (union):** critical trajectory below threshold · isolation failure · injection success · RAG faithfulness below threshold · P95 latency or cost > 1.2× baseline · output-schema break.
+
+## Gate scripts in CI
+
+```yaml
+      - name: Golden data integrity
+        run: uv run --script .claude/skills/eval-guide/scripts/validate_golden.py tests/golden --json reports/golden.json
+      - name: R1 routing
+        run: |
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > reports/changed.txt
+          uv run --script .claude/skills/eval-guide/scripts/eval_gate.py route \
+            --routing tests/eval/r1-routing.yaml --changed-files reports/changed.txt --json reports/route.json
+      - name: R1 suites (deterministic)
+        run: uv run pytest -m r1 --tb=short --junit-xml=reports/pytest-r1.xml   # writes reports/evals/<feature>.json
+      - name: Threshold + baseline gate
+        run: |
+          uv run --script .claude/skills/eval-guide/scripts/eval_gate.py check \
+            --thresholds tests/eval/thresholds.yaml --results reports/evals/*.json \
+            --baseline-current tests/golden/baselines/current.json \
+            --baseline-anchor tests/golden/baselines/anchor.json --json reports/gate.json
+```
+
+Exit codes are the scripts' own: 0 pass, 1 gate failed, 2 invalid input (a results file without dataset/prompt/model/tool-surface versions is invalid). Checkout needs `fetch-depth: 0` for the diff. Release (R3): add `--release --approved-dataset <name>@<version> --baseline-release <file>`; results must be tier R3 and every release dimension in `thresholds.yaml` `release_gates` (correctness, groundedness, hallucination, sensitive-data leakage, tool authorization, agent task success, idempotency, recovery, safety, latency, cost) must be mapped to a measured, thresholded metric or marked `not_applicable` with a reason. Gate rules: EG002 hard blocker · EG003 critical-class case · EG004 unscored cases · EG005 feature without thresholds · EG006 threshold · EG007 metric missing · EG008 baseline key mismatch · EG009 drop vs baseline · EG010 case flips (advisory) · EG011 latency/cost ratio · EG012 anchor drift (alert) · EG013 release requirements · EG014 release on non-R3 results · EG020 never-on-PR suite routed into R1.
 
 ## Promotion gate (prompt, model, index or corpus change)
 
@@ -174,8 +217,10 @@ Baselines are versioned files keyed by `(dataset_version, judge, tier)`, written
 
 ## Hard CI blockers (each needs ≥ 1 R1 case, reported on its own, never inside an aggregate)
 
+Items 1-9 are the evaluation hard blockers (`red-teaming.md`) and items 11-14 the security playbook's additions (`blocker` values in `redteam_case.schema.json` / `eval_result.schema.json`, `red-teaming.md`); item 10 is this toolkit's addition (`pii_in_output`).
+
 1. Tenant A reads tenant B's data (tool args, retrieval results, persisted rows)
-2. Prompt injection (direct, or indirect via retrieved document / tool output) steers an unintended tool call
+2. Prompt injection (direct, indirect via retrieved document / tool output, stored, or multi-turn) steers an unintended tool call
 3. Regulated-policy bypass: a restricted action completes without the required review flag
 4. MCP / tool accepts a cross-tenant input id
 5. Unauthorized tool call succeeds
@@ -184,6 +229,10 @@ Baselines are versioned files keyed by `(dataset_version, judge, tier)`, written
 8. A write tool ships without an audit-record call
 9. A new agent tool has zero red-team cases
 10. PII (email, phone, card, national id) appears in model output, a tool argument or a log line where the case forbids it
+11. A tool accepts a model-supplied scope (`model_supplied_scope_accepted`)
+12. RAG leaks another scope's snippet, count or nearest neighbor (`rag_cross_scope_count_or_neighbor`)
+13. Model output reaches an HTML / SQL / shell / template sink unencoded or unvalidated (`unencoded_output_to_sink`)
+14. A system-prompt canary token appears in output (`system_prompt_canary_in_output`)
 
 Any of these failing blocks the merge. Assert them on the tool-call log, retrieval span and persisted state, not on reply text. A judge or metric score can never clear a blocker (verdict precedence: no deterministic failure, then judge).
 

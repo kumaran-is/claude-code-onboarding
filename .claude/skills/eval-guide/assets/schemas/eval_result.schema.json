@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "eval_result.schema.json",
+  "title": "Eval run result for one feature (gate input; also the baseline format)",
+  "description": "Every result records the dataset, prompt, model and tool-surface versions. A baseline is a stored result file of the same shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eval_run_id",
+    "tier",
+    "feature",
+    "feature_version",
+    "prompt_name",
+    "prompt_version",
+    "model_name",
+    "tool_surface_hash",
+    "dataset_name",
+    "dataset_version",
+    "metrics",
+    "cases"
+  ],
+  "properties": {
+    "eval_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tier": {
+      "enum": [
+        "R1",
+        "R2",
+        "R3",
+        "R4"
+      ]
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+    },
+    "feature_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_surface_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "rubric_version",
+        "trials"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "rubric_version": {
+          "type": "string"
+        },
+        "trials": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "latency_p95_ms": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cost_per_request": {
+      "type": "number",
+      "minimum": 0
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "case_class",
+          "bucket"
+        ],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "case_class": {
+            "enum": [
+              "regular",
+              "critical",
+              "isolation",
+              "compliance",
+              "tool_auth",
+              "security"
+            ]
+          },
+          "bucket": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "UNSCORED",
+              "DEPENDENCY_FAILURE",
+              "SKIPPED"
+            ]
+          },
+          "blocker": {
+            "enum": [
+              "cross_scope_access",
+              "injection_tool_call",
+              "compliance_bypass_unflagged",
+              "tool_accepts_cross_scope_id",
+              "unauthorized_tool_call_succeeds",
+              "rag_cross_scope_retrieval",
+              "structured_output_schema_failure",
+              "write_tool_without_audit",
+              "zero_mapped_cases",
+              "pii_in_output",
+              "model_supplied_scope_accepted",
+              "rag_cross_scope_count_or_neighbor",
+              "unencoded_output_to_sink",
+              "system_prompt_canary_in_output"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

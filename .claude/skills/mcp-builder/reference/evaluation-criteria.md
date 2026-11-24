@@ -4,6 +4,8 @@
 
 This document provides guidance on creating comprehensive evaluations for MCP servers. Evaluations test whether LLMs can effectively use your MCP server to answer realistic, complex questions using only the tools provided.
 
+These question sets are the **trajectory layer** (L5) of the five-layer tool eval. They never replace the deterministic layers: protocol contract, schema validity, authorization + isolation and security run first, per tool, and an LLM judge never decides an authorization or isolation result (`eval-guide/reference/mcp-eval-patterns.md`).
+
 ### Evaluation Requirements
 - Create 10 human-readable questions
 - Questions must be READ-ONLY, INDEPENDENT, NON-DESTRUCTIVE

@@ -314,6 +314,17 @@ For agents calling an internal MCP gateway, a platform workload identity token w
 - Legacy shared API keys: compare with `timingSafeEqual` over equal-length buffers, keep them on a retirement path, and record the auth mode per request so you can see when the last key caller is gone.
 - For 2025-11-25 servers that still issue `Mcp-Session-Id`: bind each session to the identity that opened it and answer 403 when a different identity presents it.
 
+**Agent callers and delegation (cross-agent trust).** Another agent's request or output is untrusted input. The tool server, not the calling agent, decides:
+
+- **Authenticated agent identity:** the calling agent presents its own workload token; an agent name in arguments, `_meta` or a prompt is not identity.
+- **Delegation scope:** when an agent acts for a user or another agent, the effective permission is the **intersection** of the delegator's grant and the agent's own allowlist, carried in a verified token (for example an RFC 8693 token-exchange token with `act`); an agent cannot delegate a permission it does not hold.
+- **Maximum delegation depth:** count the `act` chain (or the equivalent claim) and refuse beyond the configured depth.
+- **Schema validation and provenance:** messages from agents pass the same strict schemas as any caller; record the originating principal and each hop in the audit record.
+- **Explicit tool authority and independent downstream authorization:** every hop re-checks the per-tool scope and the object's tenant; nothing is authorized because an upstream agent "already checked".
+- **Restricted context sharing:** return only the fields the caller's scope permits; never forward another principal's context or tokens (no token passthrough).
+
+These are implementation patterns for the tool side; who approves agent identities and delegation policies is an organisational control.
+
 ## 7. stdio servers
 
 The client launches the server and owns its environment. Take credentials from environment variables or the platform secret store (spec: stdio implementations SHOULD NOT follow the OAuth flow). Never accept a secret as a command-line argument: argv is visible to other processes (`ps -o args`, `/proc/<pid>/cmdline`). Write logs to stderr, never stdout.

@@ -111,7 +111,25 @@ Tested: no token → `approval_required`; approval for another document → `app
 
 ## 3. Idempotency, timeouts, retries, circuit breakers
 
-- Every write/destructive tool takes or derives an idempotency key; store `(principal, key) → result` and return the stored result on a repeat instead of acting twice.
+- Every write/destructive tool takes or derives an idempotency key **bound to a hash of the payload**. Store `(tenant, key) → (payload_hash, result)`: same key + same hash returns the stored result without acting again; same key + different hash is rejected with `IDEMPOTENCY_PAYLOAD_MISMATCH` and nothing executes. A key alone is not enough: an agent that retries with a changed amount, recipient or date would otherwise get the old result (silent) or a second effect.
+- A write the agent decided on earlier must not land after a human changed the object: carry the version the agent read (`expected_order_version`, an ETag, a `supersedes` id) and reject a mismatch as `STALE_INTENT`. Payload idempotency alone does not stop stale intent.
+
+```ts
+// Inside the refund tool, after schema + scope checks, tenant from the verified token (security-core §5).
+const payloadHash = sha256(canonicalJson({ order_id: args.order_id, amount_cents: args.amount_cents, reason: args.reason }));
+const key = sha256(`${p.tenantId}|${args.idempotency_key}`); // keys are tenant-scoped
+const prior = state.idempotency.get(key);
+if (prior) {
+  if (prior.payloadHash !== payloadHash) { audit('denied', 'IDEMPOTENCY_PAYLOAD_MISMATCH'); return toolError('IDEMPOTENCY_PAYLOAD_MISMATCH', 'Key reused with a different payload; nothing executed'); }
+  return ok({ ...prior.result, replayed: true });
+}
+if (order.version !== args.expected_order_version) { audit('denied', 'STALE_INTENT'); return toolError('STALE_INTENT', 'Order changed since it was read; re-read and decide again'); }
+audit('allowed', null); // before the effect: a failed audit write throws and nothing executes
+const result = { refund_id: `rf_${randomUUID()}`, amount_cents: args.amount_cents };
+// … perform the effect, bump the order version, then store { payloadHash, result } under key
+```
+
+`canonicalJson` sorts object keys so equal payloads hash equally. Full runnable server and suite: [`scripts/contract-test/`](../scripts/contract-test/). Tested (SDK v2 2.4.0 over Streamable HTTP, 2026-11-23): replay returns the first `refund_id` with one effect; a changed amount under the same key → `IDEMPOTENCY_PAYLOAD_MISMATCH`, no second effect; a stale version → `STALE_INTENT`; audit store down → no effect. Planted defects (hash check removed, version check removed, effect moved before the audit write) each failed the suite. In production the store is durable and shared (a unique `(tenant, key)` constraint written in the same transaction as the effect), keys are retained for the action's replay window, and an expired key never re-executes without revalidating current state.
 - Every outbound call has a deadline (`AbortSignal.timeout`); the tool returns a typed error on timeout, never a fake empty result.
 - Retry only idempotent operations, only on retryable failures (timeout, 429, 5xx, connection reset), with a bound and jittered backoff. Never retry a non-idempotent write without its idempotency key.
 - Circuit breakers and bulkheads per upstream: [resilience-core.md](resilience-core.md). Durable execution of long multi-step effects (resume after crash without repeating side effects) belongs in a workflow engine or an outbox, not in the tool handler.

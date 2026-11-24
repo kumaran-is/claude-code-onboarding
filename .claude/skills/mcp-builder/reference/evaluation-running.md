@@ -125,8 +125,10 @@ Tool results are sent back with the MCP `is_error` flag, and per-tool metrics co
 
 The evaluation script generates a detailed report including:
 
-- **Summary Statistics**: Accuracy (correct/total), average task duration, average tool calls per task, total tool calls
-- **Per-Task Results**: Prompt, expected response, actual response, correct/incorrect, duration, tool call details, agent feedback
+- **Summary Statistics**: Accuracy (correct/total), average task duration, average tool calls per task, total tool calls, tasks over the redundant-call budget
+- **Per-Task Results**: Prompt, expected response, actual response, correct/incorrect, duration, tool call details (per tool: count, durations, errors, `redundant`), redundant tool calls, agent feedback
+
+**Tool-call efficiency.** A call that repeats an earlier identical (tool, input) pair within one task is redundant; the default budget is at most 1 per task (`REDUNDANT_CALL_BUDGET`, ADAPT). Tested with a fake model client and fake connection (MOCKED, 3 passed; with the counter removed, 2 failed). This harness is the live-model trajectory layer; run the deterministic contract, schema and authorization tests first (`eval-guide/reference/mcp-eval-patterns.md`).
 
 ### Save Report to File
 

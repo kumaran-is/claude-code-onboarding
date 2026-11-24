@@ -51,6 +51,19 @@ export const logger = {
 
 - Write logs to **stderr**: stdout carries JSON-RPC for stdio servers. The protocol's `notifications/message` logging is deprecated in revision 2026-07-28 (migration: stderr for stdio, OpenTelemetry for observability).
 - Audit every authorization decision and every write/destructive tool call: timestamp, tenant, subject, client id, tool, argument **hash** or ids (not raw arguments), decision, result code, correlation id. Write the audit record before the effect; a failed audit write blocks the effect.
+- Write-tool records carry the eval standard's field set (tested: every field present on allowed and denied calls, identifiers hashed):
+
+| Field | Source |
+|---|---|
+| `tool_name`, `side_effect_type` | the tool's registration / classification (§1 of security-middleware-attacks) |
+| `caller_role`, `caller_id_hash`, `scope_id_hash` | the verified token only; SHA-256 of subject and tenant, never raw |
+| `request_id` | the JSON-RPC request id (`ctx.mcpReq.id`) |
+| `session_id` | the host application's conversation id, passed in request `_meta` (for example `app/session_id`); `null` when absent. Revision 2026-07-28 has **no protocol session**, so never derive it from `Mcp-Session-Id` |
+| `prompt_version`, `model_name` | from the agent host in request `_meta`; recorded for traceability only, **never** used for authorization (client-supplied) |
+| `input_schema_valid`, `authorization_result`, `error_code` | the handler's own decisions (`allowed` / `denied`, stable code) |
+| `audit_log_id`, `latency_ms` | generated server-side |
+
+Calls rejected by the SDK's input-schema check never reach the handler; count those from results or traces (`input_validation_failures_total`). Metric names and tests: `eval-guide/reference/mcp-eval-patterns.md`.
 - Never log tokens, approval grants, cookies, raw prompts or tool payloads containing user content. Redaction by key is a backstop; the primary control is not passing secrets to the logger.
 - Ship audit records to an append-only store with retention and access control; alert on spikes of 401/403, `insufficient_scope`, `ssrf_blocked` and `approval_*` refusals.
 

@@ -122,6 +122,8 @@ async def agent_loop(
     messages.append({"role": "assistant", "content": response.content})
 
     tool_metrics: dict[str, Any] = {}
+    # Tool-call efficiency: a call repeating an earlier (tool, input) pair in this trajectory is redundant.
+    seen_calls: set[str] = set()
 
     while response.stop_reason == "tool_use":
         tool_results = []
@@ -138,8 +140,11 @@ async def agent_loop(
                 tool_response = f"Error executing tool {tool_use.name}: {e}\n{traceback.format_exc()}"
             tool_duration = time.time() - tool_start_ts
 
-            metrics = tool_metrics.setdefault(tool_use.name, {"count": 0, "durations": [], "errors": 0})
+            metrics = tool_metrics.setdefault(tool_use.name, {"count": 0, "durations": [], "errors": 0, "redundant": 0})
             metrics["count"] += 1
+            call_key = json.dumps([tool_use.name, tool_use.input], sort_keys=True)
+            metrics["redundant"] += int(call_key in seen_calls)
+            seen_calls.add(call_key)
             metrics["durations"].append(tool_duration)
             metrics["errors"] += int(is_error)
 
@@ -196,10 +201,14 @@ async def evaluate_single_task(
         "num_tool_calls": sum(
             len(metrics["durations"]) for metrics in tool_metrics.values()
         ),
+        "redundant_tool_calls": sum(metrics["redundant"] for metrics in tool_metrics.values()),
         "summary": summary,
         "feedback": feedback,
     }
 
+
+# Default from the eval standard's tool-call efficiency dimension (ADAPT per feature).
+REDUNDANT_CALL_BUDGET = 1
 
 REPORT_HEADER = """
 # Evaluation Report
@@ -210,6 +219,7 @@ REPORT_HEADER = """
 - **Average Task Duration**: {average_duration_s:.2f}s
 - **Average Tool Calls per Task**: {average_tool_calls:.2f}
 - **Total Tool Calls**: {total_tool_calls}
+- **Tasks Over the Redundant-Call Budget**: {over_budget} (budget: {redundant_budget} repeated identical call per task)
 
 ---
 """
@@ -223,6 +233,7 @@ TASK_TEMPLATE = """
 **Correct**: {correct_indicator}
 **Duration**: {total_duration:.2f}s
 **Tool Calls**: {tool_calls}
+**Redundant Tool Calls**: {redundant_tool_calls}
 
 **Summary**
 {summary}
@@ -267,6 +278,7 @@ async def run_evaluation(
         sum(r["num_tool_calls"] for r in results) / len(results) if results else 0
     )
     total_tool_calls = sum(r["num_tool_calls"] for r in results)
+    over_budget = sum(r["redundant_tool_calls"] > REDUNDANT_CALL_BUDGET for r in results)
 
     report = REPORT_HEADER.format(
         correct=correct,
@@ -275,6 +287,8 @@ async def run_evaluation(
         average_duration_s=average_duration_s,
         average_tool_calls=average_tool_calls,
         total_tool_calls=total_tool_calls,
+        over_budget=over_budget,
+        redundant_budget=REDUNDANT_CALL_BUDGET,
     )
 
     report += "".join(
@@ -287,6 +301,7 @@ async def run_evaluation(
                 correct_indicator="✅" if result["score"] else "❌",
                 total_duration=result["total_duration"],
                 tool_calls=json.dumps(result["tool_calls"], indent=2),
+                redundant_tool_calls=result["redundant_tool_calls"],
                 summary=result["summary"] or "N/A",
                 feedback=result["feedback"] or "N/A",
             )

@@ -25,6 +25,14 @@
 - Check parameter sizes and ranges
 - Prevent command injection in system calls
 - Use schema validation (Pydantic/Zod) for all inputs
+- Strict objects (`z.strictObject`, Pydantic `extra="forbid"`): an unknown field such as a smuggled `tenant_id` is a validation error, not silently stripped. With `z.object` (strip) the smuggled call executed (planted defect)
+
+**Tool boundary order, every call:** tool exists → schema version supported → payload conforms to the pinned schema → authorization permits the action. Any failure: return a stable code and do **not** execute.
+
+- Version the contract: a `schema_version` (`"<major>.<minor>"`) argument or a versioned tool name. Unsupported major → `SCHEMA_VERSION_MISMATCH`; minor bumps are additive only; enum changes and new required fields need a compatibility review.
+- TypeScript SDK v2 validates the whole `inputSchema` before the handler runs and answers with `isError` and the text `Input validation error: …` (not a custom code). That still meets the control (nothing executes); map it to `SCHEMA_VALIDATION_FAILED` in clients or traces if you need one code. Check the major version first thing in the handler.
+- Tested (SDK v2 2.4.0, 2026-11-23): unknown field, missing required field, bad enum and `schema_version: "2.0"` were each rejected with no side effect; removing the major-version check failed the suite.
+- The advertised tool surface (name, description, input schema) is locked in CI so prompts, tool declarations and backend schemas cannot drift apart unnoticed: `eval-guide/reference/mcp-eval-patterns.md` (tool-surface lock).
 
 ### Error Handling
 
@@ -248,6 +256,7 @@ describe('security middleware', () => {
 Every MCP server MUST implement audit logging:
 
 - Generate a `correlation_id` for every incoming request
+- Write tools: one record per decision (allowed and denied) with the required field set in [security-pii-compliance.md](security-pii-compliance.md) §3, written before the effect
 - Log tool invocations with: tool name, input hash (not raw input), output status, duration
 - Include tenant context if multi-tenant (tenant_id, organization_id)
 - Track the full tool chain for multi-step operations

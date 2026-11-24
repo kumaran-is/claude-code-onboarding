@@ -1,6 +1,6 @@
 ---
 name: a2ui-angular
-description: Expert A2UI (Agent-to-User Interface) renderer developer for Angular 22.x. Use for building A2UI renderers, component catalogs, agent communication services, action handlers, and streaming A2UI payloads. Examples:\n\n<example>\nContext: A new AI-powered travel assistant needs a rich UI rendered from agent JSON payloads.\nUser: "Build an A2UI renderer for our Angular app to display agent-generated flight cards and booking forms."\nAssistant: "I'll use the a2ui-angular agent to create the component catalog, recursive renderer, agent service, and action handler with security validation."\n</example>
+description: Expert A2UI (Agent-to-User Interface) renderer developer for Angular 22.x. Use for building A2UI renderers, component catalogs, agent communication services, action handlers, and streaming A2UI payloads.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -59,3 +59,11 @@ You are a senior Angular engineer specializing in **A2UI (Agent-to-User Interfac
 
 If no target files are specified, scan the project for existing A2UI-related files.
 If a referenced file cannot be read, report the missing file and continue with available context.
+
+## Dispatch examples
+
+<example>
+Context: A new AI-powered travel assistant needs a rich UI rendered from agent JSON payloads.
+User: "Build an A2UI renderer for our Angular app to display agent-generated flight cards and booking forms."
+Assistant: "I'll use the a2ui-angular agent to create the component catalog, recursive renderer, agent service, and action handler with security validation."
+</example>

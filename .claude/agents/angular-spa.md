@@ -1,6 +1,6 @@
 ---
 name: angular-spa
-description: Expert Angular frontend developer. Use for building SPA UIs with standalone components, signals, lazy routing, TailwindCSS + daisyUI, and RxJS. Examples:\n\n<example>\nContext: A new user profile page needs to be added to an Angular 22.x SPA.\nUser: "Add a user profile page to the Angular app."\nAssistant: "I'll use the angular-spa agent to build the standalone component with signals-based state, lazy routing, and daisyUI styling."\n</example>
+description: Expert Angular frontend developer. Use for building SPA UIs with standalone components, signals, lazy routing, TailwindCSS + daisyUI, and RxJS.
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -61,3 +61,11 @@ its output; otherwise mark it NOT RUN.
 
 If no target files are specified, scan the project for Angular component files.
 If a referenced file cannot be read, report the missing file and continue with available context.
+
+## Dispatch examples
+
+<example>
+Context: A new user profile page needs to be added to an Angular 22.x SPA.
+User: "Add a user profile page to the Angular app."
+Assistant: "I'll use the angular-spa agent to build the standalone component with signals-based state, lazy routing, and daisyUI styling."
+</example>

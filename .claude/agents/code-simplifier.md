@@ -1,6 +1,6 @@
 ---
 name: code-simplifier
-description: Reviews code for unnecessary complexity, excessive nesting, redundant abstractions, over-engineering, and opportunities to reduce cognitive load without changing behavior. Complements code-reviewer (which checks correctness) by focusing purely on simplicity and readability. Use before PRs or after implementations. Not for codebase-wide duplication or dead code (dedup-code-agent). Examples:\n\n<example>\nContext: A new feature implementation works correctly but uses a factory pattern for a single implementation.\nUser: "This works but feels over-engineered — simplify it."\nAssistant: "I'll use the code-simplifier agent to identify premature abstractions, unnecessary nesting, and redundant wrappers that could be removed without changing behavior."\n</example>\n\n<example>\nContext: Reviewing a PR before merge to catch complexity issues.\nUser: "Check the PR changes for unnecessary complexity."\nAssistant: "I'll use the code-simplifier agent to find where the code could be shorter, flatter, or clearer — looking for patterns like wrapper-around-wrapper, dead flexibility, and over-parameterized functions."\n</example>
+description: Reviews code for unnecessary complexity, excessive nesting, redundant abstractions, over-engineering, and opportunities to reduce cognitive load without changing behavior. Complements code-reviewer (which checks correctness) by focusing purely on simplicity and readability. Use before PRs or after implementations. Not for codebase-wide duplication or dead code (dedup-code-agent).
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
 model: sonnet
@@ -76,3 +76,17 @@ If scope not specified, default to `git diff HEAD~1`.
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new feature implementation works correctly but uses a factory pattern for a single implementation.
+User: "This works but feels over-engineered — simplify it."
+Assistant: "I'll use the code-simplifier agent to identify premature abstractions, unnecessary nesting, and redundant wrappers that could be removed without changing behavior."
+</example>
+
+<example>
+Context: Reviewing a PR before merge to catch complexity issues.
+User: "Check the PR changes for unnecessary complexity."
+Assistant: "I'll use the code-simplifier agent to find where the code could be shorter, flatter, or clearer — looking for patterns like wrapper-around-wrapper, dead flexibility, and over-parameterized functions."
+</example>

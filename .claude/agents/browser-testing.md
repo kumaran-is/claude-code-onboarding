@@ -1,6 +1,6 @@
 ---
 name: browser-testing
-description: Browser testing specialist for web targets (Angular, React, marketing sites, Flutter web builds). Drives the browser with Playwright CLI through Bash (snapshots, forms, route mocking, offline states, screenshots, traces, attaching to a paused failing test), runs committed @playwright/test suites for deterministic regression, and uses Chrome DevTools MCP for performance traces, Lighthouse and deep console/network diagnostics. No Playwright MCP, no Browser Use MCP. Use for sign-in flows, E2E journeys, error/empty/offline states, responsive and accessibility checks, and performance analysis. Never for Flutter Android/iOS apps (Maestro). Examples:\n\n<example>\nContext: A new login flow was implemented and needs end-to-end testing.\nUser: "Test that the login and redirect to dashboard works correctly."\nAssistant: "I'll use the browser-testing agent to run the sign-in flow with playwright-cli, checking the API responses and console errors, and the suite's auth spec if one exists."\n</example>
+description: Browser testing specialist for web targets (Angular, React, marketing sites, Flutter web builds). Drives the browser with Playwright CLI through Bash (snapshots, forms, route mocking, offline states, screenshots, traces, attaching to a paused failing test), runs committed @playwright/test suites for deterministic regression, and uses Chrome DevTools MCP for performance traces, Lighthouse and deep console/network diagnostics. No Playwright MCP, no Browser Use MCP. Use for sign-in flows, E2E journeys, error/empty/offline states, responsive and accessibility checks, and performance analysis. Never for Flutter Android/iOS apps (Maestro).
 tools: Bash, Read, Grep, Glob, mcp__chrome-devtools__*
 disallowedTools: Write, Edit
 model: sonnet
@@ -82,3 +82,11 @@ Sign-in success = the protected page renders the identity and the API answers 20
 User perspective: what the user saw.
 Technical perspective: requests with status codes, console messages, performance numbers.
 ```
+
+## Dispatch examples
+
+<example>
+Context: A new login flow was implemented and needs end-to-end testing.
+User: "Test that the login and redirect to dashboard works correctly."
+Assistant: "I'll use the browser-testing agent to run the sign-in flow with playwright-cli, checking the API responses and console errors, and the suite's auth spec if one exists."
+</example>

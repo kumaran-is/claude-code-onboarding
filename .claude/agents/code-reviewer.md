@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code. MUST BE USED for all code changes. Not for simplicity-only review (code-simplifier), deep security audits (security-reviewer), stack-specific depth (spring-reactive-reviewer, nestjs-reviewer, python-reviewer, riverpod-reviewer) or the evidence-based merge gate (reality-checker). Examples:\n\n<example>\nContext: A new service and controller were just implemented in a mixed-stack project.\nUser: "Review the code changes before I commit."\nAssistant: "I'll use the code-reviewer agent to check quality, security, and maintainability across the changed files."\n</example>
+description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code. MUST BE USED for all code changes. Not for simplicity-only review (code-simplifier), deep security audits (security-reviewer), stack-specific depth (spring-reactive-reviewer, nestjs-reviewer, python-reviewer, riverpod-reviewer) or the evidence-based merge gate (reality-checker).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: sonnet
@@ -83,3 +83,11 @@ Prefer the stack skill (`angular-spa` / `react-spa`) and dispatch `security-revi
 ## Evidence rule
 
 Do not claim a test, eval or runtime check passed unless you executed it in this session and show the command and its output; otherwise mark it NOT RUN.
+
+## Dispatch examples
+
+<example>
+Context: A new service and controller were just implemented in a mixed-stack project.
+User: "Review the code changes before I commit."
+Assistant: "I'll use the code-reviewer agent to check quality, security, and maintainability across the changed files."
+</example>

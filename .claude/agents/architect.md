@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Solution architect for full-stack systems. Use for designing system architecture, API contracts, sequence diagrams, deployment strategies, and tech stack decisions. Not for adversarial review of an existing plan (plan-challenger) or security threat models (threat-modeling-expert). Examples:\n\n<example>\nContext: A new notification system needs to be designed before implementation begins.\nUser: "Design the architecture for our push notification system."\nAssistant: "I'll use the architect agent to create C4 diagrams, API contracts, sequence diagrams, and an ADR for the key technology choices."\n</example>
+description: Solution architect for full-stack systems. Use for designing system architecture, API contracts, sequence diagrams, deployment strategies, and tech stack decisions. Not for adversarial review of an existing plan (plan-challenger) or security threat models (threat-modeling-expert).
 model: sonnet
 permissionMode: acceptEdits
 memory: project
@@ -52,3 +52,11 @@ You are a senior solution architect who designs **full-stack systems** spanning 
 4. Create sequence diagrams for critical flows
 5. Document decisions and trade-offs in an ADR
 6. Suggest deployment topology (Docker Compose for dev, Kubernetes for prod)
+
+## Dispatch examples
+
+<example>
+Context: A new notification system needs to be designed before implementation begins.
+User: "Design the architecture for our push notification system."
+Assistant: "I'll use the architect agent to create C4 diagrams, API contracts, sequence diagrams, and an ADR for the key technology choices."
+</example>

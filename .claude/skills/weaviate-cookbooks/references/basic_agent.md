@@ -15,7 +15,7 @@ Docs to reference if needed:
 - Use a virtual environment via `venv`
 - Use `uv` for Python project/dependency management.
 - Do not manually author `pyproject.toml` or `uv.lock`; let `uv` generate/update them.
-- Use this install set: `uv add dspy python-dotenv`
+- Use this install set: `uv add dspy==3.5.0 python-dotenv==1.2.4`
 - Customise this cookbook to the users specification, ask them for details if not given.
 
 ## Env Rules

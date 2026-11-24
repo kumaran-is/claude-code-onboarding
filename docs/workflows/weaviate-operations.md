@@ -178,8 +178,8 @@ import weaviate
 import weaviate.classes as wvc
 import os
 
-# Connect (v4 client — always use connect_to_wcs, not weaviate.Client())
-client = weaviate.connect_to_wcs(
+# Connect (v4 client: connect_to_weaviate_cloud; connect_to_wcs is deprecated since 4.6.2, weaviate.Client() is v3)
+client = weaviate.connect_to_weaviate_cloud(
     cluster_url=os.environ["WEAVIATE_URL"],
     auth_credentials=wvc.init.Auth.api_key(os.environ["WEAVIATE_API_KEY"]),
 )
@@ -223,7 +223,7 @@ finally:
 - **Not listing collections first** — searching a non-existent collection returns a confusing error
 - **Alpha=1.0 (pure vector) for keyword-heavy queries** — product codes and serial numbers match better with BM25; use hybrid
 - **Missing generative module** — `/weaviate:ask` requires the collection to have `generative-openai` or equivalent configured at creation
-- **Using v3 client syntax** — `weaviate.Client()` is v3; always use `weaviate.connect_to_wcs()` for v4
+- **Using v3 or deprecated v4 connect calls** — `weaviate.Client()` is v3 and `weaviate.connect_to_wcs()` is deprecated; use `weaviate.connect_to_weaviate_cloud()` / `connect_to_local()` (weaviate-client 4.24.1, server ≥ 1.27.0). `graphql_raw_query()` is deprecated (Dep031): use the typed `query.*` API
 - **Forgetting `client.close()`** — v4 client holds gRPC connections; always close in `finally`
 
 ## Related Workflows

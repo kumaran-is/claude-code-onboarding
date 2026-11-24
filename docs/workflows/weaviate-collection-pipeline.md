@@ -197,7 +197,7 @@ Returns: AI-generated answer with source citations
 - **Multi-tenancy after creation** — cannot be added retroactively; decide before creating collection
 - **Vectorizer mismatch between index time and query time** — use same vectorizer for both ingestion and queries
 - **Missing `client.close()`** — Weaviate v4 client holds connections; always close in `finally`
-- **Using v3 client syntax with v4** — `weaviate.connect_to_wcs()` not `weaviate.Client()`; always query Context7 for current API
+- **Using v3 client syntax with v4** — `weaviate.connect_to_weaviate_cloud()` / `connect_to_local()`, not `weaviate.Client()` (v3) or the deprecated `connect_to_wcs()`; run new code under `python -W error::DeprecationWarning` once to surface Dep0xx warnings
 - **No error handling on `generate` calls** — generative module calls can fail; wrap in try/except with logging
 
 ## Related Workflows

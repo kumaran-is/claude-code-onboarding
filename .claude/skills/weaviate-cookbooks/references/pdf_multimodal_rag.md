@@ -26,7 +26,7 @@ A multimodal RAG system consists of two main pipelines:
 
 **Requirements:**
 - Weaviate Cloud instance (Weaviate Embeddings is cloud-only)
-- Python 3.11 or higher
+- Python 3.14 (toolkit target; every pin below resolves on 3.14)
 - `uv` package manager ([installation guide](https://docs.astral.sh/uv/getting-started/installation/))
 - [Ollama](https://ollama.com/) installed locally for VLM generation
 
@@ -61,7 +61,7 @@ brew install uv
 Install required libraries using `uv`:
 
 ```bash
-uv add weaviate-client
+uv add weaviate-client==4.24.1
 ```
 
 **Package breakdown:**
@@ -71,13 +71,13 @@ uv add weaviate-client
 
 ```bash
 # For loading Hugging Face datasets
-uv add datasets
+uv add datasets==5.2.0
 
 # For PDF processing (pdf2image requires poppler to be installed!)
-uv add pdf2image pillow
+uv add pdf2image==1.17.0 pillow==13.0.0
 
 # For VLM generation via Ollama
-uv add ollama
+uv add ollama==0.6.3
 ```
 
 ### Step 2: Prepare Your Document Dataset

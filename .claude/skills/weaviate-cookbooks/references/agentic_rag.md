@@ -20,9 +20,9 @@ First implement the basic agent from [here](./basic_agent.md). Then modify accor
 - Use a virtual environment via `venv`
 - Use `uv` for Python project/dependency management.
 - Do not manually author `pyproject.toml` or `uv.lock`; let `uv` generate/update them.
-- Use this install set: `uv add weaviate-client python-dotenv dspy`
-- Add `weaviate-agents` if using the Query Agent: `uv add "weaviate-client[agents]"`
-- Add `elysia-ai` if using Elysia: `uv add elysia-ai`
+- Use this install set: `uv add weaviate-client==4.24.1 python-dotenv==1.2.4 dspy==3.5.0`
+- Add `weaviate-agents==1.9.1` if using the Query Agent: `uv add "weaviate-client[agents]==4.24.1"`
+- Add `elysia-ai==0.2.8` if using Elysia: `uv add elysia-ai==0.2.8` (its PyPI metadata declares `requires-python <3.13`: check it installs on your runtime before choosing it on Python 3.14)
 - Customise this cookbook to the users specification, ask them for details if not given.
 
 Assume the user has data already to be used, do not create data unless asked to.

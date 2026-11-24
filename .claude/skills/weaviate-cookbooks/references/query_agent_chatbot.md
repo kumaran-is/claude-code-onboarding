@@ -14,7 +14,7 @@ Read first:
 - Use `uv` for Python project/dependency management.
 - Do not manually author `pyproject.toml` or `uv.lock`; let `uv` generate/update them.
 - Use this backend install set:
-  - `uv add fastapi 'uvicorn[standard]' weaviate-client weaviate-agents pydantic-settings sse-starlette python-dotenv`
+  - `uv add fastapi==0.165.0 'uvicorn[standard]==0.54.0' weaviate-client==4.24.1 weaviate-agents==1.9.1 pydantic-settings==2.16.3 sse-starlette==3.7.1 python-dotenv==1.2.4`
 - If `uv` not available, create a `requirements.txt` for pip installation
 - Depending on user request: consider combining this app with the Data Explorer.
   - If the user explicitly only wants chatbot, create this app independently
@@ -30,7 +30,7 @@ Project bootstrap:
 uv init chatbot
 cd chatbot
 uv venv
-uv add fastapi 'uvicorn[standard]' weaviate-client weaviate-agents pydantic-settings sse-starlette python-dotenv
+uv add fastapi==0.165.0 'uvicorn[standard]==0.54.0' weaviate-client==4.24.1 weaviate-agents==1.9.1 pydantic-settings==2.16.3 sse-starlette==3.7.1 python-dotenv==1.2.4
 ```
 
 ### Workflow Contract

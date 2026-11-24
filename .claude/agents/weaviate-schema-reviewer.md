@@ -31,7 +31,7 @@ You are a Weaviate schema specialist reviewing collection definitions for correc
 - [ ] **No hardcoded API keys**: No `api_key="sk-..."` or `WEAVIATE_API_KEY="..."` literals in code. Must use `os.environ["WEAVIATE_API_KEY"]`.
 - [ ] **No hardcoded OpenAI/Cohere keys**: API keys for vectorizer models must come from environment, not code.
 - [ ] **Valid vectorizer**: Vectorizer config references a supported model name. Flag if model name looks guessed.
-- [ ] **Client v4 API**: Code uses `weaviate.connect_to_*()` (v4), not deprecated `weaviate.Client()` (v3).
+- [ ] **Client v4 API**: Code uses `weaviate.connect_to_weaviate_cloud()` / `connect_to_local()` / `connect_to_custom()` (v4), not `weaviate.Client()` (v3). `connect_to_wcs()` (deprecated since 4.6.2) and `graphql_raw_query()` (Dep031) are HIGH. Pin `weaviate-client==4.24.1` (requires a server ≥ 1.27.0); evidence: a test or script run under `python -W error::DeprecationWarning` against a real server.
 - [ ] **Tenant scope on multi-tenant collections**: every `.query.*`, `.data.*`, `.batch.*` and `.aggregate.*` call on a multi-tenant collection goes through `.with_tenant(tenant_id)`, and `tenant_id` comes from the verified auth context — never request body, tool arguments or model output. An optional (`None`-able) tenant parameter is a leak pattern.
 - [ ] **Hybrid on self-provided vectors passes `vector=`**: a collection created with `Configure.Vectors.self_provided()` has no server vectorizer, so `hybrid(query=...)` without `vector=<query embedding>` has no vector leg and silently ranks by keywords only. Same for `near_text` (unsupported without a vectorizer — use `near_vector`). The query embedding must use the same model and task type as the stored vectors.
 

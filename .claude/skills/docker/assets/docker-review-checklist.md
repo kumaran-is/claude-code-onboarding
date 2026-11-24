@@ -1,6 +1,6 @@
 # Docker Review Checklist
 
-Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 24, Spring Boot WebFlux, Python FastAPI, TypeScript/Fastify and MCP servers on Node 26.
+Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 24, Spring Boot 4.2 / Java 25, Python FastAPI, TypeScript/Fastify and MCP servers on Node 26.
 
 ---
 
@@ -13,7 +13,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Base image selection matches stack:
   - NestJS: `node:24-alpine` (not node:18, not node:22)
   - TypeScript/Fastify services and MCP servers: `node:26.13.1-trixie-slim` (or `node:26.13.1-alpine3.23` when every native dependency ships musl builds; runtime may be `gcr.io/distroless/nodejs26-debian13:nonroot`); builder and runtime on the same Node major and libc
-  - Spring Boot: `eclipse-temurin:21-jre-alpine` runtime (not JDK, not full Debian)
+  - Spring Boot: `eclipse-temurin:25-jre` runtime (JRE, not JDK)
   - Python: `python:3.14.10-slim-trixie@sha256:<index-digest>` (patch tag matches `.python-version`; not the full image, not bookworm/bullseye)
 - [ ] RUN commands that modify the same layer are consolidated (avoids layer bloat)
 - [ ] Package manager cache cleaned in the same RUN layer (or use `--mount=type=cache`)
@@ -28,7 +28,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] `HEALTHCHECK` configured with appropriate interval, timeout, start-period, and retries
   - NestJS (alpine has busybox wget): `wget --spider http://localhost:3000/health/live`
   - Node 26 slim / distroless (no curl or wget): exec-form `node -e "fetch('http://127.0.0.1:3000/health/live')..."` (distroless: `/nodejs/bin/node`)
-  - Spring Boot: `wget --spider http://localhost:8080/actuator/health`
+  - Spring Boot (`eclipse-temurin:25-jre` ships no curl or wget; install curl in the runtime stage): `curl -fsS http://localhost:8080/actuator/health`
   - Python: stdlib only, on the LIVENESS path: `python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=3).status == 200 else 1)"` (a slim image has no curl, and httpx may not be a runtime dependency)
 - [ ] Configuration is not baked into the image: no `ENV` for env-varying values, no secrets in `ARG`; required settings have no code default
 - [ ] `.dockerignore` is an ALLOW-list (`*` then `!src`, `!pyproject.toml`, `!uv.lock`) and the build-context size is checked; image file list compared before/after the change
@@ -76,8 +76,8 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Prisma client generated in builder stage (`pnpm prisma generate`)
 - [ ] `pnpm prune --prod` run before copying node_modules to runner
 
-### Spring Boot WebFlux 3.5.x / Java 21
-- [ ] Runtime stage uses `eclipse-temurin:21-jre-alpine` (JRE, not JDK)
+### Spring Boot 4.2 / Java 25
+- [ ] Runtime stage uses `eclipse-temurin:25-jre` (JRE, not JDK); build stage `eclipse-temurin:25-jdk` running `./mvnw` (copy `mvnw` + `.mvn/`; never the `maven:*` image, which has no arm64 build)
 - [ ] JVM flags include `-XX:+UseContainerSupport` and `-XX:MaxRAMPercentage=75.0`
 - [ ] `ENTRYPOINT` uses `-Djava.security.egd=file:/dev/./urandom` for faster startup
 - [ ] `start-period` in HEALTHCHECK is at least 40s (Spring Boot startup time)

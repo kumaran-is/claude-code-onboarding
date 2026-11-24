@@ -105,7 +105,7 @@ Executed results:
 
 ---
 
-## Spring Boot 3.5.x WebFlux — Actuator Health
+## Spring Boot 4.2 — Actuator Health
 
 Spring Boot exposes `/actuator/health` automatically via `spring-boot-starter-actuator`.
 
@@ -130,7 +130,7 @@ management:
 
 Cloud Run health check target: `GET /actuator/health` → 200 with `{"status":"UP"}`
 
-Custom health indicator:
+Custom health indicator (WebFlux + R2DBC; on MVC implement `HealthIndicator` over JDBC):
 ```java
 // src/main/java/com/example/health/DatabaseHealthIndicator.java
 @Component

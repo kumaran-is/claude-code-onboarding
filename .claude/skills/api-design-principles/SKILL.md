@@ -1,6 +1,6 @@
 ---
 name: api-design-principles
-description: Use before designing any REST API endpoint — covers URL structure, HTTP method semantics, pagination, caching, idempotency, and bulk operations across Python FastAPI, NestJS 11.x, and Spring Boot WebFlux 3.5.x. Complements openapi-spec-generation (spec format) and stack-specific implementation skills (code patterns).
+description: Use before designing any REST API endpoint — covers URL structure, HTTP method semantics, pagination, caching, idempotency, and bulk operations across Python FastAPI, NestJS 11.x, and Spring Boot 4.2 (MVC default, WebFlux when justified). Complements openapi-spec-generation (spec format) and stack-specific implementation skills (code patterns).
 allowed-tools: Read
 metadata:
   triggers: REST API design, API versioning, idempotency key, ETag caching, bulk operations, pagination pattern, API checklist, URL design, HTTP methods, REST principles, CORS, rate limiting header
@@ -18,7 +18,7 @@ last-reviewed: "2026-03-14"
 
 # API Design Principles
 
-Stack-agnostic REST design principles for APIs built with Python FastAPI, NestJS 11.x, or Spring Boot WebFlux 3.5.x. Use this skill during the design phase — before writing controllers or route handlers.
+Stack-agnostic REST design principles for APIs built with Python FastAPI, NestJS 11.x, or Spring Boot 4.2 (MVC default, WebFlux when justified). Use this skill during the design phase — before writing controllers or route handlers.
 
 ## When to Use
 
@@ -36,7 +36,7 @@ Stack-agnostic REST design principles for APIs built with Python FastAPI, NestJS
 |-------|-------|
 | **api-design-principles** (this skill) | Design phase — REST semantics, patterns, checklist |
 | **openapi-spec-generation** | Documentation phase — OpenAPI 3.1 spec, developer guide |
-| **java-spring-api** | Implementation — Spring WebFlux controllers, services |
+| **java-spring-api** | Implementation — Spring MVC (default) or WebFlux controllers, services |
 | **nestjs-api** | Implementation — NestJS modules, controllers, DTOs |
 | **python-dev** | Implementation — FastAPI routes, Pydantic models |
 
@@ -78,7 +78,7 @@ Once the design is finalized, hand off to `openapi-spec-generation` to generate 
 
 | File | Content | Load When |
 |------|---------|-----------|
-| `reference/rest-design-principles.md` | URL structure, HTTP methods, pagination, caching, idempotency, bulk ops, CORS — examples for FastAPI, NestJS, Spring WebFlux | Designing new endpoints or reviewing REST compliance |
+| `reference/rest-design-principles.md` | URL structure, HTTP methods, pagination, caching, idempotency, bulk ops, CORS — examples for FastAPI, NestJS, Spring Boot (reactive WebFlux samples) | Designing new endpoints or reviewing REST compliance |
 | `reference/collection-read-fanout.md` | N+1 across network, ORM, cache and model calls: pre-flight questions, set-based reads, scope-preserving batching, single-flight, pagination completeness, request-budget tests with controls | Designing or reviewing any endpoint, screen or read model that returns a collection |
 | `assets/api-design-checklist.md` | 60-item pre-implementation checklist (REST only) with stack-specific items for all 3 backends | Before starting any new endpoint or reviewing an existing API |
 

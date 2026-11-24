@@ -92,8 +92,8 @@ START: What is your MAIN architectural concern?
 - Add Repository: when you need unit testing with mocks OR when data source may change
 - Add CQRS: only with `@nestjs/cqrs` when command/query handlers diverge meaningfully
 
-### Spring Boot WebFlux
-- Default: Repository interface (Spring Data R2DBC handles it)
+### Spring Boot (MVC default, WebFlux when justified)
+- Default: Repository interface (Spring Data JPA/JDBC handles it; Spring Data R2DBC on WebFlux)
 - Add Domain Services: for complex business logic spanning aggregates
 - Add Event-driven: use Spring Application Events for in-process, Kafka for cross-service
 

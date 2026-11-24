@@ -1,6 +1,6 @@
 # API Design Checklist
 
-Pre-implementation checklist for REST APIs. Run before writing any controller or route handler. Covers all 3 backend stacks: Python FastAPI, NestJS 11.x, Spring Boot WebFlux 3.5.x.
+Pre-implementation checklist for REST APIs. Run before writing any controller or route handler. Covers all 3 backend stacks: Python FastAPI, NestJS 11.x, Spring Boot 4.2 (MVC default, WebFlux when justified).
 
 ---
 
@@ -46,7 +46,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] Pagination metadata included in response (`total`, `pages`, `has_more`)
 - [ ] **FastAPI**: `page_size: int = Query(default=20, le=100)`
 - [ ] **NestJS**: `@Max(100) @Type(() => Number) pageSize: number = 20`
-- [ ] **Spring WebFlux**: `@RequestParam(defaultValue = "20") @Max(100) int size`
+- [ ] **Spring Boot**: `@RequestParam(defaultValue = "20") @Max(100) int size`
 
 ## Filtering and Sorting
 
@@ -71,7 +71,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] `requestId` included for log correlation
 - [ ] **FastAPI**: one envelope for domain errors, `RequestValidationError` (422 without echoing `input`), `HTTPException` and a catch-all 500 — `python-dev/reference/fastapi-error-handling.md`
 - [ ] **NestJS**: `HttpException` subclasses or `@Catch()` filter returning `ProblemDetail`
-- [ ] **Spring WebFlux**: `@ControllerAdvice` returning `ProblemDetail` (RFC 9457)
+- [ ] **Spring Boot**: `@ControllerAdvice` returning `ProblemDetail` (RFC 9457)
 
 ## Authentication and Authorization
 
@@ -90,7 +90,7 @@ Pre-implementation checklist for REST APIs. Run before writing any controller or
 - [ ] `Retry-After` header set on 429 responses
 - [ ] **FastAPI**: `slowapi` or `fastapi-limiter`; routes with path parameters use a constant shared scope; enumeration/spend limits keyed on user id; shared storage wired — `python-dev/reference/fastapi-rate-limiting.md`
 - [ ] **NestJS**: `@nestjs/throttler` with `ThrottlerGuard`
-- [ ] **Spring WebFlux**: Bucket4j or custom `WebFilter`
+- [ ] **Spring Boot**: Bucket4j, or a custom servlet `Filter` (MVC) / `WebFilter` (WebFlux)
 
 ## Caching (new endpoints serving GET responses)
 

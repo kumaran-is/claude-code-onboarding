@@ -28,7 +28,7 @@ graph TB
     User[fa:fa-user End User]
     Angular[Angular SPA<br/>Browser]
     Flutter[Flutter App<br/>iOS / Android]
-    Backend[Spring Boot API<br/>Java 21 / WebFlux]
+    Backend[Spring Boot API<br/>Java 25 / Spring Boot 4.2]
     PG[(PostgreSQL)]
     Firebase[Firebase<br/>Auth + Firestore]
     Redis[(Redis Cache)]

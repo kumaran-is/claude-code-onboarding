@@ -11,12 +11,12 @@ Persists package manager caches across builds — eliminates re-downloading depe
 ### Maven (Spring Boot)
 
 ```dockerfile
-# Cache ~/.m2 across builds — Maven never re-downloads unchanged deps
+# Cache ~/.m2 across builds — the wrapper's Maven and unchanged deps are never re-downloaded
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn dependency:go-offline -q
+    ./mvnw -B -ntp dependency:go-offline
 
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn package -DskipTests -q
+    ./mvnw -B -ntp -DskipTests package
 ```
 
 ### npm (Node.js / NestJS / Fastify)
@@ -124,15 +124,16 @@ CMD ["dist/main.js"]
 ### Java Distroless
 
 ```dockerfile
-FROM maven:3.9-eclipse-temurin-21-alpine AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -q
+COPY mvnw pom.xml ./
+COPY .mvn ./.mvn
+RUN ./mvnw -B -ntp dependency:go-offline
 COPY src ./src
-RUN mvn package -DskipTests -q
+RUN ./mvnw -B -ntp -DskipTests package
 
-# Distroless Java 21 runtime
-FROM gcr.io/distroless/java21-debian12
+# Distroless Java 25 runtime
+FROM gcr.io/distroless/java25-debian13
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080

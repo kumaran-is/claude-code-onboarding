@@ -135,7 +135,7 @@ After implementation, dispatch the matching reviewer:
 
 | Changed Files | Reviewer Agent |
 |--------------|----------------|
-| `*.java`, Spring annotations | `spring-reactive-reviewer` |
+| `*.java`, Spring annotations | `spring-boot-reviewer` |
 | `*.ts` with NestJS decorators | `nestjs-reviewer` |
 | `*.dart`, Riverpod providers | `riverpod-reviewer` |
 | `*.dart`, auth / secure storage | `flutter-security-expert` |

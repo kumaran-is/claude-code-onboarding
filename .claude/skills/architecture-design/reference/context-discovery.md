@@ -73,7 +73,7 @@ Use this to calibrate architecture complexity before recommending any pattern.
 |----------------|---------|----------|--------|----------|
 | MVP | FastAPI / NestJS | Angular (simple) | Flutter | PostgreSQL |
 | SaaS | NestJS + Prisma | Angular + Riverpod | Flutter | PostgreSQL + Redis |
-| Enterprise | Spring Boot WebFlux | Angular + state mgmt | Flutter | PostgreSQL + Kafka |
+| Enterprise | Spring Boot 4.2 (MVC default, WebFlux when justified) | Angular + state mgmt | Flutter | PostgreSQL + Kafka |
 
 ## Contradiction Check
 

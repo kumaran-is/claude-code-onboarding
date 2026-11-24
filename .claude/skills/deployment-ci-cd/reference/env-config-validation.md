@@ -70,7 +70,7 @@ export class AppModule {}
 
 ---
 
-## Spring Boot 3.5.x — `@ConfigurationProperties` Validation
+## Spring Boot 4.2 — `@ConfigurationProperties` Validation
 
 ```java
 // src/main/java/com/example/config/AppProperties.java

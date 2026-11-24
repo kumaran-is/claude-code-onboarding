@@ -35,5 +35,5 @@ Thin entry point: this skill forks into the `code-reviewer` agent ([`.claude/age
 ## Not for
 
 - Complexity only → `code-simplifier`; comment accuracy → `comment-analyzer`; swallowed errors → `silent-failure-hunter`
-- Security audit → `security-reviewer`; stack depth → the stack reviewer (`nestjs-reviewer`, `python-reviewer`, `spring-reactive-reviewer`, `riverpod-reviewer`)
+- Security audit → `security-reviewer`; stack depth → the stack reviewer (`nestjs-reviewer`, `python-reviewer`, `spring-boot-reviewer`, `riverpod-reviewer`)
 - Reviewing someone else's GitHub PR for posting → `pr-review`

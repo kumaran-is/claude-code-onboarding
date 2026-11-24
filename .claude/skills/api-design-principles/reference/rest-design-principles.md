@@ -1,6 +1,6 @@
 # REST Design Principles
 
-Patterns and conventions for designing REST APIs across Python FastAPI, NestJS 11.x, and Spring Boot WebFlux 3.5.x. Examples are given for all 3 stacks where behavior differs.
+Patterns and conventions for designing REST APIs across Python FastAPI, NestJS 11.x, and Spring Boot 4.2 (MVC default, WebFlux when justified). Examples are given for all 3 stacks where behavior differs; the Spring samples are reactive (WebFlux); Spring MVC equivalents (the default) are in `java-spring-api/reference/spring-boot-templates.md`.
 
 ---
 
@@ -744,7 +744,7 @@ export class HealthController {
 }
 ```
 
-**Spring Boot WebFlux** — use Spring Actuator:
+**Spring Boot** — use Spring Actuator:
 ```yaml
 # application.yml
 management:

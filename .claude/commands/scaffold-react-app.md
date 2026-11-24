@@ -36,7 +36,7 @@ forms) come from the `react-spa` reference-app validation.
 | `vitest`, `jsdom` | `5.1.1`, `31.0.1` |
 | `@testing-library/react`, `/dom`, `/user-event`, `/jest-dom` | `16.3.3`, `10.4.2`, `14.6.13`, `8.0.0` |
 | `msw` | `3.0.7` |
-| `@playwright/test`, `@axe-core/playwright` | `1.65.1`, `4.14.0` |
+| `@playwright/test`, `@axe-core/playwright` | `1.65.1`, `4.14.1` |
 | `@types/react`, `@types/react-dom`, `@types/node` | `19.3.0`, `19.3.0`, `26.6.6` (match the Node major you run) |
 
 Node 26.13.1 (Active LTS); the stack's floor is `^22.22.0 || ^24.15.0 || >=26.0.0` (React Router 8 `>=22.22.0`, jsdom 31
@@ -58,7 +58,7 @@ sample feature.
 2. **Runtime dependencies** (exact pins):
    `npm i -E react@19.3.1 react-dom@19.3.1 react-router@8.5.2 @tanstack/react-query@5.108.4 react-hook-form@7.92.0 @hookform/resolvers@7.0.8 zod@4.6.7 react-error-boundary@6.1.6 dompurify@3.5.0`
 3. **Dev dependencies**: `npm uninstall oxlint`, then
-   `npm i -DE typescript@6.0.3 vite@8.3.8 @vitejs/plugin-react@6.3.0 @types/react@19.3.0 @types/react-dom@19.3.0 @types/node@26.6.6 babel-plugin-react-compiler@1.0.0 @rolldown/plugin-babel@0.3.1 @babel/core@8.1.3 eslint@10.15.0 @eslint/js@10.0.1 typescript-eslint@8.74.0 globals@17.14.0 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.8 eslint-plugin-jsx-a11y-x@0.2.0 @tanstack/eslint-plugin-query@5.108.4 vitest@5.1.1 jsdom@31.0.1 @testing-library/react@16.3.3 @testing-library/dom@10.4.2 @testing-library/user-event@14.6.13 @testing-library/jest-dom@8.0.0 msw@3.0.7 @playwright/test@1.65.1 @axe-core/playwright@4.14.0`
+   `npm i -DE typescript@6.0.3 vite@8.3.8 @vitejs/plugin-react@6.3.0 @types/react@19.3.0 @types/react-dom@19.3.0 @types/node@26.6.6 babel-plugin-react-compiler@1.0.0 @rolldown/plugin-babel@0.3.1 @babel/core@8.1.3 eslint@10.15.0 @eslint/js@10.0.1 typescript-eslint@8.74.0 globals@17.14.0 eslint-plugin-react-hooks@7.1.1 eslint-plugin-react-refresh@0.5.8 eslint-plugin-jsx-a11y-x@0.2.0 @tanstack/eslint-plugin-query@5.108.4 vitest@5.1.1 jsdom@31.0.1 @testing-library/react@16.3.3 @testing-library/dom@10.4.2 @testing-library/user-event@14.6.13 @testing-library/jest-dom@8.0.0 msw@3.0.7 @playwright/test@1.65.1 @axe-core/playwright@4.14.1`
    Add the `overrides` block from `reference/tooling.md` (patched `minimatch` for the a11y plugin), run
    `npm install`, then pin the remaining template carets to exact versions in `package.json` and set the scripts from
    `reference/tooling.md` (`build`: `tsc -b && vite build`, `lint`, `test`, `e2e`).

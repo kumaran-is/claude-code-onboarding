@@ -215,7 +215,7 @@ agent_registry:
     - name: reality-checker
       domain: Final UI/feature validation gate — requires screenshot evidence. Defaults to NEEDS WORK.
       can_write: false
-      note: "Web UI: Chrome DevTools MCP / playwright-cli. Flutter Android/iOS: Maestro evidence. Only returns APPROVED with visual proof."
+      note: "Web UI: Playwright CLI / @playwright/test evidence (Chrome DevTools MCP for performance). Flutter Android/iOS: Maestro evidence. Only returns APPROVED with visual proof."
 
     - name: adk-reviewer
       domain: "Read-only reviewer for Google ADK 2.15.0 agent code"
@@ -1069,7 +1069,7 @@ dispatch_examples:
       - security-reviewer
 
   - scenario: "Browser-based E2E test or performance profiling (web target: Angular, React, website)"
-    trigger: "Playwright, Puppeteer, or Chrome DevTools test automation"
+    trigger: "Playwright CLI, Playwright Test, Puppeteer, or Chrome DevTools test automation"
     primary: browser-testing
     reviewers: []
     notes: "browser-testing is read-only — it validates but does not write application code. Web targets only."

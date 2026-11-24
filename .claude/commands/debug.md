@@ -68,6 +68,7 @@ Stop. Do not attempt Fix #4. Per `systematic-debugging` skill Phase 4.5:
 
 - Full 4-phase protocol: `.claude/skills/systematic-debugging/SKILL.md`
 - Supporting techniques in same directory: `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`
+- Failing web E2E test (`@playwright/test`): read `error-context.md` and the trace (`npx playwright show-trace`), then reproduce with `npx playwright test <spec> --debug=cli` and `npx playwright cli attach <session>` (browser-testing SKILL.md, "Debugging a failing Playwright test"). A test that passes on retry is flaky: find the cause with `--repeat-each=20 --shuffle`, never by adding sleeps
 - After the fix is confirmed: the reproducing test passes and `/verify` reports the stack PASS with its own exit code; `/validate-changes` is optional advisory review on top
 - Use instead when: `/rag-debug` — a RAG system returns a wrong, missing or leaked answer; `error-detective` agent — the evidence is production logs or traces rather than a local repro
 

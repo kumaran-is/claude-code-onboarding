@@ -23,6 +23,7 @@ Scan the file list for tech signals and build a dispatch list:
 | `*.ts`/`*.html` under Angular project (`angular.json` present) | `code-reviewer` (Angular) |
 | `*.tsx`/`*.jsx` (React) | `code-reviewer` (React) |
 | UI templates/widgets changed (Angular, React, Flutter) | + `accessibility-auditor` |
+| Web UI behaviour changed (routes, forms, auth, journeys, error states), or `playwright.config.*` / `e2e/**` changed | + `pr-test-analyzer` (missing Playwright spec, flaky-test shapes; triggers in `.claude/rules/web-frontend.md`) |
 | GenUI catalog, renderer or action (`**/a2ui/**`, `**/genui/**`, `*catalog*.json`) | `genui-contract-reviewer` |
 | MCP server code (`**/mcp/**`, `@modelcontextprotocol/*`) | `code-reviewer` + `security-reviewer` (tool contracts, authz); checklist `mcp-builder/reference/mcp-quality-standards.md` |
 | `*.dart` or `pubspec.yaml` | `riverpod-reviewer` |

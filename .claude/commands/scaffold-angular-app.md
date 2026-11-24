@@ -145,7 +145,11 @@ interface. Replace every placeholder before step 12 — never ship them.
     `null`→`string` assignment compiled with `tsc --ignoreConfig` exits 2 with TS7006/TS2322; with
     `--strict false`, exit 0). Writing `"strict": true` in `tsconfig.json` is optional, for clarity.
     `tsc` does not check templates; `ng build` does. Any non-zero exit → fix before finishing.
-    E2E (recommended): Playwright + `@axe-core/playwright` via the `browser-testing` skill.
+    E2E (recommended, required once the app has a real journey; triggers in `.claude/rules/web-frontend.md`):
+    `npm i -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.1`, `npx playwright install chromium`,
+    then `playwright.config.ts` from `browser-testing/reference/playwright-test-suite.md` with
+    `webServer.command: 'npm exec --no -- ng serve --port 4200'`; gitignore `playwright/.auth/` and `.playwright-cli/`.
+    The same install gives Claude the Playwright CLI (`npx --no-install playwright cli`).
 13. **Summary** — which files the CLI generated vs which were hand-written (steps 5–11), the exit codes,
     how to run (`npm start`), next steps.
 

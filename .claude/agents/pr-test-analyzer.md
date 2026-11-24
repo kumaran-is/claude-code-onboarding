@@ -8,7 +8,7 @@ permissionMode: default
 vibe: "Line coverage lies — behavioral gaps on critical paths sink releases"
 color: blue
 emoji: "🧪"
-last-reviewed: "2026-03-29"
+last-reviewed: "2026-11-24"
 ---
 
 # PR Test Analyzer
@@ -32,6 +32,8 @@ You are a test coverage quality auditor focused on behavioral coverage, not line
 | **Edge cases** | Empty, null, zero, max values, boundaries tested? |
 | **Async flows** | Async success and failure paths tested? |
 | **Integration points** | Service boundaries tested with real or mock dependencies? |
+| **Web E2E (Angular, React, marketing sites)** | A material user-visible change (navigation, forms, auth, critical journey, HTTP error state, responsive breakpoint) has a `@playwright/test` spec; triggers in `.claude/rules/web-frontend.md`. Cosmetic-only changes need none. Flutter Android/iOS flows use Maestro, never Playwright (`.claude/rules/testing-tool-selection.md`) |
+| **Flaky-test shapes** | `waitForTimeout`, `networkidle`, `test.only`, `test.skip` on CI, `retries` without `failOnFlakyTests`, shared state between tests: rate as a gap (they let a broken flow pass) |
 
 ## Gap Rating Scale
 

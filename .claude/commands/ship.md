@@ -66,6 +66,7 @@ Run every block of [`/verify`](verify.md) for the detected stacks with `MODE=pre
 # Flutter — release build for each shipped platform (run LAST, after version bump and changelog are final)
 flutter build apk --release > /tmp/build.log 2>&1; echo "BUILD EXIT:$?"; tail -10 /tmp/build.log
 ```
+- Web E2E: the `/verify` web block runs `playwright test --fail-on-flaky-tests` and passes only with exit 0 and more than zero executed tests; a missing browser or server is BLOCKED. Interactive Playwright CLI checks are evidence for review, never a substitute for the committed suite.
 - Flutter mobile UI/E2E gates run with Maestro only (`.claude/rules/testing-tool-selection.md`); a missing Maestro/device is BLOCKED, never a browser substitute. An iOS build on a non-macOS host is BLOCKED.
 - Before releasing an MCP server, also review `.mcp.json` hygiene from `session-mcp-governance.sh` (unpinned packages, secrets in args).
 - Zero findings from a scan is evidence only with a positive control; a diff-aware check on uncommitted work is vacuous.

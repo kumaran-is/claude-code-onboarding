@@ -14,7 +14,7 @@ Trigger words set the mode: "what if / options / compare" → `/brainstorm`, no 
 
 ## Test-First
 
-New logic: write the test that defines success, implement until it passes, show both. Bug fix: a test that reproduces the bug first. Trivial changes (rename, config): run the existing tests. Correctness first; optimize only a profiled bottleneck, measured before and after.
+Write the test that defines success before the code, implement until it passes, show both; which tests each kind of change needs: `first-principles.md` Layer 2. Correctness first; optimize only a profiled bottleneck, measured before and after.
 
 ## Project Creation
 

@@ -115,7 +115,7 @@ After writing code, before reporting done:
 
 - **Trace with a concrete example:** Walk through your code with real input values, step by step
 - **Check the unhappy paths:** What happens with null, empty, zero, error response, timeout?
-- **Run the tests:** Always run existing tests. New features or new logic → write a test (see CLAUDE.md "Always write tests"). Trivial changes (rename, config) → run existing tests only
+- **Run the tests:** always the existing suite; which new tests a change needs: `first-principles.md` Layer 2
 - **Diff review:** Re-read your own diff as if reviewing someone else's PR
 - **Contract check:** Do function signatures, return types, and error states match what callers expect?
 

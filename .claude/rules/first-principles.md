@@ -104,8 +104,7 @@ After any correction by the user:
   → Lesson written to lessons.md BEFORE continuing work
 
 After any refactor:
-  → Dead code created by YOUR changes removed immediately
-  → Pre-existing dead code: list it, ask before removing
+  → Dead-code rule (core-behaviors.md §5): yours removed now, pre-existing listed and asked
 ```
 
 ### Additional Invariants

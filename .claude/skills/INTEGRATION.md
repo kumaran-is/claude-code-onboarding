@@ -75,7 +75,7 @@ When loading the primary skill (left column), also consider loading the companio
 ```
 1. writing-skills             — governs skill authoring conventions
 2. (implement the skill)
-3. Register in .claude/SKILLS_GUIDE.md
+3. Add a row to the Routing table in `.claude/SKILLS_GUIDE.md` (technology → skill / agent / command / reviewer)
 ```
 
 ### UI / Design System Work

@@ -76,5 +76,5 @@ Every SKILL.md body should include a **Reference Files** section with this forma
 - [ ] Create `reference/index.md` mapping every file to a load condition
 - [ ] Add a "Reference Files" table to `SKILL.md`
 - [ ] Add a "Post-Code Review" section listing reviewer agents
-- [ ] Register in `.claude/SKILLS_GUIDE.md` (see `feedback_new_docs_location.md`)
+- [ ] Add a row to the Routing table in `.claude/SKILLS_GUIDE.md` (see `feedback_new_docs_location.md`)
 - [ ] Keep SKILL.md under 200 lines — move detail into `reference/`

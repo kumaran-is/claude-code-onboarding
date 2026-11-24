@@ -2,7 +2,7 @@
 
 How to write tools for `create_agent` / LangGraph. Safety rules (authority tiers, scope injection, allowlists, evidence gate, idempotency, budgets, approvals, durable resume) are canonical in `tool-execution-safety.md`; this file is the implementation template.
 
-Executed (Python 3.14, langchain 1.2.8, `ruff` + `mypy --strict` clean): scripted fake model, `httpx.MockTransport` backend, 4 tests listed under the template.
+Executed (Python 3.14, langchain 1.2.8; `ToolRuntime` injection re-run on 1.5.2, `ruff` + `mypy --strict` clean): scripted fake model, `httpx.MockTransport` backend, 4 tests listed under the template.
 
 REMOVED from the previous version: tools returning `f"... failed: {e}"` and logging `error=str(e)` (exception text reached the model and logs), a generic `call_external_api(endpoint, method, payload)` tool (model-chosen URL = SSRF), a `query_database(table, filters, columns)` tool (model-chosen table/columns), and a hand-rolled retry decorator that retried every exception and returned the last error as text.
 

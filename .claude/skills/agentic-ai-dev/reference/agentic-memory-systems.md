@@ -2,7 +2,7 @@
 
 Canonical home for agent memory **implementation** (LangGraph / LangChain v1). Principles (memory is a liability; authority order canonical state > source documents > verified outcomes > derived memory > model inference; derived memory never authorizes) live in `ai-playbook/playbook.md` §2.6. Context-window trimming for a single call is also here; caching is in `agentic-caching-patterns.md`.
 
-Executed on langchain 1.2.8 / langgraph 1.0.7 / langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16 (no live model): checkpointer lifecycle, Store namespaces, cross-user isolation, fail-closed recall, write quarantine, erasure, `trim_messages` behaviour.
+Executed on langchain 1.2.8 / langgraph 1.0.7 / langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16 (no live model), with checkpointer lifecycle, Store namespace isolation and erasure re-run on langchain 1.5.2 / langgraph 1.2.24 against PostgreSQL 18.7: checkpointer lifecycle, Store namespaces, cross-user isolation, fail-closed recall, write quarantine, erasure, `trim_messages` behaviour.
 
 ## Memory Layer Overview
 
@@ -198,7 +198,7 @@ agent = create_agent(model, tools, middleware=[
 ], checkpointer=checkpointer)
 ```
 
-Constructor verified in langchain 1.2.8 (`trigger` accepts `("tokens"|"fraction"|"messages", n)`; the older `max_tokens_before_summary` / `messages_to_keep` are deprecated kwargs). A summary is a lossy derived artefact: it never outranks canonical records, and authority facts (scope, approvals, safety flags) stay in structured state injected each turn, not in text a summarizer may drop. `count_tokens_approximately` is an estimate; measure with the target model's counter before calls near the limit, and remember images/audio are not shrunk by text summarization.
+Constructor verified in langchain 1.2.8 and 1.5.2 (`trigger` accepts `("tokens"|"fraction"|"messages", n)`; the older `max_tokens_before_summary` / `messages_to_keep` are deprecated kwargs: `DeprecationWarning` on 1.5.2). A summary is a lossy derived artefact: it never outranks canonical records, and authority facts (scope, approvals, safety flags) stay in structured state injected each turn, not in text a summarizer may drop. `count_tokens_approximately` is an estimate; measure with the target model's counter before calls near the limit, and remember images/audio are not shrunk by text summarization.
 
 ## Advanced Layers (4-7) — Research Patterns
 

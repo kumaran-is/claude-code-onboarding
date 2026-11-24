@@ -1,7 +1,7 @@
 # Agentic AI Streaming & Human-in-the-Loop
 
 Patterns for real-time token streaming and durable human approval in LangGraph / LangChain v1 agents.
-Every snippet below was executed on langchain 1.2.8 + langgraph 1.0.7 (+ langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16) with a scripted fake model; live-provider streaming was not exercised.
+Every snippet below was executed on langchain 1.2.8 + langgraph 1.0.7 (+ langgraph-checkpoint-postgres 3.2.1 against PostgreSQL 16); HITL approve/reject, resume on a fresh PostgreSQL saver and `Task.cancel()` of an in-flight call re-run on langchain 1.5.2 + langgraph 1.2.24, with a scripted fake model; live-provider streaming was not exercised.
 
 Transport rules (SSE framing, proxy buffering, reconnection, `Last-Event-ID`) live in the `streaming-protocols` skill. This file covers what an **agent** is allowed to put on that transport.
 

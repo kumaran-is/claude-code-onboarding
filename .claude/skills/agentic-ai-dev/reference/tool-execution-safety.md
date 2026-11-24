@@ -2,7 +2,7 @@
 
 Canonical home for how agents call tools safely: contracts, server-injected scope, allowlists, result verification, side-effect idempotency, budgets, approval gates, compensation and durable resume. Framework-neutral core first; LangChain v1 / LangGraph specifics marked **[LG]**; Google ADK equivalents live in `google-adk/reference/adk-tools-callbacks.md` and link here. Principles (autonomy ladder, least privilege) are in `ai-playbook/playbook.md` §2.5–2.6. MCP server implementation is out of scope.
 
-Validation: every Python block below was executed on Python 3.14 with langchain 1.2.8 / langgraph 1.0.7 and PostgreSQL 16 (`ruff` + `mypy --strict` clean; tests listed in §11), using scripted fake models. No live model was called.
+Validation: every Python block below was executed on Python 3.14 with langchain 1.2.8 / langgraph 1.0.7 and PostgreSQL 16 (`ToolRuntime` scope injection and schema hiding re-run on langchain 1.5.2) (`ruff` + `mypy --strict` clean; tests listed in §11), using scripted fake models. No live model was called.
 
 **Model proposes, code authorizes.** Tool *visibility* (what the model sees), *caller permission* (what this agent may call) and *resource authorization* (which record the backend lets this principal touch) are three independent layers; none substitutes for another. LLM-based checks are probabilistic signals, never authorization.
 

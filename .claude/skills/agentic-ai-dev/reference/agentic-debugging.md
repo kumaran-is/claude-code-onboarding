@@ -28,7 +28,7 @@ async for update in graph.astream(
             print(f"  tool_calls={getattr(last_msg, 'tool_calls', None)}")
 ```
 
-Note: LangGraph 1.0.x defaults `recursion_limit` to 10000 (not 25): without an explicit server-side limit a looping agent burns thousands of model calls before `GraphRecursionError` is raised. The error raises; it does not END gracefully.
+Note: LangGraph 1.2.x defaults `recursion_limit` to 10007 (1.0.x: 10000; not 25): without an explicit server-side limit a looping agent burns thousands of model calls before `GraphRecursionError` is raised. The error raises; it does not END gracefully.
 
 **Fixes:**
 1. Set `recursion_limit` from settings on every run and map `GraphRecursionError` to a typed `ITERATION_LIMIT` status (`agentic-templates-core.md`); with `create_agent`, add `ModelCallLimitMiddleware(run_limit=N, exit_behavior="error")`

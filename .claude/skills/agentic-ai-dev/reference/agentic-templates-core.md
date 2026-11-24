@@ -1,7 +1,7 @@
 # Agentic AI Core Templates
 
 FastAPI entry point, agent routes, base state and request models for a LangGraph / LangChain v1 service.
-The lifespan and both routes below were executed together (langchain 1.2.8, langgraph 1.0.7, langgraph-checkpoint-postgres 3.2.1, FastAPI 0.135.2, PostgreSQL 16) with a scripted fake model: `ruff` and `mypy --strict` clean, 7 tests passing (OK answer, recursion limit, timeout, principal-bound threads, SSE framing, no exception text in responses or logs, negative control for the old checkpointer snippet).
+The lifespan, the invoke route below and the stream route in `agentic-streaming-hitl.md` were executed together, copied from these code blocks, on langchain 1.5.2, langgraph 1.2.24, langgraph-checkpoint-postgres 3.2.1, FastAPI 0.165.0 (Starlette 1.10.0), PostgreSQL 18.7 and Python 3.14.10, driven with httpx2 2.16.2 and a scripted fake model (not live). Results: `ruff` and `mypy --strict` clean, 7 tests passing (OK answer with scope injected from `context=`, recursion limit, timeout, principal-bound threads, SSE framing with one terminal event and no tool output, no exception text in responses, stream or logs, negative control for the old checkpointer snippet). Negative controls: an unscoped thread key and an unmapped `GraphRecursionError` each fail their test.
 
 Generic FastAPI concerns are NOT repeated here; use the Phase 2 references:
 - Auth dependency (verified token → principal): `python-dev/reference/fastapi-auth-security.md` §4 and `fastapi-authorization-boundaries.md`.
@@ -35,7 +35,7 @@ def default_graph(checkpointer: AsyncPostgresSaver, store: AsyncPostgresStore) -
 def create_app(app_settings: Settings | None = None, build: GraphFactory = default_graph) -> FastAPI:
     """App factory: `uvicorn my_agent_service.main:create_app --factory` (no module-level app).
     Tests pass their own settings and a `build` that uses a scripted model (agentic-testing.md)."""
-    cfg = app_settings or Settings()  # type: ignore[call-arg]  # values come from the environment
+    cfg = app_settings or Settings()  # values come from the environment
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -76,10 +76,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
-from pydantic import BaseModel, Field
 
 from ...core.config import Settings
-from ...core.logging import log_exception   # python-observability.md section 2
+from ...core.logging import log_exception  # python-observability.md section 2
+from ...models.schemas import AgentRequest, AgentResponse
 from ..deps import Principal, get_principal  # verified token -> (org_id, user_id)
 
 logger = structlog.get_logger(__name__)
@@ -100,7 +100,7 @@ def scoped_thread_id(principal: Principal, client_thread_id: uuid.UUID) -> str:
 
 def _run_config(settings: Settings, thread_key: str) -> RunnableConfig:
     # recursion_limit is server config, never a request field.
-    # LangGraph 1.0.x defaults to 10000 (env LANGGRAPH_DEFAULT_RECURSION_LIMIT): always set it.
+    # LangGraph 1.2.x defaults to 10007 (1.0.x: 10000; env LANGGRAPH_DEFAULT_RECURSION_LIMIT): always set it.
     return {"configurable": {"thread_id": thread_key}, "recursion_limit": settings.max_graph_steps}
 
 
@@ -219,6 +219,12 @@ Scope ids (`org_id`, `user_id`) and the thread id are **not** state fields the m
 **File:** `src/<service>/models/schemas.py`
 
 ```python
+import uuid
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
 class AgentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     thread_id: uuid.UUID | None = None   # omit to start a conversation; scoped server-side

@@ -4,7 +4,7 @@ Retry, failover, call caps and graceful degradation for LangChain v1 / LangGraph
 
 ## Pattern 6: Resilient Agent (`create_agent` + middleware)
 
-Executed on langchain 1.2.8 with scripted fake models: `ruff` + `mypy --strict` clean; a transient error was retried twice and then answered by the fallback model (3 primary calls); a non-transient `ValueError` raised after 1 call with no failover; the failover emitted one `model_failover` warning, one `app.ai.fallbacks` increment and `app.ai.fallback=true` on the current span (in-memory OTel reader/exporter).
+Executed on langchain 1.2.8 with scripted fake models (limit-middleware errors and the `ToolRetryMiddleware` default payload re-run on 1.5.2): `ruff` + `mypy --strict` clean; a transient error was retried twice and then answered by the fallback model (3 primary calls); a non-transient `ValueError` raised after 1 call with no failover; the failover emitted one `model_failover` warning, one `app.ai.fallbacks` increment and `app.ai.fallback=true` on the current span (in-memory OTel reader/exporter).
 
 ```python
 from collections.abc import Awaitable, Callable, Sequence
@@ -68,7 +68,7 @@ def build_resilient_agent(primary: BaseChatModel, fallback: BaseChatModel, tools
 
 `transient` is the provider SDK's availability error classes (timeouts, connection errors, 5xx, rate-limit-with-short-retry-after), mapped once in the model client (`llm-inference-and-model-routing.md`). The first middleware in the list is the outermost wrapper.
 
-Traps verified by reading/executing langchain 1.2.8:
+Traps verified by reading/executing langchain 1.2.8 (re-checked on 1.5.2 where marked in `agentic-testing.md`):
 
 | Built-in default | Effect | Use instead |
 |---|---|---|

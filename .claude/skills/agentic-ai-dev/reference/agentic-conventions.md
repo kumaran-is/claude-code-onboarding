@@ -43,7 +43,7 @@ src/<service_name>/
 
 1. **State is a `TypedDict`** (or `create_agent`'s `AgentState` extended via `state_schema=`) — never `dict[str, Any]`
 2. **Messages use `Annotated[list[BaseMessage], add_messages]`**
-3. **Step caps are explicit server config**: pass `recursion_limit` on every run (LangGraph 1.0.x defaults to **10000**, overridable via `LANGGRAPH_DEFAULT_RECURSION_LIMIT` — never rely on it), catch `GraphRecursionError`, and map it to a typed `ITERATION_LIMIT` status. With `create_agent`, also use `ModelCallLimitMiddleware` / `ToolCallLimitMiddleware` with `exit_behavior="error"`. Hand-built graphs may add `iteration_count` for an earlier typed stop.
+3. **Step caps are explicit server config**: pass `recursion_limit` on every run (LangGraph 1.2.x defaults to **10007**, 1.0.x to 10000, overridable via `LANGGRAPH_DEFAULT_RECURSION_LIMIT` — never rely on it), catch `GraphRecursionError`, and map it to a typed `ITERATION_LIMIT` status. With `create_agent`, also use `ModelCallLimitMiddleware` / `ToolCallLimitMiddleware` with `exit_behavior="error"`. Hand-built graphs may add `iteration_count` for an earlier typed stop.
 4. **`Command(goto=...)` only with code-validated targets** — validate model-proposed routes against a closed enum first
 5. **Durable checkpointer in production** — `AsyncPostgresSaver` entered with `async with` in the lifespan; `InMemorySaver` is for tests
 6. **Thread ids are principal-scoped** — `{"configurable": {"thread_id": scoped_thread_id(principal, client_id)}}`; never a raw client value

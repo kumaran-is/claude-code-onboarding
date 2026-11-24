@@ -11,36 +11,39 @@ version = "0.1.0"
 description = "Production AI agent service"
 requires-python = ">=3.14"
 dependencies = [
-    # Agent stack: exact pins, upgraded together (langgraph and langgraph-prebuilt move in lockstep).
-    # This set was installed and executed together for this toolkit (Python 3.14).
-    "langchain==1.2.8",
+    # Agent stack: exact pins, upgraded together. langchain 1.5.2 needs langgraph>=1.2.12,<1.3; langgraph 1.2.24 needs
+    # langgraph-prebuilt>=1.1.3,<1.2 (prebuilt has its own version line since 1.1).
+    # This set was locked and installed together on Python 3.14.10 (uv lock + uv sync --locked exit 0) and its
+    # checkpointer, store, HITL and limit paths were exercised with a scripted model; see agentic-testing.md.
+    "langchain==1.5.2",
     "langchain-core==1.8.4",
-    "langgraph==1.0.7",
-    "langgraph-prebuilt==1.0.7",
+    "langgraph==1.2.24",
+    "langgraph-prebuilt==1.1.3",
     "langgraph-checkpoint==4.3.2",
     "langgraph-checkpoint-postgres==3.2.1",
     "psycopg[binary,pool]==3.3.9",
     # Provider integration(s) you use, pinned to the version in uv.lock, e.g. "langchain-anthropic==<x.y.z>"
 
     # API
-    "fastapi==0.135.2",
+    "fastapi[standard-no-fastapi-cloud-cli]==0.165.0",  # standard extras without fastapi-cloud-cli
     "pydantic==2.14.4",
     "pydantic-settings==2.16.3",
-    "uvicorn[standard]",          # exact version comes from uv.lock
+    "uvicorn[standard]==0.54.0",
 
     # Observability
-    "langsmith==0.16.0",
+    "langsmith==0.16.1",
     "structlog==26.1.0",
     "prometheus-client",          # exact version comes from uv.lock
-    "httpx==0.28.1",
+    "httpx==0.28.1",             # outbound HTTP clients
 ]
 
 [dependency-groups]
 dev = [
     "pytest==9.2.0",
     "pytest-asyncio==1.5.0",
-    "ruff",
-    "mypy",
+    "httpx2==2.16.2",            # drives the app in tests (ASGITransport); Starlette 1.10 deprecates httpx there
+    "ruff==0.17.6",
+    "mypy==2.4.1",
 ]
 
 # Reproducibility: commit uv.lock; CI and Docker run `uv sync --locked` (fails if the lock is stale).
@@ -76,7 +79,8 @@ disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"   # PostgreSQL fixtures are session-scoped (python-testing-patterns/reference/postgres-integration-testing.md)
+asyncio_default_test_loop_scope = "session"      # tests must share that loop
 testpaths = ["tests"]
 ```
 

@@ -7,7 +7,7 @@ Agent-specific tests for LangChain v1 / LangGraph services. Canonical homes, not
 - Real-PostgreSQL fixtures and pytest-asyncio loop scope: `python-testing-patterns/reference/postgres-integration-testing.md`.
 - RAG eval sets and gates: `rag-evaluator`.
 
-Every pattern below was executed (Python 3.14, langchain 1.2.8, langgraph 1.0.7, PostgreSQL 16) with scripted models. Mocked tests prove wiring and control flow; they are never evidence of live-provider behaviour.
+Every pattern below was executed (Python 3.14, langchain 1.2.8, langgraph 1.0.7, PostgreSQL 16) with scripted models; scope injection, recursion and call limits, HITL approve/reject, resume re-run and the `ToolRetryMiddleware` failure payload were re-run on langchain 1.5.2 / langgraph 1.2.24 (PostgreSQL 18.7 for the checkpointer cases). Mocked tests prove wiring and control flow; they are never evidence of live-provider behaviour.
 
 REMOVED from the previous version: `AsyncMock` LLMs (they accept any call, so a wrong `bind_tools`/structured-output wiring still passes), a "use `MemorySaver` in tests, never a real DB" rule (checkpointer and store wiring bugs only show against PostgreSQL), state fields `iteration_count`/`thread_id` passed by the test, and a stream test that only checked the content type.
 
@@ -22,7 +22,7 @@ Use `ScriptedModel` from `pytest-harness.md` (subclass of `GenericFakeChatModel`
 
 ## Workflow tests through the real route
 
-Test through FastAPI with the real lifespan, a real PostgreSQL checkpointer/store, and an overridden principal dependency. This exercises scope injection, thread keys, limits and error mapping in one place.
+Test through FastAPI with the real lifespan, a real PostgreSQL checkpointer/store, and an overridden principal dependency. Drive the app with `httpx2` (Starlette 1.10 deprecates `httpx` for `TestClient`/`ASGITransport`; `ASGITransport` + `AsyncClient` + lifespan context executed with httpx2 2.16.2); outbound clients stay on `httpx`. This exercises scope injection, thread keys, limits and error mapping in one place.
 
 ```python
 def make_app(messages: Iterator[AIMessage], *, steps: int = 12, timeout: float = 5.0, stream: bool = True) -> FastAPI:
@@ -39,9 +39,9 @@ def make_app(messages: Iterator[AIMessage], *, steps: int = 12, timeout: float =
     return app
 
 
-async def call(app: FastAPI, path: str, body: dict[str, Any], user: str = "u1") -> httpx.Response:
-    async with app.router.lifespan_context(app):                      # runs the async-with checkpointer setup
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+async def call(app: FastAPI, path: str, body: dict[str, Any], user: str = "u1") -> httpx2.Response:
+    async with app.router.lifespan_context(app):  # ASGITransport does not run the lifespan (checkpointer setup)
+        async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://t") as c:
             return await c.post(path, json=body, headers={"x-org": "org-a", "x-user": user})
 ```
 
@@ -90,7 +90,8 @@ Scripted tests cannot tell you whether the model chooses the right tool or groun
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "session"   # PostgreSQL fixtures are session-scoped (python-testing-patterns/reference/postgres-integration-testing.md)
+asyncio_default_test_loop_scope = "session"      # tests must share that loop
 testpaths = ["tests"]
 markers = [
     "integration: needs PostgreSQL",

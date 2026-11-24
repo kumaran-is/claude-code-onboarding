@@ -22,7 +22,7 @@ Used by the `agentic-ai-reviewer` agent. Framework-neutral items first; LangChai
 - Answer caches keyed by org + ACL scope + model + prompt version; no cross-user sharing of generated answers
 
 ### 2. Execution control (CRITICAL/HIGH)
-- **[LG]** Explicit `recursion_limit` from settings (default is 10000 in langgraph 1.0.x); `GraphRecursionError` caught and mapped to a typed status
+- **[LG]** Explicit `recursion_limit` from settings (default is 10007 in langgraph 1.2.x, 10000 in 1.0.x); `GraphRecursionError` caught and mapped to a typed status
 - **[LG]** `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` use `exit_behavior="error"` (the default `"end"` returns a library string as the answer)
 - Every run is inside `asyncio.timeout(settings.…)`; `TimeoutError` mapped to a typed status
 - Budgets are cumulative across router, sub-agents, retries and fallback models

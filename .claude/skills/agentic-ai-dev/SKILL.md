@@ -1,6 +1,6 @@
 ---
 name: agentic-ai-dev
-description: "This skill provides patterns and templates for building production AI agents with Python 3.14, LangChain v1.2.8, LangGraph v1.0.7, and FastAPI 0.135.2. Use when creating AI agents, RAG systems, graph workflows, tools, memory systems, or agent tests."
+description: "This skill provides patterns and templates for building production AI agents with Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, and FastAPI 0.165.0. Use when creating AI agents, RAG systems, graph workflows, tools, memory systems, or agent tests."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: AI agent, LangChain, LangGraph, RAG system, graph workflow, FastAPI, Python 3.14, LangGraph agent, memory system, agent test
@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-23"
 ---
 
 ## Iron Law
@@ -24,15 +24,15 @@ Before building an agent, confirm an agent is the right tool: a deterministic wo
 
 ```bash
 uv init my-agent-service && cd my-agent-service
-uv add "langchain==1.2.8" "langchain-core==1.8.4" "langgraph==1.0.7" "langgraph-prebuilt==1.0.7" \
+uv add "langchain==1.5.2" "langchain-core==1.8.4" "langgraph==1.2.24" "langgraph-prebuilt==1.1.3" \
   "langgraph-checkpoint==4.3.2" "langgraph-checkpoint-postgres==3.2.1" "psycopg[binary,pool]==3.3.9" \
-  "fastapi==0.135.2" "pydantic==2.14.4" "pydantic-settings==2.16.3" uvicorn structlog httpx
+  "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "pydantic==2.14.4" "pydantic-settings==2.16.3" uvicorn structlog httpx
 uv add <provider-integration>        # e.g. langchain-anthropic; uv.lock records the exact version
-uv add --dev pytest pytest-asyncio ruff mypy
+uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "httpx2==2.16.2" "ruff==0.17.6" "mypy==2.4.1"
 uv sync --locked                     # CI and Docker use the same command
 ```
 
-Pins are the set executed together for this toolkit; upgrade `langgraph` and `langgraph-prebuilt` together (`agentic-config-project.md`).
+Pins are the set locked together for this toolkit (`uv lock` + `uv sync --locked` exit 0 on Python 3.14.10; control flow, HITL and the PostgreSQL checkpointer/store re-run on these versions with a scripted model). `langgraph-prebuilt` no longer shares langgraph's version number: langgraph 1.2.24 requires `langgraph-prebuilt>=1.1.3,<1.2`, and langchain 1.5.2 requires `langgraph>=1.2.12,<1.3` (`agentic-config-project.md`).
 
 ## Process
 

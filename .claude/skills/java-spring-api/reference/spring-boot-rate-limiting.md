@@ -1,4 +1,6 @@
-# Inbound Rate Limiting — Spring Boot WebFlux
+# Inbound Rate Limiting — Spring Boot
+
+> **Stack:** the code samples here are **Spring WebFlux** (use it only when justified: `docs/adr/0001-java25-spring-boot-4-mvc-default.md`). Spring MVC, the default, is covered by the tested code in `spring-boot-templates.md` → Spring MVC. On MVC the same bucket logic runs in a servlet `Filter` (`OncePerRequestFilter`).
 
 ## Layer 1: GCP Cloud Armor (Edge)
 

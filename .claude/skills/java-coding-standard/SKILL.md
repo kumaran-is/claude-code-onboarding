@@ -1,6 +1,6 @@
 ---
 name: java-coding-standard
-description: This skill should be activated when reviewing Java code or enforcing coding standards in Spring Boot services. It covers naming conventions, immutability patterns, Optional usage, streams, and exception handling.
+description: This skill should be activated when reviewing Java code or enforcing coding standards in Java 25 / Spring Boot 4.2 services (Spring MVC or WebFlux). It covers naming conventions, immutability patterns, Optional usage, sealed types and pattern matching, streams, nullability, and exception handling.
 allowed-tools: Read
 metadata:
   triggers: Java coding standard, Java code review, Java best practices, Spring Boot Java, Java style, Java review
@@ -9,16 +9,16 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-24"
 ---
 
 ## Iron Law
 
-Always load the java-spring-api skill and consult Spring MCP before writing Java code; never generate Spring WebFlux patterns from memory.
+Always load the java-spring-api skill and consult current Spring docs before writing Java code; never generate Spring Boot 4 / Framework 7 APIs from memory (Boot 3 habits such as `@MockBean` or `RestTemplate` no longer compile or are deprecated).
 
 # Java Coding Standards
 
-Standards for readable, maintainable Java (21+) code in Spring Boot Reactive Web Flux services.
+Standards for readable, maintainable Java 25 code in Spring Boot 4.2 services (Spring MVC by default, WebFlux where justified).
 
 ## Core Principles
 
@@ -32,14 +32,16 @@ Standards for readable, maintainable Java (21+) code in Spring Boot Reactive Web
 | Rule | Standard |
 |------|----------|
 | **Naming** | Classes: `PascalCase`, methods/fields: `camelCase`, constants: `UPPER_SNAKE_CASE` |
-| **Immutability** | Favor records and final fields; getters only, no setters. Exception: R2DBC entities require setters for framework binding |
-| **Optional** | Return `Optional` from `find*` methods; use `map`/`flatMap`, never `.get()`. In reactive code, `Mono<T>` replaces `Optional<T>` — use `switchIfEmpty()` instead |
+| **Immutability** | Favor records and final fields; getters only, no setters. JPA entities: protected no-arg constructor + intention-revealing methods (`update(...)`) instead of setters; R2DBC entities may need setters or a persistence constructor |
+| **Optional** | Return `Optional` from `find*` methods; use `map`/`filter`/`orElseThrow`, never `.get()`. In WebFlux code, `Mono<T>` replaces `Optional<T>` — use `switchIfEmpty()` instead |
 | **Streams** | Short pipelines for transforms; prefer loops for complex logic |
 | **Exceptions** | Unchecked domain exceptions; avoid broad `catch (Exception)` |
 | **Generics** | No raw types; prefer bounded generics for reusable utilities |
-| **Null handling** | `@NonNull` by default; Bean Validation on inputs |
+| **Null handling** | Non-null by default; mark nullable values with `org.jspecify.annotations.Nullable` (Framework 7 uses JSpecify); Bean Validation on inputs |
 | **Logging** | SLF4J with structured key=value pairs |
-| **Testing** | JUnit 5 + AssertJ + Mockito + `WebTestClient` for reactive; deterministic, no sleeps |
+| **Closed hierarchies** | Sealed interfaces/classes + exhaustive pattern-matching `switch` without `default`; unnamed patterns (`case X _ ->`) for unused bindings |
+| **Language level** | Java 25 final features only; no preview features (`StructuredTaskScope`, `StableValue`, primitive patterns) in production code |
+| **Testing** | JUnit 6 (Jupiter API) + AssertJ + Mockito (`@MockitoBean` in Spring tests) + `RestTestClient`/`MockMvcTester` (MVC) or `WebTestClient`/`StepVerifier` (WebFlux); deterministic, injected `Clock`, no sleeps |
 
 ## Project Structure
 

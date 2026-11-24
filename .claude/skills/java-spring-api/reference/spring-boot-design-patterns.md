@@ -1,7 +1,9 @@
 # Spring Boot Design Patterns
 
-Quick reference for the six design patterns used in Java 21 + Spring Boot 3.5.x WebFlux services.
-All patterns are non-blocking reactive-compatible. No JPA, no blocking I/O.
+Quick reference for the six design patterns used in Java 25 + Spring Boot 4.2 services.
+The patterns apply to both stacks; the samples are written for WebFlux.
+
+> **Stack:** the code samples here are **Spring WebFlux** (use it only when justified: `docs/adr/0001-java25-spring-boot-4-mvc-default.md`). Spring MVC, the default, is covered by the tested code in `spring-boot-templates.md` → Spring MVC.
 
 ---
 
@@ -15,7 +17,7 @@ All patterns are non-blocking reactive-compatible. No JPA, no blocking I/O.
 ### Code Example
 
 ```java
-// Java 21 record covers simple DTOs — use a manual builder when construction logic is needed
+// A record covers simple DTOs — use a manual builder when construction logic is needed
 public final class OrderRequest {
     private final String customerId;   // required
     private final String productId;    // required
@@ -232,7 +234,7 @@ public Mono<Void> notify(String channel, String recipientId, String message) {
 ### Code Example
 
 ```java
-// Event — Java 21 record is ideal: immutable, concise
+// Event — a record is ideal: immutable, concise
 public record OrderPlacedEvent(String orderId, String customerId, BigDecimal total) {}
 
 // Publisher — domain service, knows nothing about listeners

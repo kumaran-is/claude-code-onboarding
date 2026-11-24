@@ -1,6 +1,6 @@
 # Reactive Stream Debugging & Observability
 
-Runtime observability patterns for Java 21 + Spring Boot 3.5.x WebFlux reactive streams.
+Runtime observability patterns for Java 25 + Spring Boot 4.2 WebFlux reactive streams.
 
 ## Reactor Hooks Configuration
 

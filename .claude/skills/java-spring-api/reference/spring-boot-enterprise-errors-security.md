@@ -1,8 +1,10 @@
 # Spring Boot Enterprise Patterns — Error Handling & Security
 
-Production-ready error handling and security patterns for Java 21 + Spring Boot 3.5.x WebFlux.
+Error handling and security rules for Java 25 + Spring Boot 4.2, Spring MVC (default) and WebFlux. The tested code for both stacks is in `spring-boot-templates.md`; this file states the rules and the traps.
 
 ## Exception Hierarchy
+
+New services prefer the **sealed** domain exceptions in `spring-boot-templates.md` (exhaustive `switch` in the advice). The open hierarchy below suits a codebase that already has one.
 
 ### Base Exception
 
@@ -90,216 +92,67 @@ public class ServiceIntegrationException extends ApplicationException {
 }
 ```
 
-### Error Response DTOs
+### Global error handling: `ProblemDetail` on both stacks
 
-```java
-// Client errors (4xx)
-public record ClientErrorResponse(
-    @Schema(description = "General error description", example = "Validation failed")
-    String message,
+Use the `ProblemDetailsAdvice` from `spring-boot-templates.md` (one per stack: Spring MVC → ProblemDetail advice, Spring WebFlux → ProblemDetail advice): it extends `ResponseEntityExceptionHandler` (MVC: `org.springframework.web.servlet.mvc.method.annotation`; WebFlux: `org.springframework.web.reactive.result.method.annotation`).
 
-    @Schema(description = "Specific error details", example = "[\"email is required\"]", nullable = true)
-    List<String> errors,
+- Every error is `application/problem+json`; set `instance` from the request path (Framework 7.1 no longer does).
+- Never return exception messages, upstream bodies or rejected values: validation errors list the field and a generic message; a test asserts that an injected `<script>` marker is absent from the 400 body.
+- The catch-all handler logs at ERROR with a correlation id and returns a generic 500.
+- Do not register an `AbstractErrorWebExceptionHandler` for API errors on WebFlux: it bypasses the controller advice and does not produce `ProblemDetail`.
 
-    @Schema(description = "Application error code", example = "VALIDATION_ERROR")
-    String errorCode,
+## Security configuration
 
-    @Schema(description = "ISO-8601 timestamp", example = "2025-05-19T13:30:00Z")
-    String timestamp
-) {}
+Both stacks: `SecurityFilterChain` (MVC) and `SecurityWebFilterChain` (WebFlux) in `spring-boot-templates.md`, tested with real RS256 tokens.
 
-// Server errors (5xx)
-public record ServerErrorResponse(
-    @Schema(description = "Error type", example = "InternalServerError")
-    String error,
+### Actuator exposure
 
-    @Schema(description = "Error description", example = "Unexpected error occurred")
-    String message,
-
-    @Schema(description = "ISO-8601 timestamp", example = "2025-05-19T13:30:00Z")
-    String timestamp,
-
-    @Schema(description = "Trace ID for log correlation", example = "abc123xy")
-    String traceId
-) {}
+```properties
+management.endpoints.web.exposure.include=health,info,prometheus
+management.endpoint.health.show-details=never
+management.endpoint.health.probes.enabled=true
 ```
 
-### Global Error Handler (WebFlux)
+```java
+// MVC: org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest
+.requestMatchers(EndpointRequest.to("health", "info")).permitAll()
+.requestMatchers(EndpointRequest.to("prometheus")).hasAuthority("SCOPE_metrics:read")
+.requestMatchers(EndpointRequest.toAnyEndpoint()).denyAll()
+// WebFlux: ...actuate.web.reactive.EndpointRequest with .pathMatchers/.matchers(...) in authorizeExchange
+```
+
+Never `permitAll()` the actuator base path: a public `loggers` endpoint lets anyone switch logging to TRACE (and leak tokens), and `env`/`heapdump` leak secrets. `metrics` and `loggers` are not exposed in production.
+
+### Tokens and authorization
+
+- Signature, expiry, **issuer and audience** are always validated (`spring-boot-templates.md` → Security; never `issuer-uri` next to `public-key-location`).
+- Authorize with the token's scopes (`hasAuthority("SCOPE_orders:write")`); end with `anyRequest().denyAll()` / `anyExchange().denyAll()`.
+- OpenAPI and Swagger UI are disabled in production (`springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`) or require authentication.
+
+### Ownership checks
+
+Enforce ownership in the service query (`findByIdAndCustomerId(...)` → 404 for another customer's record, an admin scope may read all). Both reference apps test this. On WebFlux never call `.block()` in a security bean or `@PreAuthorize` expression: on a Netty thread Reactor throws `IllegalStateException` and every request fails.
+
+### CORS
+
+Only for browser clients on another origin. Bind the origins from configuration (register the record with `@ConfigurationPropertiesScan` or `@EnableConfigurationProperties(CorsProperties.class)`) and expose one `CorsConfigurationSource` bean; `http.cors(Customizer.withDefaults())` picks it up.
 
 ```java
-@Component
-@Order(-2)
-public class GlobalErrorWebExceptionHandler extends AbstractErrorWebExceptionHandler {
+@ConfigurationProperties("app.cors")
+public record CorsProperties(List<String> allowedOrigins) {}
 
-    private static final Logger log = LoggerFactory.getLogger(GlobalErrorWebExceptionHandler.class);
-
-    public GlobalErrorWebExceptionHandler(ErrorAttributes errorAttributes,
-                                          ApplicationContext applicationContext,
-                                          ServerCodecConfigurer serverCodecConfigurer) {
-        super(errorAttributes, new WebProperties().getResources(), applicationContext);
-        super.setMessageWriters(serverCodecConfigurer.getWriters());
-        super.setMessageReaders(serverCodecConfigurer.getReaders());
-    }
-
-    @Override
-    protected RouterFunction<ServerResponse> getRoutingFunction(ErrorAttributes errorAttributes) {
-        return RouterFunctions.route(RequestPredicates.all(), this::renderErrorResponse);
-    }
-
-    private Mono<ServerResponse> renderErrorResponse(ServerRequest request) {
-        Throwable error = getError(request);
-        String traceId = UUID.randomUUID().toString().substring(0, 8);
-        String timestamp = Instant.now().toString();
-
-        log.error("[{}] {} {} — {}", traceId, request.methodName(), request.path(), error.getMessage(), error);
-
-        return switch (error) {
-            case ApplicationException appEx when appEx.getHttpStatus().is4xxClientError() ->
-                ServerResponse.status(appEx.getHttpStatus())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(new ClientErrorResponse(
-                        appEx.getMessage(), appEx.getErrors(), appEx.getErrorCode(), timestamp));
-
-            case ApplicationException appEx ->
-                ServerResponse.status(appEx.getHttpStatus())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(new ServerErrorResponse(
-                        appEx.getErrorCode(), appEx.getMessage(), timestamp, traceId));
-
-            case WebExchangeBindException validationEx -> {
-                List<String> errors = validationEx.getBindingResult().getAllErrors().stream()
-                    .map(DefaultMessageSourceResolvable::getDefaultMessage).toList();
-                yield ServerResponse.status(HttpStatus.BAD_REQUEST)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(new ClientErrorResponse(
-                        "Validation failed", errors, "VALIDATION_FAILED", timestamp));
-            }
-
-            default ->
-                ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(new ServerErrorResponse(
-                        "InternalServerError", "Unexpected error. Trace: " + traceId, timestamp, traceId));
-        };
-    }
+@Bean
+CorsConfigurationSource corsConfigurationSource(CorsProperties cors) {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(cors.allowedOrigins());          // exact origins, never "*"
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
+    config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Match"));
+    config.setExposedHeaders(List.of("Location", "ETag"));
+    config.setMaxAge(3600L);
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/api/**", config);
+    return source;
 }
 ```
 
-## Security Configuration
-
-### OAuth2 JWT Resource Server
-
-```java
-@Configuration
-@EnableWebFluxSecurity
-@EnableReactiveMethodSecurity
-public class SecurityConfig {
-
-    @Bean
-    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
-        return http
-            .csrf(ServerHttpSecurity.CsrfSpec::disable)
-            .cors(cors -> cors.configurationSource(corsSource()))
-            .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
-            .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
-            .headers(headers -> {
-                headers.frameOptions(opts -> opts.mode(XFrameOptionsServerHttpHeadersWriter.Mode.DENY));
-                headers.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; frame-ancestors 'none';"));
-            })
-            .authorizeExchange(exchanges -> exchanges
-                .pathMatchers("/management/**", "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .pathMatchers("/api/v1/**").authenticated()
-                .anyExchange().authenticated()
-            )
-            .build();
-    }
-}
-
-// Method-level authorization — requires @EnableReactiveMethodSecurity above
-@Service
-@RequiredArgsConstructor
-public class OrderService {
-    @PreAuthorize("hasRole('ADMIN')")
-    public Mono<Void> deleteOrder(UUID id) { /* ... */ }
-
-    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
-    public Mono<Order> getOrder(UUID id) { /* ... */ }
-}
-```
-
-### Custom SpEL Method Security — Ownership Checks
-
-For fine-grained ownership authorization beyond roles, create a Spring bean used as a SpEL evaluator:
-
-```java
-@Component("authz")
-@RequiredArgsConstructor
-public class AuthorizationService {
-
-    private final ResourceRepository resourceRepository;
-
-    /**
-     * Returns true if the authenticated user owns the resource.
-     * Usage: @PreAuthorize("@authz.isOwner(#resourceId, authentication)")
-     */
-    public boolean isOwner(UUID resourceId, Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) return false;
-        String userId = authentication.getName();
-        return resourceRepository.findById(resourceId)
-            .map(r -> r.getOwnerId().toString().equals(userId))
-            .defaultIfEmpty(false)
-            .block(); // acceptable in security filter — not in reactive chain
-    }
-}
-```
-
-Apply on controller methods:
-
-```java
-@GetMapping("/{id}")
-@PreAuthorize("hasRole('ADMIN') or @authz.isOwner(#id, authentication)")
-public Mono<ResponseEntity<ResourceResponse>> getResource(@PathVariable UUID id) {
-    return resourceService.findById(id).map(ResponseEntity::ok);
-}
-
-@DeleteMapping("/{id}")
-@PreAuthorize("@authz.isOwner(#id, authentication)")
-public Mono<ResponseEntity<Void>> deleteResource(@PathVariable UUID id) {
-    return resourceService.delete(id).thenReturn(ResponseEntity.noContent().<Void>build());
-}
-```
-
-Enable method security in your security config:
-
-```java
-@Configuration
-@EnableMethodSecurity  // replaces @EnableGlobalMethodSecurity(prePostEnabled=true)
-public class SecurityConfig { ... }
-```
-
-**Rules:**
-- Bean name (`"authz"`) must match the SpEL expression prefix (`@authz`)
-- The `.block()` call is acceptable inside a security service bean — not inside a `Mono`/`Flux` chain
-- Avoid complex DB queries in the security bean — keep checks lightweight
-- Always combine with role checks (`hasRole('ADMIN') or @authz.isOwner(...)`) to allow admins to bypass
-
-### CORS Configuration
-
-```java
-@Configuration
-public class CorsConfig {
-
-    private CorsConfigurationSource corsSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("${CORS_ORIGINS:http://localhost:4200}"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
-}
-```
+MVC: `org.springframework.web.cors.UrlBasedCorsConfigurationSource`; WebFlux: `org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource` (same constructor and method). Bearer-token APIs do not need `allowCredentials(true)`: leave it off.

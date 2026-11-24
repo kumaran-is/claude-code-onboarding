@@ -1,6 +1,6 @@
-# Security Hardening for Spring Boot WebFlux
+# Security Hardening for Spring Boot (MVC and WebFlux)
 
-Security scanning, static analysis patterns, and remediation for Java 21 + Spring Boot 3.5.x reactive services.
+Security scanning, static analysis patterns, and remediation for Java 25 + Spring Boot 4.2 services.
 
 ## OWASP Dependency Scanning
 
@@ -182,21 +182,23 @@ grep -rn 'exposure.*include.*\*' src/main/resources/
 
 ## Security Headers — HSTS
 
-Add HSTS (HTTP Strict Transport Security) to the existing SecurityConfig:
+Spring Security already sends `Strict-Transport-Security` (one year, `includeSubDomains`), `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` on HTTPS responses on both stacks. Configure them only to change the values; the method names differ per stack (Security 7.2, checked with `javap`):
 
 ```java
-.headers(headers -> {
-    headers.frameOptions(opts -> opts.mode(XFrameOptionsServerHttpHeadersWriter.Mode.DENY));
-    headers.contentTypeOptions(Customizer.withDefaults()); // X-Content-Type-Options: nosniff
-    headers.contentSecurityPolicy(csp ->
-        csp.policyDirectives("default-src 'self'; frame-ancestors 'none';"));
-    headers.hsts(hsts -> hsts
-        .maxAgeInSeconds(31536000)
-        .includeSubdomains(true));
-})
+// Spring MVC: HttpSecurity
+http.headers(headers -> headers
+    .frameOptions(frame -> frame.deny())
+    .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+    .httpStrictTransportSecurity(hsts -> hsts.maxAgeInSeconds(31_536_000).includeSubDomains(true)));
+
+// Spring WebFlux: ServerHttpSecurity
+http.headers(headers -> headers
+    .frameOptions(frame -> frame.mode(XFrameOptionsServerHttpHeadersWriter.Mode.DENY))
+    .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+    .hsts(hsts -> hsts.maxAge(Duration.ofDays(365)).includeSubdomains(true)));
 ```
 
-This supplements the SecurityConfig in `spring-boot-enterprise-errors-security.md` which already covers CSP and X-Frame-Options.
+Behind a TLS-terminating proxy, HSTS is only written when the request is seen as secure: set `server.request.header.forwarded.strategy=framework` (`spring-boot-config.md` → Proxy Headers).
 
 ## Password Encoding — BCryptPasswordEncoder
 

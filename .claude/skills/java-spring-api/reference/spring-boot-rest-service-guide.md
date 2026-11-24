@@ -1,6 +1,6 @@
 # REST Service Implementation Guide
 
-Step-by-step guide for implementing a REST service from OpenAPI spec + SQL DDL in Spring Boot 3.5.x WebFlux.
+Step-by-step guide for implementing a REST service from OpenAPI spec + SQL DDL in Spring Boot 4.2 (WebFlux examples; the MVC equivalents are in `spring-boot-templates.md`).
 
 ## Workflow
 
@@ -123,23 +123,30 @@ public class PaymentServiceClient {
         this.timeLimiter = tlRegistry.timeLimiter("paymentService");
     }
 
-    public Mono<PaymentResponse> processPayment(PaymentRequest request) {
+    // A payment POST is NOT idempotent: it is retried only because the provider deduplicates on the
+    // Idempotency-Key, generated once per business operation (the caller passes it in, never per attempt).
+    // Without such a key, remove the RetryOperator: a timeout after the charge would charge twice.
+    public Mono<PaymentResponse> processPayment(PaymentRequest request, String idempotencyKey) {
         return webClientBuilder.build()
             .post()
-            .uri(config.getBaseUrl() + "/api/v1/payments")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.getApiKey())
+            .uri(config.baseUrl() + "/api/v1/payments")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.apiKey())
+            .header("Idempotency-Key", idempotencyKey)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .retrieve()
+            // Never copy the upstream body into an exception message: the error advice could return it
             .onStatus(HttpStatusCode::is4xxClientError, response ->
-                response.bodyToMono(String.class)
-                    .flatMap(body -> Mono.error(new InvalidInputException("Payment rejected: " + body))))
+                Mono.error(new InvalidInputException("Payment rejected by the provider")))
             .onStatus(HttpStatusCode::is5xxServerError, response ->
                 Mono.error(new ServiceIntegrationException("Payment service unavailable", null)))
             .bodyToMono(PaymentResponse.class)
+            // transformDeferred: the operator applied LAST is the OUTERMOST. Resilience4j's order is
+            // Retry(CircuitBreaker(TimeLimiter(call))): a time limit per attempt, every attempt counted by the
+            // breaker; the retry config does not retry CallNotPermittedException (open circuit).
+            .transformDeferred(TimeLimiterOperator.of(timeLimiter))
             .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
             .transformDeferred(RetryOperator.of(retry))
-            .transformDeferred(TimeLimiterOperator.of(timeLimiter))
             .onErrorResume(CallNotPermittedException.class, ex ->
                 Mono.error(new ServiceIntegrationException(
                     HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_UNAVAILABLE",
@@ -162,7 +169,7 @@ public record PaymentServiceProperties(
 ```yaml
 integration:
   payment-service:
-    base-url: ${PAYMENT_SERVICE_URL:http://localhost:8081}
+    base-url: ${PAYMENT_SERVICE_URL}
     api-key: ${PAYMENT_SERVICE_API_KEY}
     timeout-ms: 5000
 ```
@@ -180,7 +187,7 @@ resilience4j:
     instances:
       paymentService:
         base-config: default
-        max-attempts: 2
+        max-attempts: 2              # safe only with the Idempotency-Key above
   timelimiter:
     instances:
       paymentService:
@@ -313,7 +320,7 @@ class OrderControllerTest {
     @Autowired
     private WebTestClient webTestClient;
 
-    @MockBean
+    @MockitoBean
     private OrderService orderService;
 
     @Test
@@ -471,9 +478,10 @@ class PaymentIntegrationTest {
 - [ ] Entities match DDL (column names, types, constraints)
 - [ ] DTOs use Java records with `jakarta.validation` annotations
 - [ ] MapStruct mappers for all DTO-entity conversions
-- [ ] Service layer returns `Mono`/`Flux` — no `.block()` calls
-- [ ] External clients use `WebClient` + programmatic Resilience4j (`.transformDeferred()`)
-- [ ] Fallback methods defined for all circuit breakers
-- [ ] `@WebFluxTest` for controllers, `StepVerifier` for services
+- [ ] Spring MVC (default): services return values in `@Transactional` methods with no remote call inside; WebFlux: services return `Mono`/`Flux`, no `.block()`
+- [ ] External clients: `@HttpExchange` or `RestClient` + Framework `@Retryable` (MVC); `WebClient` + `Retry.backoff` or Resilience4j operators (WebFlux)
+- [ ] Retries only on idempotent calls, or with an idempotency key the provider honours
+- [ ] Circuit-breaker fallbacks surface an error state (503 `ProblemDetail`), never fake data
+- [ ] MVC: `@WebMvcTest` + `MockMvcTester` / `RestTestClient`; WebFlux: `@WebFluxTest` + `WebTestClient`, `StepVerifier` for services
 - [ ] WireMock tests for external service integrations
 - [ ] Configuration externalized via `@ConfigurationProperties`

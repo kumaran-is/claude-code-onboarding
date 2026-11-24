@@ -123,7 +123,7 @@ src/test/java/... (mirrors main)
 
 ## Testing Expectations
 
-- JUnit 5 + AssertJ for fluent assertions
+- JUnit 6 (Jupiter API) + AssertJ for fluent assertions
 - Mockito for mocking; avoid partial mocks where possible
-- `WebTestClient` for reactive endpoint integration tests (`@SpringBootTest` + `@AutoConfigureWebTestClient`)
+- `RestTestClient` (`@AutoConfigureRestTestClient`) for MVC endpoint integration tests; `WebTestClient` (`@AutoConfigureWebTestClient`) for WebFlux
 - Favor deterministic tests; no hidden sleeps

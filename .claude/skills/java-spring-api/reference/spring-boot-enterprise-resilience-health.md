@@ -1,6 +1,8 @@
 # Spring Boot Enterprise Patterns — Resilience, Health & Monitoring
 
-Production-ready resilience, health check, and infrastructure patterns for Java 21 + Spring Boot 3.5.x WebFlux.
+Production-ready resilience, health check, and infrastructure patterns for Java 25 + Spring Boot 4.2. The code samples are the **WebFlux** variant; on Spring MVC (the default) use the Framework `@Retryable`/`@ConcurrencyLimit` and `RestClient`/`@HttpExchange` patterns in `spring-boot-templates.md`.
+
+**Start with Spring Framework 7's built-in `@Retryable` / `@ConcurrencyLimit` (`@EnableResilientMethods`)** for bounded retry and bulkheading — templates in `spring-boot-templates.md`. Add Resilience4j when you need a circuit breaker, rate limiter or time-based bulkhead.
 
 ## Resilience4j Configuration
 
@@ -59,11 +61,13 @@ resilience4j:
 ```xml
 <dependency>
     <groupId>io.github.resilience4j</groupId>
-    <artifactId>resilience4j-spring-boot3</artifactId>
+    <artifactId>resilience4j-spring-boot4</artifactId>
+    <version>2.4.0</version> <!-- not managed by the Boot BOM; built against Boot 4.0, not exercised in the 4.2 reference apps: run your tests -->
 </dependency>
 <dependency>
     <groupId>io.github.resilience4j</groupId>
-    <artifactId>resilience4j-reactor</artifactId>
+    <artifactId>resilience4j-reactor</artifactId> <!-- WebFlux only -->
+    <version>2.4.0</version>
 </dependency>
 ```
 
@@ -134,28 +138,17 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info, prometheus, metrics, loggers
-      base-path: /management
-    enabled-by-default: false
+        include: health, info, prometheus     # never metrics, loggers, env, heapdump in production
   endpoint:
     health:
-      enabled: true
-      show-details: always
+      show-details: never                     # details leak dependency names and versions
       probes:
         enabled: true
       group:
         liveness:
-          include: ping
+          include: livenessState
         readiness:
-          include: "*"
-    info:
-      enabled: true
-    prometheus:
-      enabled: true
-    metrics:
-      enabled: true
-    loggers:
-      enabled: true
+          include: readinessState, db         # r2dbc on WebFlux
   metrics:
     tags:
       application: ${spring.application.name}
@@ -163,6 +156,8 @@ management:
       percentiles-histogram:
         http.server.requests: true
 ```
+
+Security: `health` and `info` public, `prometheus` behind a scope, every other endpoint denied with `EndpointRequest` (`spring-boot-enterprise-errors-security.md` → Actuator exposure). Boot 4 replaces the `enabled` flags with access levels (`management.endpoint.<id>.access`, `management.endpoints.access.default`); exposure plus the security rules above is enough.
 
 ## Method-Level Metrics — @Timed and ObservationRegistry
 
@@ -293,8 +288,8 @@ public class SwaggerConfig {
 ```xml
 <dependency>
     <groupId>org.springdoc</groupId>
-    <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-    <version>2.8.6</version>
+    <artifactId>springdoc-openapi-starter-webflux-ui</artifactId> <!-- MVC: springdoc-openapi-starter-webmvc-ui -->
+    <version>3.2.1</version> <!-- the springdoc line for Boot 4.2 -->
 </dependency>
 ```
 
@@ -302,7 +297,9 @@ public class SwaggerConfig {
 
 ```yaml
 springdoc:
+  pre-loading-enabled: true   # WebFlux: build the model at startup, not with blocking classpath scanning on an event loop
   api-docs:
+    enabled: ${OPENAPI_DOCS_ENABLED:false}   # off in production unless explicitly enabled
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html

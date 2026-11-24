@@ -1,4 +1,6 @@
-# GDPR Account Deletion Pattern — Spring Boot WebFlux
+# GDPR Account Deletion Pattern — Spring Boot
+
+> **Stack:** the code samples here are **Spring WebFlux** (use it only when justified: `docs/adr/0001-java25-spring-boot-4-mvc-default.md`). Spring MVC, the default, is covered by the tested code in `spring-boot-templates.md` → Spring MVC.
 
 ## Overview
 

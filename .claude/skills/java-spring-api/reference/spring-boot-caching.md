@@ -1,6 +1,6 @@
 # Spring Boot Caching — @Cacheable / @CacheEvict / Caffeine
 
-Caching guide for Java 21 + Spring Boot 3.5.x. Uses Caffeine as the in-process cache (default for Spring Boot when `spring-boot-starter-cache` + `com.github.ben-manes.caffeine:caffeine` are on the classpath).
+Caching guide for Java 25 + Spring Boot 4.2. Uses Caffeine as the in-process cache (default for Spring Boot when `spring-boot-starter-cache` + `com.github.ben-manes.caffeine:caffeine` are on the classpath).
 
 ## Setup
 
@@ -124,26 +124,26 @@ public Mono<Void> deleteUser(UUID id) {
 }
 ```
 
-## WebFlux / Reactive Caveat
+## WebFlux / Reactive Caching
 
-Spring Cache annotations are **proxy-based** and work synchronously. With WebFlux `Mono`/`Flux`, the cache stores the publisher, not the emitted value — this means the cached value is the `Mono` object itself.
-
-**For reactive caching, use `ReactiveCache` or cache at the service boundary with `.cache()` operator:**
+Since Framework 6.1, `@Cacheable` on a method returning `Mono<T>` / `Flux<T>` caches the **emitted value** (`CacheAspectSupport$ReactiveCachingHandler`, present in spring-context 7.1), not the publisher, provided the cache supports async retrieval. The `CacheConfig` above is the Spring MVC (synchronous) setup; on WebFlux use an async-mode manager instead (custom caches then need `Caffeine...buildAsync()`):
 
 ```java
-// Option 1: Use .cache() on Mono (built-in Reactor memoization)
-private final Mono<List<Permission>> cachedPermissions =
-    permissionRepository.findAll().collectList().cache(Duration.ofMinutes(10));
+@Bean
+CacheManager cacheManager() {
+    CaffeineCacheManager manager = new CaffeineCacheManager("users", "permissions");
+    manager.setCaffeine(Caffeine.newBuilder().maximumSize(1_000).expireAfterWrite(Duration.ofMinutes(10)).recordStats());
+    manager.setAsyncCacheMode(true);   // required for Mono/Flux return types (checked in spring-context-support 7.1.0)
+    return manager;
+}
 
-// Option 2: Use Spring Cache on a blocking helper called from the reactive chain
-// (wraps in Schedulers.boundedElastic())
 @Cacheable("users")
-public UserResponse findByIdBlocking(UUID id) {
-    return userRepository.findById(id).map(userMapper::toResponse).block();
+public Mono<UserResponse> findById(UUID id) {          // the UserResponse is cached, the Mono is rebuilt per call
+    return userRepository.findById(id).map(userMapper::toResponse);
 }
 ```
 
-**Rule:** `@Cacheable` on a method returning `Mono<T>` caches the `Mono` wrapper, not the `T`. This is only correct if the same `Mono` is subscribed to multiple times (it is reused from cache). Prefer `Mono.cache()` for reactive caching.
+Never call `.block()` inside a cached method to make it synchronous: on a Netty thread it throws `IllegalStateException`. A single process-wide value (reference data) can also be memoised with `Mono.cache(Duration)`.
 
 ## Eviction Strategies
 
@@ -175,5 +175,5 @@ curl http://localhost:8080/actuator/caches/users  # stats for "users" cache
 - **@Cacheable on void methods** — nothing to cache; use @CacheEvict instead
 - **Caching mutable objects** — always cache immutable DTOs/records, never JPA entities
 - **Missing cache eviction** — write operations MUST evict or update the cache
-- **Caching reactive Mono without `.cache()` operator** — see Reactive Caveat above
+- **`@Cacheable` on `Mono`/`Flux` without `setAsyncCacheMode(true)`** — see WebFlux / Reactive Caching above
 - **Large cache entries** — cache fine-grained values (by ID), not entire lists

@@ -131,6 +131,7 @@ Coverage floors prove coverage did not drop, not that *your* change is exercised
 
 - the matching widget/unit test changes in the same PR, with **added assertion-bearing lines** (`expect(`, `find.`, `testWidgets(`): a comment, import or whitespace edit does not count;
 - the matching Maestro flow changes in the same PR;
+- before the PR, run only the flows for the screens you changed: tag each flow with its feature (`tags:` in the flow header) and run `maestro test --include-tags <feature> .maestro/`; the full suite runs in CI or nightly. A changed screen whose flows were not run is reported NOT RUN, not PASS;
 - the escape hatch is an explicit tag in a commit message with a reason (e.g. `[widget-na: refactor, no observable change]`), reviewed like any exception;
 - a check that parses diffs needs a self-test (known-bad must trip) and a full-depth checkout (`fetch-depth: 0`).
 

@@ -82,21 +82,9 @@ FCM handles both Android and iOS when you configure APNs keys in the Firebase Co
 
 ### Token Management in Flutter
 
-```dart
-// flutter-mobile: firebase_messaging is already in pubspec
+Register with Firebase Installation IDs (`register()` + `onRegistered`); `getToken()` / `onTokenRefresh` are the deprecated registration-token API. The full lifecycle (iOS APNs-token precondition, re-register on resume, `unregister()` at sign-out, server-side cleanup of dead registrations, dropping taps meant for another user) lives in one place: `flutter-mobile/reference/flutter-security-client-trust.md` §8.
 
-// Get token and send to backend
-final token = await FirebaseMessaging.instance.getToken();
-// Send token to your backend API
-
-// Token refresh — handle in app startup
-FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-  // Update backend with new token
-});
-
-// Multiple devices: store multiple tokens per user in Firestore
-// /users/{userId}/fcmTokens/{tokenId}
-```
+Multiple devices: store one registration per device under the user, e.g. `/users/{userId}/fcmRegistrations/{id}`.
 
 ### Token Lifecycle
 

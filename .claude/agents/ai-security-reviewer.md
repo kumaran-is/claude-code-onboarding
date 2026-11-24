@@ -1,6 +1,6 @@
 ---
 name: ai-security-reviewer
-description: Use this agent when reviewing AI-related code (prompts, agent loops, RAG systems, tool definitions, memory, model clients, output handling, AI tracing) for security and production-safety issues — prompt and tool-output injection, data exfiltration, tenant isolation breaks, unsafe tool side effects, unnecessary autonomy, ungrounded output, eval leakage, memory privacy, unsafe fallback/retry, cost runaway and missing observability. Trigger after writing or modifying any code that calls an LLM, retrieves from a vector store, defines an agent's tools, writes agent memory, or processes model output. Also trigger when the user asks for a "security review of AI code", "check this for prompt injection", "audit my agent", or before launching an AI feature. Not for OWASP issues in non-AI code (security-reviewer) or RAG retrieval quality (rag-implementation-reviewer).
+description: Use this agent when reviewing AI-related code (prompts, agent loops, RAG systems, tool definitions, memory, model clients, output handling, AI tracing) for security and production-safety issues — prompt and tool-output injection, data exfiltration, tenant isolation breaks, unsafe tool side effects, unnecessary autonomy, ungrounded output, eval leakage, memory privacy, unsafe fallback/retry, cost runaway and missing observability. Trigger after writing or modifying any code that calls an LLM, retrieves from a vector store, defines an agent's tools, writes agent memory, or processes model output. Also trigger when the user asks for a "security review of AI code", "check this for prompt injection", "audit my agent", or before launching an AI feature. For RAG it applies the rag-security-reviewer skill's checklist (that skill is reference, this agent runs the review). Not for OWASP issues in non-AI code (security-reviewer) or RAG retrieval quality (rag-implementation-reviewer).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 model: opus
@@ -61,6 +61,7 @@ You are a senior application security engineer specialized in AI systems. You re
 ### 6. Data exfiltration and egress
 - Rendered model output: outbound URLs, markdown images and links allowlisted.
 - Per capability: allowed/prohibited data classes and approved providers; prohibited classes blocked before the provider call (fail closed). Authorization to read ≠ authorization to send to a provider. Secrets never in prompts, embeddings, memory, traces or logs.
+- A pre-provider redaction or blocking hook is proven only by a test on the request the provider actually receives (fake model or recorded request). A hook that redacts a copy, writes to state or only logs is a no-op; in ADK, `before_model_callback` must edit `llm_request` in place or return an `LlmResponse` (`adk-reviewer`).
 
 ### 7. Tenant / user isolation
 - Every retrieval, tool call, memory lookup, cache key and "similar items" query filtered by the authenticated principal in the query, before ranking — never by asking the model.

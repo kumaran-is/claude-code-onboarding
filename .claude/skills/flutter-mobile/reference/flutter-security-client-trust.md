@@ -226,7 +226,13 @@ Rules:
 - Never navigate to a path, URL or screen name taken from the payload; only allowlisted types plus a validated id
 - Never put personal data or secrets in the notification payload: it is shown on the lock screen and stored by the OS
 - Log message ids, not payloads
-- The FCM token is a device address, not a credential: send it to the backend after sign-in and delete it (`deleteToken()`) in the sign-out coordinator
+- A push registration is a device address, not a credential. Registration lifecycle (firebase.google.com/docs/cloud-messaging/flutter/client and /manage-tokens, read 2026-11-24):
+  - Register with Firebase Installation IDs (`register()` + `onRegistered`); `getToken()` / `onTokenRefresh` are the deprecated registration-token API, and the two must not be mixed in one app
+  - iOS: the APNs token must exist before any FCM API request (iOS SDK 10.4.0+) and is not guaranteed at launch. Await `getAPNSToken()` with a bounded retry (a few seconds), proceed only on non-null, otherwise report push as not registered; never block startup on it
+  - Send the ID to the backend after sign-in with a timestamp, again on every `onRegistered` and on app resume (an idempotent upsert keyed by user and ID)
+  - Sign-out coordinator: `unregister()` and delete the server row while the session can still authenticate, then clear auth state
+  - Server: delete a registration when a send returns `UNREGISTERED` (404), or `INVALID_ARGUMENT` (400) for a payload known to be valid
+  - Tap routing: the payload names the recipient user; a tap for a different user than the signed-in one (shared device, account switch) opens nothing
 
 ---
 

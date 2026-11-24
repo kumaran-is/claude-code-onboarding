@@ -44,6 +44,8 @@ last-reviewed: "2026-11-23"
 
 **Evidence accounting:** each planned case lands in exactly one bucket (PASS, FAIL, UNSCORED, DEPENDENCY_FAILURE, SKIPPED); assert `sum(buckets) == planned`; zero scored cases raises; a run with any UNSCORED/DEPENDENCY/SKIPPED case is "NOT RUN (incomplete)", not PASS. A Giskard `Suite` result with `pass_rate is None` means nothing ran.
 
+**Live-run preflight (R2+):** before the first case, make one real call through the same client, model id and endpoint the suite uses and require at least one result (a completion, a retrieved chunk). If it fails, record the whole run as NOT RUN with the preflight error and score nothing: a bad key, model id or endpoint otherwise shows up as a wall of FAIL or as zero scored cases that look like a regression.
+
 ### Judge variance and trials
 
 - A single judge call is not a measurement. For a judge-gated metric that has shown variance, score **median-of-N (odd, default 3)** per case, gate on the mean of per-case medians, persist every trial score. Proof the trials run: a stubbed judge returning `[0, 1, 1]` passes at N=3 and fails at N=1.

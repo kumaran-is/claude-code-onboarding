@@ -38,6 +38,7 @@ Reasoning for each item: `.claude/skills/google-adk/reference/` (cite the file i
 
 ### HIGH — fix before merge
 - [ ] Callback signatures use ADK's keyword names: `before_model_callback(callback_context, llm_request)`, `after_model_callback(callback_context, llm_response)`, `on_model_error_callback(callback_context, llm_request, error)`, `before_tool_callback(tool, args, tool_context)`, `after_tool_callback(tool, args, tool_context, tool_response)`, `on_tool_error_callback(tool, args, tool_context, error)`. Other names raise `TypeError` at run time.
+- [ ] **Redaction or guardrail in `before_model_callback` changes nothing**: the callback must edit `llm_request` in place (e.g. its `contents` parts) or return an `LlmResponse` to block the call (adk.dev/callbacks/types-of-callbacks); building a redacted copy, writing it to state or only logging leaves the model request unchanged. The test captures the request the model actually receives (fake model or recorded request) and asserts the value is gone; asserting on the callback's return value is not evidence.
 - [ ] Model callbacks only on `LlmAgent`; orchestrators (`SequentialAgent`/`ParallelAgent`/`LoopAgent`) reject them (`extra_forbidden`) — input screening for orchestrators happens in the route. A unit test asserts the callback is wired (identity check), not a docstring.
 - [ ] Session service built once per process (lifespan), production uses `DatabaseSessionService(db_url=...)` (self-hosted Postgres, needs `sqlalchemy[asyncio]` + async driver) or `VertexAiSessionService(project=..., location=..., agent_engine_id=...)` (managed Agent Engine). `project_id=` is a `TypeError`. `InMemorySessionService` in production = finding.
 - [ ] Tools return a small JSON-serializable result with an explicit error field (`{"ok": bool, "error_code": str | None, "data": ...}`); canonical rule in `agentic-ai-coding-standard`. After the run, if every grounding tool failed, the route returns `INSUFFICIENT_EVIDENCE` regardless of model text.
@@ -47,6 +48,7 @@ Reasoning for each item: `.claude/skills/google-adk/reference/` (cite the file i
 - [ ] Memory: `preload_memory` injects recalled text into the system instruction — use `load_memory` (tool result) when memories derive from untrusted conversations, or sanitize before `add_session_to_memory`. → `adk-memory-artifacts.md` §2
 - [ ] Tests do not reach a real model: agents in tests use a scripted `BaseLlm` (InMemoryRunner alone still calls the configured model). Sessions are created (awaited) before `run_async`.
 - [ ] `await runner.close()` in lifespan shutdown (MCP connections).
+- [ ] `McpToolset` only for tools the model chooses at run time. A fixed code path (route handler, callback, deterministic workflow step) calls the owning service directly: MCP there adds a process hop, a failure mode and a tool-description injection surface for no decision.
 
 ### MEDIUM — fix within sprint
 - [ ] Model id from settings/env with no code default; tests compare to settings, never a literal. Sampling params (`temperature`/`top_p`/`top_k`) not lowered on Gemini 3.x; `thinking_level` chosen per call and `max_output_tokens` sized for thinking + answer.

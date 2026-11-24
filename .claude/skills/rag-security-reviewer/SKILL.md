@@ -1,6 +1,6 @@
 ---
 name: rag-security-reviewer
-description: Use when reviewing or designing RAG security — multi-tenant isolation, access control, prompt injection defenses, PII redaction, audit logs, data lineage, deletion / right-to-be-forgotten, adversarial testing. Triggers on phrases like "RAG security review", "prompt injection", "multi-tenant RAG", "tenant isolation", "PII in RAG", "audit log", "ACL", "data leak", "GDPR delete".
+description: Use when reviewing or designing RAG security — multi-tenant isolation, access control, prompt injection defenses, PII redaction, audit logs, data lineage, deletion / right-to-be-forgotten, adversarial testing. Triggers on phrases like "RAG security review", "prompt injection", "multi-tenant RAG", "tenant isolation", "PII in RAG", "audit log", "ACL", "data leak", "GDPR delete". Provides the RAG security checklist and patterns; the review itself is run by the ai-security-reviewer agent. Not for prompt injection or tool safety outside retrieval (ai-security-reviewer), or retrieval quality (rag-implementation-reviewer).
 metadata:
   triggers: RAG security review, prompt injection, multi-tenant RAG, tenant isolation, PII in RAG, audit log, ACL, data leak, GDPR delete
 allowed-tools: Read, Glob, Grep

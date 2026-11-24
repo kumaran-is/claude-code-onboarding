@@ -11,6 +11,7 @@ Add a complete feature across the stack:
 **Feature description:** $ARGUMENTS
 
 ## Steps
+0. **Already done?** When the feature comes from an issue, run `/status-check <issue>` first: it audits the acceptance criteria against the source. If every criterion is WORKS with executed evidence, report that and propose closing the issue with the evidence instead of implementing it again; implement only the criteria that are BROKEN or NOT IMPLEMENTED.
 1. **Analyze** which layers the feature needs (database? backend API? web UI? mobile screen?) and which stacks the repo actually contains. Create only the relevant layers. Load each layer's skill before writing code (`.claude/SKILLS_GUIDE.md` → Routing).
 2. **Database** — migration in the stack's tool (Alembic, Flyway, Prisma) with up and down; `postgresql-database-reviewer` before applying.
 3. **Backend API** — DTO/schema, repository, service, controller/router, authz check and validation, plus unit and integration tests (JUnit / pytest / Vitest), including one error-path test.

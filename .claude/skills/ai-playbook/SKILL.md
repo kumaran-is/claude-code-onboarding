@@ -114,6 +114,7 @@ When advising on AI design work:
 - **Default to the Implementation Minimum** (six items in Layer 2 §2.3). Don't over-engineer on day one.
 - **Push back when AI is the wrong tool.** The Red Flag Matrix (Layer 1 §1.6) lists where deterministic code wins.
 - **Insist on the Output Contract** (Layer 2 §2.4) before any AI output mutates state.
+- **MCP only where the model chooses the tool.** A step that always runs the same call is plain code calling the owning service; exposing it over MCP adds latency, a failure mode and an injection surface.
 - **Treat all model inputs as untrusted** — including retrieved documents, tool outputs, file uploads, and prior conversation turns from external sources.
 - **Cite thumb rules sparingly.** Don't recite the playbook at the user; apply it.
 

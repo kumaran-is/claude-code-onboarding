@@ -36,7 +36,7 @@ AGENT_SRC=src              # agent code, prompts and corpora roots (space-separa
 | # | Check | Severity if violated |
 |---|---|---|
 | 1 | **Verdict precedence:** no code path lets a judge PASS override a deterministic FAIL; judge error/timeout/skip is recorded UNSCORED/DEPENDENCY, never PASS. Grep `except` around metric/judge calls that `return`, `continue` or `pass` without recording a bucket | CRITICAL |
-| 2 | **Evidence accounting:** runner asserts recorded cases == planned cases and raises on zero scored cases; a skipped live suite reports NOT RUN; Giskard `pass_rate is None` is not success; rows are written to disk | HIGH |
+| 2 | **Evidence accounting:** runner asserts recorded cases == planned cases and raises on zero scored cases; a skipped live suite reports NOT RUN; a live (R2+) suite starts with a preflight that makes one real call through the same client and requires at least one result, else the whole suite is NOT RUN (a wrong key, model id or endpoint must not surface as N failed or zero-scored cases); Giskard `pass_rate is None` is not success; rows are written to disk | HIGH |
 | 3 | **Golden leakage:** no golden input/answer/id literal appears in `$AGENT_SRC`, prompts, few-shots or corpora (grep below) | CRITICAL |
 | 4 | **Judge model explicit and recorded:** every judge-backed metric gets `model=`/`llm=` from one config-driven factory; no model literal in eval code; resolved judge id + rubric version written per row (AST script below) | HIGH |
 | 5 | **Trials, no reruns:** judge-gated cases use declared odd k/N with median; no `@pytest.mark.flaky` / `--reruns` on LLM assertions | HIGH |

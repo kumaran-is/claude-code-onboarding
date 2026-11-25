@@ -268,7 +268,7 @@ export function LoginPage() {
 `src/app/AppLayout.tsx`
 
 ```tsx
-import { MenuIcon } from 'lucide-react'
+import { MenuIcon } from '@/shared/ui/icons'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from 'cn'

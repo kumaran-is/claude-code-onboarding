@@ -221,10 +221,18 @@ export function ThemeProvider({ children, defaultTheme = 'system', storageKey = 
 }
 ```
 
+`src/shared/ui/icons.ts`: the one place the app imports the icon package (`check-design-system.py` DS-ICON-ISOLATION);
+feature and app code import from here.
+
+```ts
+export { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, FolderIcon, MenuIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+```
+
 `src/shared/ui/mode-toggle.tsx`
 
 ```tsx
-import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+// Tier: Atom
+import { MonitorIcon, MoonIcon, SunIcon } from './icons'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,

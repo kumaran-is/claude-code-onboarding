@@ -26,8 +26,9 @@ See the tree in `SKILL.md`. Rules that make it hold:
 - `features/<f>/api/` is the only place that knows URLs; components call query hooks or `queryOptions`.
 - `features/<f>/model/` holds zod schemas; types are `z.infer<>` of them (one source for form, parse and type).
 - `shared/ui/` components are presentational: no `useQuery`, `useMutation`, `useNavigate`, `useParams`,
-  `fetch`. A quick check: `grep -rnE "useQuery|useMutation|useNavigate|useParams|fetch\(" src/shared/ui`
-  must print nothing.
+  `fetch`, global stores or `features/` imports, and line 1 is `// Tier: Atom|Molecule|Organism`
+  (providers/contexts excepted). Gate: `python3 .claude/scripts/check-design-system.py --root .` (rules
+  `DS-PRESENTATIONAL`, `DS-TIER`); tiers: `.claude/skills/design-system/reference/atomic-decision-tree.md`.
 - Cross-feature reuse goes through `shared/` (Rule of Three) or a feature's public `index.ts`.
 
 ## Components and composition — tested 2026-11-23 (`Card.tsx` + `Card.test.tsx`; not in the current app)
@@ -189,6 +190,7 @@ describe('ReleaseNotes (use + Suspense + error boundary)', () => {
 `src/shared/ui/FocusFirst.tsx`
 
 ```tsx
+// Tier: Atom
 import { Fragment, useEffect, useRef, type FragmentInstance, type ReactNode } from 'react'
 
 /**

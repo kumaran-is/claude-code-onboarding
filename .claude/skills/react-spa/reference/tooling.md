@@ -447,7 +447,7 @@ a 1.5:1 ring as the only focus indicator (independent review, 2026-11-24). Light
   button, [role="button"], [role="menuitem"], [role="menuitemradio"] { min-width: 44px; }
   h1 { font-size: var(--text-2xl, 1.5rem); font-weight: 600; }
   h2 { font-size: var(--text-xl, 1.25rem); font-weight: 600; }
-  main { padding: 1rem; max-width: 60rem; margin: 0 auto; }
+  main { padding: calc(var(--spacing) * 4); max-width: 60rem; margin: 0 auto; }
   main:focus { outline: none; }
 }
 

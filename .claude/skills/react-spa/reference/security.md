@@ -37,6 +37,7 @@
 `src/shared/ui/SafeHtml.tsx`
 
 ```tsx
+// Tier: Atom
 import DOMPurify from 'dompurify'
 
 /**

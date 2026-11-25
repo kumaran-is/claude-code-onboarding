@@ -256,7 +256,7 @@ import {
   useTable,
   type Column,
 } from '@tanstack/react-table'
-import { ArrowDownIcon, FolderIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react'
+import { ArrowDownIcon, FolderIcon, ArrowUpDownIcon, ArrowUpIcon } from '@/shared/ui/icons'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -332,6 +332,8 @@ function ProjectTable({ projects }: { projects: Project[] }) {
 }
 
 export function ProjectList() {
+  // Minimal form. Screens with real latency use the content-first model (150 ms delay / 400 ms hold, keepPreviousData,
+  // single-flight Retry): design-system/reference/interaction-contracts.md §6b.1.
   const { data, isPending, isError, isFetching, refetch } = useQuery(projectQueries.list())
 
   // Persistent live region: it is mounted before its text changes, so screen readers announce the update.

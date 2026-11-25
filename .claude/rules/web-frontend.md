@@ -32,6 +32,8 @@ Path-scoped: loads for web-app files only. Globs avoid `**/*.ts` and `**/src/**/
 
 **Accessibility:** target WCAG 2.2 AA (`.claude/skills/accessibility-audit/`). Axe finding nothing means "no automated violations; manual checks required", never "compliant".
 
+**Angular UI mode:** every Angular workspace records one mode in `package.json` `config.uiMode` (`daisyui` default, `spartan`, `hybrid`). Before UI work run `bash .claude/scripts/angular-ui-mode.sh detect <workspace>` and use only that mode's components and ownership (`.claude/skills/angular-spa/reference/ui-mode-selection.md` §4); never add the unselected library. `post-edit-angular-ui-mode-advisory.sh` flags drift on edit.
+
 **Angular scaffolding is CLI-first:** new workspaces come from `/scaffold-angular-app` (`ng new`); components, services, guards, interceptors, interfaces, environments and libraries come from `ng generate`, and integrations from `ng add`, run with the workspace's local CLI (`npm exec --no -- ng …`). Never hand-write `angular.json`, `main.ts`, `tsconfig*.json` or a skeleton the CLI generates; hand-write only application logic, and replace every generated placeholder (`return true` guard, empty interface) before lint. Older majors are upgraded with `ng update` plus `ng generate @angular/core:<migration>` (dry run first), never re-scaffolded over. Do not overwrite a non-empty directory.
 
 **Testing and gates:** tool routing in `.claude/rules/testing-tool-selection.md` (Playwright CLI interactive, `@playwright/test` regression, Chrome DevTools MCP diagnostics). Angular template errors are caught only by `ng build` / `ng test`, not `tsc`. Run `/verify` (web block: type-check, lint or NOT RUN, unit, build, E2E with an executed-test count) before claiming done.

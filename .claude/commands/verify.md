@@ -318,6 +318,7 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 |---|---|---|
 | Type-check | `tsc -p tsconfig.app.json --noEmit` and `tsconfig.spec.json` (the root tsconfig is `"files": []`, so plain `tsc --noEmit` checks nothing). Templates are checked only by `ng build` / `ng test` | `tsc -b` when tsconfig.json has `references` (create-vite), else `tsc --noEmit` |
 | Lint (quick+) | `ng lint` (the `lint` target in `angular.json`); none → **NOT RUN** (a new Angular 22 workspace has no linter until `ng add angular-eslint`) | `npm run lint` / `eslint.config.*`; none → **NOT RUN** |
+| UI mode (quick+) | `angular-ui-mode.sh detect`: `package.json` `config.uiMode` matches the installed UI packages and the global stylesheet (`angular-spa/reference/ui-mode-selection.md`); a plain-CSS workspace passes as `none` | — |
 | Unit (full+) | `ng test --watch=false` (`@angular/build:unit-test`: Vitest + jsdom by default; no Karma `--browsers` flag) | `vitest run`, else `npm test` |
 | Build (full+) | `ng build` (production by default) | `npm run build` |
 | E2E (full+) | `playwright test --fail-on-flaky-tests` when `playwright.config.*` exists; PASS needs exit 0 **and** executed > 0 (an all-skipped run exits 0); missing browser/server → **BLOCKED** | same |
@@ -325,7 +326,7 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 
 ```bash
 # Web gate: Angular + React (Vite / CRA / Next) apps, nested roots included. MODE=quick|full|pre-pr.
-MODE="${MODE:-quick}"; WEB_FAIL=0; WEB_BLOCKED=0; WEB_NOTRUN=0; WEB_RAN=0; WEB_ROOTS=""
+MODE="${MODE:-quick}"; WEB_FAIL=0; WEB_BLOCKED=0; WEB_NOTRUN=0; WEB_RAN=0; WEB_ROOTS=""; TOP=$(pwd)
 pkg_has() { node -e 'const p=require(process.argv[1]);const s={...p.dependencies,...p.devDependencies};process.exit(process.argv.slice(2).some(n=>n in s)?0:1)' "$1/package.json" "${@:2}" 2>/dev/null; }
 has_script() { node -e 'const p=require(process.argv[1]);process.exit(p.scripts&&p.scripts[process.argv[2]]?0:1)' "$1/package.json" "$2" 2>/dev/null; }
 web_check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code; log tail only on failure
@@ -383,6 +384,11 @@ while IFS= read -r entry <&3; do
   elif has_script "$root" lint; then web_check "$root" lint npm run lint
   elif has_cfg "$root" eslint.config; then web_check "$root" lint npm exec --no -- eslint .
   else not_run "$root" lint "no lint script or eslint.config.*"; fi
+  # 2b. Angular UI mode: config.uiMode matches the installed UI packages and the global stylesheet
+  if [ "$kind" = angular ]; then
+    if [ -f "$TOP/.claude/scripts/angular-ui-mode.sh" ]; then web_check "$root" "ui mode (angular-ui-mode.sh detect)" bash "$TOP/.claude/scripts/angular-ui-mode.sh" detect .
+    else not_run "$root" "ui mode" "no .claude/scripts/angular-ui-mode.sh at the repo root"; fi
+  fi
   [ "$MODE" = quick ] && continue
   # 3. unit tests
   if [ "$kind" = angular ]; then

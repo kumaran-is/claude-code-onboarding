@@ -189,10 +189,9 @@ grep -rn 'prisma\.\$queryRaw.*\+' src/
 ### Missing Input Validation
 
 ```bash
-# Controllers without DTO validation
-grep -rn '@Body()' src/ | grep -v '@Body(.*Dto)'
-grep -rn '@Query()' src/ | grep -v '@Query(.*Dto)'
-grep -rn '@Param()' src/ | grep -v '@Param(.*Dto)'
+# Parameters without { schema }: the global StandardSchemaValidationPipe validates ONLY parameters that declare a
+# schema, so `@Body() dto: CreateOrderDto` (a type name alone) is unvalidated. One decorator per line (Prettier default).
+grep -rnE --include='*.ts' '@(Body|Query|Param)\(' src/ | grep -v '{ schema'
 ```
 
 ### Comprehensive Security Scan Script
@@ -214,7 +213,8 @@ grep -rn '\$queryRaw.*\${' src/ || echo "✓ No unsafe raw queries found"
 
 echo ""
 echo "3. Checking for missing validation..."
-grep -rn '@Body()' src/ | grep -v 'Dto' || echo "✓ All endpoints have DTO validation"
+unvalidated=$(grep -rnE --include='*.ts' '@(Body|Query|Param)\(' src/ | grep -v '{ schema')
+if [ -n "$unvalidated" ]; then echo "$unvalidated"; echo "✗ parameters above declare no { schema }: not validated"; else echo "✓ every @Body/@Query/@Param declares { schema }"; fi
 
 echo ""
 echo "4. Checking for console.log statements..."

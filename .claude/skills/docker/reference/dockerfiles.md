@@ -5,56 +5,18 @@ Copy-ready multi-stage Dockerfiles and .dockerignore for all backend stacks. Eve
 
 ---
 
-## NestJS 12.x / Node 26 (pnpm + Prisma)
+## NestJS 12.x / Node 26 (npm or pnpm + Prisma)
 
-```dockerfile
-# my-service — Multi-Stage Production Dockerfile (NestJS 12.x / Node 26)
+The NestJS Dockerfile lives in one place: `nestjs-api` › `reference/nestjs-templates-infrastructure.md` § Dockerfile
+(npm, the stack default) and § pnpm projects (pnpm variant). Both were built and run on 2026-11-24: base
+`node:26.13.1-alpine3.23@sha256:<index digest>`, production dependencies only, `USER node`, exec-form `CMD`.
 
-# ============================================
-# Stage 1: Base — node:26-alpine + pnpm + non-root user
-# ============================================
-FROM node:26-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nestjs
-
-# ============================================
-# Stage 2: Dependencies — layer cache for pnpm installs
-# ============================================
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-COPY prisma ./prisma/
-RUN pnpm install --frozen-lockfile
-
-# ============================================
-# Stage 3: Builder — TypeScript compile + Prisma client + prune
-# ============================================
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN pnpm prisma generate
-RUN pnpm build
-RUN pnpm prune --prod
-
-# ============================================
-# Stage 4: Runner — minimal production image
-# ============================================
-FROM base AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=3000
-USER nestjs
-COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
-COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health/live || exit 1
-EXPOSE 3000
-CMD ["node", "dist/main.js"]
-```
+- **Package manager = the lockfile.** `package-lock.json` → `npm ci`; `pnpm-lock.yaml` → pnpm at the exact version
+  in `package.json` `"packageManager"`. Never `pnpm@latest`, never both lockfiles.
+- **No corepack on Node 25+ images.** `corepack enable` fails with `corepack: not found`; install pnpm with
+  `npm install -g pnpm@<pinned>` in a build stage.
+- **Pin the base by index digest** (`docker buildx imagetools inspect node:26.13.1-alpine3.23`), builder and runtime
+  on the same digest.
 
 **.dockerignore (NestJS):**
 ```

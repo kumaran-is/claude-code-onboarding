@@ -68,7 +68,7 @@ Before writing any Cloud Run Function code:
 
 - [ ] Chose event trigger type: Pub/Sub push | Cloud Storage notification | HTTP
 - [ ] Selected target stack: Python FastAPI | NestJS | Spring Boot 4.2 (MVC default, WebFlux when justified) | TypeScript/Fastify
-- [ ] Verified runtime version: `python:3.14.10-slim-trixie@sha256:<digest>` | `node:26-alpine` | `eclipse-temurin:25-jre`
+- [ ] Verified runtime version: `python:3.14.10-slim-trixie@sha256:<digest>` | `node:26.13.1-alpine3.23@sha256:<index digest>` | `eclipse-temurin:25-jre`
 - [ ] Confirmed port binding: `PORT` env var (Cloud Run injects this, default 8080)
 - [ ] Health check endpoint planned: `GET /health` → `{ "status": "ok" }`
 - [ ] WIF configured or planned (no service account JSON keys)
@@ -110,7 +110,7 @@ on:
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  REGION: us-central1
+  REGION: ${{ vars.GCP_REGION }}               # one variable for registry and service, so they cannot drift
   FUNCTION_NAME: my-function
   REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev
 

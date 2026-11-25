@@ -6,11 +6,16 @@ Production-ready Docker, Docker Compose, and testing configuration templates for
 
 npm-based (the stack's package manager), non-root, production dependencies only. Verified 2026-11-24 on NestJS 12.6.0,
 Node 26.13.1 and Docker Engine 29.8.0: `docker build` exit 0, the container ran as `node`, `/health` answered 200,
-then the container and image were removed. Pin the base image by digest in CI (`node:26-alpine@sha256:…`).
+then the container and image were removed. Re-verified 2026-11-24 with the digest-pinned base below (`node:26.13.1-alpine3.23@sha256:<index digest>`):
+build exit 0, ran as `node` on Node v26.13.1, `/health` answered.
 
 ```dockerfile
 # syntax=docker/dockerfile:1
-FROM node:26-alpine AS build
+# Base image pinned by multi-arch index digest (node:26.13.1-alpine3.23, resolved 2026-11-24).
+# Renovate/Dependabot bump tag and digest together; never a floating tag.
+ARG NODE_IMAGE=node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f
+
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -20,12 +25,12 @@ COPY src ./src
 # prisma.config.ts reads DATABASE_URL at load; generate never connects, so a placeholder is enough.
 RUN DATABASE_URL=postgresql://placeholder@localhost:5432/placeholder npx prisma generate && npx nest build
 
-FROM node:26-alpine AS prod-deps
+FROM ${NODE_IMAGE} AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-FROM node:26-alpine
+FROM ${NODE_IMAGE}
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
@@ -46,6 +51,44 @@ CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]
 - `main.ts` must listen on `0.0.0.0`; Fastify's default `127.0.0.1` is unreachable from outside the container.
 - Secrets come from the platform's secret store as env vars at runtime; never `COPY .env`.
 
+### pnpm projects
+
+The lockfile decides the package manager: `package-lock.json` → the npm Dockerfile above (the `/scaffold-nestjs-api`
+default); `pnpm-lock.yaml` → this variant. Never mix lockfiles. Node 25+ images ship **no corepack and no pnpm**
+(`corepack: not found` on `node:26.13.1-alpine3.23@sha256:<index digest>`), so install the exact version that `package.json` pins in
+`"packageManager": "pnpm@<x.y.z>"`. pnpm 12 also needs, committed in `pnpm-workspace.yaml`: `allowBuilds` (build
+scripts are blocked until approved; Prisma needs `prisma` and `@prisma/engines`) and it rejects lockfile entries younger
+than `minimumReleaseAge`. Keep that gate: a failing install means "wait or review", not "disable it in the Dockerfile".
+Verified 2026-11-24 with pnpm 12.23.0 on the same NestJS 12.6 app: build exit 0, ran as `node` on Node 26.13.1.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f
+# Must equal package.json "packageManager" (a Dockerfile comment has to sit on its own line).
+ARG PNPM_VERSION=12.23.0
+
+FROM ${NODE_IMAGE} AS pnpm-base
+ARG PNPM_VERSION
+RUN npm install -g pnpm@${PNPM_VERSION} && npm cache clean --force
+
+FROM pnpm-base AS build
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY tsconfig.json tsconfig.build.json nest-cli.json prisma.config.ts ./
+COPY prisma ./prisma
+COPY src ./src
+RUN DATABASE_URL=postgresql://placeholder@localhost:5432/placeholder pnpm exec prisma generate && pnpm exec nest build
+
+FROM pnpm-base AS prod-deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+
+FROM ${NODE_IMAGE}
+# runtime stage identical to the npm Dockerfile above (ENV, COPY --chown=node:node, USER node, HEALTHCHECK, CMD)
+```
+
 ## Docker Compose (Development)
 
 ```yaml
@@ -62,7 +105,7 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: myservice
     volumes:
       # PostgreSQL 18 images keep data under /var/lib/postgresql/<major>; mount the parent directory

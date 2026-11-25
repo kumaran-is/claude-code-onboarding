@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev
 ```
 
-### pnpm (NestJS)
+### pnpm (projects with `pnpm-lock.yaml`)
 
 ```dockerfile
 # Cache pnpm store across builds

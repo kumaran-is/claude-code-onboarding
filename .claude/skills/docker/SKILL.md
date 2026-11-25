@@ -48,7 +48,7 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 
 | Stack | Base Image | Build Tool | Port |
 |-------|-----------|-----------|------|
-| NestJS 12.x / Node 26 | node:26-alpine | pnpm | 3000 |
+| NestJS 12.x / Node 26 | node:26.13.1-alpine3.23@sha256 | lockfile decides: npm (default) or pinned pnpm | 3000 |
 | Spring Boot 4.2 / Java 25 | eclipse-temurin:25-jdk → eclipse-temurin:25-jre | Maven wrapper (`./mvnw`, Maven 3.10.2) | 8080 |
 | Python FastAPI 3.14 | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 | 8080 |
 | Python Agentic AI | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 (+ `uvicorn --workers N` off Cloud Run) | 8080 |
@@ -57,7 +57,7 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 ### Step 2: Set Up Docker Compose
 
 Read `reference/compose-patterns.md` for:
-- Development compose (PostgreSQL 18 + Redis 7; 18+ volumes mount at `/var/lib/postgresql`)
+- Development compose (PostgreSQL 18 + Redis 8; 18+ volumes mount at `/var/lib/postgresql`)
 - Production compose with Docker secrets (`_FILE` env pattern)
 - Health check dependency ordering (`condition: service_healthy`)
 - Network isolation (internal backend network)

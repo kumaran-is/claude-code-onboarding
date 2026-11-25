@@ -20,7 +20,7 @@ Run this checklist before deploying any Cloud Run Function. Every HIGH or CRITIC
 | Global mutable state across requests (Python) | MEDIUM | FastAPI is multi-threaded — guard shared state with locks or use immutable module-level singletons |
 | Missing structured logging (plain print/console.log) | MEDIUM | One JSON object per line on stdout with `severity`, `message`, `event` — Cloud Logging parses single-line JSON; alerts filter on the event name. Never log `str(exc)` (PII). See `deployment-ci-cd/reference/python-observability.md` |
 | No max-instances set | MEDIUM | Unbounded scaling can exhaust Pub/Sub quota or DB connections — always set `--max-instances` |
-| node:20 or python:3.11 base images | MEDIUM | Use `node:26-alpine` and `python:3.14.10-slim-trixie@sha256:<digest>` — workspace mandates current runtime versions; distroless python3 images carry Debian's 3.13 |
+| node:20 or python:3.11 base images | MEDIUM | Use `node:26.13.1-alpine3.23@sha256:<index digest>` and `python:3.14.10-slim-trixie@sha256:<digest>` — workspace mandates current runtime versions; distroless python3 images carry Debian's 3.13 |
 | Running as root in container | MEDIUM | Add non-root user in Dockerfile — see `docker` skill `reference/dockerfiles.md` |
 | Secrets in environment variables (plaintext) | MEDIUM | Mount secrets from Secret Manager via `--set-secrets` flag or volume mount |
 | No retry budget on Pub/Sub subscription | LOW | Set `--max-delivery-attempts` on subscription to prevent infinite retry loops on poison pills |
@@ -40,11 +40,20 @@ async def lifespan(app: FastAPI):
 ```
 Use `signal.signal(signal.SIGTERM, ...)` only for non-uvicorn processes (workers, scripts); replacing uvicorn's handler can skip lifespan cleanup.
 
-**Node.js (NestJS / Fastify):**
+**NestJS:** call `app.enableShutdownHooks()` once in `main.ts` and nothing else; Nest then runs
+`onModuleDestroy`/`beforeApplicationShutdown`/`onApplicationShutdown` on SIGTERM. Adding your own
+`process.on('SIGTERM', () => app.close())` is redundant: Nest already handles the signal, and a hand-written
+`process.exit()` in that handler can end the process before Nest's own shutdown finishes (nestjs-api skill, lifecycle).
+
+**Plain Node / Fastify service:**
 ```typescript
-process.on('SIGTERM', async () => {
-  await app.close();   // NestJS: graceful shutdown
-  process.exit(0);
+process.once('SIGTERM', () => {
+  app.close()                       // stop accepting requests, finish in-flight ones, run onClose hooks
+    .then(() => process.exit(0))
+    .catch((error: unknown) => {
+      logger.error({ err: error }, 'shutdown failed');
+      process.exit(1);
+    });
 });
 ```
 

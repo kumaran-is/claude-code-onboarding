@@ -24,7 +24,7 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${PROJECT_NAME:-myservice}
     volumes:
       - postgres-data:/var/lib/postgresql
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2-alpine
     container_name: ${PROJECT_NAME:-myservice}-redis
     ports:
       - "6379:6379"
@@ -69,19 +69,20 @@ volumes:
     driver: local
 ```
 
-**Connection strings matching the above:**
+**Connection strings matching the above** (`.env`, gitignored). `.env` files do not expand `${VAR}` (dotenv, `node --env-file` and `@nestjs/config`
+without `expandVariables` keep it literally), so write the same value as `POSTGRES_PASSWORD` in place of the placeholder:
 ```
 # NestJS / Prisma
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/myservice?schema=public"
+DATABASE_URL="postgresql://postgres:<POSTGRES_PASSWORD value>@localhost:5432/myservice?schema=public"
 REDIS_URL="redis://localhost:6379"
 
 # Python FastAPI / SQLAlchemy async
-DATABASE_URL="postgresql+asyncpg://postgres:postgres@localhost:5432/myservice"
+DATABASE_URL="postgresql+asyncpg://postgres:<POSTGRES_PASSWORD value>@localhost:5432/myservice"
 
 # Spring Boot WebFlux / R2DBC
 SPRING_R2DBC_URL=r2dbc:postgresql://localhost:5432/myservice
 SPRING_R2DBC_USERNAME=postgres
-SPRING_R2DBC_PASSWORD=postgres
+SPRING_R2DBC_PASSWORD=<POSTGRES_PASSWORD value>
 ```
 
 ---
@@ -163,7 +164,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2-alpine
     command: redis-server --requirepass-file /run/secrets/redis_password
     secrets:
       - redis_password
@@ -226,7 +227,7 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: myservice
     volumes:
       - postgres-data:/var/lib/postgresql
@@ -247,7 +248,7 @@ volumes:
 ```
 SPRING_R2DBC_URL=r2dbc:postgresql://localhost:5432/myservice
 SPRING_R2DBC_USERNAME=postgres
-SPRING_R2DBC_PASSWORD=postgres
+SPRING_R2DBC_PASSWORD=<POSTGRES_PASSWORD value>
 SPRING_FLYWAY_URL=jdbc:postgresql://localhost:5432/myservice
 ```
 

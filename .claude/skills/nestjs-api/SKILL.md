@@ -14,7 +14,7 @@ last-reviewed: "2026-11-24"
 
 ## Iron Law
 
-**NO NESTJS MODULE WITHOUT READING `reference/nestjs-conventions.md` AND `reference/nestjs-production-baseline.md` FIRST — the baseline is the runtime-verified reference for auth, tenant scoping, validation, rate limiting, WebSockets, shutdown and tests; every rule there has a negative test**
+**NO NESTJS MODULE WITHOUT READING `reference/nestjs-conventions.md` AND THE MATCHING SECTION OF `reference/nestjs-production-baseline.md` FIRST — the baseline is the runtime-verified reference; every rule there has a negative test.** Read its "What is proven" table (lines 14–38), then only the sections the task touches: §1 config, §2 auth, §3 tenant-scoped feature, §4 bootstrap/shutdown, §5 module wiring (throttling, validation, guards), §6 WebSockets, §7 Prisma, §8 BullMQ, §9 tracing, §10 tests, §11 container/CI, §12 webhooks. A new feature module needs §3, §5 and §10.
 
 # NestJS 12.x + Fastify + Prisma REST API Skill
 

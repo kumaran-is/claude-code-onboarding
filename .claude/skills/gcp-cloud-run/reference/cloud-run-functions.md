@@ -138,68 +138,72 @@ Use the Python multi-stage template in the `docker` skill `reference/dockerfiles
 
 ---
 
-## NestJS / Fastify (node:26-alpine)
+## NestJS / Fastify (Node 26)
 
 ### Pub/Sub Push Handler
 
 ```typescript
 // src/pubsub/pubsub.controller.ts
-import { Controller, Post, Get, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
+import { z } from 'zod';
+import { PubSubMessageService } from './pubsub-message.service.js';
 
-interface PubSubMessage {
-  data: string;        // base64-encoded
-  messageId: string;
-  publishTime: string;
-}
+// Push envelope, validated at the boundary by the global StandardSchemaValidationPipe (malformed -> 400).
+const pubSubEnvelopeSchema = z.object({
+  message: z.object({
+    data: z.base64(),
+    messageId: z.string().min(1),
+    publishTime: z.string().min(1),
+    attributes: z.record(z.string(), z.string()).optional(),
+  }),
+  subscription: z.string().min(1),
+});
+type PubSubEnvelope = z.infer<typeof pubSubEnvelopeSchema>;
 
-interface PubSubEnvelope {
-  message: PubSubMessage;
-  subscription: string;
-}
-
-@Controller()
+@Controller('pubsub')
 export class PubSubController {
   private readonly logger = new Logger(PubSubController.name);
 
-  @Post()
-  async handlePubSub(@Body() envelope: PubSubEnvelope): Promise<{ status: string }> {
-    try {
-      const payload = JSON.parse(Buffer.from(envelope.message.data, 'base64').toString('utf-8'));
-      this.logger.log({ messageId: envelope.message.messageId, payload });
-      // TODO: delegate to service
-      return { status: 'ok' };
-    } catch (error) {
-      this.logger.error('Failed to process Pub/Sub message', error);
-      throw new HttpException('Processing failed', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  constructor(private readonly messages: PubSubMessageService) {}
 
-  @Get('/health')
-  health(): { status: string } {
-    return { status: 'ok' };
+  // Any 2xx acknowledges the message. A thrown error becomes a 5xx and Pub/Sub redelivers it (configure a
+  // dead-letter topic so a poison message cannot retry forever), so handle() must be idempotent per messageId.
+  @Post()
+  @HttpCode(204)
+  async handlePush(@Body({ schema: pubSubEnvelopeSchema }) envelope: PubSubEnvelope): Promise<void> {
+    const { messageId, data } = envelope.message;
+    this.logger.log('pubsub message received', { messageId, subscription: envelope.subscription }); // never the payload
+    await this.messages.handle(messageId, Buffer.from(data, 'base64').toString('utf8'));
   }
 }
 ```
+
+`PubSubMessageService.handle(messageId, json)` parses its payload with its own Zod schema, does the work idempotently and
+throws on failure (logged once by the global exception filter). Authenticate the push: deploy with `--no-allow-unauthenticated` and create
+the subscription with `--push-auth-service-account` set to an identity that holds `roles/run.invoker`, so Cloud Run rejects
+every caller except Pub/Sub. Health checks follow the `nestjs-api` production baseline (§7).
 
 ### Bootstrap for Cloud Run
 
 ```typescript
-// src/main.ts
+// src/main.ts: Cloud Run sets PORT; it is validated by the env schema like every other setting.
+import 'reflect-metadata';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-import { AppModule } from './app.module';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { AppModule } from './app.module.js';
+import type { Env } from './config/env.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
-  const port = parseInt(process.env.PORT ?? '8080', 10);
-  await app.listen(port, '0.0.0.0');
-}
-bootstrap();
+const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+app.enableShutdownHooks(); // SIGTERM from Cloud Run runs onModuleDestroy/onApplicationShutdown, then exits
+await app.listen(app.get<ConfigService<Env, true>>(ConfigService).get('PORT', { infer: true }), '0.0.0.0');
 ```
+
+The full bootstrap (structured logger, body limit, failure exit code) is `nestjs-api` › `nestjs-production-baseline.md` §4.
 
 ### Dockerfile Reference
 
-Use `node:26-alpine` base — see `docker` skill `reference/dockerfiles.md` for the full NestJS multi-stage template.
+Use the digest-pinned `node:26.13.1-alpine3.23@sha256:<index digest>` base — see `docker` skill `reference/dockerfiles.md` for the full NestJS multi-stage template.
 
 ---
 
@@ -261,7 +265,7 @@ Use `eclipse-temurin:25-jre` runtime stage — see `docker` skill `reference/doc
 
 ---
 
-## TypeScript / Fastify (node:26-alpine)
+## TypeScript / Fastify (Node 26)
 
 ### Pub/Sub Push Handler
 
@@ -313,7 +317,7 @@ app.listen({ port, host: '0.0.0.0' }).catch((err) => {
 
 ### Dockerfile Reference
 
-Use `node:26-alpine` base — see `docker` skill `reference/dockerfiles.md` for the Node/TypeScript multi-stage template.
+Use the digest-pinned `node:26.13.1-alpine3.23@sha256:<index digest>` base — see `docker` skill `reference/dockerfiles.md` for the Node/TypeScript multi-stage template.
 
 ---
 

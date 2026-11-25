@@ -95,7 +95,7 @@ export function redisThrottlerOptions(redisUrl: string): ThrottlerModuleOptions 
 ```typescript
 @Throttle({ burst: { limit: 5, ttl: 60_000 } }) // 5/min for this route, overriding the 'burst' throttler
 @Post('login')
-login(@Body() dto: LoginDto): Promise<TokenPair> {
+login(@Body({ schema: LoginSchema }) dto: Login): Promise<TokenPair> {
   return this.auth.login(dto);
 }
 ```

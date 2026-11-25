@@ -11,7 +11,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Production stage contains ONLY runtime artifacts — no build tools, no dev dependencies
 - [ ] `.dockerignore` present and excludes: `node_modules/`, `dist/`, `target/`, `.git/`, `.env*`, `**/*.test.*`, `docs/`
 - [ ] Base image selection matches stack:
-  - NestJS: `node:26-alpine` (not node:18, not node:22)
+  - NestJS: `node:26.13.1-alpine3.23@sha256:<index digest>` (exact tag + digest; not a floating `node:26-alpine`, not node:18/22)
   - TypeScript/Fastify services and MCP servers: `node:26.13.1-trixie-slim` (or `node:26.13.1-alpine3.23` when every native dependency ships musl builds; runtime may be `gcr.io/distroless/nodejs26-debian13:nonroot`); builder and runtime on the same Node major and libc
   - Spring Boot: `eclipse-temurin:25-jre` runtime (JRE, not JDK)
   - Python: `python:3.14.10-slim-trixie@sha256:<index-digest>` (patch tag matches `.python-version`; not the full image, not bookworm/bullseye)
@@ -72,9 +72,9 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 ## Stack-Specific Checks
 
 ### NestJS / Node 26
-- [ ] Uses `pnpm` (not npm) — `corepack enable && corepack prepare pnpm@latest --activate`
-- [ ] Prisma client generated in builder stage (`pnpm prisma generate`)
-- [ ] `pnpm prune --prod` run before copying node_modules to runner
+- [ ] Package manager matches the lockfile: `npm ci` for `package-lock.json`; for `pnpm-lock.yaml`, pnpm installed at the `packageManager` version (no `corepack` on Node 25+, no `pnpm@latest`)
+- [ ] Prisma client generated in the build stage (`npx prisma generate` / `pnpm exec prisma generate`)
+- [ ] Runtime `node_modules` from a separate prod-deps stage (`npm ci --omit=dev --ignore-scripts` / `pnpm install --prod --ignore-scripts`)
 
 ### Spring Boot 4.2 / Java 25
 - [ ] Runtime stage uses `eclipse-temurin:25-jre` (JRE, not JDK); build stage `eclipse-temurin:25-jdk` running `./mvnw` (copy `mvnw` + `.mvn/`; never the `maven:*` image, which has no arm64 build)

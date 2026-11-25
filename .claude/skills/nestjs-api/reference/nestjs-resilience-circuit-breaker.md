@@ -1,6 +1,6 @@
 # NestJS Resilience — Circuit Breaker & Database Fallback
 
-Circuit breaker and database fallback patterns for NestJS 11.x. For request context and correlation IDs, see `nestjs-resilience-context.md`.
+Circuit breaker and database fallback patterns for NestJS 12.x. For request context and correlation IDs, see `nestjs-resilience-context.md`.
 
 ## 1. Circuit Breaker Pattern
 
@@ -22,7 +22,7 @@ import type {
   ICircuitBreakerState,
   IResilienceContext,
   IPatternExecutor
-} from '../interfaces/resilience.interface';
+} from '../interfaces/resilience.interface.js';
 
 interface CircuitBreakerConfig {
   enabled: boolean;

@@ -1,76 +1,64 @@
 # NestJS Security — Validation, Logging & Prisma
 
-Input validation hardening, PII masking in logs, Prisma security patterns, and OWASP checklist for NestJS 11.x. For dependency scanning, headers, and CORS, see `nestjs-security-scanning.md`.
+Input validation hardening, PII masking in logs, Prisma security patterns, and OWASP checklist for NestJS 12.x. For dependency scanning, headers, and CORS, see `nestjs-security-scanning.md`.
 
 **Note:** For authentication and authorization patterns (JWT, passwords, rate limiting), see `nestjs-security-auth.md`.
 
 ## 1. Input Validation Hardening
 
-### Advanced DTO Validation
+### Request schema hardening (Zod 4, Standard Schema)
 
 ```typescript
-// src/features/users/dto/create-user.dto.ts
-import {
-  IsEmail,
-  IsString,
-  IsNotEmpty,
-  MinLength,
-  MaxLength,
-  Matches,
-  IsOptional,
-  ValidateNested,
-  IsArray,
-  ArrayMaxSize,
-} from 'class-validator';
-import { Transform, Type } from 'class-transformer';
-import * as DOMPurify from 'isomorphic-dompurify';
+// src/features/users/users.schemas.ts
+import { z } from 'zod';
 
-export class CreateUserDto {
-  @IsEmail({}, { message: 'Invalid email format' })
-  @MaxLength(255)
-  email: string;
+export const CreateUserSchema = z
+  .strictObject({
+    // Normalize before validating; uniqueness is enforced by the database (unique index), not here.
+    email: z.string().trim().toLowerCase().pipe(z.email().max(255)),
+    // Length is the strength control (NIST SP 800-63B): long passphrases, no composition rules,
+    // 128-char cap so the hash input stays bounded. Check breached-password lists in the service.
+    password: z.string().min(12).max(128),
+    firstName: z
+      .string()
+      .trim()
+      .min(2)
+      .max(50)
+      .regex(/^[\p{L}\p{M}' -]+$/u, 'contains invalid characters'),
+    tags: z.array(z.string().trim().min(1).max(30)).max(10).default([]),
+  })
+  .meta({ id: 'CreateUser' });
+export type CreateUser = z.infer<typeof CreateUserSchema>;
+```
 
-  @IsString()
-  @MinLength(12, { message: 'Password must be at least 12 characters' })
-  @MaxLength(128)
-  @Matches(
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]+$/,
-    {
-      message: 'Password must contain uppercase, lowercase, number, and special character',
-    },
-  )
-  password: string;
-
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(50)
-  @Matches(/^[a-zA-Z\s'-]+$/, { message: 'Name contains invalid characters' })
-  @Transform(({ value }) => DOMPurify.sanitize(value.trim()))
-  firstName: string;
-
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsString({ each: true })
-  tags: string[];
+```typescript
+@Post()
+@Public()
+create(@Body({ schema: CreateUserSchema }) body: CreateUser) {
+  return this.users.register(body);
 }
 ```
 
-### Global Validation Pipe
+- `z.strictObject` rejects unknown keys with 400 (a smuggled `role` or `tenantId` never reaches the handler).
+- Every string and array is bounded; Fastify's `bodyLimit` bounds the whole request (413 above it).
+- Do not HTML-sanitize on input: store what was validated and encode on output (Angular/React escape by default).
+  Sanitizing input corrupts legitimate data and is not a substitute for output encoding.
+- The validation error lists `"path: message"` entries and never echoes the submitted value (verified: an
+  `<script>` payload in `sku` is absent from the 400 body).
+
+### Global validation
 
 ```typescript
-// src/main.ts
-import { ValidationPipe } from '@nestjs/common';
+// src/app.module.ts (excerpt): validates every parameter declared with { schema }
+import { StandardSchemaValidationPipe } from '@nestjs/common';
+import { APP_PIPE } from '@nestjs/core';
 
-app.useGlobalPipes(
-  new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    disableErrorMessages: process.env.NODE_ENV === 'production',
-  }),
-);
+providers: [{ provide: APP_PIPE, useValue: new StandardSchemaValidationPipe() }];
 ```
+
+**Existing class-validator codebases:** `ValidationPipe` is still supported in NestJS 12; keep
+`whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: false }`,
+and use `@ValidateIf((_, value) => value !== undefined)` where `null` must be rejected (`@IsOptional()` lets it through).
 
 ## 2. Secure Logging — PII Masking
 
@@ -135,32 +123,39 @@ export class LogSanitizerService {
 ### Avoid SQL Injection
 
 ```typescript
-// ❌ DANGEROUS
+import { Prisma } from '../../generated/prisma/client.js'; // Prisma 7: from the generated client
+
+// ❌ DANGEROUS — string-built SQL through the Unsafe API
 async findUserBad(email: string) {
-  return this.prisma.$queryRaw`SELECT * FROM users WHERE email = ${email}`;
+  return this.prisma.client.$queryRawUnsafe(`SELECT * FROM users WHERE email = '${email}'`);
 }
 
-// ✅ SAFE — Parameterized query
-import { Prisma } from '@prisma/client';
-
+// ✅ SAFE — tagged template: every ${value} becomes a bind parameter
 async findUserSafe(email: string) {
-  return this.prisma.$queryRaw(
-    Prisma.sql`SELECT * FROM users WHERE email = ${email}`,
+  return this.prisma.client.$queryRaw`SELECT id, email FROM users WHERE email = ${email}`;
+}
+
+// ✅ SAFE — composed fragments stay parameterized with Prisma.sql / Prisma.join
+async findUsersByIds(ids: string[]) {
+  return this.prisma.client.$queryRaw(
+    Prisma.sql`SELECT id, email FROM users WHERE id IN (${Prisma.join(ids)})`,
   );
 }
 
-// ✅ BEST — Use Prisma Client methods
+// ✅ BEST — Prisma Client methods
 async findUserBest(email: string) {
-  return this.prisma.user.findUnique({ where: { email } });
+  return this.prisma.client.user.findUnique({ where: { email } });
 }
 ```
+
+Identifiers (column or table names) cannot be bind parameters: map them from an allow-list, never from input.
 
 ### Field-Level Encryption
 
 ```typescript
 // src/common/encryption/encryption.service.ts
 import { Injectable } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 
 @Injectable()
 export class EncryptionService {
@@ -211,14 +206,14 @@ export class UserRepository {
   constructor(private prisma: PrismaService) {}
 
   async softDelete(id: string): Promise<void> {
-    await this.prisma.user.update({
+    await this.prisma.client.user.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
   }
 
   async findActive(id: string) {
-    return this.prisma.user.findFirst({
+    return this.prisma.client.user.findFirst({
       where: { id, deletedAt: null },
     });
   }
@@ -231,7 +226,7 @@ export class UserRepository {
 
 - [ ] **A01: Broken Access Control** — Implement RBAC with guards on protected routes
 - [ ] **A02: Cryptographic Failures** — Use bcrypt (cost >=12), RS256 for JWT, encrypt sensitive DB fields
-- [ ] **A03: Injection** — Never use string concatenation in queries, validate all inputs with DTOs
+- [ ] **A03: Injection** — Never use string concatenation in queries (`$queryRawUnsafe`), validate all inputs with `z.strictObject` schemas
 - [ ] **A04: Insecure Design** — Implement rate limiting, circuit breakers, fail-fast config
 - [ ] **A05: Security Misconfiguration** — Run npm audit in CI/CD, configure Helmet, disable stack traces in prod
 - [ ] **A06: Vulnerable Components** — Automate dependency scanning (Snyk), keep dependencies updated
@@ -244,7 +239,7 @@ export class UserRepository {
 
 - [ ] Enable CORS with explicit origin whitelist
 - [ ] Implement CSP to prevent XSS
-- [ ] Use `whitelist: true` in ValidationPipe
+- [ ] Global `StandardSchemaValidationPipe`; request schemas are `z.strictObject` (or `whitelist` + `forbidNonWhitelisted` in a class-validator codebase)
 - [ ] Soft delete pattern to prevent data loss
 - [ ] Field-level encryption for sensitive data
 - [ ] Automated security scanning in CI/CD
@@ -254,6 +249,6 @@ export class UserRepository {
 
 **Next Steps:**
 1. Run security scan: `bash security-scan.sh`
-2. Configure ESLint security rules: `npm run lint`
+2. Run the linter (`npm run lint`: oxlint with type-aware rules in the scaffold)
 3. Review and apply all checklist items
 4. Set up automated security audits in CI/CD

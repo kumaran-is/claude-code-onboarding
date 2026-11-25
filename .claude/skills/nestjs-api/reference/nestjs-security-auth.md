@@ -1,6 +1,6 @@
 # NestJS Security — Authentication & Authorization
 
-Enterprise authentication patterns for NestJS 11.x with JWT, bcrypt, and rate limiting.
+Enterprise authentication patterns for NestJS 12.x with JWT, bcrypt, and rate limiting.
 
 ## Redirect URL Validation
 
@@ -111,8 +111,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { readFileSync } from 'fs';
-import { RedisService } from '@/common/redis/redis.service';
+import { readFileSync } from 'node:fs';
+import { RedisService } from '@/common/redis/redis.service.js';
 
 interface JwtPayload {
   sub: string;
@@ -165,8 +165,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { readFileSync } from 'fs';
-import { RedisService } from '@/common/redis/redis.service';
+import { readFileSync } from 'node:fs';
+import { RedisService } from '@/common/redis/redis.service.js';
 
 @Injectable()
 export class TokenService {
@@ -274,12 +274,13 @@ npm install @nestjs/throttler
 
 ### Multi-Tier Rate Limiting and Custom Tracking
 
-Verified configuration (NestJS 11.2.11 + Fastify, `@nestjs/throttler` 6.8.0): see `nestjs-production-baseline.md` §5
-and `nestjs-rate-limiting.md`. Two corrections to older guidance:
+Verified configuration (NestJS 12.6.0 + Fastify, `@nestjs/throttler` 6.8.0, 2026-11-24): see `nestjs-production-baseline.md`
+and `nestjs-rate-limiting.md`. Corrections to older guidance:
 
 - The Redis storage package is `@nest-lab/throttler-storage-redis` (1.2.0). `@nestjs/throttler-storage-redis` does
   **not exist** on npm (404) — installing an unregistered scoped name invites typosquatting. Pass an **instance**
-  (`new ThrottlerStorageRedisService(new Redis(url))`), not the class.
+  (`new ThrottlerStorageRedisService(new Redis(url))`), not the class. On NestJS 12 its 1.2.0 release fails to install
+  (`ERESOLVE`: peers on Nest ≤ 11); see `nestjs-rate-limiting.md` for the interim options.
 - Customise the tracker with the `getTracker` option and the 429 text with `errorMessage`. Overriding
   `throwThrottlingException(context): void` no longer compiles on v6 (`TS2416`; the base signature is
   `(context, throttlerLimitDetail) => Promise<void>`).

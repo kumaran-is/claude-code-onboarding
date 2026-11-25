@@ -9,7 +9,7 @@ Generate OpenAPI specs directly from annotated code. Each stack auto-generates t
 | **Python** | FastAPI + Pydantic | Type hints + `Field()` | Auto at `/openapi.json` |
 | **Java/Kotlin** | springdoc-openapi | `@Operation`, `@Schema` | Auto at `/v3/api-docs` |
 | **TypeScript (Fastify)** | zod 4 + fastify-type-provider-zod + @fastify/swagger | zod schemas on the route | `app.swagger()` after `app.ready()` |
-| **TypeScript (NestJS)** | `@nestjs/swagger` | Decorators | See the `nestjs-api` skill |
+| **TypeScript (NestJS 12)** | `@nestjs/swagger` 12.1.2 + zod 4 | Standard Schema on the route: `@Body({ schema })`, `@Param(name, { schema })`, `@Query({ schema })`, `@ApiOkResponse({ standardSchema })`; `.meta({ id })` names the component | `SwaggerModule.createDocument(app, config)` after `app.init()` — see the `nestjs-api` skill |
 
 ## Extraction Commands
 

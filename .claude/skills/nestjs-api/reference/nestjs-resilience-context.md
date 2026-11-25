@@ -1,6 +1,6 @@
 # NestJS Resilience — Request Context & Correlation
 
-Request context propagation using AsyncLocalStorage for NestJS 11.x. For circuit breaker and database fallback patterns, see `nestjs-resilience-circuit-breaker.md`.
+Request context propagation using AsyncLocalStorage for NestJS 12.x. For circuit breaker and database fallback patterns, see `nestjs-resilience-circuit-breaker.md`.
 
 ## 1. Request Context (AsyncLocalStorage)
 
@@ -123,7 +123,7 @@ export function updateContextMetadata(updates: Record<string, unknown>): void {
 
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { requestContext, RequestContext } from './request-context.service';
+import { requestContext, RequestContext } from './request-context.service.js';
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
@@ -162,7 +162,7 @@ export class RequestContextMiddleware implements NestMiddleware {
 
 ```typescript
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-import { RequestContextMiddleware } from './common/context/request-context.middleware';
+import { RequestContextMiddleware } from './common/context/request-context.middleware.js';
 
 @Module({
   // ...
@@ -179,7 +179,7 @@ export class AppModule implements NestModule {
 ### Usage in Services
 
 ```typescript
-import { getRequestContext, getCorrelationId, getUserId } from './common/context/request-context.service';
+import { getRequestContext, getCorrelationId, getUserId } from './common/context/request-context.service.js';
 
 export class OrderService {
   async createOrder(data: CreateOrderDto): Promise<Order> {

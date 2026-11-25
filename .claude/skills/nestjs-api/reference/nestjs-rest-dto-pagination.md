@@ -1,329 +1,246 @@
-# NestJS REST Controllers — DTOs, Mapping & Pagination
+# NestJS REST Controllers — Schemas, Mapping & Pagination
 
-DTO mapping patterns, pagination, filtering, and sorting for NestJS 11.x REST APIs with Prisma ORM and TypeScript 5.x.
+Response mapping, pagination, filtering and sorting for NestJS 12.x REST APIs with Prisma 7 and TypeScript 6.0.
+Contracts are Zod 4 schemas (Standard Schema): the global `StandardSchemaValidationPipe` validates requests declared
+with `{ schema }`, and the global `StandardSchemaSerializerInterceptor` applies `@SerializeOptions({ schema })` to
+responses. `@nestjs/swagger` 12 documents both from the same schemas. Runtime-verified wiring:
+`nestjs-production-baseline.md`.
 
-## 3. DTO Mapping Patterns
+## 3. Response Mapping Patterns
 
-### Pattern 1: Static Factory Methods
+The response schema is the contract; mapping code only converts types (Prisma `Decimal` → number, `Date` → ISO string).
+`z.object` strips every field it does not declare (`tenantId`, `passwordHash`, `deletedAt`), so a forgotten field
+cannot leak; a value that breaks the schema throws `Serialization failed` and the client gets an opaque 500.
+
+### Pattern 1: Response schema + mapping function (default)
 
 ```typescript
-import { ApiProperty } from '@nestjs/swagger';
-import { Product } from '@prisma/client';
+// src/features/products/products.schemas.ts
+import { z } from 'zod';
 
-export class ProductResponseDto {
-  @ApiProperty({ example: '123e4567-e89b-12d3-a456-426614174000' })
-  id: string;
+export const ProductStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']);
 
-  @ApiProperty({ example: 'Wireless Mouse' })
-  name: string;
+export const ProductResponseSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    sku: z.string(),
+    price: z.number(),
+    status: ProductStatusSchema,
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'ProductResponse' });
+export type ProductResponse = z.infer<typeof ProductResponseSchema>;
+```
 
-  @ApiProperty({ example: 'MOUSE-001' })
-  sku: string;
+```typescript
+// src/features/products/products.mapper.ts
+import type { Product } from '../../generated/prisma/client.js';
+import type { ProductResponse } from './products.schemas.js';
 
-  @ApiProperty({ example: 29.99 })
-  price: number;
+/** Converts types only; the response schema decides which fields leave the service. */
+export function toProductResponse(entity: Product): ProductResponse {
+  return {
+    ...entity,
+    price: entity.price.toNumber(), // Prisma Decimal -> number
+    createdAt: entity.createdAt.toISOString(),
+    updatedAt: entity.updatedAt.toISOString(),
+  };
+}
+```
 
-  @ApiProperty({ enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'] })
-  status: string;
-
-  @ApiProperty()
-  createdAt: Date;
-
-  @ApiProperty()
-  updatedAt: Date;
-
-  // Static factory method for single entity
-  static fromEntity(entity: Product): ProductResponseDto {
-    const dto = new ProductResponseDto();
-    dto.id = entity.id;
-    dto.name = entity.name;
-    dto.sku = entity.sku;
-    dto.price = entity.price.toNumber(); // Prisma Decimal → number
-    dto.status = entity.status;
-    dto.createdAt = entity.createdAt;
-    dto.updatedAt = entity.updatedAt;
-    return dto;
-  }
-
-  // Static factory method for entity list
-  static fromEntityList(entities: Product[]): ProductResponseDto[] {
-    return entities.map(entity => this.fromEntity(entity));
+```typescript
+// Controller: the class-level schema applies to every handler; a handler can override it.
+@Controller({ path: 'products', version: '1' })
+@SerializeOptions({ schema: ProductResponseSchema })
+export class ProductController {
+  @Get(':id')
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  findOne(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: z.uuid() }) id: string,
+  ): Promise<ProductResponse> {
+    return this.productService.findOne(principal, id);
   }
 }
 ```
 
-### Pattern 2: class-transformer with @Expose/@Exclude
+### Pattern 2: Request schema → Prisma input (dedicated mapper)
 
-```typescript
-import { Expose, Exclude, plainToInstance } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
-import { Product } from '@prisma/client';
-
-@Exclude()
-export class ProductResponseDto {
-  @Expose()
-  @ApiProperty()
-  id: string;
-
-  @Expose()
-  @ApiProperty()
-  name: string;
-
-  @Expose()
-  @ApiProperty()
-  sku: string;
-
-  @Expose()
-  @ApiProperty()
-  price: number;
-
-  @Expose()
-  @ApiProperty()
-  status: string;
-
-  @Expose()
-  @ApiProperty()
-  createdAt: Date;
-
-  @Expose()
-  @ApiProperty()
-  updatedAt: Date;
-
-  // Factory using plainToInstance
-  static fromEntity(entity: Product): ProductResponseDto {
-    return plainToInstance(ProductResponseDto, entity, {
-      excludeExtraneousValues: true,
-    });
-  }
-}
-```
-
-### Pattern 3: Dedicated Mapper Service
+Use a mapper when the persistence shape differs from the request (Decimal construction, derived columns, nested
+writes). The tenant always comes from the verified principal, never from the body.
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { Prisma, Product } from '@prisma/client';
-import { CreateProductDto, UpdateProductDto, ProductResponseDto } from './dto';
+import { z } from 'zod';
+import { Prisma } from '../../generated/prisma/client.js';
+import { ProductStatusSchema } from './products.schemas.js';
+
+export const CreateProductSchema = z
+  .strictObject({
+    name: z.string().trim().min(1).max(200),
+    sku: z.string().regex(/^[A-Z0-9-]{3,32}$/),
+    price: z.number().nonnegative().multipleOf(0.01),
+    status: ProductStatusSchema.default('ACTIVE'),
+    description: z.string().max(1000).optional(),
+  })
+  .meta({ id: 'CreateProduct' });
+export type CreateProduct = z.infer<typeof CreateProductSchema>;
+
+export const UpdateProductSchema = CreateProductSchema.omit({ sku: true })
+  .partial()
+  .meta({ id: 'UpdateProduct' });
+export type UpdateProduct = z.infer<typeof UpdateProductSchema>;
 
 @Injectable()
 export class ProductMapper {
-  toResponse(entity: Product): ProductResponseDto {
-    return {
-      id: entity.id,
-      name: entity.name,
-      sku: entity.sku,
-      price: entity.price.toNumber(),
-      status: entity.status,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
-    };
+  toCreateInput(tenantId: string, input: CreateProduct): Prisma.ProductCreateInput {
+    return { ...input, tenantId, price: new Prisma.Decimal(input.price) };
   }
 
-  toResponseList(entities: Product[]): ProductResponseDto[] {
-    return entities.map(e => this.toResponse(e));
-  }
-
-  toCreateInput(dto: CreateProductDto): Prisma.ProductCreateInput {
-    return {
-      name: dto.name,
-      sku: dto.sku,
-      price: new Prisma.Decimal(dto.price),
-      status: dto.status ?? 'ACTIVE',
-      description: dto.description,
-    };
-  }
-
-  toUpdateInput(dto: UpdateProductDto): Prisma.ProductUpdateInput {
-    const data: Prisma.ProductUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name;
-    if (dto.price !== undefined) data.price = new Prisma.Decimal(dto.price);
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.description !== undefined) data.description = dto.description;
-    return data;
+  toUpdateInput(input: UpdateProduct): Prisma.ProductUpdateInput {
+    const { price, ...rest } = input;
+    return price === undefined ? rest : { ...rest, price: new Prisma.Decimal(price) };
   }
 }
 ```
+
+### Existing class-validator codebases
+
+Response DTO classes with `class-transformer` `@Exclude()`/`@Expose()` and `ClassSerializerInterceptor` remain
+supported in NestJS 12. In such a codebase keep one style per module; for new modules use the schema patterns above.
+The class-based form fails open (a field without `@Exclude()` leaks); `z.object` strips by default.
 
 ---
 
 ## 4. Pagination, Filtering & Sorting
 
-### Generic Pagination DTO
+### Generic pagination query schema
+
+Query strings arrive as text: coerce explicitly with `z.coerce`, bound every value, and allow-list sort fields (a free
+`sortBy: string` passed to Prisma's `orderBy` lets a client sort by any column, including private ones).
 
 ```typescript
-import { IsOptional, IsInt, Min, Max, IsString, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+// src/common/schemas/pagination.schemas.ts
+import { z } from 'zod';
 
-export enum SortOrder {
-  ASC = 'asc',
-  DESC = 'desc',
+export const SortOrderSchema = z.enum(['asc', 'desc']);
+
+/** Builds a pagination query schema whose sortBy is restricted to the given columns. */
+export function paginationQuery<const TSort extends readonly [string, ...string[]]>(sortable: TSort) {
+  return z.strictObject({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    sortBy: z.enum(sortable).default(sortable[0]),
+    sortOrder: SortOrderSchema.default('desc'),
+  });
 }
 
-export class PaginationQueryDto {
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = 1;
-
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit: number = 20;
-
-  @ApiPropertyOptional({ default: 'createdAt' })
-  @IsOptional()
-  @IsString()
-  sortBy: string = 'createdAt';
-
-  @ApiPropertyOptional({ enum: SortOrder, default: SortOrder.DESC })
-  @IsOptional()
-  @IsEnum(SortOrder)
-  sortOrder: SortOrder = SortOrder.DESC;
-
-  get skip(): number {
-    return (this.page - 1) * this.limit;
-  }
-
-  get take(): number {
-    return this.limit;
-  }
+export function toSkipTake(query: { page: number; limit: number }): { skip: number; take: number } {
+  return { skip: (query.page - 1) * query.limit, take: query.limit };
 }
 ```
 
-### Generic Paginated Response
+### Generic paginated response
 
 ```typescript
-import { ApiProperty } from '@nestjs/swagger';
+// src/common/schemas/pagination.schemas.ts (continued)
+export const PaginationMetaSchema = z.object({
+  page: z.int(),
+  limit: z.int(),
+  total: z.int(),
+  totalPages: z.int(),
+  hasNextPage: z.boolean(),
+  hasPreviousPage: z.boolean(),
+});
 
-export class PaginationMeta {
-  @ApiProperty()
-  page: number;
-
-  @ApiProperty()
-  limit: number;
-
-  @ApiProperty()
-  total: number;
-
-  @ApiProperty()
-  totalPages: number;
-
-  @ApiProperty()
-  hasNextPage: boolean;
-
-  @ApiProperty()
-  hasPreviousPage: boolean;
+/** Wraps an item schema in the { data, meta } envelope; give the result its own .meta({ id }). */
+export function paginated<TItem extends z.ZodType>(item: TItem) {
+  return z.object({ data: z.array(item), meta: PaginationMetaSchema });
 }
 
-export class PaginatedResponse<T> {
-  @ApiProperty({ isArray: true })
-  data: T[];
-
-  @ApiProperty({ type: PaginationMeta })
-  meta: PaginationMeta;
-
-  static create<T>(
-    data: T[],
-    total: number,
-    page: number,
-    limit: number,
-  ): PaginatedResponse<T> {
-    const totalPages = Math.ceil(total / limit);
-    return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1,
-      },
-    };
-  }
+export function toPage<T>(data: T[], total: number, page: number, limit: number) {
+  const totalPages = Math.ceil(total / limit);
+  return {
+    data,
+    meta: { page, limit, total, totalPages, hasNextPage: page < totalPages, hasPreviousPage: page > 1 },
+  };
 }
 ```
 
-### Product Filter DTO
+### Product filter schema
 
 ```typescript
-import { IsOptional, IsString, IsEnum, IsNumber, Min } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { PaginationQueryDto } from '@/common/dto/pagination-query.dto';
+// src/features/products/products.schemas.ts (continued)
+import { paginated, paginationQuery } from '../../common/schemas/pagination.schemas.js';
 
-export enum ProductStatus {
-  ACTIVE = 'ACTIVE',
-  INACTIVE = 'INACTIVE',
-  ARCHIVED = 'ARCHIVED',
+export const ProductFilterSchema = paginationQuery(['createdAt', 'name', 'price'])
+  .extend({
+    search: z.string().trim().min(1).max(100).optional(),
+    status: ProductStatusSchema.optional(),
+    minPrice: z.coerce.number().nonnegative().optional(),
+    maxPrice: z.coerce.number().nonnegative().optional(),
+  })
+  .refine((f) => f.minPrice === undefined || f.maxPrice === undefined || f.minPrice <= f.maxPrice, {
+    message: 'minPrice must not exceed maxPrice',
+    path: ['minPrice'],
+  })
+  .meta({ id: 'ProductFilter' });
+export type ProductFilter = z.infer<typeof ProductFilterSchema>;
+
+export const ProductPageSchema = paginated(ProductResponseSchema).meta({ id: 'ProductPage' });
+export type ProductPage = z.infer<typeof ProductPageSchema>;
+```
+
+```typescript
+// Controller
+@Get()
+@SerializeOptions({ schema: ProductPageSchema })
+@ApiOkResponse({ standardSchema: ProductPageSchema })
+findAll(
+  @CurrentPrincipal() principal: Principal,
+  @Query({ schema: ProductFilterSchema }) filter: ProductFilter,
+): Promise<ProductPage> {
+  return this.productService.findAll(principal, filter);
 }
 
-export class ProductFilterDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: 'Search in name, SKU, or description' })
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @ApiPropertyOptional({ enum: ProductStatus })
-  @IsOptional()
-  @IsEnum(ProductStatus)
-  status?: ProductStatus;
-
-  @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  minPrice?: number;
-
-  @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  maxPrice?: number;
+// Service
+async findAll(principal: Principal, filter: ProductFilter): Promise<ProductPage> {
+  const [rows, total] = await this.repository.findManyWithPagination(principal.tenantId, filter);
+  return toPage(rows.map(toProductResponse), total, filter.page, filter.limit);
 }
 ```
 
-### Repository with Pagination Implementation
+### Repository with pagination
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@/core/prisma/prisma.service';
-import { Prisma, Product } from '@prisma/client';
-import { ProductFilterDto } from './dto';
+import { toSkipTake } from '../../common/schemas/pagination.schemas.js';
+import { PrismaService } from '../../core/database/prisma.service.js';
+import { Prisma, type Product } from '../../generated/prisma/client.js';
+import type { ProductFilter } from './products.schemas.js';
 
 @Injectable()
 export class ProductRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findManyWithPagination(filter: ProductFilterDto): Promise<[Product[], number]> {
-    const where = this.buildWhereClause(filter);
-    const orderBy = { [filter.sortBy]: filter.sortOrder };
+  async findManyWithPagination(tenantId: string, filter: ProductFilter): Promise<[Product[], number]> {
+    const where = this.buildWhereClause(tenantId, filter);
+    // sortBy is one of the allow-listed columns, so this cannot address an arbitrary field.
+    const orderBy: Prisma.ProductOrderByWithRelationInput = { [filter.sortBy]: filter.sortOrder };
 
-    const [data, total] = await Promise.all([
-      this.prisma.product.findMany({
-        where,
-        orderBy,
-        skip: filter.skip,
-        take: filter.take,
-      }),
-      this.prisma.product.count({ where }),
+    // One snapshot for rows and count; Promise.all on two queries can see different data.
+    return this.prisma.client.$transaction([
+      this.prisma.client.product.findMany({ where, orderBy, ...toSkipTake(filter) }),
+      this.prisma.client.product.count({ where }),
     ]);
-
-    return [data, total];
   }
 
-  private buildWhereClause(filter: ProductFilterDto): Prisma.ProductWhereInput {
-    const where: Prisma.ProductWhereInput = {};
+  private buildWhereClause(tenantId: string, filter: ProductFilter): Prisma.ProductWhereInput {
+    const where: Prisma.ProductWhereInput = { tenantId, deletedAt: null };
 
-    if (filter.search) {
+    if (filter.search !== undefined) {
       where.OR = [
         { name: { contains: filter.search, mode: 'insensitive' } },
         { sku: { contains: filter.search, mode: 'insensitive' } },
@@ -331,21 +248,21 @@ export class ProductRepository {
       ];
     }
 
-    if (filter.status) {
+    if (filter.status !== undefined) {
       where.status = filter.status;
     }
 
     if (filter.minPrice !== undefined || filter.maxPrice !== undefined) {
-      where.price = {};
-      if (filter.minPrice !== undefined) {
-        where.price.gte = new Prisma.Decimal(filter.minPrice);
-      }
-      if (filter.maxPrice !== undefined) {
-        where.price.lte = new Prisma.Decimal(filter.maxPrice);
-      }
+      where.price = {
+        ...(filter.minPrice !== undefined && { gte: new Prisma.Decimal(filter.minPrice) }),
+        ...(filter.maxPrice !== undefined && { lte: new Prisma.Decimal(filter.maxPrice) }),
+      };
     }
 
     return where;
   }
 }
 ```
+
+Offset pagination degrades on deep pages (`OFFSET 100000` still scans the skipped rows). For feeds and exports use
+keyset pagination on an indexed `(tenant_id, created_at, id)` with a `cursor` query parameter.

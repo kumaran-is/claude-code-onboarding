@@ -1,6 +1,6 @@
 # NestJS REST Services
 
-Service layer patterns, external API integration, and data transformation for NestJS 11.x with circuit breaker resilience.
+Service layer patterns, external API integration, and data transformation for NestJS 12.x with circuit breaker resilience.
 
 ## 1. Service Layer Implementation
 
@@ -8,23 +8,24 @@ Service layer patterns, external API integration, and data transformation for Ne
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { ProductRepository } from './product.repository';
-import { ProductFilterDto, ProductResponseDto } from './dto';
-import { PaginatedResponse } from '@/common/dto/paginated-response.dto';
+import type { Principal } from '../../auth/principal.js';
+import { toPage } from '../../common/schemas/pagination.schemas.js';
+import { toProductResponse } from './products.mapper.js';
+import type { ProductFilter, ProductPage } from './products.schemas.js';
+import { ProductRepository } from './product.repository.js';
 
 @Injectable()
 export class ProductService {
   constructor(private readonly repository: ProductRepository) {}
 
-  async findAll(filter: ProductFilterDto): Promise<PaginatedResponse<ProductResponseDto>> {
-    const [products, total] = await this.repository.findManyWithPagination(filter);
-
-    const data = ProductResponseDto.fromEntityList(products);
-
-    return PaginatedResponse.create(data, total, filter.page, filter.limit);
+  async findAll(principal: Principal, filter: ProductFilter): Promise<ProductPage> {
+    const [products, total] = await this.repository.findManyWithPagination(principal.tenantId, filter);
+    return toPage(products.map(toProductResponse), total, filter.page, filter.limit);
   }
 }
 ```
+
+Schemas, `toPage` and `toProductResponse`: `nestjs-rest-dto-pagination.md`.
 
 ---
 
@@ -38,8 +39,8 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import axios from 'axios';
 import { firstValueFrom } from 'rxjs';
-import { ResilienceOrchestratorService } from '@/core/resilience/resilience-orchestrator.service';
-import { mapPaymentError } from '@/common/http/http-errors';
+import { ResilienceOrchestratorService } from '../../core/resilience/resilience-orchestrator.service.js';
+import { mapPaymentError } from '../../common/http/http-errors.js';
 
 export interface PaymentRequest {
   orderId: string;
@@ -174,15 +175,17 @@ export default registerAs('paymentService', (): PaymentServiceConfig => {
 ```typescript
 @Injectable()
 export class ProductService {
-  async bulkCreate(dtos: CreateProductDto[]): Promise<{ count: number }> {
-    const data = dtos.map(dto => ({
-      name: dto.name,
-      sku: dto.sku,
-      price: new Prisma.Decimal(dto.price),
-      status: dto.status ?? 'ACTIVE',
+  // Body schema: z.strictObject({ items: z.array(CreateProductSchema).min(1).max(500) })
+  async bulkCreate(principal: Principal, items: CreateProduct[]): Promise<{ count: number }> {
+    const data = items.map((item) => ({
+      tenantId: principal.tenantId,
+      name: item.name,
+      sku: item.sku,
+      price: new Prisma.Decimal(item.price),
+      status: item.status,
     }));
 
-    const result = await this.prisma.product.createMany({
+    const result = await this.prisma.client.product.createMany({
       data,
       skipDuplicates: true, // Skip records with duplicate unique fields
     });
@@ -197,24 +200,26 @@ export class ProductService {
 ```typescript
 @Injectable()
 export class ProductService {
-  async bulkUpdateStatus(ids: string[], status: ProductStatus): Promise<{ count: number }> {
-    const result = await this.prisma.product.updateMany({
-      where: { id: { in: ids } },
+  async bulkUpdateStatus(principal: Principal, ids: string[], status: ProductStatus): Promise<{ count: number }> {
+    const result = await this.prisma.client.product.updateMany({
+      where: { tenantId: principal.tenantId, id: { in: ids } },
       data: { status, updatedAt: new Date() },
     });
 
     return { count: result.count };
   }
 
-  async bulkUpdatePrices(updates: Array<{ id: string; price: number }>): Promise<void> {
-    await this.prisma.$transaction(
-      updates.map(({ id, price }) =>
-        this.prisma.product.update({
-          where: { id },
+  async bulkUpdatePrices(principal: Principal, updates: Array<{ id: string; price: number }>): Promise<void> {
+    // All-or-nothing: a row from another tenant (count 0) aborts the whole batch.
+    await this.prisma.client.$transaction(async (tx) => {
+      for (const { id, price } of updates) {
+        const { count } = await tx.product.updateMany({
+          where: { id, tenantId: principal.tenantId },
           data: { price: new Prisma.Decimal(price) },
-        })
-      )
-    );
+        });
+        if (count === 0) throw new NotFoundException('Product not found', { errorCode: 'PRODUCT_NOT_FOUND' });
+      }
+    });
   }
 }
 ```
@@ -230,7 +235,7 @@ reads and an explicit model method for deletes — rewriting `delete` into `upda
 Type-checked against a Prisma 7.10.1 generated client (runtime against PostgreSQL NOT RUN):
 
 ```typescript
-import { type PrismaClient } from '../generated/prisma/client';
+import { type PrismaClient } from '../generated/prisma/client.js';
 
 export function withOrderSoftDelete(client: PrismaClient) {
   return client.$extends({
@@ -266,16 +271,17 @@ export type ExtendedClient = ReturnType<typeof withOrderSoftDelete>;
 ```typescript
 @Injectable()
 export class ProductService {
-  async restore(id: string): Promise<ProductResponseDto> {
-    const product = await this.prisma.product.update({
-      where: { id },
+  async restore(principal: Principal, id: string): Promise<ProductResponse> {
+    const { count } = await this.prisma.client.product.updateMany({
+      where: { id, tenantId: principal.tenantId, deletedAt: { not: null } },
       data: { deletedAt: null },
     });
-    return ProductResponseDto.fromEntity(product);
+    if (count === 0) throw new NotFoundException('Product not found', { errorCode: 'PRODUCT_NOT_FOUND' });
+    return this.findOne(principal, id);
   }
 
-  async hardDelete(id: string): Promise<void> {
-    await this.prisma.product.delete({ where: { id } });
+  async hardDelete(principal: Principal, id: string): Promise<void> {
+    await this.prisma.client.product.deleteMany({ where: { id, tenantId: principal.tenantId } });
   }
 }
 ```
@@ -296,10 +302,10 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
   ) {}
 
-  async createOrder(dto: CreateOrderDto): Promise<OrderResponseDto> {
+  async createOrder(principal: Principal, input: CreateOrder): Promise<OrderResponse> {
     // 1. Validate inventory availability
     const inventoryCheck = await this.inventoryClient.checkAvailability({
-      items: dto.items,
+      items: input.items,
     });
 
     if (!inventoryCheck.available) {
@@ -307,8 +313,8 @@ export class OrderService {
     }
 
     // 2. Create order in pending state
-    const order = await this.orderRepository.create({
-      ...dto,
+    const order = await this.orderRepository.create(principal.tenantId, {
+      ...input,
       status: 'PENDING',
     });
 
@@ -316,7 +322,7 @@ export class OrderService {
       // 3. Reserve inventory
       await this.inventoryClient.reserveItems({
         orderId: order.id,
-        items: dto.items,
+        items: input.items,
       });
 
       // 4. Process payment
@@ -324,7 +330,7 @@ export class OrderService {
         orderId: order.id,
         amount: order.totalAmount,
         currency: 'USD',
-        customerId: dto.customerId,
+        customerId: principal.subject,
       });
 
       // 5. Update order status
@@ -336,13 +342,13 @@ export class OrderService {
       // 6. Send notification (fire-and-forget)
       this.notificationClient.sendOrderConfirmation({
         orderId: order.id,
-        customerId: dto.customerId,
-      }).catch(error => {
+        customerId: principal.subject,
+      }).catch((error: unknown) => {
         // Log but don't fail the order
         this.logger.error('Failed to send notification', error);
       });
 
-      return OrderResponseDto.fromEntity(confirmedOrder);
+      return toOrderResponse(confirmedOrder);
 
     } catch (error) {
       // Rollback: cancel order and release inventory
@@ -436,36 +442,37 @@ export class ProductService {
     private readonly productRepository: ProductRepository,
   ) {}
 
-  async findOne(id: string): Promise<ProductResponseDto> {
-    const cacheKey = `product:${id}`;
+  async findOne(principal: Principal, id: string): Promise<ProductResponse> {
+    // Tenant in the key: a shared cache must never serve one tenant's row to another.
+    const cacheKey = `product:${principal.tenantId}:${id}`;
 
     // Try cache first
-    const cached = await this.cacheManager.get<ProductResponseDto>(cacheKey);
+    const cached = await this.cacheManager.get<ProductResponse>(cacheKey);
     if (cached) {
       return cached;
     }
 
     // Fetch from database
-    const product = await this.productRepository.findById(id);
-    if (!product) {
-      throw new NotFoundException('Product not found');
+    const product = await this.productRepository.findById(principal.tenantId, id);
+    if (product === null) {
+      throw new NotFoundException('Product not found', { errorCode: 'PRODUCT_NOT_FOUND' });
     }
 
-    const dto = ProductResponseDto.fromEntity(product);
+    const response = toProductResponse(product);
 
     // Cache for 5 minutes
-    await this.cacheManager.set(cacheKey, dto, 300000);
+    await this.cacheManager.set(cacheKey, response, 300_000);
 
-    return dto;
+    return response;
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<ProductResponseDto> {
-    const updated = await this.productRepository.update(id, dto);
+  async update(principal: Principal, id: string, input: UpdateProduct): Promise<ProductResponse> {
+    const updated = await this.productRepository.update(principal.tenantId, id, input);
 
     // Invalidate cache on update
-    await this.cacheManager.del(`product:${id}`);
+    await this.cacheManager.del(`product:${principal.tenantId}:${id}`);
 
-    return ProductResponseDto.fromEntity(updated);
+    return toProductResponse(updated);
   }
 }
 ```
@@ -477,17 +484,17 @@ export class ProductService {
 - [ ] Prisma schema designed with proper relations and indexes
 - [ ] Database migrations created and tested
 - [ ] Feature module, controller, and service generated
-- [ ] Request DTOs with `class-validator` validation
-- [ ] Response DTOs with `@ApiProperty` for Swagger
-- [ ] Pagination, filtering, and sorting implemented
-- [ ] DTO mapping pattern chosen (factory, transformer, or mapper service)
+- [ ] Request schemas (`z.strictObject`) declared on every `@Body`/`@Param`/`@Query` with `{ schema }`
+- [ ] Response schemas (`z.object`) applied with `@SerializeOptions({ schema })`; Swagger generated from them
+- [ ] Pagination, filtering, and sorting implemented (sort fields allow-listed)
+- [ ] Response mapping converts types only (Decimal, Date); the response schema decides the fields
 - [ ] Repository layer with Prisma queries
 - [ ] Service layer with business logic
 - [ ] External service clients with circuit breaker
 - [ ] Type-safe configuration for external APIs
 - [ ] File upload endpoint with validation
 - [ ] Bulk operations for create/update/delete
-- [ ] Soft delete middleware configured
+- [ ] Soft delete via a `$extends` query extension (Prisma `$use` middleware no longer exists)
 - [ ] API versioning strategy applied
 - [ ] Swagger decorators on all endpoints
 - [ ] OpenAPI JSON exported for API gateway

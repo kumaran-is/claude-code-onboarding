@@ -1,6 +1,6 @@
 # NestJS Security — Scanning, Headers & CORS
 
-Dependency scanning, ESLint security plugins, static analysis, security headers, and CORS configuration for NestJS 11.x. For input validation, PII masking, and Prisma security, see `nestjs-security-validation-logging.md`.
+Dependency scanning, linting (oxlint type-aware, or ESLint security plugins), static analysis, security headers, and CORS configuration for NestJS 12.x. For input validation, PII masking, and Prisma security, see `nestjs-security-validation-logging.md`.
 
 **Note:** For authentication and authorization patterns (JWT, passwords, rate limiting), see `nestjs-security-auth.md`.
 
@@ -15,8 +15,8 @@ npm audit --audit-level=high
 # Fix automatically where possible
 npm audit fix
 
-# Production audit (fails CI on vulnerabilities)
-npm audit --audit-level=high --production
+# Production dependencies only (npm 11: `--production` is deprecated and prints "Use `--omit=dev` instead")
+npm audit --audit-level=high --omit=dev
 ```
 
 ### Snyk Integration
@@ -52,13 +52,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '26.13.1'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=high --production
+        run: npm audit --audit-level=high --omit=dev
 
       - name: Run Snyk test
         run: npx snyk test --severity-threshold=high
@@ -66,12 +66,38 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 ```
 
-## 2. ESLint Security Plugins
+## 2. Linting — oxlint (NestJS 12 default) or ESLint Security Plugins
 
-### Installation
+NestJS 12's `nest new` generates **oxlint**. Type-aware rules (`no-floating-promises`, `no-misused-promises`) need
+`oxlint --type-aware` with `oxlint-tsgolint`. Verified 2026-11-24 on NestJS 12.6.0 with oxlint 1.95.0 +
+oxlint-tsgolint 7.0.2008: `oxlint --type-aware --deny-warnings src/ test/` exit 0 on the reference app.
+
+```json
+// .oxlintrc.json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["src/generated/**", "dist/**"],
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "no-console": "error"
+  },
+  "env": {
+    "node": true
+  }
+}
+```
+
+`package.json`: `"lint": "oxlint --type-aware --deny-warnings src/ test/"` (`--deny-warnings` makes warnings fail CI).
+
+Projects that already lint with ESLint (10.15.0 + `typescript-eslint` 8.74.0, flat config) can keep it and add the
+security plugin below; the example was not re-run on NestJS 12.
+
+### Installation (ESLint)
 
 ```bash
-npm install --save-dev eslint-plugin-security @typescript-eslint/eslint-plugin
+npm install --save-dev -E eslint-plugin-security@4.2.1 @typescript-eslint/eslint-plugin@8.74.0 @typescript-eslint/parser@8.74.0
 ```
 
 ### eslint.config.js Configuration
@@ -212,7 +238,7 @@ npm install @fastify/helmet
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
-import { AppModule } from './app.module';
+import { AppModule } from './app.module.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(

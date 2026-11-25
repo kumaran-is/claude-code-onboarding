@@ -1,6 +1,6 @@
 # NestJS Observability & Logging
 
-Observability patterns for NestJS 11.x covering OpenTelemetry tracing, metrics, and structured logging.
+Observability patterns for NestJS 12.x covering OpenTelemetry tracing, metrics, and structured logging.
 
 ## Structured Logging Configuration
 
@@ -19,7 +19,7 @@ Configuration for structured logging with cloud provider support and request log
  */
 
 import { registerAs } from '@nestjs/config';
-import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader';
+import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader.js';
 
 export default registerAs('logging', () => ({
   // Log level: error, warn, log, debug, verbose
@@ -85,7 +85,7 @@ Configuration for distributed tracing and metrics collection via OpenTelemetry.
  */
 
 import { registerAs } from '@nestjs/config';
-import { getOptionalString, getOptionalBoolean, getOptionalNumber } from './static-config-reader';
+import { getOptionalString, getOptionalBoolean, getOptionalNumber } from './static-config-reader.js';
 
 export default registerAs('observability', () => ({
   // Master switch for observability
@@ -137,86 +137,76 @@ export default registerAs('observability', () => ({
 }));
 ```
 
-## OpenTelemetry Tracing Module
+## OpenTelemetry Tracing Bootstrap
 
-Module initialization for distributed tracing with automatic instrumentation.
+Start the SDK **before** any application module is loaded, from a separate entry file passed to `node --import`.
+An SDK started in a Nest `onModuleInit` starts too late: `http` and Fastify are already loaded, so their
+auto-instrumentation never patches them.
 
-### Tracing Module (`src/core/observability/tracing/tracing.module.ts`)
+Verified 2026-11-24 on NestJS 12.6.0 / Fastify 5.12.8 / Node 26.13.1 with `@opentelemetry/sdk-node` 0.301.2,
+`@opentelemetry/sdk-trace` 3.1.1, `@opentelemetry/instrumentation-http` 0.301.2 and `@opentelemetry/api` 1.10.0:
+one server span per HTTP request in the console exporter, `/health` excluded.
+
+### Instrumentation entry (`src/instrumentation.ts`)
 
 ```typescript
-/**
- * OpenTelemetry Tracing Module
- *
- * Initializes distributed tracing with automatic instrumentation
- */
-
-import { Module, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { Resource } from '@opentelemetry/resources';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION, ATTR_DEPLOYMENT_ENVIRONMENT } from '@opentelemetry/semantic-conventions';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace';
 
-@Module({})
-export class TracingModule implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(TracingModule.name);
-  private sdk: NodeSDK | null = null;
+/**
+ * Loaded with `node --import ./dist/instrumentation.js dist/main.js`, before any app module,
+ * so the http module is patched before Fastify requires it. Console exporter here; swap in
+ * an OTLP exporter for a real collector.
+ */
+const sdk = new NodeSDK({
+  serviceName: 'orders-api',
+  spanProcessors: [new SimpleSpanProcessor({ exporter: new ConsoleSpanExporter() })],
+  instrumentations: [new HttpInstrumentation({ ignoreIncomingRequestHook: (req) => req.url === '/health' })],
+});
+sdk.start();
 
-  constructor(private readonly configService: ConfigService) {}
-
-  async onModuleInit(): Promise<void> {
-    const enabled = this.configService.get<boolean>('observability.enabled');
-    const tracingEnabled = this.configService.get<boolean>('observability.tracing.enabled');
-
-    if (!enabled || !tracingEnabled) {
-      this.logger.log('OpenTelemetry tracing is disabled');
-      return;
-    }
-
-    try {
-      const serviceName = this.configService.get<string>('observability.serviceName');
-      const serviceVersion = this.configService.get<string>('observability.serviceVersion');
-      const environment = this.configService.get<string>('observability.deploymentEnvironment');
-      const endpoint = this.configService.get<string>('observability.tracing.endpoint');
-
-      const resource = new Resource({
-        [ATTR_SERVICE_NAME]: serviceName,
-        [ATTR_SERVICE_VERSION]: serviceVersion,
-        [ATTR_DEPLOYMENT_ENVIRONMENT]: environment,
-      });
-
-      const traceExporter = new OTLPTraceExporter({
-        url: endpoint,
-      });
-
-      this.sdk = new NodeSDK({
-        resource,
-        spanProcessor: new BatchSpanProcessor(traceExporter),
-        instrumentations: [
-          getNodeAutoInstrumentations({
-            '@opentelemetry/instrumentation-fs': { enabled: false },
-            '@opentelemetry/instrumentation-dns': { enabled: false },
-          }),
-        ],
-      });
-
-      await this.sdk.start();
-      this.logger.log(`OpenTelemetry tracing initialized - exporting to ${endpoint}`);
-    } catch (error) {
-      this.logger.error('Failed to initialize OpenTelemetry tracing', error);
-    }
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.sdk) {
-      await this.sdk.shutdown();
-      this.logger.log('OpenTelemetry tracing shut down');
-    }
-  }
-}
+process.once('SIGTERM', () => {
+  sdk.shutdown().catch((error: unknown) => {
+    process.stderr.write(`otel shutdown failed: ${String(error)}\n`);
+  });
+});
 ```
+
+`package.json`: `"start:prod": "node --import ./dist/instrumentation.js dist/main.js"`; the Dockerfile `CMD` uses the
+same arguments.
+
+### Production exporter (OTLP over HTTP)
+
+Replace the processor with a batching one and an OTLP exporter (`@opentelemetry/exporter-trace-otlp-http` 0.301.2;
+constructor and option names checked against its published types, not run against a collector):
+
+```typescript
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace';
+
+// Endpoint, headers and sampler come from the standard OTEL_EXPORTER_OTLP_* / OTEL_TRACES_SAMPLER* env vars.
+spanProcessors: [new BatchSpanProcessor({ exporter: new OTLPTraceExporter() })],
+```
+
+Breaking changes from the 1.x/0.5x SDKs used in earlier versions of this page (each one fails `tsc`):
+
+| Old | Now |
+|---|---|
+| `new Resource({ [ATTR_SERVICE_NAME]: … })` | `serviceName: '…'`, or `resource: defaultResource().merge(resourceFromAttributes({ … }))` (`Resource` is type-only) |
+| `spanProcessor: new BatchSpanProcessor(exporter)` | `spanProcessors: [new BatchSpanProcessor({ exporter })]` |
+| `@opentelemetry/sdk-trace-node` / `sdk-trace-base` processors | `@opentelemetry/sdk-trace` |
+| `await sdk.start()` inside `TracingModule.onModuleInit` | `sdk.start()` in the `--import` entry; never swallow its errors |
+
+Optional: `getNodeAutoInstrumentations()` from `@opentelemetry/auto-instrumentations-node` instead of
+`HttpInstrumentation` (disable `instrumentation-fs` and `instrumentation-dns`, which are noisy).
+
+### `@nestjs/observe` — DEFER
+
+NestJS 12 ships `@nestjs/observe` (0.3.27, pre-1.0) and `nest new` enables it in a non-interactive run unless you
+pass `--no-observe`. It reports to the hosted, paid Observe platform and needs its app key and secret; it adds
+nothing without that service. Use OpenTelemetry above (vendor-neutral, works with any collector). Revisit if the
+team adopts the Observe platform.
 
 ## Logging Interceptor
 
@@ -289,20 +279,15 @@ export class LoggingInterceptor implements NestInterceptor {
 ### Registration
 
 ```typescript
-// main.ts
+// main.ts (ESM: relative imports carry .js)
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { AppModule } from './app.module.js';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  // Global logging interceptor
-  app.useGlobalInterceptors(new LoggingInterceptor());
-
-  await app.listen(3000);
-}
-bootstrap();
+const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+app.useGlobalInterceptors(new LoggingInterceptor());
+await app.listen({ port: 3000, host: '0.0.0.0' });
 ```
 
 ## Environment Configuration
@@ -354,19 +339,18 @@ GCP_PROJECT_ID=my-project
 Add these packages to your project:
 
 ```bash
-npm install @opentelemetry/sdk-node \
-  @opentelemetry/exporter-trace-otlp-http \
-  @opentelemetry/resources \
-  @opentelemetry/semantic-conventions \
-  @opentelemetry/auto-instrumentations-node \
-  @opentelemetry/sdk-trace-node
+# Exact pins (npm view, 2026-11-24); the first four were run in the NestJS 12.6.0 reference app
+npm install -E @opentelemetry/api@1.10.0 @opentelemetry/sdk-node@0.301.2 \
+  @opentelemetry/sdk-trace@3.1.1 @opentelemetry/instrumentation-http@0.301.2 \
+  @opentelemetry/exporter-trace-otlp-http@0.301.2
 ```
 
 ## Troubleshooting
 
 | Issue | Symptom | Fix |
 |-------|---------|-----|
-| Tracing not working | No spans exported | Check `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT` is reachable |
+| Tracing not working | No spans exported | Start the process with `node --import ./dist/instrumentation.js`; check `OTEL_EXPORTER_OTLP_ENDPOINT` is reachable |
+| No HTTP spans although the SDK started | SDK started inside Nest (`onModuleInit`) | Move it to the `--import` entry: `http` must be patched before Fastify loads |
 | Too many spans | High cardinality, storage cost | Lower `OTEL_TRACES_SAMPLER_ARG` to 0.1 or 0.01 (1% sampling) |
 | Missing correlation IDs | Logs show `unknown` | Ensure upstream services send `x-correlation-id` header or generate in middleware |
 | Sensitive data in logs | Passwords appearing | Add field names to `sensitiveFields` array in interceptor |

@@ -1,96 +1,62 @@
 # NestJS REST Controllers — File Upload, Versioning & Error Handling
 
-File upload with Fastify multipart, API versioning, and RFC 9457 error response standardization for NestJS 11.x.
+File upload with Fastify multipart, API versioning, and RFC 9457 error response standardization for NestJS 12.x.
 
 ## 5. File Upload Pattern
 
-### Fastify Multipart Setup
+### Fastify uploads with `@nestjs/platform-fastify/multipart` (NestJS 12.1+)
+
+Since 12.1 the Fastify adapter has its own `FileInterceptor` family (`FileInterceptor`, `FilesInterceptor`,
+`FileFieldsInterceptor`, `AnyFilesInterceptor`, `NoFilesInterceptor`, `FileStreamInterceptor`, `MultipartModule`) in
+`@nestjs/platform-fastify/multipart`. It needs the optional peer `@fastify/multipart` (`10.1.9`, `npm i -E`), which the
+adapter registers itself. The uploaded file has multer's shape, so `@UploadedFile()`, `ParseFilePipe` and the built-in
+validators work unchanged. Do not import `FileInterceptor` from `@nestjs/platform-express` on Fastify.
+
+Verified 2026-11-24 on NestJS 12.6.0 (4/4 tests: real PNG → 201; over `limits.fileSize` → 413; a shell script sent as
+`image/png` → 400 by magic bytes; missing file → 400; removing `FileTypeValidator` made the spoof test fail).
 
 ```typescript
-// In main.ts
-import multipart from '@fastify/multipart';
+import { Controller, FileTypeValidator, HttpCode, MaxFileSizeValidator, ParseFilePipe, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor, type UploadedMultipartFile } from '@nestjs/platform-fastify/multipart';
+import { ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { ProductService } from './product.service.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter()
-  );
-
-  await app.register(multipart, {
-    limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB
-      files: 5,
-    },
-  });
-
-  await app.listen(3000);
-}
-```
-
-### File Upload Controller
-
-```typescript
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiConsumes, ApiBody, ApiOperation } from '@nestjs/swagger';
-
-interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  buffer: Buffer;
-  size: number;
-}
+const MAX_BYTES = 5 * 1024 * 1024;
 
 @Controller({ path: 'products', version: '1' })
-export class ProductController {
-  @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiOperation({ summary: 'Upload product image' })
+export class ProductUploadController {
+  constructor(private readonly products: ProductService) {}
+
+  @Post('image')
+  @HttpCode(201)
   @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: { type: 'string', format: 'binary' },
-      },
-    },
-  })
-  async uploadFile(@UploadedFile() file: MulterFile) {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    const maxSize = 5 * 1024 * 1024; // 5MB
-
-    if (!allowedTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Only JPEG, PNG, and WebP images are allowed');
-    }
-
-    // Validate actual file content by magic bytes (not just MIME type)
-    // MIME type is client-spoofable — magic bytes check the real file signature
-    // npm install file-type
-    const { fileTypeFromBuffer } = await import('file-type');
-    const detected = await fileTypeFromBuffer(file.buffer);
-    if (!detected || !allowedTypes.includes(detected.mime)) {
-      throw new BadRequestException(
-        `File content does not match allowed types (detected: ${detected?.mime ?? 'unknown'})`,
-      );
-    }
-
-    if (file.size > maxSize) {
-      throw new BadRequestException('File size must not exceed 5MB');
-    }
-
-    const uploadResult = await this.productService.uploadImage(file);
-
-    return {
-      filename: file.originalname,
-      size: file.size,
-      mimetype: file.mimetype,
-      url: uploadResult.url,
-    };
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  // limits.fileSize is enforced while streaming (413); files: 1 rejects a second file.
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_BYTES, files: 1 } }))
+  async upload(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: MAX_BYTES }),
+          // Checks the file's magic bytes, not only the client-controlled content-type.
+          new FileTypeValidator({ fileType: /^image\/(png|jpeg|webp)$/ }),
+        ],
+      }),
+    )
+    file: UploadedMultipartFile,
+  ): Promise<{ size: number; mimetype: string; url: string }> {
+    const stored = await this.products.uploadImage({ buffer: file.buffer, mimetype: file.mimetype });
+    // Never echo the client filename into storage keys or HTML; return what the server decided.
+    return { size: file.size, mimetype: file.mimetype, url: stored.url };
   }
 }
 ```
+
+- Limits fall back to `MultipartModule`, then to the `@fastify/multipart` registration, then to its defaults: `fileSize` is
+  capped by the Fastify `bodyLimit` (1 MiB unless set), `parts` by 1000, `fieldSize` 1 MB. Set `fileSize` and `files`
+  per route; a raised `bodyLimit` on the adapter is still the global ceiling.
+- Memory storage (the default) sets `file.buffer`; for large files use disk storage or `FileStreamInterceptor` and stream
+  to object storage instead of buffering.
 
 ### Direct-to-storage uploads (presigned URL + confirm)
 
@@ -102,8 +68,8 @@ and Spring (`java-spring-api/reference/spring-boot-rest-service-guide.md`). Buck
 method is `getSignedUrl`; `generateSignedUrl` does not exist.
 
 ```typescript
-// src/upload/upload.dto.ts
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+// src/upload/upload.schemas.ts
+import { z } from 'zod';
 
 export const ALLOWED_TYPES = {
   'image/jpeg': '.jpg',
@@ -114,27 +80,22 @@ export const ALLOWED_TYPES = {
 export type AllowedType = keyof typeof ALLOWED_TYPES;
 export const MAX_BYTES = 100 * 1024 * 1024;
 
-export class PresignedUrlRequestDto {
-  // Accepted because the Angular client sends it (forbidNonWhitelisted); never used in the object key
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  filename?: string;
+const ALLOWED_TYPE_NAMES = Object.keys(ALLOWED_TYPES) as [AllowedType, ...AllowedType[]];
 
-  @IsIn(Object.keys(ALLOWED_TYPES))
-  contentType!: AllowedType;
+export const PresignedUrlRequestSchema = z
+  .strictObject({
+    // Accepted because the Angular client sends it (strictObject would reject it); never used in the object key
+    filename: z.string().max(255).optional(),
+    contentType: z.enum(ALLOWED_TYPE_NAMES),
+    size: z.int().min(1).max(MAX_BYTES),
+  })
+  .meta({ id: 'PresignedUrlRequest' });
+export type PresignedUrlRequest = z.infer<typeof PresignedUrlRequestSchema>;
 
-  @IsInt()
-  @Min(1)
-  @Max(MAX_BYTES)
-  size!: number;
-}
-
-export class ConfirmUploadDto {
-  @IsString()
-  @MaxLength(200)
-  objectKey!: string;
-}
+export const ConfirmUploadSchema = z
+  .strictObject({ objectKey: z.string().max(200) })
+  .meta({ id: 'ConfirmUpload' });
+export type ConfirmUpload = z.infer<typeof ConfirmUploadSchema>;
 ```
 
 ```typescript
@@ -143,7 +104,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Storage, type Bucket } from '@google-cloud/storage';
-import { ALLOWED_TYPES, MAX_BYTES, type PresignedUrlRequestDto } from './upload.dto';
+import { ALLOWED_TYPES, MAX_BYTES, type PresignedUrlRequest } from './upload.schemas.js';
 
 const URL_TTL_MS = 15 * 60 * 1000;
 
@@ -156,15 +117,15 @@ export class UploadService {
     this.bucket = new Storage().bucket(config.getOrThrow<string>('GCS_UPLOAD_BUCKET'));
   }
 
-  async createPresignedUrl(ownerId: string, dto: PresignedUrlRequestDto) {
+  async createPresignedUrl(ownerId: string, input: PresignedUrlRequest) {
     // Server-chosen key under the owner's directory: the client filename never reaches the key
-    const objectKey = `uploads/${ownerId}/${randomUUID()}${ALLOWED_TYPES[dto.contentType]}`;
+    const objectKey = `uploads/${ownerId}/${randomUUID()}${ALLOWED_TYPES[input.contentType]}`;
     const expiresAt = new Date(Date.now() + URL_TTL_MS);
     const [uploadUrl] = await this.bucket.file(objectKey).getSignedUrl({
       version: 'v4',
       action: 'write',
       expires: expiresAt,
-      contentType: dto.contentType, // the PUT must send this exact Content-Type or GCS answers 403
+      contentType: input.contentType, // the PUT must send this exact Content-Type or GCS answers 403
     });
     this.logger.log({ msg: 'upload_url_issued', objectKey }); // never log the URL: it is a credential
     return { uploadUrl, objectKey, expiresAt: expiresAt.toISOString() };
@@ -197,10 +158,15 @@ export class UploadService {
 ```typescript
 // src/upload/upload.controller.ts  (global JwtAuthGuard: nestjs-production-baseline.md)
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { CurrentPrincipal } from '../auth/auth.decorators';
-import type { Principal } from '../auth/principal';
-import { ConfirmUploadDto, PresignedUrlRequestDto } from './upload.dto';
-import { UploadService } from './upload.service';
+import { CurrentPrincipal } from '../auth/auth.decorators.js';
+import type { Principal } from '../auth/principal.js';
+import {
+  type ConfirmUpload,
+  ConfirmUploadSchema,
+  type PresignedUrlRequest,
+  PresignedUrlRequestSchema,
+} from './upload.schemas.js';
+import { UploadService } from './upload.service.js';
 
 @Controller({ path: 'upload', version: '1' })
 export class UploadController {
@@ -208,14 +174,20 @@ export class UploadController {
 
   @Post('presigned-url')
   @HttpCode(200)
-  presignedUrl(@CurrentPrincipal() principal: Principal, @Body() dto: PresignedUrlRequestDto) {
-    return this.uploads.createPresignedUrl(principal.subject, dto);
+  presignedUrl(
+    @CurrentPrincipal() principal: Principal,
+    @Body({ schema: PresignedUrlRequestSchema }) body: PresignedUrlRequest,
+  ) {
+    return this.uploads.createPresignedUrl(principal.subject, body);
   }
 
   @Post('confirm')
   @HttpCode(204)
-  async confirm(@CurrentPrincipal() principal: Principal, @Body() dto: ConfirmUploadDto): Promise<void> {
-    await this.uploads.confirmUpload(principal.subject, dto.objectKey);
+  async confirm(
+    @CurrentPrincipal() principal: Principal,
+    @Body({ schema: ConfirmUploadSchema }) body: ConfirmUpload,
+  ): Promise<void> {
+    await this.uploads.confirmUpload(principal.subject, body.objectKey);
   }
 }
 ```

@@ -1,6 +1,6 @@
 # NestJS REST Controllers — Workflow & Swagger Setup
 
-REST service development workflow and OpenAPI/Swagger-driven controller patterns for NestJS 11.x with Fastify and TypeScript 5.x.
+REST service development workflow and OpenAPI/Swagger-driven controller patterns for NestJS 12.x with Fastify and TypeScript 6.0.
 
 ## 1. REST Service Development Workflow
 
@@ -23,10 +23,10 @@ REST service development workflow and OpenAPI/Swagger-driven controller patterns
    nest g service features/products
    ```
 
-4. **Create DTOs**
-   - Request DTOs with `class-validator` decorators
-   - Response DTOs with `@ApiProperty` for Swagger
-   - Reusable pagination and filter DTOs
+4. **Create schemas**
+   - Request schemas with Zod 4 `z.strictObject(...)`, bound with `@Body({ schema })`, `@Param(name, { schema })`, `@Query({ schema })`
+   - Response schemas with `z.object(...)` and `@SerializeOptions({ schema })`; `.meta({ id })` names the OpenAPI component
+   - Reusable pagination and filter schemas (query strings coerced explicitly with `z.coerce`)
 
 5. **Implement Layers**
    - Repository: Prisma database access
@@ -54,130 +54,145 @@ REST service development workflow and OpenAPI/Swagger-driven controller patterns
 
 ### Controller with Complete Swagger Documentation
 
+`@nestjs/swagger` 12 generates the request body, path/query parameters and response schemas from the Zod schemas
+declared on the route (verified on 12.1.2: the generated `/docs-json` lists the `CreateOrder` properties with
+`additionalProperties: false`). `@ApiOperation` and error-status `@ApiResponse`s stay hand-written.
+
 ```typescript
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { ProductService } from './product.service';
-import { CreateProductDto, UpdateProductDto, ProductResponseDto, ProductFilterDto } from './dto';
-import { PaginatedResponse } from '@/common/dto/paginated-response.dto';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, SerializeOptions } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+
+import { CurrentPrincipal } from '../../auth/auth.decorators.js';
+import type { Principal } from '../../auth/principal.js';
+import {
+  type CreateProduct,
+  CreateProductSchema,
+  type ProductFilter,
+  ProductFilterSchema,
+  ProductIdSchema,
+  ProductPageSchema,
+  type ProductPage,
+  type ProductResponse,
+  ProductResponseSchema,
+  type UpdateProduct,
+  UpdateProductSchema,
+} from './product.schemas.js';
+import { ProductService } from './product.service.js';
 
 @ApiTags('Products')
 @Controller({ path: 'products', version: '1' })
+@SerializeOptions({ schema: ProductResponseSchema })
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Create a new product',
-    description: 'Creates a product with validation and returns the created entity'
-  })
-  @ApiBody({ type: CreateProductDto })
-  @ApiResponse({
-    status: 201,
-    description: 'Product created successfully',
-    type: ProductResponseDto
-  })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
-  @ApiResponse({ status: 409, description: 'Product with SKU already exists' })
-  async create(@Body() dto: CreateProductDto): Promise<ProductResponseDto> {
-    const product = await this.productService.create(dto);
-    return ProductResponseDto.fromEntity(product);
+  @ApiOperation({ summary: 'Create a new product' })
+  @ApiCreatedResponse({ standardSchema: ProductResponseSchema })
+  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiConflictResponse({ description: 'Product with SKU already exists' })
+  create(
+    @CurrentPrincipal() principal: Principal,
+    @Body({ schema: CreateProductSchema }) body: CreateProduct,
+  ): Promise<ProductResponse> {
+    return this.productService.create(principal, body);
   }
 
   @Get()
   @ApiOperation({ summary: 'List products with pagination and filters' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  @ApiQuery({ name: 'status', required: false, enum: ['ACTIVE', 'INACTIVE', 'ARCHIVED'] })
-  @ApiResponse({
-    status: 200,
-    description: 'Paginated list of products',
-    type: PaginatedResponse<ProductResponseDto>
-  })
-  async findAll(@Query() filter: ProductFilterDto): Promise<PaginatedResponse<ProductResponseDto>> {
-    return this.productService.findAll(filter);
+  @SerializeOptions({ schema: ProductPageSchema })
+  @ApiOkResponse({ standardSchema: ProductPageSchema })
+  findAll(
+    @CurrentPrincipal() principal: Principal,
+    @Query({ schema: ProductFilterSchema }) filter: ProductFilter,
+  ): Promise<ProductPage> {
+    return this.productService.findAll(principal, filter);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get product by ID' })
-  @ApiParam({ name: 'id', description: 'Product UUID', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @ApiResponse({ status: 200, description: 'Product found', type: ProductResponseDto })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async findOne(@Param('id') id: string): Promise<ProductResponseDto> {
-    const product = await this.productService.findOne(id);
-    return ProductResponseDto.fromEntity(product);
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  @ApiNotFoundResponse({ description: 'Product not found (or owned by another tenant)' })
+  findOne(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+  ): Promise<ProductResponse> {
+    return this.productService.findOne(principal, id);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update product' })
-  @ApiParam({ name: 'id', description: 'Product UUID' })
-  @ApiBody({ type: UpdateProductDto })
-  @ApiResponse({ status: 200, description: 'Product updated', type: ProductResponseDto })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponseDto> {
-    const product = await this.productService.update(id, dto);
-    return ProductResponseDto.fromEntity(product);
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  update(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+    @Body({ schema: UpdateProductSchema }) body: UpdateProduct,
+  ): Promise<ProductResponse> {
+    return this.productService.update(principal, id, body);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete product (soft delete)' })
-  @ApiParam({ name: 'id', description: 'Product UUID' })
-  @ApiResponse({ status: 204, description: 'Product deleted' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async remove(@Param('id') id: string): Promise<void> {
-    await this.productService.remove(id);
+  @ApiNoContentResponse({ description: 'Product deleted' })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  async remove(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+  ): Promise<void> {
+    await this.productService.remove(principal, id);
   }
 }
 ```
 
+Schemas for this controller follow `nestjs-templates-features.md` (`products.schemas.ts`); the paginated envelope and
+filter schema are in `nestjs-rest-dto-pagination.md`.
+
 ### Swagger Setup in main.ts
 
+Validation and serialization are global providers in `AppModule` (`APP_PIPE` / `APP_INTERCEPTOR`, see
+`nestjs-templates-core.md`), so `main.ts` registers no pipe.
+
 ```typescript
+import { writeFileSync } from 'node:fs';
+import { VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { writeFileSync } from 'fs';
-import { AppModule } from './app.module';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter({ logger: true })
-  );
+const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
 
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-  }));
+app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  // API versioning
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-  });
+const config = new DocumentBuilder()
+  .setTitle('Product Service API')
+  .setDescription('REST API for product management')
+  .setVersion('1.0')
+  .addTag('Products')
+  .addBearerAuth()
+  .build();
 
-  // Swagger configuration
-  const config = new DocumentBuilder()
-    .setTitle('Product Service API')
-    .setDescription('REST API for product management')
-    .setVersion('1.0')
-    .addTag('Products')
-    .addBearerAuth()
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
+const document = SwaggerModule.createDocument(app, config);
+// Swagger routes are public (guards do not protect them): serve the UI only outside production.
+if (process.env['NODE_ENV'] !== 'production') {
   SwaggerModule.setup('api/docs', app, document);
-
-  // Export OpenAPI JSON for API gateway
-  writeFileSync('./openapi.json', JSON.stringify(document, null, 2));
-
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
-bootstrap();
+
+// Export OpenAPI JSON for the API gateway (run with EXPORT_OPENAPI=1 in CI, not on every start).
+if (process.env['EXPORT_OPENAPI'] === '1') {
+  writeFileSync('./openapi.json', JSON.stringify(document, null, 2));
+}
+
+await app.listen({ port: Number(process.env['PORT'] ?? 3000), host: '0.0.0.0' });
 ```

@@ -1,8 +1,8 @@
 ---
 name: spartan
-description: "Manages spartan/ui, the Angular UI library - adding, composing, fixing, debugging, and styling UI with the Brain (headless primitives) and Helm (styled) layers. Provides project context, component APIs, and usage examples. Applies when working with spartan/ui, @spartan-ng/brain, @spartan-ng/helm, the @spartan-ng/cli generators, or any Angular project with a components.json file. Also triggers for \"spartan init\", \"add a spartan component\", or \"set up spartan/ui\"."
+description: "Manages spartan/ui, the Angular UI library - adding, composing, fixing, debugging, and styling UI with the Brain (headless primitives) and Helm (styled) layers. Provides project context, component APIs, and usage examples. Applies when working with spartan/ui, @spartan-ng/brain, @spartan-ng/helm, the @spartan-ng/cli generators, or any Angular project with a components.json file. Not for React/shadcn projects (shadcn skill). Also triggers for \"spartan init\", \"add a spartan component\", or \"set up spartan/ui\"."
 user-invocable: false
-source: "official (spartan-ng/spartan skills/spartan at tag v1.10.1, commit 1905e03; MIT). Body vendored unchanged; frontmatter: description joined onto one line (same text) and source, last-reviewed, metadata added"
+source: "official (spartan-ng/spartan skills/spartan at tag v1.10.1, commit 1905e03; MIT). Body vendored with house edits: the 1.10.1 pin paragraph, healthcheck --autoFix only after approval, and pinned installs in cli.md, mcp.md and customization.md; frontmatter: description joined onto one line (same text) and source, last-reviewed, metadata added; plus a house Iron Law"
 last-reviewed: "2026-11-24"
 metadata:
   triggers: spartan, spartan/ui, spartan-ng, @spartan-ng/brain, @spartan-ng/helm, @spartan-ng/cli, helm component, brain primitive, components.json, hlmBtn
@@ -14,8 +14,12 @@ allowed-tools:
 
 # spartan/ui
 
+## Iron Law
+
+ONLY IN A SPARTAN OR HYBRID WORKSPACE; PINNED `@spartan-ng/cli@1.10.1`; `healthcheck --autoFix` ONLY AFTER THE HUMAN APPROVES.
+
 spartan/ui is an Angular UI library on the stable **1.x** line (`@spartan-ng/brain`, `@spartan-ng/cli`, `@spartan-ng/mcp`). Do **not** assume a fixed version such as 1.0 — read the
-declared dependency versions for Brain, Helm, and CLI from `npx nx g @spartan-ng/cli:info --json` (Nx) or `ng g @spartan-ng/cli:info --json` (Angular CLI) (field `versions`; these are `package.json` ranges, not lockfile-resolved installs). For the latest published MCP package version, check npm (`@spartan-ng/mcp`).
+declared dependency versions for Brain, Helm, and CLI from `npx nx g @spartan-ng/cli:info --json` (Nx) or `ng g @spartan-ng/cli:info --json` (Angular CLI) (field `versions`; these are `package.json` ranges, not lockfile-resolved installs). This toolkit pins the 1.10.1 line (`@spartan-ng/cli@1.10.1`, `@spartan-ng/mcp@1.10.1`); move it deliberately, never to an unpinned latest.
 
 It uses a **two-layer architecture**:
 
@@ -174,5 +178,5 @@ npx nx g @spartan-ng/cli:ui --name=dialog
 npx nx g @spartan-ng/cli:ui-theme
 
 # Scan + auto-fix deprecated APIs/imports after an upgrade
-npx nx g @spartan-ng/cli:healthcheck --autoFix
+npx nx g @spartan-ng/cli:healthcheck            # report only; add --autoFix only after the human approves the changes
 ```

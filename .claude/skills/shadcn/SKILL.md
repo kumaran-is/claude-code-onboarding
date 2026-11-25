@@ -2,7 +2,7 @@
 name: shadcn
 description: "Manages shadcn/ui in React projects (Vite SPA, Next.js, React Router) - adding, searching, fixing, debugging, styling and composing components on Base UI or Radix primitives, Tailwind CSS v4 tokens, registries and presets. Applies when working with shadcn/ui, the shadcn CLI, components.json in a React project, --preset codes, or a DESIGN.md mapped onto shadcn tokens. Not for Angular projects with components.json (spartan skill)."
 user-invocable: false
-source: "official (shadcn-ui/ui skills/shadcn at commit 4233ed1, 2026-10-14; MIT). Body vendored with three changes: every shadcn@latest pinned to shadcn@4.23.0; the load-time shell injection of 'shadcn info --json' replaced by an explicit step; frontmatter description scoped to React and source, last-reviewed, metadata added; a toolkit-policy note added and allowed-tools narrowed to read-only subcommands. Not vendored: assets/*.png, agents/openai.yml, evals/"
+source: "official (shadcn-ui/ui skills/shadcn at commit 4233ed1, 2026-10-14; MIT). Body vendored with three changes: every shadcn@latest pinned to shadcn@4.23.0; the load-time shell injection of 'shadcn info --json' replaced by an explicit step; frontmatter description scoped to React and source, last-reviewed, metadata added; a toolkit-policy note added, allowed-tools narrowed to read-only subcommands, and the new-project `init --template/--name` examples replaced by /scaffold-react-app. Not vendored: assets/*.png, agents/openai.yml, evals/; plus a house Iron Law"
 last-reviewed: "2026-11-24"
 metadata:
   triggers: shadcn, shadcn/ui, components.json (React), Base UI, @base-ui/react, radix-ui, FieldGroup, Field, data-invalid, shadcn preset, shadcn registry, tw-animate-css
@@ -18,6 +18,10 @@ allowed-tools: Bash(npx shadcn@4.23.0 info *), Bash(npx shadcn@4.23.0 docs *), B
 > `--overwrite`, `--all` and `apply` need the human's approval first (they write remote code over local,
 > app-owned files). Updates: `add --dry-run` / `--diff` (`react-spa/reference/tailwind-shadcn.md`).
 > Read-only commands (`info`, `docs`, `search`, `view`) need no approval.
+
+## Iron Law
+
+NEW APPS ONLY VIA `/scaffold-react-app`; NO THIRD-PARTY REGISTRY, `--overwrite`, `--all` OR `apply` WITHOUT THE HUMAN'S APPROVAL.
 
 A framework for building ui, components and design systems. Components are added as source code to the user's project via the CLI.
 
@@ -207,7 +211,7 @@ npx shadcn@4.23.0 docs button dialog select
 
 When the user asks for a design system from a `DESIGN.md` (or a brand spec), with or without a preset, follow [design-system.md](./design-system.md) end to end:
 
-1. `init --preset <code> --template <vite|next> --name <app> --no-monorepo -y`. Without a preset code, pick the closest style and pass `--base base --preset <style>`. Then `add --all -y`.
+1. Create the app with `/scaffold-react-app`, then inside it `init --preset <code> --no-monorepo -y` (without a preset code, pick the closest style: `--base base --preset <style>`). Add the components the design system page needs; `add --all` only with the human's approval (toolkit policy above).
 2. Read the DESIGN.md frontmatter, Do's and Don'ts, and Known Gaps before editing.
 3. Map its tokens onto the shadcn variables in `tailwindCssFile`. Pin the radius scale, shadows, fonts and `type-*` utilities.
 4. Restyle components by editing their `cva` variants. Change control heights together.
@@ -229,22 +233,10 @@ When the user asks to update a component from upstream while keeping their local
 ## Quick Reference
 
 ```bash
-# Create a new project.
-npx shadcn@4.23.0 init --name my-app --preset base-nova
-npx shadcn@4.23.0 init --name my-app --preset a2r6bw --template vite
+# New project: /scaffold-react-app (never `init --template/--name`; the block-raw-scaffold hook blocks it).
 
-# Create a design system app (then follow design-system.md).
-npx shadcn@4.23.0 init --name my-ds --preset b0 --template vite --no-monorepo -y
-npx shadcn@4.23.0 init --name my-ds --base base --preset maia --template vite --no-monorepo -y
-npx shadcn@4.23.0 add --all -y
-
-# Create a monorepo project.
-npx shadcn@4.23.0 init --name my-app --preset base-nova --monorepo
-npx shadcn@4.23.0 init --name my-app --preset base-nova --template next --monorepo
-
-# Initialize existing project.
+# Initialize the existing (scaffolded) project.
 npx shadcn@4.23.0 init --preset base-nova
-npx shadcn@4.23.0 init --defaults  # shortcut: --template=next --preset=nova (base style implied)
 
 # Apply a preset to an existing project.
 npx shadcn@4.23.0 apply a2r6bw
@@ -261,9 +253,9 @@ npx shadcn@4.23.0 preset resolve --json
 
 # Add components.
 npx shadcn@4.23.0 add button card dialog
-npx shadcn@4.23.0 add @magicui/shimmer-button
-npx shadcn@4.23.0 add owner/repo/item
-npx shadcn@4.23.0 add --all
+npx shadcn@4.23.0 add @magicui/shimmer-button   # third-party registry: human approval first
+npx shadcn@4.23.0 add owner/repo/item           # third-party registry: human approval first
+npx shadcn@4.23.0 add --all                     # human approval first
 
 # Preview changes before adding/updating.
 npx shadcn@4.23.0 add button --dry-run

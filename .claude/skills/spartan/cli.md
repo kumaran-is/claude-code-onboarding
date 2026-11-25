@@ -6,7 +6,7 @@ the workspace (`info --json` reports `workspaceType`):
 - **Nx** (`nx.json` present): `npx nx g @spartan-ng/cli:<generator>` (or `pnpm nx g ...`).
 - **Angular CLI** (`angular.json`, no `nx.json`): `ng g @spartan-ng/cli:<generator>`.
 
-Install the plugin first: `npm i -D @spartan-ng/cli`.
+Install the plugin first: `npm i -D -E @spartan-ng/cli@1.10.1`.
 
 ## Core generators
 
@@ -66,7 +66,7 @@ Scans the workspace for deprecated APIs, outdated imports, and breaking changes;
 
 ```bash
 npx nx g @spartan-ng/cli:healthcheck            # report only
-npx nx g @spartan-ng/cli:healthcheck --autoFix  # apply fixes
+npx nx g @spartan-ng/cli:healthcheck --autoFix  # apply fixes: only after the human approves
 ng g @spartan-ng/cli:healthcheck --autoFix
 ```
 
@@ -87,7 +87,7 @@ npx nx g @spartan-ng/cli:migrate-helm-imports
 ## Typical sequence
 
 ```bash
-npm i -D @spartan-ng/cli
+npm i -D -E @spartan-ng/cli@1.10.1
 npx nx g @spartan-ng/cli:init
 npx nx g @spartan-ng/cli:ui-theme
 npx nx g @spartan-ng/cli:ui --name=button

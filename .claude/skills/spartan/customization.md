@@ -84,5 +84,5 @@ the choice to `localStorage` and respects the system color scheme.
 
 Because Helm code is copied into your project, customize by editing those files directly - adjust the
 `class-variance-authority` variants, change classes, or add inputs. Do not fork or edit the Brain
-packages. After spartan upgrades, run `@spartan-ng/cli:healthcheck --autoFix` to reconcile
+packages. After spartan upgrades, run `@spartan-ng/cli:healthcheck` (report) and, once the human approves, `--autoFix` to reconcile
 deprecated APIs.

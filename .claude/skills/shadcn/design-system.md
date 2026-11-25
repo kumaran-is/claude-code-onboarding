@@ -34,16 +34,17 @@ If the DESIGN.md path can't be read (macOS privacy blocks `~/Downloads` and `~/D
 
 ## Step 1: Scaffold
 
-With a preset code from the user:
+Create the app with `/scaffold-react-app` (house rule: never `init --template/--name`). Then, in that app,
+with a preset code from the user:
 
 ```bash
-npx shadcn@4.23.0 init --preset <code> --template vite --name <app> --no-monorepo -y
+npx shadcn@4.23.0 init --preset <code> --no-monorepo -y
 ```
 
 Without one, pick the style whose geometry is closest to the DESIGN.md and pass it with `--base`:
 
 ```bash
-npx shadcn@4.23.0 init --base base --preset <style> --template vite --name <app> --no-monorepo -y
+npx shadcn@4.23.0 init --base base --preset <style> --no-monorepo -y
 ```
 
 Then:
@@ -73,6 +74,8 @@ The theme gets replaced by the DESIGN.md anyway. The style decides geometry the 
 State the choice and the reason in one line ("Picked maia: 40px controls, 12–16px cards, generous padding"). If the user names a style, use it. Read `base`, `style`, `iconLibrary`, `tailwindCssFile` and `aliases` from `info` before writing any code.
 
 ## Step 2: Install Everything
+
+House rule: `add --all` writes every registry component into the app; get the human's approval first.
 
 ```bash
 npx shadcn@4.23.0 add --all -y

@@ -11,22 +11,17 @@ No install (recommended):
 ```json
 {
 	"mcpServers": {
-		"spartan-ui": { "command": "npx", "args": ["-y", "@spartan-ng/mcp"] }
+		"spartan-ui": { "command": "npx", "args": ["-y", "@spartan-ng/mcp@1.10.1"] }
 	}
 }
 ```
 
-Global install:
+Run it pinned (house rule: no global installs):
 
 ```bash
-npm install -g @spartan-ng/mcp
+npx -y @spartan-ng/mcp@1.10.1
 ```
 
-```json
-{
-	"mcpServers": { "spartan-ui": { "command": "spartan-mcp" } }
-}
-```
 
 ## Tools
 

@@ -25,6 +25,7 @@ maestro
 mobile-mcp
 postgres
 revenuecat
+spartan-ui
 stripe
 terraform
 voicemode

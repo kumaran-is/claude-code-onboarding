@@ -143,6 +143,7 @@ The single source of truth for WHICH servers are approved is `.claude/mcp-allowl
 | `github` (api.githubcopilot.com) | ✅ Trusted | HTTP MCP, reads/writes GitHub only |
 | `angular-cli` (npx @angular/cli mcp) | ✅ Trusted | Local CLI, no network write calls |
 | `chrome-devtools` (chrome-devtools-mcp) | ✅ Trusted | Local browser automation |
+| `spartan-ui` (npx @spartan-ng/mcp@1.10.1) | ✅ Trusted | Official spartan/ui docs server (stdio, no key). Package scanned 2026-11-24: no process spawn or eval; network only to www.spartan.ng; writes only its cache (`~/.cache/spartan-mcp`) |
 | `firebase` (npx firebase-tools mcp) | ✅ Trusted | Scoped to authenticated Firebase project |
 | `context7` (npx @upstash/context7-mcp) | ✅ Trusted | Read-only doc fetcher |
 | `dart-mcp-server` (dart mcp-server) | ✅ Trusted | Local Dart/Flutter tooling |

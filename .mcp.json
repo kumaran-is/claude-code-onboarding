@@ -21,6 +21,17 @@
       ],
       "timeout": 60000
     },
+    "spartan-ui": {
+      "type": "stdio",
+      "disabled": false,
+      "description": "Official spartan/ui MCP (read-only docs): component and block code/API, dependencies, accessibility notes, health checks for Spartan Brain/Helm. Fetches www.spartan.ng and caches under ~/.cache/spartan-mcp (SPARTAN_MCP_CACHE_DIR). Only for projects whose UI mode is spartan or hybrid (--ui=spartan|hybrid).",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@spartan-ng/mcp@1.10.1"
+      ],
+      "timeout": 60000
+    },
     "chrome-devtools": {
       "type": "stdio",
       "disabled": false,

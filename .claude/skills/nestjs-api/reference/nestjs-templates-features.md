@@ -1,6 +1,12 @@
 # NestJS Feature Templates — CRUD Module Pattern
 
-Complete feature module templates for NestJS 11.x with controller, service, repository, and DTOs.
+Complete feature module templates for NestJS 12.x (ESM) with controller, service, repository and Zod schemas
+(Standard Schema validation and serialization). The same shapes are runtime-verified in
+`nestjs-production-baseline.md` (orders feature): copy from there when in doubt.
+
+Assumed global wiring (`app.module.ts`, see `nestjs-templates-core.md`): `StandardSchemaValidationPipe` as `APP_PIPE`,
+`StandardSchemaSerializerInterceptor` as `APP_INTERCEPTOR`, `ThrottlerGuard` then `JwtAuthGuard` as `APP_GUARD`s.
+Feature controllers therefore add no `@UseGuards(JwtAuthGuard)`: authentication is global, `@Public()` opts out.
 
 ## Feature Module Template
 
@@ -8,9 +14,9 @@ Complete feature module templates for NestJS 11.x with controller, service, repo
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { ProductsController } from './controllers/products.controller';
-import { ProductsService } from './services/products.service';
-import { ProductsRepository } from './repositories/products.repository';
+import { ProductsController } from './controllers/products.controller.js';
+import { ProductsRepository } from './repositories/products.repository.js';
+import { ProductsService } from './services/products.service.js';
 
 @Module({
   controllers: [ProductsController],
@@ -20,133 +26,151 @@ import { ProductsRepository } from './repositories/products.repository';
 export class ProductsModule {}
 ```
 
+### Product Schemas (src/features/products/products.schemas.ts)
+
+One file holds the request and response contracts. Request schemas are `z.strictObject` (an unknown key, such as a
+smuggled `tenantId`, is a 400, not silently dropped); response schemas are `z.object` (the serializer strips every field
+they do not declare). `.meta({ id })` names the OpenAPI component that `@nestjs/swagger` 12 generates from the schema.
+
+```typescript
+import { z } from 'zod';
+
+export const CreateProductSchema = z
+  .strictObject({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(1000).optional(),
+    price: z.number().nonnegative().multipleOf(0.01),
+    stock: z.int().min(0).default(0),
+    isActive: z.boolean().default(true),
+  })
+  .meta({ id: 'CreateProduct' });
+export type CreateProduct = z.infer<typeof CreateProductSchema>;
+
+// partial() keeps strictness; at least one field must be present.
+export const UpdateProductSchema = CreateProductSchema.partial()
+  .refine((value) => Object.keys(value).length > 0, { message: 'at least one field is required' })
+  .meta({ id: 'UpdateProduct' });
+export type UpdateProduct = z.infer<typeof UpdateProductSchema>;
+
+// Query strings arrive as text: coerce explicitly and cap the page size.
+export const ListProductsQuerySchema = z
+  .strictObject({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .meta({ id: 'ListProductsQuery' });
+export type ListProductsQuery = z.infer<typeof ListProductsQuerySchema>;
+
+export const ProductIdSchema = z.uuid();
+
+export const ProductResponseSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    description: z.string().nullable(),
+    price: z.number(),
+    stock: z.int(),
+    isActive: z.boolean(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'ProductResponse' });
+export type ProductResponse = z.infer<typeof ProductResponseSchema>;
+
+export const ProductListSchema = z.array(ProductResponseSchema);
+```
+
 ### Product Controller (src/features/products/controllers/products.controller.ts)
 
 ```typescript
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
   Body,
-  Param,
-  Query,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
-  UseGuards,
-  Logger,
+  Param,
+  Patch,
+  Post,
+  Query,
+  SerializeOptions,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiQuery,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 
-import { ProductsService } from '../services/products.service';
-import { CreateProductDto } from '../dto/create-product.dto';
-import { UpdateProductDto } from '../dto/update-product.dto';
-import { ProductResponseDto } from '../dto/product-response.dto';
-import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { CurrentPrincipal, Roles } from '../../../auth/auth.decorators.js';
+import type { Principal } from '../../../auth/principal.js';
+import {
+  type CreateProduct,
+  CreateProductSchema,
+  type ListProductsQuery,
+  ListProductsQuerySchema,
+  ProductIdSchema,
+  ProductListSchema,
+  type ProductResponse,
+  ProductResponseSchema,
+  type UpdateProduct,
+  UpdateProductSchema,
+} from '../products.schemas.js';
+import { ProductsService } from '../services/products.service.js';
 
 @ApiTags('products')
-@Controller({ path: 'products', version: '1' })
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@Controller({ path: 'products', version: '1' })
+@SerializeOptions({ schema: ProductResponseSchema })
 export class ProductsController {
-  private readonly logger = new Logger(ProductsController.name);
-
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new product' })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Product created successfully',
-    type: ProductResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Invalid input data',
-  })
-  async create(@Body() dto: CreateProductDto): Promise<ProductResponseDto> {
-    this.logger.log(`Creating product: ${dto.name}`);
-    return this.productsService.create(dto);
+  @Roles(['products:write'])
+  @ApiCreatedResponse({ standardSchema: ProductResponseSchema })
+  create(
+    @CurrentPrincipal() principal: Principal,
+    @Body({ schema: CreateProductSchema }) body: CreateProduct,
+  ): Promise<ProductResponse> {
+    return this.productsService.create(principal, body);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all products' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Products retrieved successfully',
-    type: [ProductResponseDto],
-  })
-  async findAll(
-    @Query('page') page = 1,
-    @Query('limit') limit = 10,
-  ): Promise<ProductResponseDto[]> {
-    this.logger.log(`Fetching products - page: ${page}, limit: ${limit}`);
-    return this.productsService.findAll({ page, limit });
+  @SerializeOptions({ schema: ProductListSchema })
+  @ApiOkResponse({ standardSchema: ProductListSchema })
+  findAll(
+    @CurrentPrincipal() principal: Principal,
+    @Query({ schema: ListProductsQuerySchema }) query: ListProductsQuery,
+  ): Promise<ProductResponse[]> {
+    return this.productsService.findAll(principal, query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get product by ID' })
-  @ApiParam({ name: 'id', type: String, description: 'Product ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Product retrieved successfully',
-    type: ProductResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Product not found',
-  })
-  async findOne(@Param('id') id: string): Promise<ProductResponseDto> {
-    this.logger.log(`Fetching product: ${id}`);
-    return this.productsService.findById(id);
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  findOne(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+  ): Promise<ProductResponse> {
+    return this.productsService.findById(principal, id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update product' })
-  @ApiParam({ name: 'id', type: String, description: 'Product ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Product updated successfully',
-    type: ProductResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Product not found',
-  })
-  async update(
-    @Param('id') id: string,
-    @Body() dto: UpdateProductDto,
-  ): Promise<ProductResponseDto> {
-    this.logger.log(`Updating product: ${id}`);
-    return this.productsService.update(id, dto);
+  @Roles(['products:write'])
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  update(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+    @Body({ schema: UpdateProductSchema }) body: UpdateProduct,
+  ): Promise<ProductResponse> {
+    return this.productsService.update(principal, id, body);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete product' })
-  @ApiParam({ name: 'id', type: String, description: 'Product ID' })
-  @ApiResponse({
-    status: HttpStatus.NO_CONTENT,
-    description: 'Product deleted successfully',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Product not found',
-  })
-  async delete(@Param('id') id: string): Promise<void> {
-    this.logger.log(`Deleting product: ${id}`);
-    await this.productsService.delete(id);
+  @Roles(['products:write'])
+  @ApiNoContentResponse()
+  async delete(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: ProductIdSchema }) id: string,
+  ): Promise<void> {
+    await this.productsService.delete(principal, id);
   }
 }
 ```
@@ -155,11 +179,11 @@ export class ProductsController {
 
 ```typescript
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ProductsRepository } from '../repositories/products.repository';
-import type { Product } from '../../../generated/prisma/client';
-import { CreateProductDto } from '../dto/create-product.dto';
-import { UpdateProductDto } from '../dto/update-product.dto';
-import { ProductResponseDto } from '../dto/product-response.dto';
+
+import type { Principal } from '../../../auth/principal.js';
+import type { Product } from '../../../generated/prisma/client.js';
+import type { CreateProduct, ListProductsQuery, ProductResponse, UpdateProduct } from '../products.schemas.js';
+import { ProductsRepository } from '../repositories/products.repository.js';
 
 @Injectable()
 export class ProductsService {
@@ -167,223 +191,108 @@ export class ProductsService {
 
   constructor(private readonly repository: ProductsRepository) {}
 
-  async create(dto: CreateProductDto): Promise<ProductResponseDto> {
-    try {
-      const product = await this.repository.create({
-        name: dto.name,
-        description: dto.description,
-        price: dto.price,
-        stock: dto.stock ?? 0,
-        isActive: dto.isActive ?? true,
-      });
-
-      return this.toResponseDto(product);
-    } catch (error) {
-      this.logger.error('Failed to create product', error);
-      throw error;
-    }
+  async create(principal: Principal, input: CreateProduct): Promise<ProductResponse> {
+    const product = await this.repository.create(principal.tenantId, input);
+    this.logger.log('product created', { productId: product.id });
+    return toResponse(product);
   }
 
-  async findAll(options: {
-    page: number;
-    limit: number;
-  }): Promise<ProductResponseDto[]> {
-    const { page, limit } = options;
-    const skip = (page - 1) * limit;
-
-    const products = await this.repository.findMany({
-      skip,
-      take: limit,
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
+  async findAll(principal: Principal, query: ListProductsQuery): Promise<ProductResponse[]> {
+    const products = await this.repository.findMany(principal.tenantId, {
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
     });
-
-    return products.map((p) => this.toResponseDto(p));
+    return products.map(toResponse);
   }
 
-  async findById(id: string): Promise<ProductResponseDto> {
-    const product = await this.repository.findById(id);
-
-    if (!product || product.deletedAt) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    return this.toResponseDto(product);
+  /** Another tenant's product is indistinguishable from a missing one: 404, no existence oracle. */
+  async findById(principal: Principal, id: string): Promise<ProductResponse> {
+    return toResponse(await this.getOwned(principal, id));
   }
 
-  async update(id: string, dto: UpdateProductDto): Promise<ProductResponseDto> {
-    const existing = await this.repository.findById(id);
-
-    if (!existing || existing.deletedAt) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    const updated = await this.repository.update(id, {
-      ...dto,
-      version: existing.version + 1, // Optimistic locking
-    });
-
-    return this.toResponseDto(updated);
+  async update(principal: Principal, id: string, input: UpdateProduct): Promise<ProductResponse> {
+    const existing = await this.getOwned(principal, id);
+    // Optimistic locking: the update matches the version that was read; 0 rows -> someone else won.
+    const updated = await this.repository.updateVersioned(principal.tenantId, id, existing.version, input);
+    if (updated === null) throw new NotFoundException('Product not found', { errorCode: 'PRODUCT_NOT_FOUND' });
+    return toResponse(updated);
   }
 
-  async delete(id: string): Promise<void> {
-    const product = await this.repository.findById(id);
-
-    if (!product || product.deletedAt) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
-    // Soft delete
-    await this.repository.update(id, {
-      deletedAt: new Date(),
-    });
-
-    this.logger.log(`Product ${id} soft-deleted`);
+  async delete(principal: Principal, id: string): Promise<void> {
+    await this.getOwned(principal, id);
+    await this.repository.softDelete(principal.tenantId, id);
+    this.logger.log('product soft-deleted', { productId: id });
   }
 
-  private toResponseDto(product: Product): ProductResponseDto { // Product from the generated Prisma client
-    return {
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      price: product.price,
-      stock: product.stock,
-      isActive: product.isActive,
-      createdAt: product.createdAt,
-      updatedAt: product.updatedAt,
-    };
+  private async getOwned(principal: Principal, id: string): Promise<Product> {
+    const product = await this.repository.findById(principal.tenantId, id);
+    if (product === null) throw new NotFoundException('Product not found', { errorCode: 'PRODUCT_NOT_FOUND' });
+    return product;
   }
 }
-```
 
-### Create Product DTO (src/features/products/dto/create-product.dto.ts)
-
-```typescript
-import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsString,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsBoolean,
-  Min,
-  MaxLength,
-} from 'class-validator';
-
-export class CreateProductDto {
-  @ApiProperty({ example: 'Laptop Pro', description: 'Product name' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  name: string;
-
-  @ApiProperty({
-    example: 'High-performance laptop for professionals',
-    description: 'Product description',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(1000)
-  description?: string;
-
-  @ApiProperty({ example: 1299.99, description: 'Product price' })
-  @IsNumber()
-  @Min(0)
-  price: number;
-
-  @ApiProperty({ example: 50, description: 'Stock quantity', required: false })
-  @IsNumber()
-  @IsOptional()
-  @Min(0)
-  stock?: number;
-
-  @ApiProperty({ example: true, description: 'Product active status', required: false })
-  @IsBoolean()
-  @IsOptional()
-  isActive?: boolean;
-}
-```
-
-### Update Product DTO (src/features/products/dto/update-product.dto.ts)
-
-```typescript
-import { PartialType } from '@nestjs/swagger';
-import { CreateProductDto } from './create-product.dto';
-
-export class UpdateProductDto extends PartialType(CreateProductDto) {}
-```
-
-### Product Response DTO (src/features/products/dto/product-response.dto.ts)
-
-```typescript
-import { ApiProperty } from '@nestjs/swagger';
-
-export class ProductResponseDto {
-  @ApiProperty({ example: 'cm3a1b2c3d4e5f6g7h8i9' })
-  id: string;
-
-  @ApiProperty({ example: 'Laptop Pro' })
-  name: string;
-
-  @ApiProperty({ example: 'High-performance laptop for professionals' })
-  description?: string;
-
-  @ApiProperty({ example: 1299.99 })
-  price: number;
-
-  @ApiProperty({ example: 50 })
-  stock: number;
-
-  @ApiProperty({ example: true })
-  isActive: boolean;
-
-  @ApiProperty({ example: '2026-02-02T10:30:00.000Z' })
-  createdAt: Date;
-
-  @ApiProperty({ example: '2026-02-02T10:30:00.000Z' })
-  updatedAt: Date;
+/** Dates become ISO strings and Decimal a number; the response schema strips tenantId, version, deletedAt. */
+function toResponse(product: Product): ProductResponse {
+  return {
+    ...product,
+    price: product.price.toNumber(),
+    createdAt: product.createdAt.toISOString(),
+    updatedAt: product.updatedAt.toISOString(),
+  };
 }
 ```
 
 ### Product Repository (src/features/products/repositories/products.repository.ts)
 
+`PrismaService` exposes the client by composition (`prisma.client`, see `nestjs-config-prisma7.md`). Every method takes
+`tenantId` first, so a query without the tenant filter cannot be written by accident, and soft-deleted rows are
+excluded in one place.
+
 ```typescript
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../../core/database/services/prisma.service';
-import { Prisma, Product } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+
+import { PrismaService } from '../../../core/database/prisma.service.js';
+import type { Product } from '../../../generated/prisma/client.js';
+import type { CreateProduct, UpdateProduct } from '../products.schemas.js';
 
 @Injectable()
 export class ProductsRepository {
-  private readonly logger = new Logger(ProductsRepository.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.ProductCreateInput): Promise<Product> {
-    return this.prisma.product.create({ data });
+  create(tenantId: string, input: CreateProduct): Promise<Product> {
+    return this.prisma.client.product.create({ data: { tenantId, ...input } });
   }
 
-  async findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+  findById(tenantId: string, id: string): Promise<Product | null> {
+    return this.prisma.client.product.findFirst({ where: { id, tenantId, deletedAt: null } });
   }
 
-  async findMany(args: Prisma.ProductFindManyArgs): Promise<Product[]> {
-    return this.prisma.product.findMany(args);
-  }
-
-  async update(id: string, data: Prisma.ProductUpdateInput): Promise<Product> {
-    return this.prisma.product.update({
-      where: { id },
-      data,
+  findMany(tenantId: string, page: { skip: number; take: number }): Promise<Product[]> {
+    return this.prisma.client.product.findMany({
+      where: { tenantId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      skip: page.skip,
+      take: Math.min(page.take, 100),
     });
   }
 
-  async delete(id: string): Promise<Product> {
-    return this.prisma.product.delete({ where: { id } });
+  /** Returns null when the row changed since it was read (version mismatch) or is gone. */
+  async updateVersioned(tenantId: string, id: string, version: number, input: UpdateProduct): Promise<Product | null> {
+    const { count } = await this.prisma.client.product.updateMany({
+      where: { id, tenantId, version, deletedAt: null },
+      data: { ...input, version: { increment: 1 } },
+    });
+    return count === 0 ? null : this.findById(tenantId, id);
   }
 
-  async count(where?: Prisma.ProductWhereInput): Promise<number> {
-    return this.prisma.product.count({ where });
+  async softDelete(tenantId: string, id: string): Promise<void> {
+    await this.prisma.client.product.updateMany({
+      where: { id, tenantId, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
   }
 }
 ```
+
+A version conflict surfaces here as 404 to keep the template short; return `409 Conflict` with
+`{ errorCode: 'PRODUCT_VERSION_CONFLICT' }` when clients send the version they edited (`If-Match`).

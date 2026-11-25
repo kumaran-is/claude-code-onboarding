@@ -1,6 +1,6 @@
 # NestJS Enterprise Patterns
 
-Exception handling, validation, and API versioning patterns for NestJS 11.x.
+Exception handling, validation, and API versioning patterns for NestJS 12.x.
 
 ## Exception Hierarchy
 
@@ -29,7 +29,7 @@ export class BaseException extends HttpException {
 ```typescript
 // src/common/exceptions/business.exception.ts
 import { HttpStatus } from '@nestjs/common';
-import { BaseException } from './base.exception';
+import { BaseException } from './base.exception.js';
 
 export class BusinessException extends BaseException {
   constructor(
@@ -122,9 +122,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { BaseException } from '../exceptions/base.exception';
-import { getCorrelationId } from '../context/request-context.service';
+// Prisma 7 (`prisma-client` generator): error classes come from the generated client, not '@prisma/client/runtime/library'.
+import { Prisma } from '../../generated/prisma/client.js';
+import { BaseException } from '../exceptions/base.exception.js';
+import { getCorrelationId } from '../context/request-context.service.js';
 
 interface ProblemDetail {
   type: string;
@@ -163,7 +164,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
     // Handle Prisma errors
-    else if (exception instanceof PrismaClientKnownRequestError) {
+    else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       problemDetail = this.handlePrismaError(
         exception,
         instance,
@@ -223,7 +224,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private handlePrismaError(
-    exception: PrismaClientKnownRequestError,
+    exception: Prisma.PrismaClientKnownRequestError,
     instance: string,
     correlationId: string,
     timestamp: string,
@@ -292,7 +293,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       const responseObj = response as Record<string, unknown>;
       detail = (responseObj.message as string) ?? exception.message;
 
-      // Handle class-validator errors
+      // Validation pipe errors: StandardSchemaValidationPipe (and ValidationPipe) put a string[] in `message`,
+      // one "path: message" entry per issue (e.g. "quantity: Too small: expected number to be >=1").
       if (Array.isArray(responseObj.message)) {
         errors = responseObj.message as string[];
         detail = 'Validation failed';
@@ -307,7 +309,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       status,
       detail,
       instance,
-      errorCode: 'HTTP_ERROR',
+      // NestJS 12: new NotFoundException('Order not found', { errorCode: 'ORDER_NOT_FOUND' }) carries a stable code.
+      errorCode: exception.errorCode ?? 'HTTP_ERROR',
       correlationId,
       timestamp,
       ...(errors && { errors }),
@@ -381,42 +384,53 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
 ## Validation Pipe Configuration
 
-Global validation with class-validator and class-transformer.
+NestJS 12 validates with any Standard Schema library (Zod 4 here) through the built-in pipe. It validates only parameters
+declared with `{ schema }`, so binding it globally is safe; failure returns 400 with a `message: string[]` of
+`"path: message"` entries (no input values echoed).
 
 ```typescript
 // src/app.module.ts (excerpt)
-import { Module, ValidationPipe } from '@nestjs/common';
-import { APP_PIPE } from '@nestjs/core';
+import { Module, StandardSchemaSerializerInterceptor, StandardSchemaValidationPipe } from '@nestjs/common';
+import { APP_INTERCEPTOR, APP_PIPE, Reflector } from '@nestjs/core';
 
 @Module({
   providers: [
+    { provide: APP_PIPE, useValue: new StandardSchemaValidationPipe() },
+    // Responses: @SerializeOptions({ schema }) strips undeclared fields; a contract violation throws -> 500.
     {
-      provide: APP_PIPE,
-      useFactory: (configService: ConfigService) => {
-        const environment = configService.get<string>('application.environment');
-        return new ValidationPipe({
-          whitelist: true, // Strip unknown properties
-          forbidNonWhitelisted: true, // Throw error on unknown properties
-          transform: true, // Auto-transform payloads to DTO instances
-          transformOptions: {
-            // false: implicit conversion turns "false" into true for booleans (verified).
-            // Convert explicitly with @Type(() => Number) on the DTO property.
-            enableImplicitConversion: false,
-          },
-          disableErrorMessages: environment === 'production', // Hide details in prod
-          forbidUnknownValues: true, // Reject unknown object values
-          validationError: {
-            target: false, // Don't expose target object in errors
-            value: false, // Don't expose value in errors (security)
-          },
-        });
-      },
-      inject: [ConfigService],
+      provide: APP_INTERCEPTOR,
+      inject: [Reflector],
+      useFactory: (reflector: Reflector) => new StandardSchemaSerializerInterceptor(reflector),
     },
   ],
 })
 export class AppModule {}
 ```
+
+```typescript
+// Usage: request schemas are z.strictObject (unknown keys -> 400); query strings are coerced explicitly.
+@Post()
+create(@Body({ schema: CreateOrderSchema }) body: CreateOrder) { /* ... */ }
+
+@Get(':id')
+get(@Param('id', { schema: z.uuid() }) id: string) { /* ... */ }
+
+@Get()
+list(@Query({ schema: ListQuerySchema }) query: ListQuery) { /* ... */ }
+```
+
+Pipe options (`@nestjs/common` 12.6): `transform` (default `true`: the parsed value, with Zod defaults and coercions,
+reaches the handler), `errorHttpStatusCode` (default 400), `exceptionFactory`, `maxErrorMessagesLength`,
+`validateCustomDecorators` (default `false`).
+
+### Existing class-validator codebases
+
+`ValidationPipe` with `class-validator` / `class-transformer` is still supported in NestJS 12 (both are optional peers
+of `@nestjs/common`). Keep it in a codebase that already uses it, with
+`whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: false }`
+(implicit conversion turns the string `"false"` into `true`), and the v12 `errorFormat: 'list'` default. Do not run both
+pipes on one parameter, and do not mix decorated DTO classes and Zod schemas in one module. `@IsOptional()` also lets
+`null` through; use `@ValidateIf((_, value) => value !== undefined)` where `null` must be rejected.
 
 ## API Versioning
 
@@ -426,23 +440,16 @@ URI-based versioning for backward compatibility.
 // src/main.ts (excerpt)
 import { VersioningType } from '@nestjs/common';
 
-async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-  );
+const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
 
-  // Enable URI versioning
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-    prefix: 'v',
-  });
+// Enable URI versioning
+app.enableVersioning({
+  type: VersioningType.URI,
+  defaultVersion: '1',
+  prefix: 'v',
+});
 
-  await app.listen(3000);
-}
-
-bootstrap();
+await app.listen({ port: 3000, host: '0.0.0.0' });
 ```
 
 ### Using Versioning in Controllers
@@ -480,5 +487,5 @@ URLs:
 
 1. **Exception Handling**: All exceptions are caught by GlobalExceptionFilter and converted to RFC 9457 ProblemDetail format
 2. **Prisma Errors**: Automatic handling of P2002 (unique constraint), P2025 (not found), P2003 (foreign key)
-3. **Validation**: Global ValidationPipe with whitelist and transform enabled, hiding errors in production
+3. **Validation**: Global `StandardSchemaValidationPipe` with Zod `z.strictObject` request schemas (unknown keys → 400) and a global `StandardSchemaSerializerInterceptor` for responses
 4. **Versioning**: URI-based versioning (`/v1/`, `/v2/`) with default version fallback

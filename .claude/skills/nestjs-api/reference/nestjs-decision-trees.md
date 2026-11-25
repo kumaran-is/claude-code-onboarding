@@ -1,6 +1,6 @@
 # NestJS Decision Trees
 
-Architectural decision guides for NestJS 11.x + Fastify + Prisma. Use when the right approach is unclear before implementation.
+Architectural decision guides for NestJS 12.x + Fastify + Prisma. Use when the right approach is unclear before implementation.
 
 ---
 
@@ -147,11 +147,11 @@ Use when deciding how to surface errors to API consumers:
 What kind of error occurred?
 |
 +-- Client sent invalid input
-|   -> 400 Bad Request via ValidationPipe (its default errorHttpStatusCode; verified)
+|   -> 400 Bad Request via StandardSchemaValidationPipe (default errorHttpStatusCode; verified on 12.6.0)
 |   -> ProblemDetail body with field-level errors
 |
 +-- Resource not found
-|   -> throw new NotFoundException('User not found')
+|   -> throw new NotFoundException('User not found', { errorCode: 'USER_NOT_FOUND' })
 |   -> Global exception filter converts to 404 ProblemDetail
 |
 +-- Duplicate / conflict

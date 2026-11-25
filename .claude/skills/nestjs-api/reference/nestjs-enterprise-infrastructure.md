@@ -1,6 +1,6 @@
 # NestJS Enterprise Infrastructure
 
-Security, rate limiting, health checks, and API documentation for NestJS 11.x.
+Security, rate limiting, health checks, and API documentation for NestJS 12.x.
 
 ## Security Middleware (Helmet)
 
@@ -22,7 +22,7 @@ Comprehensive security headers including CSP, HSTS, CORP, COEP, COOP.
 import helmet from '@fastify/helmet';
 import compression from '@fastify/compress';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import type { MiddlewareConfigurationService } from './config/middleware-configuration.service';
+import type { MiddlewareConfigurationService } from './config/middleware-configuration.service.js';
 
 export async function registerSecurityMiddleware(
   app: NestFastifyApplication,
@@ -198,7 +198,7 @@ async function bootstrap() {
   if (enableSwagger === true) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('NestJS API')
-      .setDescription('Enterprise-grade REST API built with NestJS 11.x')
+      .setDescription('Enterprise-grade REST API built with NestJS 12.x')
       .setVersion(version)
       .addBearerAuth()
       .addServer(`http://localhost:${port}`, 'Local Development')
@@ -225,210 +225,118 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 }
 
-bootstrap();
+await bootstrap(); // ESM top-level await: a startup failure rejects and exits non-zero
 ```
 
-## Health Checks (Terminus)
+## Health Checks (Terminus 12)
 
-Kubernetes-ready health checks with liveness, readiness, and startup probes.
+Kubernetes-ready liveness, readiness and startup probes with `@nestjs/terminus` 12.2.0. Terminus 12 **removed** the
+legacy `HealthIndicator` base class, `HealthCheckError` and `getStatus()` (a probe importing them fails with TS2724);
+custom checks use `HealthIndicatorService`. Verified 2026-11-24 on NestJS 12.6.0 (Fastify, PostgreSQL 18, Redis 8):
+`/health` 200 with `database` and `redis` up, from the reference app behind `nestjs-production-baseline.md`.
 
 ```typescript
-// src/core/health/controllers/health.controller.ts
-import { Controller, Get } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+// src/health/health.controller.ts
+import { Controller, Get, Inject, VERSION_NEUTRAL } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
-  HealthCheckResult,
+  HealthIndicatorService,
   MemoryHealthIndicator,
-  DiskHealthIndicator,
+  PrismaHealthIndicator,
 } from '@nestjs/terminus';
-import { DatabaseHealthIndicator } from '../indicators/database.health-indicator';
-import { RedisHealthIndicator } from '../indicators/redis.health-indicator';
-import { ApplicationHealthIndicator } from '../indicators/application.health-indicator';
+import { SkipThrottle } from '@nestjs/throttler';
+import type { Redis } from 'ioredis';
+import { Public } from '../auth/auth.decorators.js';
+import { PrismaService } from '../database/prisma.service.js';
 
-@Controller('health')
+export const HEALTH_REDIS = Symbol('HEALTH_REDIS');
+
 @ApiTags('health')
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
+@Public()
+@SkipThrottle()
 export class HealthController {
-  private startupComplete = false;
-  private startupTime: Date | null = null;
+  private startedAt: Date | null = null;
 
   constructor(
     private readonly health: HealthCheckService,
+    private readonly indicators: HealthIndicatorService,
     private readonly memory: MemoryHealthIndicator,
-    private readonly disk: DiskHealthIndicator,
-    private readonly database: DatabaseHealthIndicator,
-    private readonly redis: RedisHealthIndicator,
-    private readonly application: ApplicationHealthIndicator,
+    private readonly prismaIndicator: PrismaHealthIndicator,
+    private readonly prisma: PrismaService,
+    @Inject(HEALTH_REDIS) private readonly redis: Redis,
   ) {}
 
-  /**
-   * Liveness probe - Is the application running?
-   * Should return 200 if the app is alive (even if dependencies are down)
-   */
+  /** Liveness: is the process alive? Never checks dependencies (a DB outage must not restart every pod). */
   @Get('live')
   @HealthCheck()
-  @ApiOperation({ summary: 'Liveness probe - is the application running?' })
-  @ApiResponse({ status: 200, description: 'Application is alive' })
-  @ApiResponse({ status: 503, description: 'Application is not responding' })
-  async checkLive(): Promise<HealthCheckResult> {
-    return this.health.check([
-      // Only check if the process is running and has enough memory
-      () => this.memory.checkHeap('memory_heap', 500 * 1024 * 1024), // 500MB
-    ]);
+  @ApiOperation({ summary: 'Liveness probe' })
+  live() {
+    return this.health.check([this.memory.checkHeap('memory_heap', 500 * 1024 * 1024)]);
   }
 
-  /**
-   * Readiness probe - Can the application accept traffic?
-   * Should return 200 only if all dependencies are healthy
-   */
+  /** Readiness: can this instance take traffic? 503 when a dependency is down. */
   @Get('ready')
   @HealthCheck()
-  @ApiOperation({ summary: 'Readiness probe - can the application accept traffic?' })
-  @ApiResponse({ status: 200, description: 'Application is ready to accept traffic' })
-  @ApiResponse({ status: 503, description: 'Application is not ready' })
-  async checkReady(): Promise<HealthCheckResult> {
+  @ApiOperation({ summary: 'Readiness probe' })
+  ready() {
     return this.health.check([
-      () => this.database.isHealthy('database'),
-      () => this.redis.isHealthy('redis'),
-      () => this.application.isHealthy('application'),
+      // Built-in Prisma indicator; `.withTimeout()` replaces the deprecated `timeout` option.
+      this.prismaIndicator.pingCheck('database', this.prisma.client).withTimeout(1500),
+      // Custom check with the v12 API: no base class, no HealthCheckError.
+      this.indicators
+        .check('redis')
+        .attempt(async () => {
+          const pong = await this.redis.ping();
+          if (pong !== 'PONG') throw new Error(`unexpected reply ${String(pong)}`);
+        })
+        .withTimeout(1000)
+        // Replace the driver's error text in the public body; it is still logged by Terminus.
+        .withFailureData({ message: 'unavailable' }),
     ]);
   }
 
-  /**
-   * Startup probe - Has the application finished initializing?
-   * Kubernetes uses this to know when to start liveness/readiness checks
-   */
+  /** Startup: done initializing? Answers down until markStarted() runs (call it from onApplicationBootstrap). */
   @Get('startup')
   @HealthCheck()
-  @ApiOperation({ summary: 'Startup probe - has the application finished initializing?' })
-  @ApiResponse({ status: 200, description: 'Application startup complete' })
-  @ApiResponse({ status: 503, description: 'Application still starting up' })
-  async checkStartup(): Promise<HealthCheckResult> {
-    if (!this.startupComplete) {
-      return {
-        status: 'error',
-        info: {},
-        error: {
-          startup: {
-            status: 'down',
-            message: 'Application still starting up',
-          },
-        },
-        details: {},
-      };
-    }
-
-    return {
-      status: 'ok',
-      info: {
-        startup: {
-          status: 'up',
-          startupTime: this.startupTime?.toISOString(),
-        },
-      },
-      error: {},
-      details: {
-        startup: {
-          status: 'up',
-          startupTime: this.startupTime?.toISOString(),
-        },
-      },
-    };
-  }
-
-  /**
-   * Mark application as fully started
-   */
-  markStartupComplete(): void {
-    this.startupComplete = true;
-    this.startupTime = new Date();
-  }
-
-  /**
-   * Detailed health check for monitoring dashboards
-   */
-  @Get()
-  @HealthCheck()
-  @ApiOperation({ summary: 'Full health check with all indicators' })
-  async checkAll(): Promise<HealthCheckResult> {
+  @ApiOperation({ summary: 'Startup probe' })
+  startup() {
+    const session = this.indicators.check('startup');
     return this.health.check([
-      () => this.memory.checkHeap('memory_heap', 500 * 1024 * 1024),
-      () => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024), // 1GB
-      () => this.database.isHealthy('database'),
-      () => this.redis.isHealthy('redis'),
-      () => this.application.isHealthy('application'),
+      () =>
+        this.startedAt === null
+          ? session.down('still starting')
+          : session.up({ startedAt: this.startedAt.toISOString() }),
     ]);
   }
-}
-```
 
-### Custom Health Indicators
-
-```typescript
-// src/core/health/indicators/database.health-indicator.ts
-import { Injectable } from '@nestjs/common';
-import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
-import { PrismaService } from '../../database/services/prisma.service';
-
-@Injectable()
-export class DatabaseHealthIndicator extends HealthIndicator {
-  constructor(private readonly prisma: PrismaService) {
-    super();
-  }
-
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-      return this.getStatus(key, true, { status: 'up' });
-    } catch (error) {
-      throw new HealthCheckError(
-        'Database check failed',
-        this.getStatus(key, false, { status: 'down', error: error.message }),
-      );
-    }
-  }
-}
-
-// src/core/health/indicators/redis.health-indicator.ts
-import { Injectable } from '@nestjs/common';
-import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from '@nestjs/terminus';
-import { RedisService } from '../../cache/services/redis.service';
-
-@Injectable()
-export class RedisHealthIndicator extends HealthIndicator {
-  constructor(private readonly redis: RedisService) {
-    super();
-  }
-
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    try {
-      await this.redis.ping();
-      return this.getStatus(key, true, { status: 'up' });
-    } catch (error) {
-      throw new HealthCheckError(
-        'Redis check failed',
-        this.getStatus(key, false, { status: 'down', error: error.message }),
-      );
-    }
-  }
-}
-
-// src/core/health/indicators/application.health-indicator.ts
-import { Injectable } from '@nestjs/common';
-import { HealthIndicator, HealthIndicatorResult } from '@nestjs/terminus';
-
-@Injectable()
-export class ApplicationHealthIndicator extends HealthIndicator {
-  async isHealthy(key: string): Promise<HealthIndicatorResult> {
-    return this.getStatus(key, true, {
-      name: 'application',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    });
+  markStarted(): void {
+    this.startedAt = new Date();
   }
 }
 ```
+
+Module wiring: `TerminusModule.forRoot({ errorLogStyle: 'json' })` in the imports; provide `HEALTH_REDIS` with a
+factory (`new Redis(url, { maxRetriesPerRequest: 1, lazyConnect: true })`) and `quit()` it in `onApplicationShutdown`.
+
+Notes:
+- A `down` result makes `health.check` answer **503**; the indicator functions never throw for that.
+- `HealthCheckAttempt` also offers `.cacheFor(ttl)` (do not hammer the database from every probe) and
+  `.degradedAfter(ms)` (slow but working).
+- `PrismaHealthIndicator.pingCheck` can include the driver's error text in its down body; see
+  `deployment-ci-cd/reference/health-endpoints.md` for a SQL-only custom indicator when that matters.
+- Migration from v11: replace each `extends HealthIndicator` class with an `indicators.check(key).attempt(fn)` call
+  (or `.up()` / `.down()`), delete `HealthCheckError`, and move `timeout` options to `.withTimeout()`.
+- Downstream HTTP services: `FetchHealthIndicator` (global `fetch`, no `@nestjs/axios`) replaces the deprecated
+  `HttpHealthIndicator`. Check them on readiness only when the pod cannot serve without them, never on liveness:
+  ```typescript
+  constructor(private readonly health: HealthCheckService, private readonly http: FetchHealthIndicator) {}
+  // inside readiness(): 2xx = up; verify() overrides that rule
+  () => this.http.pingCheck('payments', this.paymentsHealthUrl, { verify: (res) => res.status === 204 }),
+  ```
+  Verified on Terminus 12.2.0: 204 → `up`, 503 → `health.check` rejects with 503, a failing `verify` → 503.
 
 ## Usage Notes
 

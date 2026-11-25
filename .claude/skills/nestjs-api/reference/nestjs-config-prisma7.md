@@ -1,6 +1,6 @@
 # NestJS Configuration — Prisma 7.x & Database
 
-Prisma 7.x schema, database setup, PrismaService, and environment configuration for NestJS 11.x. For npm and TypeScript configuration, see `nestjs-config-npm-ts.md`.
+Prisma 7.x schema, database setup, PrismaService, and environment configuration for NestJS 12.x. For npm and TypeScript configuration, see `nestjs-config-npm-ts.md`.
 
 ## Prisma 7.x Schema
 
@@ -257,19 +257,23 @@ Prisma 7.x moved the datasource URL from `schema.prisma` to `prisma.config.ts`. 
 **File:** `prisma.config.ts` (project root)
 
 ```typescript
-import 'dotenv/config';
-import { defineConfig } from 'prisma/config';
+import { defineConfig, env } from 'prisma/config';
 
+// No dotenv import: the shell, CI or container sets DATABASE_URL (locally: `node --env-file=.env`
+// or `export $(cat .env)`). env() fails loudly when it is missing instead of passing `undefined`.
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
   },
   datasource: {
-    url: process.env['DATABASE_URL'],
+    url: env('DATABASE_URL'),
   },
 });
 ```
+
+`prisma generate` never connects, but `env()` still requires the variable when the config loads: in a Docker build
+stage pass a placeholder (`DATABASE_URL=postgresql://placeholder@localhost:5432/placeholder npx prisma generate`).
 
 ## PrismaService (Prisma 7.x — composition pattern)
 
@@ -280,7 +284,7 @@ Prisma 7.x `PrismaClient` requires a driver adapter. Use composition, NOT inheri
 ```typescript
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '../../generated/prisma/client';
+import { PrismaClient } from '../../generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 @Injectable()
@@ -319,12 +323,13 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
 **Write `.env` via Bash** (not Write/Edit tools — hooks block `.env` modifications):
 ```bash
-cat > .env << 'EOF'
-# {project_name} - Local Development Defaults
-# All values match docker-compose.dev.yml — app boots immediately
+# Unquoted EOF: the shell fills DB_USER / DB_PASSWORD now, defaulting to the docker-compose.dev.yml values.
+cat > .env << EOF
+# {project_name} - Local Development Defaults (match docker-compose.dev.yml; app boots immediately)
+# .env is git-ignored: local values only, never commit it.
 
-# Database (matches docker-compose.dev.yml credentials)
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/{project_name}?schema=public"
+# Database
+DATABASE_URL="postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@localhost:5432/{project_name}?schema=public"
 
 # Application
 APP_NAME={project_name}
@@ -405,7 +410,7 @@ model StockLevel {
 // src/database/prisma.service.ts
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/prisma/client';
+import { PrismaClient } from '../generated/prisma/client.js';
 
 /** Composition, not inheritance: expose the client, own its lifecycle. */
 @Injectable()
@@ -428,9 +433,9 @@ Register it with a factory (`{ provide: PrismaService, inject: [ConfigService], 
 ```typescript
 // src/orders/prisma-orders.repository.ts
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Prisma } from '../generated/prisma/client';
-import { violatedUniqueConstraint } from '../database/prisma-errors';
-import { PrismaService } from '../database/prisma.service';
+import { Prisma } from '../generated/prisma/client.js';
+import { violatedUniqueConstraint } from '../database/prisma-errors.js';
+import { PrismaService } from '../database/prisma.service.js';
 
 export class InsufficientStockError extends Error {}
 
@@ -484,7 +489,7 @@ export class PrismaOrdersRepository {
 
 ```typescript
 // src/database/prisma-errors.ts
-import { Prisma } from '../generated/prisma/client';
+import { Prisma } from '../generated/prisma/client.js';
 
 /**
  * Name of the unique constraint a P2002 violated, or undefined.
@@ -521,12 +526,12 @@ N+1: fetch lists with one query (`select`/`include` with `take`), and use `findM
 ```typescript
 // src/database/prisma-extensions.ts
 import { Logger } from '@nestjs/common';
-import { type PrismaClient } from '../generated/prisma/client';
+import { type PrismaClient } from '../generated/prisma/client.js';
 
 const logger = new Logger('Prisma');
 
 /**
- * Prisma 5+ removed `$use` middleware (absent from the Prisma 7 client). Query extensions replace it.
+ * Prisma 5 removed `$use` middleware (absent from the Prisma 7 client). Query extensions replace it.
  * `$extends` returns a NEW client: use the returned value, the base client is unchanged.
  */
 export function withQueryTiming(client: PrismaClient, slowMs = 100) {

@@ -23,8 +23,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 
-import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service';
-import { getRequestContext } from '../../../common/context/request-context.service';
+import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service.js';
+import { getRequestContext } from '../../../common/context/request-context.service.js';
 
 interface FeatureFlagConfig {
   enabled: boolean;
@@ -219,9 +219,9 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 
-import { L2CacheService } from '../../cache/services/l2-cache.service';
-import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service';
-import { getRequestContext } from '../../../common/context/request-context.service';
+import { L2CacheService } from '../../cache/services/l2-cache.service.js';
+import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service.js';
+import { getRequestContext } from '../../../common/context/request-context.service.js';
 
 interface FeatureFlagConfig {
   enabled: boolean;
@@ -368,9 +368,9 @@ export class FeatureFlagsRedisService implements OnModuleInit {
 ```typescript
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { FeatureFlagsRedisService } from './feature-flags-redis.service';
-import { L2CacheService } from '../../cache/services/l2-cache.service';
-import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service';
+import { FeatureFlagsRedisService } from './feature-flags-redis.service.js';
+import { L2CacheService } from '../../cache/services/l2-cache.service.js';
+import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service.js';
 
 @Module({
   imports: [ScheduleModule.forRoot()],

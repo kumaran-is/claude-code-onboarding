@@ -1,45 +1,47 @@
 # NestJS Infrastructure Templates — Docker, Compose, Testing
 
-Production-ready Docker, Docker Compose, and testing configuration templates for NestJS 11.x.
+Production-ready Docker, Docker Compose, and testing configuration templates for NestJS 12.x.
 
 ## Dockerfile
 
-npm-based (the stack's package manager), non-root, production dependencies only. **Docker build NOT RUN in the
-toolkit sandbox** (no Docker daemon); the same commands were run directly on Node 24 (`npm ci`, `prisma generate`,
-`npm run build`, `npm prune --omit=dev` all exit 0; `node dist/main.js` served `/health/live` 200, kept Swagger off in
-production (`/docs-json` 404) and exited 143 on SIGTERM). Pin the base image by digest in CI (`node:24-alpine@sha256:…`).
+npm-based (the stack's package manager), non-root, production dependencies only. Verified 2026-11-24 on NestJS 12.6.0,
+Node 26.13.1 and Docker Engine 29.8.0: `docker build` exit 0, the container ran as `node`, `/health` answered 200,
+then the container and image were removed. Pin the base image by digest in CI (`node:26-alpine@sha256:…`).
 
 ```dockerfile
 # syntax=docker/dockerfile:1
-FROM node:24-alpine AS deps
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY prisma ./prisma/
-COPY prisma.config.ts ./
 RUN npm ci
-
-FROM deps AS builder
-COPY tsconfig.json tsconfig.build.json ./
+COPY tsconfig.json tsconfig.build.json nest-cli.json prisma.config.ts ./
+COPY prisma ./prisma
 COPY src ./src
-# prisma.config.ts reads DATABASE_URL via env(); generate needs only a syntactically valid value
-RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma generate \
- && npm run build \
- && npm prune --omit=dev
+# prisma.config.ts reads DATABASE_URL at load; generate never connects, so a placeholder is enough.
+RUN DATABASE_URL=postgresql://placeholder@localhost:5432/placeholder npx prisma generate && npx nest build
 
-FROM node:24-alpine AS runner
-ENV NODE_ENV=production PORT=3000
+FROM node:26-alpine AS prod-deps
 WORKDIR /app
-COPY --from=builder --chown=node:node /app/package.json ./
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist ./dist
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+FROM node:26-alpine
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --chown=node:node package.json ./
 USER node
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -q --spider http://127.0.0.1:3000/health/live || exit 1
-# exec form: node is PID 1 and receives SIGTERM, so enableShutdownHooks() runs
-CMD ["node", "dist/main.js"]
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+# exec form: node is PID 1 and receives SIGTERM, so enableShutdownHooks() runs.
+# --import loads the OpenTelemetry entry before the app (nestjs-observability.md); drop it if tracing is off.
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/main.js"]
 ```
 
+- `package.json` must keep `"type": "module"` in the runtime image (it is copied): NestJS 12 builds emit ESM.
+- A separate `prod-deps` stage with `npm ci --omit=dev --ignore-scripts` keeps dev tools (Prisma CLI, Vitest, oxlint)
+  out of the final image; `npm prune --omit=dev` does not remove the `prisma` CLI, which `@prisma/client` 7.10.1 peers on.
 - Migrations run as a separate release step (`npx prisma migrate deploy` in a job/init container), not at container start where several replicas would race. Note: `npm prune --omit=dev` does **not** remove the `prisma` CLI — `@prisma/client` 7.10.1 declares it as a peer, so npm keeps it.
 - `main.ts` must listen on `0.0.0.0`; Fastify's default `127.0.0.1` is unreachable from outside the container.
 - Secrets come from the platform's secret store as env vars at runtime; never `COPY .env`.
@@ -47,15 +49,14 @@ CMD ["node", "dist/main.js"]
 ## Docker Compose (Development)
 
 ```yaml
-# docker-compose.dev.yml - Development Environment
-version: '3.9'
+# docker-compose.dev.yml - Development Environment (the top-level `version:` key is obsolete in Compose v2)
 
 services:
   # PostgreSQL Database
   # NOTE: Credentials here must match DATABASE_URL in .env
-  # .env: DATABASE_URL="postgresql://postgres:postgres@localhost:5432/{project_name}?schema=public"
+  # .env: DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/{project_name}?schema=public"
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18
     container_name: {project_name}-postgres
     ports:
       - "5432:5432"
@@ -64,7 +65,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: myservice
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/<major>; mount the parent directory
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -74,7 +76,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:7-alpine
+    image: redis:8
     container_name: {project_name}-redis
     ports:
       - "6379:6379"
@@ -131,32 +133,39 @@ docs/
 Thumbs.db
 ```
 
-## Vitest Configuration (vitest.config.mts)
+## Vitest Configuration (vitest.config.ts)
 
-Verified with Vitest 4.1.12 + `@vitest/coverage-v8` 4.1.12: thresholds fail the run when unmet (unit-only coverage 30% vs 80% → exit 1; thresholds lowered to 25% → exit 0).
+Vitest 5.1.1 in an ESM package (`"type": "module"`), verified 2026-11-24 on NestJS 12.6.0 (9 unit + 23 e2e tests).
+No SWC plugin: Vite 8's Oxc transform reads `experimentalDecorators` and `emitDecoratorMetadata` from `tsconfig.json`.
+With `emitDecoratorMetadata` turned off the e2e suite failed (class-typed constructor injection resolved `undefined`), so keep
+one test that resolves a class-typed dependency as the canary. Coverage thresholds failed an unmet run on Vitest 4.1
+(30% vs 80% → exit 1); with `@vitest/coverage-v8` 5.1.1 that negative check was NOT RUN, so prove it once per project.
 
 ```typescript
-import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
+// No SWC plugin: Vite 8's Oxc transform reads experimentalDecorators/emitDecoratorMetadata from tsconfig.
 export default defineConfig({
   test: {
+    globals: false,
     environment: 'node',
-    include: ['src/**/*.spec.ts'],
     root: './',
+    include: ['src/**/*.spec.ts'],
     // No passWithNoTests and no retry: an empty or flaky suite must fail, not pass.
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.spec.ts', 'src/generated/**', 'src/main.ts'],
+      exclude: ['src/**/*.spec.ts', 'src/generated/**', 'src/main.ts', 'src/instrumentation.ts'],
       reporter: ['text', 'lcov'],
       thresholds: { lines: 80, branches: 70, functions: 80, statements: 80 },
     },
   },
-  plugins: [swc.vite({ module: { type: 'es6' } })],
 });
 ```
 
-- `.mts`: the package is CommonJS; a `.ts` config with ESM syntax triggers Vite 8's CommonJS warning, and `__dirname` is not defined in ESM — use `import.meta.dirname` if you need paths.
-- Vitest 4 removed `test.poolOptions`; `retry` hides flaky tests and `passWithNoTests` turns an empty suite into a pass — leave both out.
+- Plain `.ts` config files: the package is ESM, so the `.mts` names used for CommonJS packages are unnecessary.
+  Use `import.meta.dirname` instead of `__dirname`.
+- After changing `tsconfig.json`, run `npx vitest --clearCache` (clears the caches, runs no tests): Vitest 5's file-system
+  module cache served stale transforms, and 20 e2e tests were skipped until the cache was cleared.
+- `retry` hides flaky tests and `passWithNoTests` turns an empty suite into a pass — leave both out.
 - E2E config: `nestjs-testing-integration-setup.md`.

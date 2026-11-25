@@ -4,7 +4,7 @@ Common NestJS framework-level issues sourced from GitHub issues and Stack Overfl
 
 > ORM-specific issues (TypeORM, Mongoose) omitted — workspace uses Prisma 7.x.
 > Auth-specific issues (Passport.js) omitted — workspace uses custom JWT with RS256 guards.
-> Test-runner issues (Jest) omitted — workspace uses Vitest exclusively.
+> Test-runner issues (Jest) omitted — workspace uses Vitest exclusively. NestJS 12 packages are ESM-only: Jest loads them only on Node >= 24.9 (NestJS migration guide), another reason to stay on Vitest.
 
 ---
 
@@ -197,7 +197,7 @@ export class SomeService implements OnModuleDestroy {
 
 When a working feature breaks after a NestJS version bump:
 1. Check GitHub issues filtered by your specific version tag
-2. Try downgrading to previous patch version (`@nestjs/core@11.x.y-1`)
+2. Try downgrading to previous patch version (`@nestjs/core@12.x.y-1`), keeping every `@nestjs/*` core package on the same version
 3. Update to latest patch (regressions are usually fixed quickly)
 4. Report with a minimal reproduction (required for triage)
 
@@ -208,12 +208,12 @@ When a working feature breaks after a NestJS version bump:
 The `createMock<T>()` helper creates fully-typed mocks with auto-mocked methods. Works with Vitest:
 
 ```bash
-npm install --save-dev @golevelup/nestjs-testing
+npm install --save-dev -E @golevelup/nestjs-testing@0.1.2
 ```
 
 ```typescript
 import { createMock } from '@golevelup/nestjs-testing';
-import { DatabaseService } from '../database/database.service';
+import { DatabaseService } from '../database/database.service.js';
 
 // Auto-creates a mock with all methods as vi.fn()
 const mockDb = createMock<DatabaseService>();

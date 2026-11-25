@@ -2,11 +2,11 @@
 
 ## Code Conventions
 
-- Use **NestJS 11.x** (verified 11.2.11) with the **Fastify** adapter (not Express)
+- Use **NestJS 12.x** (verified 12.6.0) with the **Fastify** adapter (not Express), as an **ESM** package: `"type": "module"`, relative imports end in `.js`, `import.meta.dirname` instead of `__dirname`, top-level `await` in `main.ts`
 - **Prisma ORM** for database access with PostgreSQL
 - Module aggregation: `ConfigModule → CommonModule → CoreModule → FeaturesModule`
 - Fail-fast configuration: app crashes at startup if env vars are missing
-- `class-validator` + `class-transformer` for DTO validation
+- Standard Schema validation with **Zod 4**: request schemas are `z.strictObject(...)`, bound with `@Body({ schema })` / `@Param(name, { schema })` / `@Query({ schema })`; response schemas (`z.object`) via `@SerializeOptions({ schema })`
 - Feature-first modules: `src/features/{entity}/` with module, controller, service, dto, repository
 - Circuit breaker pattern for all external calls
 - Request context via `AsyncLocalStorage` for correlation ID propagation
@@ -18,9 +18,11 @@
 - Guard order: `ThrottlerGuard` → `JwtAuthGuard` → role/permission checks
 - JWT: `jose.jwtVerify` (JWKS) or passport-jwt with pinned `algorithms`, `issuer`, `audience` read via `getOrThrow`
 - Tenant/owner ids only from the verified principal; repositories take `tenantId` explicitly; cross-tenant → 404
-- `ValidationPipe`: `whitelist` + `forbidNonWhitelisted` + `transform`, `enableImplicitConversion: false`; invalid input → 400
+- Global `StandardSchemaValidationPipe` (`APP_PIPE`) + global `StandardSchemaSerializerInterceptor` (`APP_INTERCEPTOR`); invalid input → 400, unknown request keys → 400 (`z.strictObject`), undeclared response fields (`passwordHash`, `tenantId`) stripped
+- Domain errors carry a stable code: `new NotFoundException('Order not found', { errorCode: 'ORDER_NOT_FOUND' })`
+- `Public` / `Roles` are `Reflector.createDecorator<T>()` decorators
 - WebSocket auth in socket.io middleware (`server.use` in `afterInit`)
-- `enableShutdownHooks()` is the only signal handler
+- `enableShutdownHooks()` is the only signal handler. NestJS 12 calls lifecycle hooks (`onModuleInit`, `onModuleDestroy`, `onApplicationShutdown`) by module hierarchy level, so do not rely on the v11 registration order between sibling modules
 
 ## Package Layout
 
@@ -42,7 +44,7 @@ src/
 - Use decorator-based DI (`@Injectable()`, `@Module()`, `@Controller()`)
 - Module aggregation pattern: ConfigModule → CommonModule → CoreModule → FeaturesModule
 - Fail-fast configuration: app crashes at startup if env vars are missing — all required values live in `.env`, never as `??` defaults in code
-- Use class-validator + class-transformer for DTO validation
+- Validate with Zod schemas through the built-in Standard Schema pipe (`@nestjs/common` 12). `class-validator` + `ValidationPipe` is still supported, for existing codebases only; never mix both styles in one module
 - Use Prisma 7.x Client for database access (not TypeORM or Sequelize)
 - Return structured responses via interceptors (TransformInterceptor)
 - Global exception filter produces RFC 9457 ProblemDetail responses

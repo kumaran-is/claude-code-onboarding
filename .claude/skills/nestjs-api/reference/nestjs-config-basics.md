@@ -1,6 +1,6 @@
 # NestJS Configuration Basics
 
-Fail-fast configuration patterns with static config reader and module aggregation for NestJS 11.x.
+Fail-fast configuration patterns with static config reader and module aggregation for NestJS 12.x.
 
 ## Static Configuration Reader
 
@@ -19,7 +19,7 @@ All environment variable validation happens in a centralized reader with fail-fa
  * - Application FAILS FAST if configs are missing
  */
 
-import { StaticConfigurationException } from '../common/exceptions/static-configuration.exception';
+import { StaticConfigurationException } from '../common/exceptions/static-configuration.exception.js';
 
 const NON_EMPTY_STRING_MSG = 'non-empty string';
 
@@ -255,15 +255,17 @@ The root configuration module aggregates ALL individual config files.
 import { Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 
+import { envSchema } from './env.schema.js';
+
 // Core application configurations
-import apiConfig from './api.config';
-import applicationConfig from './application.config';
-import cacheConfig from './cache.config';
-import databaseConfig from './database.config';
-import healthConfig from './health.config';
-import resilienceConfig from './resilience.config';
-import securityConfig from './security.config';
-import throttlerConfig from './throttler.config';
+import apiConfig from './api.config.js';
+import applicationConfig from './application.config.js';
+import cacheConfig from './cache.config.js';
+import databaseConfig from './database.config.js';
+import healthConfig from './health.config.js';
+import resilienceConfig from './resilience.config.js';
+import securityConfig from './security.config.js';
+import throttlerConfig from './throttler.config.js';
 
 export const ALL_CONFIGS = [
   applicationConfig,
@@ -283,10 +285,9 @@ export const ALL_CONFIGS = [
       cache: true,
       expandVariables: true,
       load: ALL_CONFIGS,
-      validationOptions: {
-        allowUnknown: false,
-        abortEarly: true,
-      },
+      // @nestjs/config 12: validationSchema accepts any Standard Schema (Zod 4 here). It runs when the
+      // module is imported, so a missing or malformed variable stops bootstrap before any provider exists.
+      validationSchema: envSchema,
     }),
   ],
   exports: [NestConfigModule],
@@ -306,6 +307,29 @@ export {
 };
 ```
 
+### Environment schema (`src/config/env.schema.ts`)
+
+```typescript
+import { z } from 'zod';
+
+/** Every variable the service reads. Unknown variables are ignored; missing or malformed ones fail bootstrap. */
+export const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']),
+  PORT: z.coerce.number().int().min(1).max(65535),
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  JWT_ISSUER: z.url(),
+  JWT_AUDIENCE: z.string().min(1),
+  JWT_JWKS_URL: z.url(),
+});
+export type Env = z.infer<typeof envSchema>;
+```
+
+Read typed values with `ConfigService<Env, true>`: `config.get('PORT', { infer: true })` is a `number`. Joi still works
+in `@nestjs/config` 12 but needs Joi 18+, and Joi-only options (`allowUnknown`, `abortEarly`) move to
+`validationOptions.libraryOptions`. In tests, set the variables in the Vitest config `test.env`: the schema runs when
+`AppModule` is imported, before any `beforeAll`.
+
 ## Individual Config File Pattern
 
 Each config file uses `registerAs()` from `@nestjs/config` and the static config reader for validation.
@@ -323,7 +347,7 @@ Each config file uses `registerAs()` from `@nestjs/config` and the static config
  */
 
 import { registerAs } from '@nestjs/config';
-import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader';
+import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader.js';
 
 export default registerAs('logging', () => ({
   // Log level: error, warn, log, debug, verbose
@@ -376,7 +400,7 @@ export default registerAs('logging', () => ({
 
 | Pattern | Description |
 |---------|-------------|
-| Fail-fast validation | All required env vars validated at startup via static config reader |
+| Fail-fast validation | All required env vars validated at startup: `validationSchema` (Zod Standard Schema) on `ConfigModule.forRoot`, plus the static config reader for derived values |
 | No hardcoded defaults | Every value comes from environment or explicit fallback in config |
 | Type-safe configs | Use `registerAs()` for namespaced, type-safe config access |
 | Global config module | `isGlobal: true` makes ConfigService available everywhere |

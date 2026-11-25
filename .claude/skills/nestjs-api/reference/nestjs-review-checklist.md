@@ -31,13 +31,17 @@
 - Guards/secrets built from config refuse empty values at startup (an empty expected secret admits a present-but-empty header)
 
 **2b. Input and transport security**
-- Input validation: `class-validator` decorators on all DTO fields
-- Global pipe with `whitelist: true`, `forbidNonWhitelisted: true`; `enableImplicitConversion: false` (implicit conversion turns `"false"` into `true`)
-- Invalid input returns 400 (ValidationPipe default); a doc or test expecting 422 is wrong unless `errorHttpStatusCode` is set
+- Input validation: every `@Body()`, `@Param()` and `@Query()` declares `{ schema }` (Zod 4, Standard Schema); a parameter without a schema is NOT validated by the global `StandardSchemaValidationPipe` (CRITICAL on a write endpoint)
+- Request schemas are `z.strictObject` (a `z.object` silently drops a smuggled `tenantId`; verified: changing one made 2 negative tests fail); every string/array bounded; query numbers via `z.coerce`
+- Responses that return entities declare `@SerializeOptions({ schema })` with a `z.object` response schema, and the global `StandardSchemaSerializerInterceptor` is registered (otherwise `passwordHash`/`tenantId` leak)
+- Invalid input returns 400 (both pipes' default); a doc or test expecting 422 is wrong unless `errorHttpStatusCode` is set
+- class-validator codebase (still supported in NestJS 12): global `ValidationPipe` with `whitelist`, `forbidNonWhitelisted`, `transform`, `enableImplicitConversion: false`; a module mixing class-validator DTOs and Zod schemas is a P2 finding
+- `Public` / `Roles` built with `Reflector.createDecorator<T>()`; `routeConflictPolicy: { duplicate: 'error' }` set on `NestFactory.create` (NestJS 12 opt-in)
+- Domain errors carry a stable `errorCode` (`new NotFoundException('…', { errorCode: 'ORDER_NOT_FOUND' })`), not a parsed message
 - No hardcoded secrets, API keys, or passwords
 - Helmet middleware registered with CSP, HSTS, X-Frame-Options
 - CORS properly scoped (not wildcard `*` in production)
-- Rate limiting configured (`@nestjs/throttler`): Redis storage via `@nest-lab/throttler-storage-redis` when >1 instance; tracker hashes credentials
+- Rate limiting configured (`@nestjs/throttler`): shared storage when >1 instance (`@nest-lab/throttler-storage-redis` 1.2.0 does not install on NestJS 12: see `nestjs-rate-limiting.md` for the interim options); tracker hashes credentials
 - Webhooks verified over the raw body with a length check before `timingSafeEqual`
 - Dependencies exist on npm (`npm view`), are pinned, and `npm audit --audit-level=high` is clean (or the override is documented)
 
@@ -51,8 +55,8 @@
 **4. Testing**
 - Unit tests for services with mocked dependencies
 - E2E tests through the production `configureApp()` (`app.inject()` or supertest) with negative cases: no token 401, wrong audience 401, missing role 403, other tenant 404, unknown field 400, throttled 429
-- Test env for `ConfigModule.forRoot({ validate })` set in the Vitest config, not in `beforeAll`
-- No Jest APIs, no `poolOptions` (removed in Vitest 4), no `retry`/`passWithNoTests` hiding failures
+- Test env for `ConfigModule.forRoot({ validationSchema })` set in the Vitest config, not in `beforeAll` (the module validates when it is imported)
+- No Jest APIs, no `poolOptions` (removed in Vitest 4; still absent in Vitest 5.1), no `retry`/`passWithNoTests` hiding failures
 - `@nestjs/testing` Test.createTestingModule for DI setup
 - Circuit breaker tested: happy path + open state + fallback
 - Coverage >= 90% line, 80% branch
@@ -77,21 +81,21 @@
 - Redis caching for frequently accessed data
 - Connection pools configured (Prisma, Redis)
 - Interactive transactions set `isolationLevel`, `maxWait`, `timeout`; no HTTP/queue calls inside; conditional `updateMany` instead of read-then-write
-- `$extends` instead of `$use` (removed in Prisma 5+; absent from the Prisma 7 client)
+- `$extends` instead of `$use` (removed in Prisma 5; absent from the Prisma 7 client)
 
 **8. Observability**
 - Structured logging with correlation IDs
 - Meaningful log messages at appropriate levels
-- Health indicators for critical dependencies (DB, Redis, external APIs)
-- OpenTelemetry configured for distributed tracing
-- `app.enableShutdownHooks()` is the only signal handler (an extra `process.on('SIGTERM')` makes shutdown hooks run twice); `onModuleDestroy` closes Prisma/Redis/workers
-- BullMQ handlers idempotent (job id = business id), bounded attempts with backoff, `UnrecoverableError` for poison payloads
+- Health indicators for critical dependencies (DB, Redis, external APIs) with `@nestjs/terminus` 12 `HealthIndicatorService` (`check(key).up()/.down()/.attempt()`, `.withTimeout()`); `HealthIndicator` / `HealthCheckError` no longer exist (compile error)
+- OpenTelemetry configured for distributed tracing, loaded with `node --import ./dist/instrumentation.js` (SDK 3.x: `spanProcessors: [...]`, `new SimpleSpanProcessor({ exporter })`, `resourceFromAttributes`)
+- `app.enableShutdownHooks()` is the only signal handler (an extra `process.on('SIGTERM')` makes shutdown hooks run twice); `onModuleDestroy` closes Prisma/Redis/workers. NestJS 12 orders lifecycle hooks by module hierarchy level: code that relied on v11 sibling order is a finding
+- BullMQ handlers idempotent (job id = business id), bounded attempts with backoff, `UnrecoverableError` for poison payloads; `ioredis` is a direct dependency (BullMQ 6 made it optional: missing → runtime failure)
 
 ### P2 — Review Last
 
 **9. Architecture**
 - Module aggregation: ConfigModule → CommonModule → CoreModule → FeaturesModule
-- Feature modules are self-contained (own controller, service, repository, DTOs)
+- Feature modules are self-contained (own controller, service, repository, schemas)
 - No business logic in controllers
 - Configuration externalized via `@nestjs/config` with fail-fast validation
 - `.env` file contains ALL required env vars with working defaults — no `??` fallbacks in config code
@@ -99,9 +103,10 @@
 - `DATABASE_URL` in `.env` matches `docker-compose.dev.yml` credentials
 - Prisma 7.x: `provider = "prisma-client"` (not `prisma-client-js`), no `url` in schema, `prisma.config.ts` present
 - PrismaService uses composition with `@prisma/adapter-pg` (not `extends PrismaClient`)
+- ESM package (`"type": "module"`): relative imports end in `.js`, no `__dirname`/`require()`; a missing extension is a TS2307 under `nodenext`
 
 **10. Documentation**
-- Public APIs have Swagger decorators (`@ApiTags`, `@ApiOperation`, `@ApiResponse`)
+- Public APIs have Swagger decorators (`@ApiTags`, `@ApiOperation`, error `@ApiResponse`s); success bodies come from the route schemas (`@ApiOkResponse({ standardSchema })`), not hand-written `@ApiProperty` copies
 - Non-obvious logic has comments explaining WHY
 - CHANGELOG updated for user-facing changes
 
@@ -112,16 +117,16 @@ For each issue found, report:
 ```
 [P0] Missing input validation
 File: src/features/products/controllers/products.controller.ts:25
-Problem: @Body() parameter lacks ValidationPipe, allows arbitrary input
+Problem: @Body() declares no schema, so the global StandardSchemaValidationPipe passes the raw body through
 Current:
     @Post()
-    create(@Body() dto: CreateProductDto) {
+    create(@Body() body: CreateProduct) {
 Fix:
     @Post()
-    create(@Body(new ValidationPipe({ whitelist: true })) dto: CreateProductDto) {
+    create(@Body({ schema: CreateProductSchema }) body: CreateProduct) {
 ```
 
-Or ensure global ValidationPipe is registered in app.module.ts.
+And confirm `{ provide: APP_PIPE, useValue: new StandardSchemaValidationPipe() }` is registered in app.module.ts.
 
 ## Summary Template
 
@@ -154,7 +159,7 @@ For code patterns and correct implementations, read the `nestjs-api` skill refer
 - `nestjs-config-npm-ts.md` — package.json, tsconfig.json
 - `nestjs-config-prisma7.md` — Prisma 7.x schema, prisma.config.ts, .env template
 - `nestjs-templates-core.md` — main.ts, AppModule, CoreModule templates
-- `nestjs-templates-features.md` — Feature module, controller, service, DTO templates
+- `nestjs-templates-features.md` — Feature module, controller, service, schema templates
 - `nestjs-templates-infrastructure.md` — Dockerfile, docker-compose, Vitest config
 - `nestjs-enterprise-patterns.md` — Exception hierarchy, validation pipe, API versioning
 - `nestjs-enterprise-infrastructure.md` — Security middleware (Helmet), rate limiting, Swagger, health checks
@@ -173,7 +178,7 @@ For code patterns and correct implementations, read the `nestjs-api` skill refer
 - `nestjs-testing-patterns.md` — Circuit breaker testing, AsyncLocalStorage testing
 - `nestjs-testing-ci-troubleshooting.md` — Coverage standards, CI/CD, troubleshooting
 - `nestjs-rest-workflow.md` — REST workflow, OpenAPI/Swagger controller setup
-- `nestjs-rest-dto-pagination.md` — DTO mapping, pagination, filter patterns
+- `nestjs-rest-dto-pagination.md` — Response mapping, pagination, filter schemas
 - `nestjs-rest-upload-errors.md` — File uploads, API versioning, ProblemDetail errors
 - `nestjs-rest-services.md` — Service patterns, external API clients, bulk operations, soft delete
 - `nestjs-security-auth.md` — JWT authentication (RS256), password hashing, token management

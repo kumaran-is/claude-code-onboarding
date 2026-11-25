@@ -22,7 +22,7 @@ Path-scoped: loads for NestJS, Node service and MCP server files only. Globs avo
 - Use `/verify` (Node/NestJS and MCP server blocks) and `/ship`; each check reports PASS / FAIL / BLOCKED / NOT RUN from its own exit code.
 
 **Code**
-- No `as any`, no `: any` parameters, no swallowed `catch`: log with context, then rethrow or return a typed error. Validate every external input (HTTP body, env, tool arguments) at the boundary with a schema (class-validator DTOs or zod).
+- No `as any`, no `: any` parameters, no swallowed `catch`: log with context, then rethrow or return a typed error. Validate every external input (HTTP body, env, tool arguments) at the boundary with a schema: NestJS 12 → Zod through `StandardSchemaValidationPipe` (`@Body({ schema })`) and a response schema via `@SerializeOptions({ schema })`; class-validator DTOs only in existing codebases; plain Node → zod.
 - No `console.log` in production code: NestJS `Logger` or the service logger (pino). Config and secrets come from validated env, never from literals.
 
 **MCP servers** (new servers: `/scaffold-mcp-server`; Node 26 LTS, TypeScript 6.0.3, SDK v2)

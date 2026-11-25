@@ -10,7 +10,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 
 ## Tech Stack
 - **Backend (Java)**: Java 25 LTS, Spring Boot 4.2.x (Spring Framework 7.1): Spring MVC + virtual threads by default, WebFlux + R2DBC for non-blocking workloads; REST APIs
-- **Backend (Node.js/NestJS)**: Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
+- **Backend (Node.js/NestJS)**: Node.js 26.13.x, NestJS 12.6.x, Fastify, Prisma 7, TypeScript 6.0.x
 - **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.x), TypeScript 6.0.3, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, protocol 2026-07-28), Fastify 5.12.8, Zod 4.6.7, OpenTelemetry JS SDK 3.x: see `/scaffold-mcp-server`
 - **Backend (Python)**: Python 3.14 (verified on 3.14.10; 3.15 deferred: grpcio/numpy/zstandard lack cp315 wheels), FastAPI (verified on 0.165.x across backend and agentic references; uv 0.13.9, PyJWT, `limits` rate limiting), Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0; Google ADK 2.15.0 (requires google-genai 2.34.x, so ADK and google-genai 3.x services keep separate locks)

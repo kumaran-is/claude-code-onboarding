@@ -1,6 +1,6 @@
 # NestJS + TypeScript Coding Standards Examples
 
-Concrete code examples for NestJS 11.x services following team standards.
+Concrete code examples for NestJS 12.x services following team standards.
 
 ---
 
@@ -15,10 +15,11 @@ export class ProductsService { }
 // Controllers: PascalCase + "Controller" suffix
 export class ProductsController { }
 
-// DTOs: PascalCase + operation + "Dto" suffix
-export class CreateProductDto { }
-export class UpdateProductDto { }
-export class ProductResponseDto { }
+// Schemas: PascalCase + "Schema" suffix; the inferred type drops the suffix
+export const CreateProductSchema = z.strictObject({ /* ... */ });
+export type CreateProduct = z.infer<typeof CreateProductSchema>;
+export const ProductResponseSchema = z.object({ /* ... */ });
+export type ProductResponse = z.infer<typeof ProductResponseSchema>;
 
 // Exceptions: PascalCase + "Exception" suffix
 export class ProductNotFoundException extends BaseException { }
@@ -29,7 +30,8 @@ export class ProductNotFoundException extends BaseException { }
 ```typescript
 // Files: kebab-case matching class name
 // products.service.ts → ProductsService
-// create-product.dto.ts → CreateProductDto
+// products.schemas.ts → CreateProductSchema, UpdateProductSchema, ProductResponseSchema
+// imports between files: './products.schemas.js' (ESM, nodenext: the .js extension is required)
 // product-not-found.exception.ts → ProductNotFoundException
 ```
 
@@ -156,18 +158,14 @@ export class ProductsService {
 }
 ```
 
-### Readonly DTO Properties
+### Readonly Schema Output
 
 ```typescript
-export class CreateProductDto {
-  @IsString()
-  @IsNotEmpty()
-  readonly name: string;
-
-  @IsNumber()
-  @Min(0)
-  readonly price: number;
-}
+// z.infer types are mutable by default; .readonly() makes the parsed value Readonly<...>.
+export const CreateProductSchema = z
+  .strictObject({ name: z.string().min(1), price: z.number().nonnegative() })
+  .readonly();
+export type CreateProduct = z.infer<typeof CreateProductSchema>; // { readonly name: string; readonly price: number }
 ```
 
 ### Object.freeze for Constants
@@ -196,80 +194,74 @@ function updateProduct(product: Product, price: number): Product {
 
 ---
 
-## 4. DTO Patterns
+## 4. Schema Patterns (Zod 4, Standard Schema)
 
-### Create DTO
+NestJS 12 validates parameters declared with `{ schema }` through the global `StandardSchemaValidationPipe`, and
+shapes responses with `@SerializeOptions({ schema })` through the global `StandardSchemaSerializerInterceptor`.
+`@nestjs/swagger` 12 documents both from the same schema, so there are no `@ApiProperty` copies to keep in sync.
+
+### Create Schema
 
 ```typescript
-export class CreateProductDto {
-  @ApiProperty({ example: 'Laptop' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  readonly name: string;
+import { z } from 'zod';
 
-  @ApiProperty({ example: 999.99 })
-  @IsNumber()
-  @Min(0)
-  readonly price: number;
+export const ProductStatusSchema = z.enum(['active', 'inactive']);
 
-  @ApiProperty({ example: 'active', enum: ['active', 'inactive'] })
-  @IsEnum(['active', 'inactive'])
-  readonly status: string;
-}
+export const CreateProductSchema = z
+  .strictObject({ // unknown keys -> 400
+    name: z.string().trim().min(1).max(255),
+    price: z.number().nonnegative(),
+    status: ProductStatusSchema.default('active'),
+  })
+  .meta({ id: 'CreateProduct' }); // OpenAPI component name
+export type CreateProduct = z.infer<typeof CreateProductSchema>;
 ```
 
-### Update DTO
+### Update Schema
 
 ```typescript
-// Use PartialType for optional updates
-export class UpdateProductDto extends PartialType(CreateProductDto) {}
+// partial() keeps the strictness of the create schema; refine so an empty body is a 400
+export const UpdateProductSchema = CreateProductSchema.partial()
+  .refine((value) => Object.keys(value).length > 0, { message: 'at least one field is required' })
+  .meta({ id: 'UpdateProduct' });
+export type UpdateProduct = z.infer<typeof UpdateProductSchema>;
 ```
 
-### Response DTO
+### Response Schema
 
 ```typescript
-export class ProductResponseDto {
-  @ApiProperty()
-  readonly id: string;
-
-  @ApiProperty()
-  readonly name: string;
-
-  @ApiProperty()
-  readonly price: number;
-
-  @ApiProperty()
-  readonly createdAt: Date;
-
-  @ApiProperty()
-  readonly updatedAt: Date;
-}
+// z.object (not strict): undeclared fields (tenantId, passwordHash, deletedAt) are stripped on the way out.
+export const ProductResponseSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    price: z.number(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ id: 'ProductResponse' });
+export type ProductResponse = z.infer<typeof ProductResponseSchema>;
 ```
 
 ### Nested Validation
 
 ```typescript
-export class AddressDto {
-  @IsString()
-  @IsNotEmpty()
-  readonly street: string;
+const AddressSchema = z.strictObject({
+  street: z.string().trim().min(1).max(200),
+  city: z.string().trim().min(1).max(100),
+});
 
-  @IsString()
-  @IsNotEmpty()
-  readonly city: string;
-}
-
-export class CreateCustomerDto {
-  @IsString()
-  @IsNotEmpty()
-  readonly name: string;
-
-  @ValidateNested()
-  @Type(() => AddressDto)
-  readonly address: AddressDto;
-}
+export const CreateCustomerSchema = z
+  .strictObject({
+    name: z.string().trim().min(1).max(200),
+    address: AddressSchema, // nested objects are validated and strict by construction
+  })
+  .meta({ id: 'CreateCustomer' });
+export type CreateCustomer = z.infer<typeof CreateCustomerSchema>;
 ```
+
+class-validator DTO classes (`@IsString()`, `PartialType`, `@ValidateNested()` + `@Type()`) remain supported in
+NestJS 12 for existing codebases; do not mix them with Zod schemas in one module.
 
 ---
 
@@ -408,14 +400,13 @@ try {
 ```typescript
 @Injectable()
 export class ProductsService {
-  constructor(
-    private readonly repository: ProductsRepository,
-    private readonly logger: Logger,
-  ) {}
+  private readonly logger = new Logger(ProductsService.name);
 
-  async create(dto: CreateProductDto): Promise<Product> {
-    this.logger.log('Creating product', { name: dto.name });
-    return this.repository.create(dto);
+  constructor(private readonly repository: ProductsRepository) {}
+
+  async create(principal: Principal, input: CreateProduct): Promise<Product> {
+    this.logger.log('creating product', { name: input.name });
+    return this.repository.create(principal.tenantId, input);
   }
 
   async findAll(): Promise<Product[]> {
@@ -429,15 +420,26 @@ export class ProductsService {
 ```typescript
 @Injectable()
 export class OrdersService {
-  async createOrder(dto: CreateOrderDto): Promise<Order> {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({ data: dto });
-      await tx.inventory.updateMany({
-        where: { productId: { in: dto.productIds } },
-        data: { quantity: { decrement: 1 } },
-      });
-      return order;
-    });
+  constructor(private readonly prisma: PrismaService) {}
+
+  async createOrder(principal: Principal, input: CreateOrder): Promise<Order> {
+    return this.prisma.client.$transaction(
+      async (tx) => {
+        const order = await tx.order.create({
+          data: { tenantId: principal.tenantId, productIds: input.productIds },
+        });
+        // Conditional update: never decrements below zero; a short count means out of stock.
+        const { count } = await tx.inventory.updateMany({
+          where: { tenantId: principal.tenantId, productId: { in: input.productIds }, quantity: { gt: 0 } },
+          data: { quantity: { decrement: 1 } },
+        });
+        if (count !== input.productIds.length) {
+          throw new ConflictException('Out of stock', { errorCode: 'OUT_OF_STOCK' }); // rolls back
+        }
+        return order;
+      },
+      { isolationLevel: 'ReadCommitted', maxWait: 2_000, timeout: 5_000 },
+    );
   }
 }
 ```
@@ -450,31 +452,39 @@ export class OrdersService {
 
 ```typescript
 @ApiTags('products')
-@Controller('products')
+@Controller({ path: 'products', version: '1' })
+@SerializeOptions({ schema: ProductResponseSchema })
 export class ProductsController {
   constructor(private readonly service: ProductsService) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all products' })
-  @ApiResponse({ status: 200, type: [ProductResponseDto] })
-  async findAll(): Promise<ProductResponseDto[]> {
-    return this.service.findAll();
+  @SerializeOptions({ schema: ProductListSchema })
+  @ApiOkResponse({ standardSchema: ProductListSchema })
+  findAll(@CurrentPrincipal() principal: Principal): Promise<ProductResponse[]> {
+    return this.service.findAll(principal);
   }
 
   @Post()
-  @HttpCode(201)
+  @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new product' })
-  @ApiResponse({ status: 201, type: ProductResponseDto })
-  async create(@Body() dto: CreateProductDto): Promise<ProductResponseDto> {
-    return this.service.create(dto);
+  @ApiCreatedResponse({ standardSchema: ProductResponseSchema })
+  create(
+    @CurrentPrincipal() principal: Principal,
+    @Body({ schema: CreateProductSchema }) body: CreateProduct,
+  ): Promise<ProductResponse> {
+    return this.service.create(principal, body);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get product by ID' })
-  @ApiResponse({ status: 200, type: ProductResponseDto })
-  @ApiResponse({ status: 404, description: 'Product not found' })
-  async findById(@Param('id') id: string): Promise<ProductResponseDto> {
-    return this.service.findById(id);
+  @ApiOkResponse({ standardSchema: ProductResponseSchema })
+  @ApiNotFoundResponse({ description: 'Product not found' })
+  findById(
+    @CurrentPrincipal() principal: Principal,
+    @Param('id', { schema: z.uuid() }) id: string,
+  ): Promise<ProductResponse> {
+    return this.service.findById(principal, id);
   }
 }
 ```
@@ -503,9 +513,10 @@ export class ProductsController {
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
-  async create(dto: CreateProductDto): Promise<Product> {
-    this.logger.log('Creating product', { name: dto.name, price: dto.price });
-    return this.repository.create(dto);
+  async create(principal: Principal, input: CreateProduct): Promise<Product> {
+    // NestJS 12: structured params are on by default; the object becomes fields in JSON logs.
+    this.logger.log('creating product', { name: input.name, price: input.price });
+    return this.repository.create(principal.tenantId, input);
   }
 }
 ```
@@ -530,10 +541,10 @@ this.logger.debug('Query execution', { query, params });
 
 ```typescript
 // Bad
-this.logger.log('User login', { password: dto.password });
+this.logger.log('User login', { password: body.password });
 
 // Bad: email is PII
-this.logger.log('User login attempt', { email: dto.email });
+this.logger.log('User login attempt', { email: body.email });
 
 // Good: an opaque id, never credentials or PII
 this.logger.log({ event: 'login_attempt', userId: user.id });
@@ -574,18 +585,19 @@ describe('ProductsService', () => {
   });
 
   describe('create', () => {
-    it('should create product when valid DTO provided', async () => {
+    it('should create product when valid input provided', async () => {
       // Arrange
-      const dto = { name: 'New Product', price: 99.99 };
-      const expected = { id: '1', ...dto };
+      const principal: Principal = { subject: 'u1', tenantId: 't1', roles: new Set() };
+      const input = { name: 'New Product', price: 99.99, status: 'active' as const };
+      const expected = { id: '1', tenantId: 't1', ...input };
       repository.create.mockResolvedValue(expected);
 
       // Act
-      const result = await service.create(dto);
+      const result = await service.create(principal, input);
 
       // Assert
       expect(result).toEqual(expected);
-      expect(repository.create).toHaveBeenCalledWith(dto);
+      expect(repository.create).toHaveBeenCalledWith('t1', input); // tenant from the principal
     });
   });
 });
@@ -607,8 +619,8 @@ function createOrder(
   discount: number,
 ) { }
 
-// Good: Use DTO
-function createOrder(dto: CreateOrderDto) { }
+// Good: One typed input (z.infer of the request schema)
+function createOrder(input: CreateOrder) { }
 ```
 
 ### Deep Nesting

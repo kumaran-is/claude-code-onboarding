@@ -70,7 +70,7 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 | Check | Command | Why not the obvious one |
 |---|---|---|
 | Type-check (quick+) | `tsc -p tsconfig.json --noEmit`; `tsc -b` for a solution config (`"files": []`) | The Nest CLI build config (`tsconfig.build.json`) excludes `**/*spec.ts` and `test/`: `npm run build` passes a type error in a spec |
-| Lint (quick+) | `npm run lint`, else `eslint .` with an `eslint.config.*`; none → **NOT RUN** | |
+| Lint (quick+) | `npm run lint`, else `eslint .` with an `eslint.config.*`, else `oxlint --deny-warnings src test` (`--type-aware` with `oxlint-tsgolint`) with an `.oxlintrc.json`; none → **NOT RUN** | |
 | Unit (full+) | `vitest run` / `jest --ci` with a JSON report; PASS needs executed (passed + failed) > 0 | Vitest exits 0 when every test is skipped; `npm test` alone gives no count → **BLOCKED** |
 | Build (full+) | `npm run build`; none → **NOT RUN** | |
 | MCP server (full+, MCP packages) | real SDK client (the package's own `@modelcontextprotocol/client` v2 or `@modelcontextprotocol/sdk` v1): connect (an `initialize` handshake only on revisions ≤ 2025-11-25; 2026-07-28 removed it), negotiated spec revision, `tools/list` (all pages), per tool: name `[A-Za-z0-9_.-]{1,128}`, unique, description, `inputSchema`/`outputSchema` of `"type": "object"` that compile. Never calls a tool | Server from `bin`/`main` over stdio, or `MCP_SERVER_CMD="node dist/index.js"`, or `MCP_SERVER_URL=http://127.0.0.1:3000/mcp` (Streamable HTTP; nothing listening → **BLOCKED**). `MCP_MIN_PROTOCOL=2025-11-25` fails an older revision; `MCP_GATE_TIMEOUT_MS` (default 20000) |
@@ -265,7 +265,8 @@ FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git \) 
 while IFS= read -r f; do
   [ -n "$f" ] || continue; d=$(dirname "$f")
   [ -f "$d/angular.json" ] && continue
-  pkg_has "$d" react @angular/core react-native vite next && continue          # web and mobile apps: other blocks
+  # web and mobile apps: other blocks. A NestJS 12 package pins vite for Vitest 5, so @nestjs/core wins over vite.
+  pkg_has "$d" @nestjs/core || { pkg_has "$d" react @angular/core react-native vite next && continue; }
   if pkg_has "$d" @nestjs/core; then kind=nest
   elif pkg_has "$d" @modelcontextprotocol/sdk @modelcontextprotocol/server; then kind=mcp
   elif [ -f "$d/tsconfig.json" ]; then kind=node
@@ -289,7 +290,12 @@ while IFS= read -r entry <&3; do
   # 2. lint: only a configured linter; absence is NOT RUN, never PASS
   if has_script "$root" lint; then check "$root" lint npm run lint
   elif ls "$root"/eslint.config.* >/dev/null 2>&1 && eslint=$(bin_up "$root" eslint); then check "$root" lint "$eslint" .
-  else not_run "$root" lint "no lint script or eslint.config.*"; fi
+  elif [ -f "$root/.oxlintrc.json" ] && oxlint=$(bin_up "$root" oxlint); then # NestJS 12 default linter
+    ox_dirs=""; for d in src test; do [ -d "$root/$d" ] && ox_dirs="$ox_dirs $d"; done # never ".": it lints node_modules
+    if [ -z "$ox_dirs" ]; then not_run "$root" lint ".oxlintrc.json but no src/ or test/"
+    elif bin_up "$root" tsgolint >/dev/null; then check "$root" "lint (oxlint --type-aware)" "$oxlint" --type-aware --deny-warnings $ox_dirs
+    else check "$root" "lint (oxlint)" "$oxlint" --deny-warnings $ox_dirs; fi
+  else not_run "$root" lint "no lint script, eslint.config.* or .oxlintrc.json"; fi
   [ "$MODE" = quick ] && continue
   tests "$root"
   if has_script "$root" build; then check "$root" build npm run build; else not_run "$root" build "no build script"; fi
@@ -309,6 +315,8 @@ NODE_GATE
 ```
 
 Proven on 2026-11-23 fixtures (TypeScript 5.9.3, NestJS 11.2.11, Vitest 5.1.1, Jest 30.5.2, ESLint 10.15.0, `@modelcontextprotocol/sdk` 1.32.2 and `@modelcontextprotocol/client` 2.4.0, Node 24.13.1): clean NestJS + MCP packages → PASS in `pre-pr`; a type error planted in a spec → typecheck FAIL while `npm run build` stays green; all tests `it.skip` → unit FAIL (Vitest exit 0, executed 0 of 2); `console.log` with `no-console` → lint FAIL; a tool named `get order!` with an empty description → tool schemas FAIL; a server that throws at boot, or hangs → FAIL with its stderr line / timeout; no `node_modules` or no TypeScript → BLOCKED; nothing listening at `MCP_SERVER_URL` → BLOCKED; the gate over Streamable HTTP → PASS. A Python (FastMCP) server is not detected by this block: `npx -y @modelcontextprotocol/inspector@2.16.0 --cli <server command> --method tools/list` exits 1 on a server that fails to start (verified against a Node stdio server only).
+
+Re-proven on 2026-11-24 against a NestJS 12.6.0 ESM app (Node 26.13.1, TypeScript 6.0.3, Vitest 5.1.1, oxlint 1.95.0 via `npm run lint`): before the `@nestjs/core` precedence fix the gate reported NOT APPLICABLE with exit 0, because the app pins `vite` for Vitest and was skipped as a web app; after it, `full` and `pre-pr` → PASS (unit executed 9 of 9, audit exit 0), and a type error planted in a spec plus a `console.log` → typecheck FAIL (exit 2) and lint FAIL (exit 1), gate exit 1. The same app without a `lint` script: the `.oxlintrc.json` fallback ran `oxlint --type-aware --deny-warnings src test` → PASS, a planted `console.log` → lint FAIL (exit 1), no linter config → NOT RUN. With `@nestjs/mcp` 0.0.4 added it is `nest+mcp`: `full` without `MCP_SERVER_URL` → MCP BLOCKED (no `bin`/`main`); `pre-pr` with `MCP_SERVER_URL` at the running app → connect, spec version 2026-07-28, tools/list and tool schemas PASS.
 
 ### Web apps — Angular (`angular.json`) and React (`package.json` with `react` + `vite` / `react-scripts` / `next`)
 

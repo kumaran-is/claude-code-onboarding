@@ -5,7 +5,7 @@
 | Reference | When to Load | Key Content |
 |-----------|-------------|-------------|
 | [nestjs-conventions.md](nestjs-conventions.md) | **Before any module** — Iron Law | Package layout, Fastify quirks, Prisma 7.x patterns, DTO validation rules, env file rules |
-| [nestjs-production-baseline.md](nestjs-production-baseline.md) | **Before any feature** — Iron Law; auth/tenancy/validation reviews | Runtime-verified JWT guard, tenant scoping, ValidationPipe, Fastify throttling, WebSocket auth, shutdown, BullMQ, webhooks |
+| [nestjs-production-baseline.md](nestjs-production-baseline.md) | **Before any feature** — Iron Law; auth/tenancy/validation reviews | Runtime-verified (NestJS 12.6.0) JWT guard, tenant scoping, Standard Schema (Zod) validation and serialization, Fastify throttling, WebSocket auth, shutdown, BullMQ, webhooks |
 | [nestjs-config-basics.md](nestjs-config-basics.md) | Project setup or initial configuration | Static config reader, config module aggregation, fail-fast validation |
 | [nestjs-config-npm-ts.md](nestjs-config-npm-ts.md) | Setting up package.json or tsconfig | Verified pins, package.json, tsconfig, Vitest + ESLint config |
 | [nestjs-config-prisma7.md](nestjs-config-prisma7.md) | Setting up database or writing Prisma queries | Prisma 7.x schema, prisma.config.ts, PrismaService, .env template |
@@ -18,13 +18,14 @@
 | [nestjs-resilience-context.md](nestjs-resilience-context.md) | Adding request tracing or correlation IDs | AsyncLocalStorage request context, correlation IDs |
 | [nestjs-feature-flags.md](nestjs-feature-flags.md) | Implementing feature flags or gradual rollout | Feature flags service, Redis fallback, gradual rollout |
 | [nestjs-observability.md](nestjs-observability.md) | Adding observability, structured logging, or tracing | OpenTelemetry tracing/metrics, structured logging, cloud logging |
-| [nestjs-rate-limiting.md](nestjs-rate-limiting.md) | Adding rate limiting to endpoints | Throttler guard order, credential-hash tracker, `@nest-lab/throttler-storage-redis` |
+| [nestjs-rate-limiting.md](nestjs-rate-limiting.md) | Adding rate limiting to endpoints | Throttler guard order, credential-hash tracker, shared Redis storage (BLOCKED on NestJS 12; interim options) |
 | [nestjs-messaging-basics.md](nestjs-messaging-basics.md) | Adding background jobs or queue processing | BullMQ queues, background job processing |
 | [nestjs-messaging-queues.md](nestjs-messaging-queues.md) | Implementing RabbitMQ messaging or dead letter queues | RabbitMQ reliable messaging, dead letter queues |
 | [nestjs-messaging-streaming.md](nestjs-messaging-streaming.md) | Implementing Kafka streaming or high-throughput events | Kafka event streaming, high-throughput patterns |
 | [nestjs-rest-workflow.md](nestjs-rest-workflow.md) | Designing REST endpoints or setting up Swagger | REST workflow, OpenAPI/Swagger controller setup |
 | [nestjs-rest-dto-pagination.md](nestjs-rest-dto-pagination.md) | Creating DTOs or implementing pagination | DTO mapping, pagination, filter patterns |
 | [nestjs-rest-upload-errors.md](nestjs-rest-upload-errors.md) | Implementing file uploads or error responses | File uploads, API versioning, ProblemDetail errors |
+| [nestjs-mcp-server.md](nestjs-mcp-server.md) | Exposing a Nest service's operations as MCP tools | `@nestjs/mcp` 0.0.4 on Fastify (verified), security, tests, Observe MCP server (DEFER) |
 | [nestjs-rest-services.md](nestjs-rest-services.md) | Writing service logic or calling external APIs | Service patterns, external API clients, bulk ops, soft delete |
 | [nestjs-security-auth.md](nestjs-security-auth.md) | Implementing JWT auth or writing guards | JWT authentication (RS256), password hashing, token management |
 | [nestjs-security-scanning.md](nestjs-security-scanning.md) | Security auditing or dependency scanning | OWASP scanning, security headers, static analysis |

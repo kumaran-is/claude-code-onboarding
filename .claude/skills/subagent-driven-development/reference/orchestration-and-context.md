@@ -13,7 +13,7 @@ interactive Claude Code shell. Sub-agents run headlessly — they **cannot** inv
 If anyone runs a raw `flutter create`, `ng new`, `nest new`, `create-vite`, `create-next-app` or `create-react-router`, the `block-raw-scaffold.sh` hook
 hard-blocks the tool call with exit 2. The scaffold commands themselves run the creator with an inline
 per-command marker (`CC_SCAFFOLD=<scaffold-command-name> <creator> ...`), which the hook allows for that
-one command only and records in `.claude/state/scaffold-audit.log`. Do not add the marker to ad-hoc
+one command only and records in `.git/claude-state/scaffold-audit.log`. Do not add the marker to ad-hoc
 creator calls; run the scaffold command instead.
 
 ### Required sequence

@@ -299,14 +299,16 @@ def state_tamper(root: Path, cmd: str) -> bool:
     if REVIEW_CLI_RE.match(cmd) or not STATE_WRITE_RE.search(cmd):
         return False
     s = _normalise(cmd)
-    root_s = _normalise(str(root)).rstrip("/") + "/"
+    # both spellings of this root (macOS: /var -> /private/var), so a resolved absolute path still counts as ours
+    roots = {_normalise(str(r)).rstrip("/") + "/" for r in (root, root.resolve())}
     # `cd .claude && ... > state/review/...` names the evidence directory without the `.claude/state` spelling
     if ".claude" in s and re.search(r"(?:^|[\s'\"=(<>,/])state/(?:review|stamps)\b", s):
         return True
-    for m in re.finditer(r"(\S*?)\.claude/state\b", s):
+    # The evidence lives in <git dir>/claude-state (review_state.state_base); `.claude/state` is the legacy spelling.
+    for m in re.finditer(r"(\S*?)(?:\.claude/state|claude-state)\b", s):
         prefix = re.split(r"[\s'\"=(<>,]", m.group(1))[-1]  # the path part only: `open(".claude/...` -> ''
         # An absolute path into ANOTHER project is not ours; everything else (relative, ~, $PWD, $VAR, this root) is.
-        if prefix.startswith("/") and prefix != root_s:
+        if prefix.startswith("/") and re.sub(r"\.git/$", "", prefix) not in roots:
             continue
         return True
     return False
@@ -317,7 +319,7 @@ def on_bash(root: Path, payload: dict) -> int:
     enabled = rs.is_enabled(root)
     if enabled and state_tamper(root, cmd):
         return emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                     "permissionDecisionReason": "Enforcement kit: .claude/state holds the review evidence; only review_state.py and the "
+                     "permissionDecisionReason": "Enforcement kit: .git/claude-state holds the review evidence; only review_state.py and the "
                                                  "kit's hooks write it. Use `review_state.py` (findings close/dismiss, stamp write, disable)."}})
     hits, override = pr_segments(cmd)
     if not hits:
@@ -528,7 +530,7 @@ def main() -> int:
         return 0
     root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
     bash_cmd = (payload.get("tool_input") or {}).get("command", "") if payload.get("tool_name") == "Bash" else None
-    if bash_cmd is not None and not pr_segments(bash_cmd)[0] and ".claude" not in bash_cmd.lower():
+    if bash_cmd is not None and not pr_segments(bash_cmd)[0] and not re.search(r"\.claude|claude-state", bash_cmd.lower()):
         return 0  # the common case costs no git call
     try:
         rs.git("rev-parse", "--git-dir", cwd=root)
@@ -544,7 +546,7 @@ def main() -> int:
         handler = {"SubagentStart": on_subagent_start, "SubagentStop": on_subagent_stop, "Stop": on_stop}.get(event)
         return handler(root, payload) if handler else 0
     except Exception as exc:  # noqa: BLE001 - a hook must not crash the session; report it instead of failing silently
-        gated = bash_cmd is not None and (pr_segments(bash_cmd)[0] or ".claude/state" in _normalise(bash_cmd))
+        gated = bash_cmd is not None and (pr_segments(bash_cmd)[0] or ".claude/state" in _normalise(bash_cmd) or "claude-state" in _normalise(bash_cmd))
         try:
             enabled = rs.is_enabled(root)
         except Exception:  # noqa: BLE001 - cannot tell: treat as enabled (fail closed)
@@ -692,7 +694,8 @@ def selftest() -> int:
         rs_cli = [sys.executable, str(HERE.parent / "scripts" / "review_state.py")]
         forged = subprocess.run(rs_cli + ["stamp", "write", "review", "--note", "trust me"], cwd=root, env=rs_env, capture_output=True, text=True)
         ok(forged.returncode == 2 and "cannot be written by hand" in forged.stderr, "positive (G2): `stamp write review` is refused", forged.stderr)
-        rel = rs.state_dir(root).relative_to(root)
+        rel = rs.state_dir(root).resolve().relative_to(root.resolve())
+        absolute = rs.state_dir(root).resolve()
         for shape in [f"echo '{{}}' > {rel}/stamps/review.json", f"python3 -c 'open(\"{rel}/ledger.json\",\"w\")'",
                       f"cp /tmp/x.json ./{rel}/ledger.json", f"rm -rf .claude/state",
                       # security review bypasses: CLI-name exemption, relative after cd, path spellings, variables
@@ -703,10 +706,13 @@ def selftest() -> int:
                       "echo x > .claude/./state/review/l.json", "echo x > .CLAUDE/state/review/l.json",
                       'echo x > "$PWD/.claude/state/review/l.json"', 'rm -rf "$T/.claude/state"',
                       "unlink .claude/state/enabled", "find .claude/state -name enabled -delete", "git checkout -- .claude/state",
-                      "rsync -a /tmp/x/ .claude/state/"]:
+                      "rsync -a /tmp/x/ .claude/state/",
+                      # the real location (.git/claude-state), relative and absolute
+                      "rm -rf .git/claude-state", f"echo x > {absolute}/ledger.json", "find .git/claude-state -delete"]:
             rc, out = run(root, bash(shape), on)
-            ok(deny(out) and ".claude/state" in json.dumps(out), f"positive (G2): hand-writing the evidence is denied: {shape[:44]!r}", out)
-        for shape in ["python3 .claude/scripts/review_state.py findings list", "rm -rf /tmp/other-project/.claude/state", "cat .claude/state/x/ledger.json"]:
+            ok(deny(out) and "claude-state" in json.dumps(out), f"positive (G2): hand-writing the evidence is denied: {shape[:44]!r}", out)
+        for shape in ["python3 .claude/scripts/review_state.py findings list", "rm -rf /tmp/other-project/.claude/state",
+                      "rm -rf /tmp/other-project/.git/claude-state", "cat .claude/state/x/ledger.json", "cat .git/claude-state/x/ledger.json"]:
             rc, out = run(root, bash(shape), on)
             ok(not deny(out), f"negative (G2): not a hand write of this project's evidence: {shape[:44]!r}", out)
         rc, out = run(root, {"hook_event_name": "SubagentStop", "agent_type": "x-reviewer", "agent_id": "ok1", "stop_hook_active": False,

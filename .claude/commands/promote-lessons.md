@@ -14,7 +14,7 @@ Collect candidates from every source, not only corrections:
 | Source | How |
 |---|---|
 | Corrections | `lessons.md` entries (the CLAUDE.md Self-Improvement Loop writes them) |
-| Reviewer findings | Closed and dismissed findings in `.claude/state/review/*/ledger.json` (enforcement kit). The same root-cause class closed on 2 or more branches is a recurrence |
+| Reviewer findings | Closed and dismissed findings in `.git/claude-state/review/*/ledger.json` (enforcement kit). The same root-cause class closed on 2 or more branches is a recurrence |
 | Successes | An approach that worked first time on something that usually fails (a debugging route, a test seam, a release step), noted by the user or in the PR's lessons step |
 | Post-ship | Since the last run: reverted PRs (`git log --oneline --grep='^Revert' --since=<date>`), fix commits that touch code merged in the window, incidents or bug reports the user names. For each: what escaped, which gate should have caught it, and why it did not |
 | Agent memory | `.claude/agent-memory/**` (Step 2) |

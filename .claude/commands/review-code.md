@@ -10,7 +10,7 @@ Review the specified code for quality, security, and maintainability using **par
 
 ## Process
 
-**Re-review rounds (enforcement kit ON, `.claude/state/ledger.json` exists):** a follow-up run after fixes dispatches only the reviewers `python3 .claude/scripts/review_state.py findings rereview` names (owners of open or newly closed findings), not the whole set again, plus a reviewer for a stack or concern that newly appears in the diff. Every reviewer report counts as a round (from round 3, MEDIUM/LOW findings stop blocking), and `/review-code` and `/review-pr` both dispatch `code-reviewer`: run one of them per round, never both, or the round count doubles.
+**Re-review rounds (enforcement kit ON, `.git/claude-state/review/<branch>/ledger.json` exists):** a follow-up run after fixes dispatches only the reviewers `python3 .claude/scripts/review_state.py findings rereview` names (owners of open or newly closed findings), not the whole set again, plus a reviewer for a stack or concern that newly appears in the diff. Every reviewer report counts as a round (from round 3, MEDIUM/LOW findings stop blocking), and `/review-code` and `/review-pr` both dispatch `code-reviewer`: run one of them per round, never both, or the round count doubles.
 
 ### Step 1 — Detect scope
 Determine which files/directories to review from `$ARGUMENTS` (default: recent changes via `git diff --name-only HEAD`).

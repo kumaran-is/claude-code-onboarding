@@ -64,7 +64,7 @@ Authoring contract: `.claude/rules/hook-and-gate-authoring.md`. Security-relevan
       hook — and every guard fails open.
 - [ ] No untrusted input reaches `eval`, `bash -c`, `sh -c` or an unquoted expansion.
 - [ ] No hook sends data off the machine (`curl`/`wget` with tool output, prompts or file content).
-- [ ] Audit logs (`.claude/*-detected.log`, `.claude/state/`) are gitignored and never contain the
+- [ ] Audit logs (`.claude/*-detected.log`) are gitignored; hook state lives in `.git/claude-state/` (outside the working tree) and never contain the
       matched secret or the full command that carried it: log the pattern name, tool name and a
       hash, not the raw text.
 - [ ] Advisory hooks deliver text through `additionalContext` JSON; stdout/stderr of an exit-0 hook
@@ -136,7 +136,7 @@ grep -lE '^permissionMode: *(acceptEdits|bypassPermissions)' .claude/agents/*.md
 git grep -nIE 'sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}' -- '*.md' '*.json' '*.yaml'
 
 # Runtime logs are ignored and untracked
-git check-ignore -v .claude/secrets-detected.log .claude/state/x .claude/agent-memory/x/MEMORY.md
+git check-ignore -v .claude/secrets-detected.log .claude/agent-memory/x/MEMORY.md
 git ls-files .claude | grep -E '\.log$|/state/|agent-memory'
 ```
 

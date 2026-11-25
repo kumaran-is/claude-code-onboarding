@@ -30,6 +30,16 @@ flutter_mobile_app() { # $1 = root; prints the first mobile app dir found
   return 1
 }
 
+state_dir_for() { # $1 project root -> runtime state dir inside its git dir (never the working tree); temp dir outside git
+  local d
+  if d=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null); then
+    case "$d" in /*) ;; *) d="$1/$d" ;; esac
+    printf '%s/claude-state' "$d"
+  else
+    printf '%s/claude-state/%s' "${TMPDIR:-/tmp}" "$(printf '%s' "$1" | shasum | cut -c1-12)"
+  fi
+}
+
 evaluate() { # $1 = tool name, $2 = bash command, $3 = root, $4 = session id, $5 = state dir
   local tool="$1" cmd="$2" root="$3" sid="$4" state="$5" app marker msg
   if [[ "$tool" =~ $BROWSER_TOOL ]]; then :
@@ -87,5 +97,5 @@ CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)
 SID=$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)
 ROOT="${CLAUDE_PROJECT_DIR:-$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)}"
 [ -n "$ROOT" ] && [ -d "$ROOT" ] || exit 0
-evaluate "$TOOL" "$CMD" "$ROOT" "$SID" "$ROOT/.claude/state"
+evaluate "$TOOL" "$CMD" "$ROOT" "$SID" "$(state_dir_for "$ROOT")"
 exit 0

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Review state for the opt-in enforcement kit: findings ledger + content-fingerprinted evidence stamps.
 
-State lives under .claude/state/review/<branch>/ (gitignored): ledger.json, stamps/<name>.json and the
+State lives under <git-common-dir>/claude-state/review/<branch>/ (inside .git: never in the working tree): ledger.json, stamps/<name>.json and the
 opt-in marker `enabled`. Hooks import this file; humans and Claude use the CLI.
 
   review_state.py init | enabled | disable
@@ -68,12 +68,23 @@ def project_root() -> Path:
         return Path.cwd()
 
 
+def state_base(root: Path) -> Path:
+    """Runtime state lives in the repository's git directory, never in the working tree (nothing to ignore or
+    commit; linked worktrees share it). Outside git: a per-project folder in the system temp directory."""
+    try:
+        common = Path(git("rev-parse", "--git-common-dir", cwd=root))
+        return (common if common.is_absolute() else root / common).resolve() / "claude-state"
+    except (RuntimeError, OSError):
+        import hashlib
+        return Path(tempfile.gettempdir()) / "claude-state" / hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:12]
+
+
 def state_dir(root: Path) -> Path:
     try:
         branch = git("rev-parse", "--abbrev-ref", "HEAD", cwd=root)
     except (RuntimeError, OSError):
         branch = "no-git"
-    return root / ".claude" / "state" / "review" / re.sub(r"[^A-Za-z0-9._-]", "__", branch)
+    return state_base(root) / "review" / re.sub(r"[^A-Za-z0-9._-]", "__", branch)
 
 
 def is_enabled(root: Path) -> bool:

@@ -34,6 +34,7 @@ selftest() {
 /repo/.claude//state/review/main/ledger.json|2|review evidence
 /repo/.claude/./state/review/main/ledger.json|2|review evidence
 /repo/.claude/statements.md|0|
+/repo/.git/claude-state/review/main/ledger.json|2|.git/ internals
 /repo/.env.example|0|
 /repo/apps/api/.env.sample|0|
 /repo/.env.template|0|
@@ -60,8 +61,8 @@ fi
 
 # --- Enforcement-kit evidence: the ledger and stamps are written only by review_state.py and the kit's hooks ---
 # Case-insensitive (APFS) and with // and /./ collapsed, so path spellings do not dodge it.
-if printf '%s\n' "$file" | sed -e 's#//*#/#g' -e 's#/\./#/#g' | grep -qiE '(^|/)\.claude/state/'; then
-  echo "BLOCKED: .claude/state holds review evidence (ledger, stamps); only review_state.py and the enforcement kit write it." >&2
+if printf '%s\n' "$file" | sed -e 's#//*#/#g' -e 's#/\./#/#g' | grep -qiE '(^|/)(\.claude/state|\.git/claude-state)/'; then
+  echo "BLOCKED: .git/claude-state (legacy .claude/state) holds review evidence (ledger, stamps); only review_state.py and the enforcement kit write it." >&2
   exit 2
 fi
 

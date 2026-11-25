@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Security vulnerability detection and remediation skill. Provides OWASP Top 10 checklists, secret scanning patterns, and security review methodology.
+description: Use when reviewing code or config for security vulnerabilities (OWASP Top 10, secrets, injection, XSS, SSRF, auth/authz, unsafe crypto, file uploads) or remediating them. Provides OWASP checklists, secret-scanning patterns and the review methodology. Not for AI/LLM/RAG code (ai-security-reviewer) or Flutter storage/pinning (flutter-security-expert).
 allowed-tools: Read, Bash, Grep, Glob
 agent: security-reviewer
 context: fork

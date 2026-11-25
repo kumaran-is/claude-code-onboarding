@@ -13,7 +13,7 @@
 #   to leave behind, and it is visible in the transcript.
 # - The value must name the scaffold command that owns that technology; a Flutter marker does not
 #   authorize `ng new`.
-# - Every authorized call is appended to .claude/state/scaffold-audit.log (gitignored).
+# - Every authorized call is appended to <git dir>/claude-state/scaffold-audit.log (inside .git, never committed).
 # Anything else that matches a raw creator is blocked (exit 2).
 #
 # Inert heredoc bodies: the body of `cat [>|>>] FILE <<'DELIM'` / `tee [-a] FILE <<'DELIM'` is data written to a
@@ -28,7 +28,16 @@
 #
 # Test: bash .claude/hooks/block-raw-scaffold.sh --selftest
 
-LOG_DIR="${CLAUDE_PROJECT_DIR:-.}/.claude/state"
+state_dir_for() { # $1 project root -> runtime state dir inside its git dir (never the working tree); temp dir outside git
+  local d
+  if d=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null); then
+    case "$d" in /*) ;; *) d="$1/$d" ;; esac
+    printf '%s/claude-state' "$d"
+  else
+    printf '%s/claude-state/%s' "${TMPDIR:-/tmp}" "$(printf '%s' "$1" | shasum | cut -c1-12)"
+  fi
+}
+LOG_DIR=$(state_dir_for "${CLAUDE_PROJECT_DIR:-.}")
 
 # <scaffold command>#<raw-creator ERE>#<label>#<technology>   ('#' is the field separator; the ERE may contain '|')
 RULES=(

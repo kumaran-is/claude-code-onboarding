@@ -30,6 +30,7 @@ Thumbs.db
 .claude/agent-memory-local/
 
 # Runtime state and retired logging systems — never commit prompt logs or generated state
+# legacy location of hook state (now .git/claude-state/, outside the working tree)
 .claude/state/
 blackbox/
 .claude/smart-suggest.jsonl

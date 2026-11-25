@@ -460,6 +460,14 @@ Proven 2026-11-23 on Flutter 3.50.1: a clean sample app → format, analyze, cod
 
 **UI/E2E on a Flutter Android/iOS target** uses Maestro only (`.claude/rules/testing-tool-selection.md`); if Maestro or a device is missing the check is `BLOCKED`, never a browser substitute.
 
+### Design system (any Flutter, Angular or React target; every mode)
+
+```bash
+python3 .claude/scripts/check-design-system.py --root . > /tmp/ds-gate.log 2>&1; echo "DESIGN GATE EXIT:$?"; tail -25 /tmp/ds-gate.log
+```
+
+Exit 0 = PASS (or `NOT APPLICABLE` when no UI source exists) · 1 = FAIL (literal design values, missing tier marker, presentational violation, second icon family, unwrapped animation runtime, parallel token scale) · 2 = BROKEN (the gate's own detector selftest failed; nothing was judged → FAIL). A missing `DESIGN.md` is a warning line, not a failure, unless the project passes `--require-design-md`. Rules and fixes: `/lint-design-system`.
+
 ### AI assets and evals (golden data, `prompts/`, governance records or AI code present; otherwise NOT APPLICABLE)
 
 ```bash

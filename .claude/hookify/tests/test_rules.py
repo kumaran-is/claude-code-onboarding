@@ -94,6 +94,7 @@ CASES = {
         (False, "/w/packages/shared_ui/lib/src/widgets/task_card.g.dart", "part of 'task_card.dart';\n"),
         (False, "/w/packages/shared_ui/lib/src/widgets/task_card_test.dart", "void main() {}\n"),
         (False, "/w/packages/shared_ui/lib/src/theme/app_spacing.dart", "class AppSpacing {}\n"),
+        (False, "/w/apps/mobile/lib/design_system/components/components.dart", "export 'buttons/app_button.dart';\n"),
         (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "class HomeScreen {}\n"),
     ],
     "design-tier-comment-angular": [
@@ -104,7 +105,62 @@ CASES = {
         (False, "/w/web/src/app/shared/components/item-card/item-card.component.html", "<div></div>\n"),
         (False, f"{NG}/list.component.ts", "import { Component } from '@angular/core';\n"),
     ],
+    "design-tier-comment-react": [
+        (True, f"{RX}/shared/ui/status-badge.tsx", "export function StatusBadge() { return null; }\n"),
+        (True, f"{RX}/shared/ui/chip.tsx", "// tier: atom\n"),
+        (False, f"{RX}/shared/ui/status-badge.tsx", "// Tier: Atom\nexport function StatusBadge() { return null; }\n"),
+        (False, f"{RX}/shared/ui/status-badge.test.tsx", "it('x', () => {});\n"),
+        (False, f"{RX}/shared/ui/theme-provider.tsx", "export function ThemeProvider() {}\n"),
+        (False, f"{RX}/components/ui/button.tsx", "export function Button() {}\n"),
+        (False, f"{RX}/features/orders/order-page.tsx", "export function OrderPage() {}\n"),
+    ],
+    "design-presentational-imports": [
+        # Flutter shared atom importing a feature repository / Riverpod state
+        (True, "/w/packages/shared_ui/lib/components/status_badge.dart", "// Tier: Atom\nimport '../../features/orders/data/order_repository.dart';\n"),
+        (True, "/w/apps/mobile/lib/design_system/components/user_card.dart", "class UserCard extends ConsumerWidget {}\n"),
+        (True, "/w/apps/mobile/lib/design_system/components/quoted.dart", 'import "package:flutter_riverpod/flutter_riverpod.dart";\n'),
+        # Angular presentational component injecting a domain service / doing HTTP
+        (True, "/w/web/src/app/shared/components/summary/summary.component.ts", "private orders = inject(OrderService);\n"),
+        (True, "/w/web/src/app/shared/components/chip/chip.ts", "private s = inject(AuthSession);\n"),
+        (True, "/w/web/src/app/shared/components/kpi/kpi.ts", "constructor(private readonly api: DashboardApi) {}\n"),
+        (False, "/w/web/src/app/shared/components/kpi/kpi-chip.ts", "constructor(private el: ElementRef, private r: Renderer2) {}\n"),
+        (True, "/w/web/src/app/shared/components/fetcher/fetcher.component.ts", "import { HttpClient } from '@angular/common/http';\n"),
+        # React shared badge importing a global store / fetching
+        (True, f"{RX}/shared/ui/cart-badge.tsx", "import { useCartStore } from '@/features/cart/store';\n"),
+        (True, f"{RX}/shared/ui/user-chip.tsx", "const q = useQuery({ queryKey: ['u'] });\n"),
+        # Dumb button with isBusy/tone/onPressed, and smart containers outside the library
+        (False, "/w/packages/shared_ui/lib/components/primary_button.dart", "// Tier: Atom\nfinal bool isBusy;\nfinal ButtonTone tone;\nfinal VoidCallback? onPressed;\n"),
+        (False, "/w/web/src/app/shared/components/badge/badge.component.ts", "tone = input<'ok' | 'warn'>('ok');\nhost = inject(ElementRef);\n"),
+        (False, f"{RX}/features/cart/cart-page.tsx", "import { useCartStore } from '@/features/cart/store';\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "class HomeScreen extends ConsumerWidget {}\n"),
+        (False, f"{RX}/shared/ui/theme-provider.tsx", "import { useStore } from 'zustand';\n"),
+        (False, f"{RX}/shared/ui/cart-badge.tsx", "// ignore-design: legacy badge, migrating in ticket\nimport { useCartStore } from '@/features/cart/store';\n"),
+    ],
+    "design-no-hardcoded-colors-dart": [
+        (True, "/w/apps/mobile/lib/features/home/home_screen.dart", "StatusBadge(color: Color(0xFFE53935));\n"),
+        (True, "/w/apps/mobile/lib/features/home/home_screen.dart", "final c = Colors.red;\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "final c = Theme.of(context).colorScheme.error;\n"),
+        (False, "/w/apps/mobile/lib/design_system/tokens/app_colors.dart", "const primary = Color(0xFF0057B8);\n"),
+        (False, "/w/packages/shared_ui/lib/src/theme/app_color_scheme.dart", "const c = Color(0xFF000000);\n"),
+        (False, "/w/apps/mobile/lib/core/brand_theme.dart", "const c = Color(0xFF000000);\n"),
+        (True, "/w/apps/mobile/lib/features/promo/theme/promo_colors.dart", "const c = Color(0xFF112233);\n"),
+        (False, "/w/apps/mobile/lib/features/home/home.g.dart", "final c = Colors.red;\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "final c = Colors.transparent;\n"),
+    ],
+    "design-no-raw-spacing-dart": [
+        (True, "/w/apps/mobile/lib/features/home/home_screen.dart", "padding: EdgeInsets.all(16),\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "padding: EdgeInsets.all(AppSpacing.md),\n"),
+        (False, "/w/apps/mobile/lib/design_system/tokens/app_spacing.dart", "static const insets = EdgeInsets.all(16);\n"),
+    ],
+    "design-no-raw-textstyle-dart": [
+        (True, "/w/apps/mobile/lib/features/home/home_screen.dart", "style: TextStyle(fontSize: 18),\n"),
+        (False, "/w/apps/mobile/lib/features/home/home_screen.dart", "style: Theme.of(context).textTheme.titleMedium,\n"),
+        (False, "/w/apps/mobile/lib/design_system/typography/app_text_styles.dart", "static const h1 = TextStyle(fontSize: 32);\n"),
+    ],
 }
+
+# Tier rules read line 1 of a whole file: an Edit's new_string is a fragment, so they must stay silent on Edit.
+WRITE_ONLY_RULES = ("design-tier-comment-dart", "design-tier-comment-angular", "design-tier-comment-react")
 
 
 def fires(engine: RuleEngine, rule: Rule, path: str, content: str) -> bool:
@@ -156,6 +212,21 @@ def main() -> int:
                 failures += 1
                 print(f"  FAIL {name}: expected {'fire' if expect else 'silent'} for {path} :: {content}")
         print(f"  ok   {name}: {pos} positive / {neg} negative controls checked")
+
+    for name in WRITE_ONLY_RULES:
+        rule = rules.get(name)
+        if rule is None:
+            continue
+        cases = [c for c in CASES[name] if c[0]]
+        result = engine.evaluate_rules([rule], {
+            "hook_event_name": "PostToolUse", "tool_name": "Edit",
+            "tool_input": {"file_path": cases[0][1], "old_string": "a", "new_string": cases[0][2]},
+        })
+        if result:
+            print(f"  FAIL {name}: fired on an Edit fragment (line 1 of new_string is not line 1 of the file)")
+            failures += 1
+        else:
+            print(f"  ok   {name}: silent on Edit fragments")
 
     # Loud-failure control: a variable-width look-behind is rejected by Python `re`.
     broken = Rule(name="broken-probe", enabled=True, event="file", action="warn",

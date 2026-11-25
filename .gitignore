@@ -19,6 +19,9 @@ Thumbs.db
 .claude/settings.local.json
 .claude/temp/
 .claude/ralph-loop.local.md
+# Shared design rules are committed although a global `*.local.md` ignore would hide them
+# (that is how the tier rules went missing while their tests were committed). Personal hookify rules stay local.
+!.claude/hookify.design-*.local.md
 # security-guidance plugin: per-developer overrides (project files stay committed)
 .claude/claude-security-guidance.local.md
 .claude/security-patterns.local.yaml

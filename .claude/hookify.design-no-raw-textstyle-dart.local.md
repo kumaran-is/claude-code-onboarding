@@ -6,7 +6,7 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: lib/.*\.dart$
+    pattern: ^(?!.*(?:_test|\.g|\.freezed|\.gr|\.mocks)\.dart$)(?!.*/(?:test|integration_test)/)(?!(?!.*/features/).*/(?:tokens|theme|themes|typography|foundations)/)(?!(?!.*/features/).*/(?:app_(?:colors?|color_scheme|theme\w*|spacing|radius|radii|motion|typography|text_styles?|text_theme|elevation|shadows?|icons|tokens|sizes|breakpoints)|\w+_tokens|\w+_theme(?:_extension)?)\.dart$).*(?:^|/)lib/.*\.dart$
   - field: content
     operator: regex_match
     pattern: (?m)(?:\A|^(?![^\n]*ignore-design:\s*\S)[^\n]*\n)(?![^\n]*ignore-design:\s*\S)[^\n]*(?:TextStyle\(\s*fontSize\s*:)

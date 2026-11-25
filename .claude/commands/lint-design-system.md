@@ -1,109 +1,64 @@
 ---
-description: Scan files for design system violations — literal colours, arbitrary spacing, raw typography, inline styles, daisyUI 4 class names and small touch targets across Flutter and web (Angular, React)
+description: Run the design-system gate across Flutter and web (Angular, React) — DESIGN.md discovery, literal colours/spacing/typography, inline styles, daisyUI 4 classes, tier markers, presentational boundaries, icon family and isolation, animation runtimes and parallel token scales
 allowed-tools: Bash, Glob, Grep, Read
 ---
 
 # /lint-design-system
 
-Scan changed files for design system violations. Detects hardcoded colors, raw spacing values, inline typography, and touch target issues.
+Run the project's design-system gate. One detector serves this command, `/verify` and CI: `.claude/scripts/check-design-system.py`. It proves every detector on planted fixtures before it reads a project file (exit 2 = a detector is broken; nothing was judged).
 
-## Process
+## 1. Run
 
-### 1. Detect Stack
-
-Determine which stack to scan:
-- If `*.dart` files exist in `lib/` → run Flutter checks
-- If `*.html`, `*.scss`, `*.ts` files exist in `src/app/` → run web checks (Angular); `*.tsx`/`*.jsx` in `src/` → web checks (React)
-- If both → run both
-
-### 2. Flutter Design Checks
-
-Scan `lib/**/*.dart` (exclude `*.g.dart`, `*.freezed.dart`):
-
-| Check | Pattern | Violation |
-|---|---|---|
-| Hardcoded colors | `Color(0x...)`, `Colors.xxx` | Use `Theme.of(context).colorScheme` tokens |
-| Raw spacing | `EdgeInsets.all(N)`, `SizedBox(height: N)` with numeric literals | Use `AppSpacing.xs/sm/md/lg/xl/xxl` |
-| Raw TextStyle | `TextStyle(fontSize: N)` | Use `Theme.of(context).textTheme` |
-| Small touch targets | `SizedBox` with width/height < 48 wrapping `GestureDetector`/`InkWell` | 48×48 dp platform guideline (WCAG 2.5.8 AA floor is 24×24); assert with `androidTapTargetGuideline` in widget tests |
-
-Commands to run:
 ```bash
-# Hardcoded colors
-grep -rn "Color(0x\|Colors\." lib/ --include="*.dart" | grep -v ".g.dart" | grep -v ".freezed.dart" | grep -v "test/" | grep -v "// ignore-design"
-
-# Raw spacing
-grep -rn "EdgeInsets\.\(all\|symmetric\|only\)([0-9]" lib/ --include="*.dart" | grep -v ".g.dart" | grep -v ".freezed.dart" | grep -v "// ignore-design"
-
-# Raw TextStyle
-grep -rn "TextStyle(fontSize:" lib/ --include="*.dart" | grep -v ".g.dart" | grep -v ".freezed.dart" | grep -v "// ignore-design"
+python3 .claude/scripts/check-design-system.py --root . > /tmp/ds-gate.log 2>&1; echo "DESIGN GATE EXIT:$?"; cat /tmp/ds-gate.log
+# changed files only (no project-level checks such as icon family or parallel scales):
+python3 .claude/scripts/check-design-system.py --root . --files $(git diff --name-only --diff-filter=AM HEAD) ; echo "EXIT:$?"
+# a project that has adopted DESIGN.md can make its absence an error:
+python3 .claude/scripts/check-design-system.py --root . --require-design-md; echo "EXIT:$?"
 ```
 
-### 3. Web Design Checks (Angular `src/app/`, React `src/**/*.tsx|jsx`)
+Exit codes: `0` PASS (warnings may print), `1` FAIL (errors), `2` BROKEN (detector selftest failed or bad usage). `NOT APPLICABLE` prints when no Flutter, Angular or React source exists under the root. Report the gate's own exit code; never pipe it into `tail`/`grep` before reading it. The `--files` form is vacuous when nothing changed: say how many files it saw.
 
-These mirror the write-time hookify rules (`.claude/hookify.design-no-*-angular.local.md`). Tailwind 4 numeric utilities (`p-4`, `gap-2`, `mt-6`) **are** the spacing scale (multiples of `--spacing`), so they are allowed; arbitrary values are not.
+## 2. What it checks
 
-| Check | Flags | Use instead |
-|---|---|---|
-| Literal colours | `bg-[#…]`, `text-[rgb(…)]`, `color: #…`, `background: oklch(…)` | daisyUI semantic tokens (`bg-primary`, `text-base-content`), `var(--color-…)` |
-| Arbitrary spacing | `p-[13px]`, `gap-x-[1.1rem]`, `style="margin: 12px"` | The numeric scale (`p-3`) or daisyUI component spacing |
-| Raw typography | `text-[14px]`, `font-[Arial]`, `font-size: 14px` | `text-sm`, `text-lg`, `font-sans` |
-| Inline styles | `style="…"` in templates | Tailwind utilities |
-| daisyUI 4 classes | `input-bordered`, `select-bordered`, `textarea-bordered`, `file-input-bordered`, `form-control`, `label-text`, `card-bordered`, `btn-group` | v5: `input`, `fieldset`/`fieldset-legend`, `label`, `card-border`, `join` (v4 names emit no CSS in daisyUI 5) |
-| Spacing tokens that shadow `max-w-*` | `--spacing-xs/sm/md/lg/xl:` in `@theme` | The default `--spacing` multiplier; non-size names (`--spacing-gutter`) |
-| Muted text below contrast floor | `text-base-content/10`…`/50` on text | `/60` minimum on `base-100`, `/70` on `base-200`/`base-300` (warn only; fine on decorative or disabled elements) |
+| Rule | Stack | Flags | Use instead |
+|---|---|---|---|
+| `DS-COLOR` | all | `Color(0x…)`, `Color.from(…)`, `Colors.red`, any quoted string that is exactly a hex colour in web code (status maps, constants, ternaries, `statusColor="#E53935"`; lines with `href`/`fragment`/`routerLink`/`id` skipped), a theme variable re-declared with a literal outside the global stylesheet, `bg-[#…]`, `color: #…`, `oklch(…)` outside token definitions, Tailwind named palettes (`text-red-500`) | `colorScheme`/ThemeExtension roles; `bg-primary`, `text-base-content`, `text-muted-foreground`, `var(--color-…)` |
+| `DS-SPACING` | all | `EdgeInsets.all(13)`, `SizedBox(height: 12)`, `SizedBox.square(dimension: 13)`, `p-[13px]`, `padding: 12px`, `style={{ margin: 8 }}` | `AppSpacing.*`; Tailwind numeric scale (`p-3`, `gap-2`) |
+| `DS-SHAPE` | all | `BorderRadius.circular(12)`, `Radius.circular(8)`, `border-radius: 13px`, `rounded-[13px]`, `--radius-card: 3px` outside the global stylesheet | `AppRadius.*`; `rounded-box`/`rounded-field`, `var(--radius-…)` |
+| `DS-TYPE` | all | `fontSize: 18`, `fontFamily: '…'`, `text-[15px]`, `font-[…]`, `font-size:`/`font-family:` in component styles | `TextTheme` roles; `text-sm`, `text-lg`, theme font |
+| `DS-INLINE-STYLE` | Angular | `style="…"` in templates | utilities / component styles with tokens |
+| `DS-DAISYUI4` | web | `input-bordered`, `form-control`, `label-text`, `card-bordered`, `btn-group` | v5 `input`, `fieldset`/`fieldset-legend`, `label`, `card-border`, `join` |
+| `DS-SPACING-SHADOW` | web | `--spacing-xs…2xl:` (shadows `max-w-*` in Tailwind 4) | default `--spacing` multiplier |
+| `DS-TIER` | all | shared-library component without line-1 `// Tier: Atom\|Molecule\|Organism` | decision tree: `design-system/reference/atomic-decision-tree.md` |
+| `DS-PRESENTATIONAL` | all | shared-library component using Riverpod `ref`, repositories, `HttpClient`, injected services/stores, TanStack Query, global stores, `fetch`, `features/` imports | move data work to the smart container; pass tone/variant enums |
+| `DS-ICON-ISOLATION` / `DS-ICON-FAMILY` | all | icon package imported in feature code; more than one icon family per app | the project icon wrapper; one family (DESIGN.md) |
+| `DS-ANIM` | all | Lottie/Rive runtime imported outside a shared animation wrapper | the wrapper (lifecycle, static fallback, reduced motion) |
+| `DS-SCALE` | Flutter | two classes for one token family anywhere in the workspace (`AppSpacing` + `SpacingTokens`, or `AppSpacing` in two packages) | one scale per family |
+| `DS-AUTHORITY` | Flutter | colour literals in more than one token root (`lib/theme/` beside `design_system/`) | one token root |
+| `DS-REDUCED-MOTION` | web | a daisyUI `loading-*` indicator in an app whose global stylesheet lacks the `.loading` reduced-motion override (SMIL ignores the media query) | the override in `src/styles.css` (`daisyui-v5-components.md`) or `motion-reduce:hidden` |
+| `DS-MUTED-TEXT` | web (warning) | `text-base-content/10`…`/50` on text | `/60` on `base-100`, `/70` on `base-200`/`base-300` |
 
-Commands (POSIX ERE via `grep -E`, portable across BSD and GNU grep; no `\d`). Each excludes lines carrying `ignore-design: <reason>`; a bare `ignore-design` without a reason does not exempt:
-```bash
-# INC is an array: a string expanded as $INC stays ONE argument in zsh, so grep searches nothing (false PASS).
-WEB="src/app"; INC=(--include='*.html' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.css' --include='*.scss')
-X='ignore-design:[[:space:]]*[^[:space:]]'
-# Literal colours (token/theme stylesheets are where literals belong: exclude them)
-grep -rnE "${INC[@]}" '(bg|text|border|ring|fill|stroke|from|via|to|outline)-\[(#|rgba?\(|hsla?\(|oklch\(|oklab\(|hwb\()|(background(-color)?|[^a-z-]color|border(-[a-z]+)?-color|fill|stroke|(background|border|outline)Color)[[:space:]]*:[[:space:]]*['"'"'"]?(#[0-9a-fA-F]{3,8}|(rgba?|hsla?|oklch|oklab|hwb)\()' "$WEB" \
-  | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
-# Arbitrary spacing values and inline px spacing
-grep -rnE "${INC[@]}" '(^|[[:space:]"'"'"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^]v][^]]*\]|style="[^"]*(margin|padding|gap)[a-z-]*[[:space:]]*:[[:space:]]*-?[0-9.]+px|style=\{\{[^}]*(margin|padding|gap)[A-Za-z]*[[:space:]]*:[[:space:]]*['"'"'"]?-?[0-9]' "$WEB" | grep -vE '\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
-# Raw typography
-grep -rnE "${INC[@]}" 'text-\[[0-9.]+(px|rem|em)\]|font-\[[^]v][^]]*\]|font-size[[:space:]]*:[[:space:]]*[0-9]|fontSize[[:space:]]*:[[:space:]]*['"'"'"]?[0-9]' "$WEB" | grep -vE '(tokens?|theme)[^/]*\.s?css:|\.(spec|test)\.[jt]sx?:' | grep -vE "$X"
-# Inline styles in templates
-grep -rnE --include='*.html' 'style="' "$WEB" | grep -vE "$X"
-# daisyUI 4 class names
-grep -rnE "${INC[@]}" '\b(input|select|textarea|file-input)-bordered\b|\bform-control\b|\blabel-text(-alt)?\b|\bcard-bordered\b|\bbtn-group\b' "$WEB" | grep -vE "$X"
-# Spacing tokens shadowing max-w-*
-grep -rnE --include='*.css' --include='*.scss' -- '--spacing-(xs|sm|md|lg|xl|2xl)[[:space:]]*:' src/
-# Muted text below the contrast floor (warn)
-grep -rnE "${INC[@]}" 'text-base-content/(10|20|30|40|50)\b' "$WEB" | grep -vE "$X"
-```
-For React projects set `WEB=src`. Form-control labelling is an accessibility check, not a regex check: use `@angular-eslint/template` accessibility rules or `eslint-plugin-jsx-a11y-x` (React, ESLint 10), and the `accessibility-auditor` agent.
+Out of scope by design: token-definition files and CSS custom-property declarations (that is where literals belong), generated files, tests, and CLI-owned UI-kit folders (`src/components/ui/`, Spartan `libs/ui/`). Literal `Duration(...)` values are not flagged (timeouts and debounces are legitimate): motion durations are a review item (`AppMotion`). Touch-target size, contrast in context and label association are runtime/accessibility checks and the `accessibility-auditor` agent's job.
+- Flutter targets: widget tests with `androidTapTargetGuideline` / `textContrastGuideline`; device flows with Maestro.
+- Web targets (Angular, React): Playwright + axe.
 
-### 4. Report
-
-Output results in this format:
+## 3. Report
 
 ```
 ## Design System Lint Report
-
-### Flutter Violations
-- [file:line] Hardcoded color: `Colors.blue` → use `Theme.of(context).colorScheme.primary`
-- [file:line] Raw spacing: `EdgeInsets.all(16)` → use `EdgeInsets.all(AppSpacing.md)`
-
-### Web Violations
-- [file:line] Literal colour: `bg-[#3b82f6]` → use `bg-primary`
-- [file:line] Arbitrary spacing: `p-[13px]` → use `p-3`
-- [file:line] daisyUI 4 class: `input-bordered` → remove (v5 `input` is bordered by default)
-
-### Summary
-- Total violations: [N]
-- Status: PASS (0 violations) / FAIL (1+ violations). Show each grep command's own exit status: 1 = no match, 2 = grep error (a broken pattern is FAIL, not PASS)
+DESIGN.md: <path> (canonical) | missing (warning)
+Gate: python3 .claude/scripts/check-design-system.py --root . → EXIT <n>
+Scanned: <N> files (flutter a, angular b, react c)
+Findings: <file:line> <RULE> <message> :: <snippet>   (one per line, as printed)
+Status: PASS / FAIL / BROKEN / NOT APPLICABLE
 ```
 
-### 5. Exception Policy
+## 4. Exception policy
 
-Lines containing `// ignore-design: <reason>` or `<!-- ignore-design: <reason> -->` are excluded from checks. The reason is required; a bare marker does not exempt.
+`ignore-design: <reason>` (12+ characters of reason) on the hit line or the comment line directly above exempts that line only. A bare marker, a short reason or a marker elsewhere in the file does not. Tier markers cannot be exempted: move a non-component file out of the governed folder instead. Five or more markers in one file means the design system needs extending: raise it.
 
 ## Scope
 
-- Flutter: `lib/` only (not `test/`, not generated files)
-- Web: Angular `src/app/`, React `src/` (not `node_modules/`, not generated files, not `*.spec.ts`)
-- Accessibility (labels, focus, contrast in context) is out of scope here: use the `accessibility-auditor` agent
-- Run this before `/review-code` to catch design drift early
+- Flutter: `lib/` of each app and package (`pubspec.yaml` root). Angular / React: `src/` of each `package.json` root that depends on `@angular/core` / `react`.
+- Run before `/review-code`; `/verify` runs the same gate for UI stacks.

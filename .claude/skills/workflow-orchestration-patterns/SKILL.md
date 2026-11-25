@@ -16,7 +16,7 @@ last-reviewed: "2026-11-23"
 
 **NO WORKFLOW WITHOUT DETERMINISM ENFORCEMENT AND IDEMPOTENT ACTIVITIES — non-deterministic workflow code causes replay failures; non-idempotent activities cause duplicate charges, double-sends, and data corruption**
 
-# Workflow Orchestration Patterns — Temporal + Java 21 / Python 3.14 / NestJS 11.x
+# Workflow Orchestration Patterns — Temporal + Java 21 / Python 3.14 / NestJS 12.x
 
 ## Quick Scaffold
 
@@ -33,7 +33,7 @@ temporal server start-dev
 # Python 3.14 — uv add
 uv add "temporalio==1.36.1"   # executed: reference/implementation-playbook.md (Python 3.14.10)
 
-# NestJS 11.x — npm
+# NestJS 12.x — npm
 npm install @temporalio/client @temporalio/worker @temporalio/workflow @temporalio/activity
 ```
 

@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
 Workflow modules import activity types through `with workflow.unsafe.imports_passed_through():` so the sandbox does not re-import them on every replay.
 
-### NestJS 11.x / TypeScript
+### NestJS 12.x / TypeScript
 
 ```typescript
 // worker.ts — run as separate process

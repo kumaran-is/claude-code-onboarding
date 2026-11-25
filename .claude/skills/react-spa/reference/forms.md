@@ -10,7 +10,12 @@
 ```tsx
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useId } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
 import { newProjectSchema, type NewProject } from '../model/project'
 
 type ProjectFormProps = { onSubmit: (values: NewProject) => Promise<void> }
@@ -18,7 +23,7 @@ type ProjectFormProps = { onSubmit: (values: NewProject) => Promise<void> }
 export function ProjectForm({ onSubmit }: ProjectFormProps) {
   const id = useId()
   const {
-    register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -35,40 +40,54 @@ export function ProjectForm({ onSubmit }: ProjectFormProps) {
 
   return (
     <form onSubmit={handleSubmit(submit)} noValidate>
-      <div className="field">
-        <label htmlFor={`${id}-name`}>Project name</label>
-        <input
-          id={`${id}-name`}
-          aria-invalid={errors.name ? true : undefined}
-          aria-describedby={errors.name ? `${id}-name-error` : undefined}
-          {...register('name')}
+      <FieldGroup>
+        {/* Controller hands RHF the Input's ref (field.ref), so a failed submit focuses the first invalid field. */}
+        <Controller
+          name="name"
+          control={control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={`${id}-name`}>Project name</FieldLabel>
+              <Input
+                {...field}
+                id={`${id}-name`}
+                aria-invalid={fieldState.invalid ? true : undefined}
+                aria-describedby={fieldState.invalid ? `${id}-name-hint ${id}-name-error` : `${id}-name-hint`}
+              />
+              <FieldDescription id={`${id}-name-hint`}>Shown in the project list.</FieldDescription>
+              {fieldState.invalid && <FieldError id={`${id}-name-error`} errors={[fieldState.error]} />}
+            </Field>
+          )}
         />
-        {errors.name && (
-          <p id={`${id}-name-error`} className="field-error">
-            {errors.name.message}
-          </p>
-        )}
-      </div>
-      <div className="field">
-        <label htmlFor={`${id}-email`}>Owner email</label>
-        <input
-          id={`${id}-email`}
-          type="email"
-          autoComplete="email"
-          aria-invalid={errors.ownerEmail ? true : undefined}
-          aria-describedby={errors.ownerEmail ? `${id}-email-error` : undefined}
-          {...register('ownerEmail')}
+        <Controller
+          name="ownerEmail"
+          control={control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={`${id}-email`}>Owner email</FieldLabel>
+              <Input
+                {...field}
+                id={`${id}-email`}
+                type="email"
+                autoComplete="email"
+                aria-invalid={fieldState.invalid ? true : undefined}
+                aria-describedby={fieldState.invalid ? `${id}-email-hint ${id}-email-error` : `${id}-email-hint`}
+              />
+              <FieldDescription id={`${id}-email-hint`}>Receives access notices.</FieldDescription>
+              {fieldState.invalid && <FieldError id={`${id}-email-error`} errors={[fieldState.error]} />}
+            </Field>
+          )}
         />
-        {errors.ownerEmail && (
-          <p id={`${id}-email-error`} className="field-error">
-            {errors.ownerEmail.message}
-          </p>
+        {errors.root?.server && (
+          <Alert variant="destructive">
+            <AlertDescription>Could not create the project: {errors.root.server.message}</AlertDescription>
+          </Alert>
         )}
-      </div>
-      {errors.root?.server && <p role="alert">Could not create the project: {errors.root.server.message}</p>}
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Creating…' : 'Create project'}
-      </button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting && <Spinner data-icon="inline-start" aria-hidden="true" />}
+          {isSubmitting ? 'Creating…' : 'Create project'}
+        </Button>
+      </FieldGroup>
     </form>
   )
 }
@@ -88,8 +107,8 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ProjectForm } from './ProjectForm'
 
-describe('ProjectForm', () => {
-  it('blocks submit, marks fields invalid and links the error text', async () => {
+describe('ProjectForm (shadcn Field + React Hook Form Controller)', () => {
+  it('blocks submit, marks fields invalid, links the error text and focuses the first invalid field', async () => {
     const onSubmit = vi.fn(async () => {})
     render(<ProjectForm onSubmit={onSubmit} />)
     const user = userEvent.setup()
@@ -98,10 +117,21 @@ describe('ProjectForm', () => {
 
     const name = screen.getByLabelText('Project name')
     expect(name).toHaveAttribute('aria-invalid', 'true')
-    expect(name).toHaveAccessibleDescription('Name must be at least 3 characters')
-    expect(screen.getByLabelText('Owner email')).toHaveAccessibleDescription('Enter a valid email address')
+    // The hint (FieldDescription) and the FieldError are both part of the accessible description.
+    expect(name).toHaveAccessibleDescription(/Name must be at least 3 characters/)
+    const describedBy = name.getAttribute('aria-describedby')?.split(' ') ?? []
+    expect(describedBy).toHaveLength(2)
+    expect(document.getElementById(describedBy[1] ?? '')).toHaveTextContent('Name must be at least 3 characters')
+    expect(screen.getByLabelText('Owner email')).toHaveAccessibleDescription(/Enter a valid email address/)
     expect(name).toHaveFocus()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('a field without an error is described by its hint only and is not invalid', () => {
+    render(<ProjectForm onSubmit={async () => {}} />)
+    const name = screen.getByLabelText('Project name')
+    expect(name).not.toHaveAttribute('aria-invalid')
+    expect(name).toHaveAccessibleDescription('Shown in the project list.')
   })
 
   it('submits parsed, trimmed values', async () => {
@@ -125,46 +155,22 @@ describe('ProjectForm', () => {
 })
 ```
 
-## Accessible dialog (native `<dialog>`)
+## Accessible dialog (shadcn `Dialog`, Base UI)
 
-`src/shared/ui/Dialog.tsx`
+The create form opens in the shadcn `Dialog` (`src/components/ui/dialog.tsx`, generated by
+`npx shadcn@4.23.0 add dialog`, imports `@base-ui/react/dialog`). Base UI supplies the focus trap, Escape,
+the inert background and focus return; the trigger is composed with `render={<Button />}` (Base UI has no
+`asChild`). Every dialog has a `DialogTitle` (use `className="sr-only"` if it must be hidden); the close
+button keeps its `sr-only` "Close" label, or axe fails `button-name` (planted and verified). Wiring:
+`ProjectsPage` in `server-state-and-api.md`.
 
-```tsx
-import { useEffect, useId, useRef, type ReactNode } from 'react'
-
-type DialogProps = { open: boolean; title: string; onClose: () => void; children: ReactNode }
-
-/**
- * Modal built on native <dialog>: showModal() gives focus containment, Escape, an inert background,
- * and focus return to the opener on close. Presentational: no data fetching, no router hooks.
- */
-export function Dialog({ open, title, onClose, children }: DialogProps) {
-  const ref = useRef<HTMLDialogElement>(null)
-  const titleId = useId()
-
-  // Syncs React state with an imperative browser API: a legitimate effect.
-  useEffect(() => {
-    const dialog = ref.current
-    if (!dialog) return
-    if (open && !dialog.open) dialog.showModal()
-    if (!open && dialog.open) dialog.close()
-  }, [open])
-
-  return (
-    <dialog ref={ref} aria-labelledby={titleId} onClose={onClose}>
-      <h2 id={titleId}>{title}</h2>
-      {children}
-      <button type="button" onClick={onClose}>
-        Cancel
-      </button>
-    </dialog>
-  )
-}
-```
-
-`showModal()` gives focus containment, Escape to close, an inert background and focus return to the
-opener; Playwright asserts Escape closes it and focus returns to "New project" (see `testing.md`).
 The form is remounted on each opening (`{dialogOpen && <ProjectForm key=... />}`), so no reset effect.
+Playwright asserts Tab stays inside the dialog, Escape closes it and focus returns to "New project"
+(`e2e/dialog-menu.spec.ts` in `tailwind-shadcn.md`). A Base UI toast also has `role="dialog"`, so tests
+query the dialog by name: `getByRole('dialog', { name: 'New project' })`.
+
+An app without a component library can use native `<dialog>` + `showModal()` (focus containment, Escape,
+inert background) behind an effect that follows the `open` prop.
 
 ## React 19 Actions (no shared cache)
 
@@ -186,6 +192,10 @@ optimistic cache writes for the same data.
 import { useActionState, useId, useOptimistic } from 'react'
 import { useFormStatus } from 'react-dom'
 import { z } from 'zod'
+import { Button } from '@/components/ui/button'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
 import { logger } from '@/shared/lib/logger'
 
 const displayNameSchema = z.string().trim().min(2, 'Name must be at least 2 characters').max(40, 'Name must be at most 40 characters')
@@ -197,9 +207,10 @@ type DisplayNameFormProps = { initialName: string; save: (name: string) => Promi
 function SubmitButton() {
   const { pending } = useFormStatus()
   return (
-    <button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending}>
+      {pending && <Spinner data-icon="inline-start" aria-hidden="true" />}
       {pending ? 'Saving…' : 'Save name'}
-    </button>
+    </Button>
   )
 }
 
@@ -233,26 +244,24 @@ export function DisplayNameForm({ initialName, save }: DisplayNameFormProps) {
 
   return (
     <form action={submit} noValidate>
+      <FieldGroup>
       <p>
         Current name: <strong data-testid="current-name">{optimisticName}</strong>
       </p>
-      <div className="field">
-        <label htmlFor={`${id}-name`}>Display name</label>
+      <Field data-invalid={!!state.error}>
+        <FieldLabel htmlFor={`${id}-name`}>Display name</FieldLabel>
         {/* React resets an uncontrolled form after the Action; defaultValue={draft} keeps the user's input on error. */}
-        <input
+        <Input
           id={`${id}-name`}
           name="displayName"
           defaultValue={state.draft}
           aria-invalid={state.error ? true : undefined}
           aria-describedby={state.error ? `${id}-error` : undefined}
         />
-        {state.error && (
-          <p id={`${id}-error`} role="alert" className="field-error">
-            {state.error}
-          </p>
-        )}
-      </div>
+        {state.error && <FieldError id={`${id}-error`}>{state.error}</FieldError>}
+      </Field>
       <SubmitButton />
+      </FieldGroup>
     </form>
   )
 }
@@ -368,6 +377,8 @@ export const announcementQuery = queryOptions({
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { session } from '@/app/session'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { FocusFirst } from '@/shared/ui/FocusFirst'
 import { SafeHtml } from '@/shared/ui/SafeHtml'
 import { announcementQuery, settingsApi } from '../api/settings.api'
@@ -384,26 +395,30 @@ export function SettingsPage() {
   const announcement = useQuery(announcementQuery)
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
       {/* React 19 hoists <title> into <head>; no helmet library needed. */}
       <title>Settings · Projects app</title>
       <h1>Settings</h1>
-      {announcement.isError && <p role="alert">The announcement could not be loaded.</p>}
+      {announcement.isError && (
+        <Alert variant="destructive">
+          <AlertDescription>The announcement could not be loaded.</AlertDescription>
+        </Alert>
+      )}
       {announcement.data && <SafeHtml html={announcement.data.html} />}
       <DisplayNameForm initialName={session.get()?.userName ?? ''} save={settingsApi.saveDisplayName} />
       <SettingsTabs panels={panels} />
       <h2>Release notes</h2>
       <ReleaseNotes notesPromise={notesPromise} onRetry={() => setNotesPromise(settingsApi.releaseNotes())} />
-      <button type="button" aria-expanded={dangerOpen} onClick={() => setDangerOpen((open) => !open)}>
+      <Button variant="outline" aria-expanded={dangerOpen} onClick={() => setDangerOpen((open) => !open)}>
         Danger zone
-      </button>
+      </Button>
       {dangerOpen && (
         <FocusFirst active={dangerOpen}>
           <p>These actions cannot be undone.</p>
-          <button type="button">Delete account</button>
+          <Button variant="destructive">Delete account</Button>
         </FocusFirst>
       )}
-    </>
+    </div>
   )
 }
 ```

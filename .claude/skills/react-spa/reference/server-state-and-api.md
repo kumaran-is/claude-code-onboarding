@@ -159,7 +159,7 @@ export function useCreateProject() {
     onMutate: async (input, context) => {
       await context.client.cancelQueries({ queryKey: projectKeys.list() })
       const previous = context.client.getQueryData<Project[]>(projectKeys.list())
-      const optimistic: Project = { id: `optimistic-${input.name}`, ...input }
+      const optimistic: Project = { id: `optimistic-${crypto.randomUUID()}`, ...input }
       context.client.setQueryData<Project[]>(projectKeys.list(), (old = []) => [...old, optimistic])
       return { previous }
     },
@@ -247,33 +247,138 @@ describe('useCreateProject optimistic update', () => {
 
 ```tsx
 import { useQuery } from '@tanstack/react-query'
+import {
+  createColumnHelper,
+  createSortedRowModel,
+  rowSortingFeature,
+  sortFn_alphanumeric,
+  tableFeatures,
+  useTable,
+  type Column,
+} from '@tanstack/react-table'
+import { ArrowDownIcon, FolderIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { projectQueries } from '../api/projects.queries'
+import type { Project } from '../model/project'
+
+// TanStack Table v9: features are registered explicitly. Module scope keeps `features` and `columns` stable.
+const features = tableFeatures({
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+  sortFns: { alphanumeric: sortFn_alphanumeric },
+})
+const columnHelper = createColumnHelper<typeof features, Project>()
+
+function SortButton({ column, label }: { column: Column<typeof features, Project, string>; label: string }) {
+  const sorted = column.getIsSorted()
+  const Icon = sorted === 'asc' ? ArrowUpIcon : sorted === 'desc' ? ArrowDownIcon : ArrowUpDownIcon
+  return (
+    <Button variant="ghost" className="-ml-2.5" onClick={column.getToggleSortingHandler()}>
+      {label}
+      <Icon data-icon="inline-end" aria-hidden="true" />
+    </Button>
+  )
+}
+
+const columns = columnHelper.columns([
+  columnHelper.accessor('name', {
+    header: ({ column }) => <SortButton column={column} label="Name" />,
+    sortFn: 'alphanumeric',
+  }),
+  columnHelper.accessor('ownerEmail', {
+    header: ({ column }) => <SortButton column={column} label="Owner" />,
+    sortFn: 'alphanumeric',
+    cell: (info) => <span className="break-all">{info.getValue()}</span>,
+  }),
+])
+
+const ariaSort = { asc: 'ascending', desc: 'descending' } as const
+
+function ProjectTable({ projects }: { projects: Project[] }) {
+  const table = useTable({ features, columns, data: projects, getRowId: (project) => project.id })
+  return (
+    <Table aria-label="Projects">
+      <TableHeader>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id}>
+            {group.headers.map((header) => {
+              const sorted = header.column.getIsSorted()
+              return (
+                <TableHead key={header.id} aria-sort={sorted ? ariaSort[sorted] : 'none'}>
+                  {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                </TableHead>
+              )
+            })}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows.map((row) => (
+          <TableRow key={row.id}>
+            {row.getAllCells().map((cell) => (
+              <TableCell key={cell.id}>
+                <table.FlexRender cell={cell} />
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
 
 export function ProjectList() {
   const { data, isPending, isError, isFetching, refetch } = useQuery(projectQueries.list())
 
-  if (isPending) return <p role="status">Loading projects…</p>
-  if (isError)
+  // Persistent live region: it is mounted before its text changes, so screen readers announce the update.
+  const status = (
+    <p role="status" className="sr-only">
+      {isFetching ? 'Refreshing…' : ''}
+    </p>
+  )
+
+  if (isPending)
     return (
-      <div role="alert">
-        <p>Projects could not be loaded.</p>
-        <button type="button" onClick={() => refetch()}>
-          Retry
-        </button>
+      <div role="status" className="flex flex-col gap-2">
+        <span className="sr-only">Loading projects…</span>
+        <Skeleton className="h-10 w-full" aria-hidden="true" />
+        <Skeleton className="h-10 w-full" aria-hidden="true" />
+        <Skeleton className="h-10 w-full" aria-hidden="true" />
       </div>
     )
-  if (data.length === 0) return <p>No projects yet. Create the first one.</p>
+  if (isError)
+    return (
+      <Alert variant="destructive" className="flex flex-col items-start gap-2">
+        <AlertDescription>Projects could not be loaded.</AlertDescription>
+        <Button variant="outline" onClick={() => refetch()}>
+          Retry
+        </Button>
+      </Alert>
+    )
+  if (data.length === 0)
+    return (
+      <>
+        {status}
+        <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FolderIcon aria-hidden="true" />
+          </EmptyMedia>
+          <EmptyTitle>No projects yet</EmptyTitle>
+          <EmptyDescription>Create the first one with the New project button.</EmptyDescription>
+        </EmptyHeader>
+        </Empty>
+      </>
+    )
 
   return (
     <>
-      {isFetching && <p role="status">Refreshing…</p>}
-      <ul aria-label="Projects">
-        {data.map((project) => (
-          <li key={project.id}>
-            {project.name} <span>({project.ownerEmail})</span>
-          </li>
-        ))}
-      </ul>
+      {status}
+      <ProjectTable projects={data} />
     </>
   )
 }
@@ -285,7 +390,7 @@ a small status instead of blanking the list. Never return `[]`/`null` on error.
 `src/features/projects/components/ProjectList.test.tsx`
 
 ```tsx
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
@@ -294,13 +399,42 @@ import { renderWithQuery } from '@/test/render'
 import { ProjectList } from './ProjectList'
 
 const url = `${window.location.origin}/api/projects`
+const rows = [
+  { id: '2', name: 'Beta', ownerEmail: 'b@example.com' },
+  { id: '3', name: 'Gamma', ownerEmail: 'g@example.com' },
+  { id: '1', name: 'Alpha', ownerEmail: 'a@example.com' },
+]
+
+function projectNames() {
+  const table = screen.getByRole('table', { name: 'Projects' })
+  return within(table)
+    .getAllByRole('row')
+    .slice(1) // header row
+    .map((row) => within(row).getAllByRole('cell')[0]?.textContent)
+}
 
 describe('ProjectList', () => {
-  it('shows a loading state, then the projects', async () => {
+  it('shows a skeleton loading state, then the projects', async () => {
     server.use(http.get(url, () => HttpResponse.json([{ id: '1', name: 'Alpha', ownerEmail: 'a@example.com' }])))
     renderWithQuery(<ProjectList />)
     expect(screen.getByRole('status')).toHaveTextContent('Loading projects')
-    expect(await screen.findByRole('list', { name: 'Projects' })).toHaveTextContent('Alpha')
+    expect(await screen.findByRole('table', { name: 'Projects' })).toHaveTextContent('Alpha')
+  })
+
+  it('keeps a persistent live region: empty at rest, "Refreshing…" during a background refetch', async () => {
+    server.use(http.get(url, () => HttpResponse.json(rows)))
+    const { client } = renderWithQuery(<ProjectList />)
+    await screen.findByRole('table', { name: 'Projects' })
+    const region = screen.getByRole('status')
+    expect(region).toBeEmptyDOMElement()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    server.use(http.get(url, async () => { await gate; return HttpResponse.json(rows) }))
+    void client.invalidateQueries()
+    await vi.waitFor(() => expect(region).toHaveTextContent('Refreshing…'))
+    expect(screen.getByRole('status')).toBe(region) // same node: the region was not re-inserted
+    release()
+    await vi.waitFor(() => expect(region).toBeEmptyDOMElement())
   })
 
   it('shows an empty state for an empty list', async () => {
@@ -317,7 +451,7 @@ describe('ProjectList', () => {
 
     server.use(http.get(url, () => HttpResponse.json([{ id: '2', name: 'Beta', ownerEmail: 'b@example.com' }])))
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByRole('list', { name: 'Projects' })).toHaveTextContent('Beta')
+    expect(await screen.findByRole('table', { name: 'Projects' })).toHaveTextContent('Beta')
   })
 
   it('treats a response that fails schema validation as an error, not as data', async () => {
@@ -339,6 +473,38 @@ describe('ProjectList', () => {
     await vi.waitFor(() => expect(seenSignal?.aborted).toBe(true))
     vi.unstubAllGlobals()
   })
+
+  it('sorts by a column header button: ascending, descending, then back to the data order', async () => {
+    server.use(http.get(url, () => HttpResponse.json(rows)))
+    renderWithQuery(<ProjectList />)
+    await screen.findByRole('table', { name: 'Projects' })
+    const user = userEvent.setup()
+    const nameHeader = screen.getByRole('columnheader', { name: /Name/ })
+    expect(projectNames()).toEqual(['Beta', 'Gamma', 'Alpha'])
+    expect(nameHeader).toHaveAttribute('aria-sort', 'none')
+
+    await user.click(screen.getByRole('button', { name: 'Name' }))
+    expect(projectNames()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(nameHeader).toHaveAttribute('aria-sort', 'ascending')
+
+    await user.click(screen.getByRole('button', { name: 'Name' }))
+    expect(projectNames()).toEqual(['Gamma', 'Beta', 'Alpha'])
+    expect(nameHeader).toHaveAttribute('aria-sort', 'descending')
+
+    await user.click(screen.getByRole('button', { name: 'Name' }))
+    expect(projectNames()).toEqual(['Beta', 'Gamma', 'Alpha'])
+    expect(nameHeader).toHaveAttribute('aria-sort', 'none')
+  })
+
+  it('sorts by the owner column and moves aria-sort with it', async () => {
+    server.use(http.get(url, () => HttpResponse.json(rows)))
+    renderWithQuery(<ProjectList />)
+    await screen.findByRole('table', { name: 'Projects' })
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Owner' }))
+    expect(screen.getByRole('columnheader', { name: /Owner/ })).toHaveAttribute('aria-sort', 'ascending')
+    expect(screen.getByRole('columnheader', { name: /Name/ })).toHaveAttribute('aria-sort', 'none')
+    expect(projectNames()).toEqual(['Alpha', 'Beta', 'Gamma'])
+  })
 })
 ```
 
@@ -351,7 +517,9 @@ and `seenSignal` is `undefined`, so it fails.
 
 ```tsx
 import { useState } from 'react'
-import { Dialog } from '@/shared/ui/Dialog'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { toast } from '@/components/ui/toast'
 import { useCreateProject } from '../api/projects.queries'
 import { ProjectForm } from '../components/ProjectForm'
 import { ProjectList } from '../components/ProjectList'
@@ -364,20 +532,28 @@ export function ProjectsPage() {
   async function create(values: NewProject) {
     await createProject.mutateAsync(values)
     setDialogOpen(false)
+    toast.add({ title: `Project "${values.name}" created`, type: 'success' })
   }
 
   return (
-    <>
-      <h1>Projects</h1>
-      <button type="button" onClick={() => setDialogOpen(true)}>
-        New project
-      </button>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1>Projects</h1>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          {/* The trigger is how Base UI returns focus to the opener when the dialog closes. */}
+          <DialogTrigger render={<Button />}>New project</DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New project</DialogTitle>
+              <DialogDescription>Name the project and say who owns it.</DialogDescription>
+            </DialogHeader>
+            {/* Rendered only while open: the form unmounts on close and remounts on the next opening, so it starts clean (no reset effect). */}
+            {dialogOpen && <ProjectForm onSubmit={create} />}
+          </DialogContent>
+        </Dialog>
+      </div>
       <ProjectList />
-      <Dialog open={dialogOpen} title="New project" onClose={() => setDialogOpen(false)}>
-        {/* key remounts the form so each opening starts clean: no reset effect needed */}
-        {dialogOpen && <ProjectForm key="new-project" onSubmit={create} />}
-      </Dialog>
-    </>
+    </div>
   )
 }
 ```

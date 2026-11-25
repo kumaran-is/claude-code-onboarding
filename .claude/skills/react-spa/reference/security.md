@@ -13,7 +13,9 @@
 2. URLs from data go through `safeHref` before `href`/`src` (`javascript:` and `data:` dropped).
 3. Post-login redirects go through `safeReturnPath` (same-origin path only).
 4. No tokens in `localStorage`/`sessionStorage` (readable by any XSS). Prefer an HttpOnly, Secure,
-   SameSite cookie set by a BFF; otherwise keep the access token in memory and refresh via cookie.
+   SameSite cookie set by a same-origin BFF (`apiRequest` sends cookies same-origin only; a cross-origin
+   cookie API needs `credentials: 'include'` for that origin: `server-state-and-api.md`); otherwise keep the
+   access token in memory and refresh via cookie.
 5. Credentials only to allow-listed API origins (`apiRequest` in `server-state-and-api.md`).
 6. `VITE_*` variables are public: Vite exposes every variable starting with `envPrefix` (default
    `'VITE_'`, from `vite/dist/node/index.d.ts`) to client code and inlines it into the bundle.
@@ -164,11 +166,10 @@ logs a console error) fails the test.
 `e2e/react19.spec.ts`
 
 ```ts
-import AxeBuilder from '@axe-core/playwright'
+import { expect, test } from './fixtures.ts'
+import { axeViolations, signIn } from './support.ts'
 import type { Page } from '@playwright/test'
-import { expect, test } from './fixtures.ts' // fails a test on any console error, page error or 5xx
 
-const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 const ATTACK = '<img src="x" alt="" onerror="window.__pwned=1"><b>Maintenance on Sunday</b>'
 
 async function openSettings(page: Page) {
@@ -190,9 +191,7 @@ async function openSettings(page: Page) {
     await new Promise((resolve) => setTimeout(resolve, 300))
     await route.fulfill({ json: { name: (route.request().postDataJSON() as { name: string }).name } })
   })
-  await page.goto('/app/settings')
-  await page.getByLabel('Name').fill('Dana')
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  await signIn(page, '/app/settings')
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
 }
 
@@ -224,8 +223,7 @@ test('React 19.3 settings page: metadata, Actions, use(), ViewTransition, Fragme
   await page.getByRole('button', { name: 'Danger zone' }).click()
   await expect(page.getByRole('button', { name: 'Delete account' })).toBeFocused()
 
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
-  expect(violations.map((v) => v.id)).toEqual([])
+  expect(await axeViolations(page)).toEqual([])
 })
 
 test.describe('control', () => {

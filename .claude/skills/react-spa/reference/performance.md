@@ -50,6 +50,7 @@ Actions, a `<Suspense>` reveal); urgent updates commit immediately.
 
 ```tsx
 import { addTransitionType, startTransition, useState, ViewTransition } from 'react'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 const tabs = ['Profile', 'Notifications', 'Privacy'] as const
 type Tab = (typeof tabs)[number]
@@ -63,6 +64,7 @@ export function SettingsTabs({ panels }: { panels: Record<Tab, string> }) {
   const [active, setActive] = useState<Tab>('Profile')
 
   function select(next: Tab) {
+    if (next === active) return
     startTransition(() => {
       addTransitionType(tabs.indexOf(next) > tabs.indexOf(active) ? 'forward' : 'back')
       setActive(next)
@@ -71,13 +73,22 @@ export function SettingsTabs({ panels }: { panels: Record<Tab, string> }) {
 
   return (
     <section aria-label="Settings sections">
-      <div role="group" aria-label="Section">
+      {/* ToggleGroup, not a loop of Buttons with manual active state. An empty value (re-clicking the active item) is ignored. */}
+      <ToggleGroup
+        aria-label="Section"
+        variant="outline"
+        value={[active]}
+        onValueChange={(value) => {
+          const next = tabs.find((tab) => tab === value[0])
+          if (next) select(next)
+        }}
+      >
         {tabs.map((tab) => (
-          <button key={tab} type="button" aria-pressed={tab === active} onClick={() => select(tab)}>
+          <ToggleGroupItem key={tab} value={tab}>
             {tab}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
       <ViewTransition
         key={active}
         enter={{ forward: 'slide-from-right', back: 'slide-from-left', default: 'none' }}

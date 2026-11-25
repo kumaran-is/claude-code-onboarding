@@ -14,67 +14,28 @@
   `button-name`; `<img>` without `alt` → ESLint `jsx-a11y-x/alt-text`.
 - Dialog: Escape closes it and focus returns to the opener; the first invalid field receives focus.
 
-## Styling stack (verified 2026-11-23, Vite 8.3.8)
+## Styling stack (verified 2026-11-24)
 
-The default React stack uses **CSS Modules + CSS custom-property tokens**: no CSS framework and no extra
-dependency (Vite supports `*.module.css` natively and `vite/client` types the import). Token naming, tiers and
-review rules are framework-neutral: `ui-standards-tokens` skill (`reference/ui-design-tokens.md`); do not
-redefine them here.
+The React stack styles with **Tailwind CSS v4 + shadcn/ui** (Base UI primitives): semantic tokens
+(`--background`, `--foreground`, `--muted-foreground`, `--destructive`, ...) in OKLCH under `:root` and
+`.dark`, mapped to utilities by `@theme inline`. The full `src/index.css`, theme provider and evidence are in
+`reference/tailwind-shadcn.md`; token naming and tiers stay framework-neutral in the `ui-standards-tokens`
+skill.
 
-`src/index.css`: tokens in `:root`, a dark set under `prefers-color-scheme`, motion collapsed under
-`prefers-reduced-motion`; components use only `var(--…)`.
+Accessibility consequences verified in Chromium at 375 and 1280 px:
 
-```css
-:root {
-  color-scheme: light dark;
-  --color-bg: #ffffff;
-  --color-fg: #1a1a1a;
-  --color-muted: #4a4a4a;
-  --color-accent: #0b57d0;
-  --color-accent-fg: #ffffff;
-  --color-danger: #b00020;
-  --target-min: 44px;
-  --duration-fast: 150ms;
-  color: var(--color-fg);
-  background: var(--color-bg);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #121212;
-    --color-fg: #ececec;
-    --color-muted: #b8b8b8;
-    --color-accent: #8ab4f8;
-    --color-accent-fg: #0b1a33;
-    --color-danger: #ff8a80;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  :root { --duration-fast: 0ms; }
-}
-:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
-```
-
-`App.module.css` (imported as `import styles from './App.module.css'`, used as `className={styles.button}`):
-
-```css
-.button {
-  min-height: var(--target-min);
-  min-width: var(--target-min);
-  padding-inline: 1rem;
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
-  transition: background-color var(--duration-fast) ease;
-}
-```
-
-Verified in Chromium at 375 and 1280 px: axe (`wcag2a`…`wcag22aa`) reports no violations in light mode
-and with `page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })`. Under reduced motion the
-computed `transition-duration` is `0s`. A planted `#bbb` text on white fails `color-contrast`.
-
-Tailwind is optional. Add it only when the design system is Tailwind-based: `tailwindcss` and
-`@tailwindcss/vite` 4.3.5 (peer `vite ^5.2 || ^6 || ^7 || ^8`; registry-checked, not installed in the
-validation app). Patterns live in the `tailwind-patterns` skill. Never ship two styling systems for the same
-components.
+- axe (`wcag2a`…`wcag22aa`) reports no violations in light **and** dark mode, on the page, with the dialog
+  open and with the menu open. A planted dark `--muted-foreground: oklch(0.32 0 0)` fails `color-contrast`
+  in the two dark tests only.
+- The shadcn default light `--destructive` (`oklch(0.577 0.245 27.325)`) fails `color-contrast` for
+  `text-destructive` on `bg-destructive/10`; the reference app darkens it to `oklch(0.505 0.2 27.5)`. Fix a
+  failing token in `index.css`, never per component.
+- The base layer keeps 44 px controls (`button`, `[role="button"]`, `[role="menuitem"]`, `[role="menuitemradio"]`, inputs; a new item role
+  must be added there, and the theme-menu E2E test measures it). The
+  `:focus-visible` outline is unlayered (shadcn's `outline-none` utility beats `@layer base`) and asserted by a
+  computed-style test, because axe does not check focus indicators; reduced motion collapses animations and view transitions.
+- Axe can flag `color-contrast` on a menu that is still fading in: wait for finite animations before a scan
+  (`e2e/support.ts` in `testing.md`).
 
 ## React specifics
 
@@ -85,7 +46,7 @@ components.
 | Errors | `aria-invalid` + `aria-describedby` to the error text; form-level failure in `role="alert"` |
 | Async states | loading in `role="status"`, failure in `role="alert"` (see `ProjectList`) |
 | Route change | move focus to `<main tabIndex={-1}>` or the page `<h1>`; one `<h1>` per page; set `document.title` per route |
-| Dialogs | native `<dialog>` + `showModal()`; `aria-labelledby` to its heading; focus returns to the opener |
+| Dialogs | shadcn `Dialog` (Base UI) with a `DialogTitle`: focus trap, Escape, focus returns to the opener (asserted in Chromium; jsdom cannot test Tab trapping). Without a component library: native `<dialog>` + `showModal()` |
 | Targets | at least 24×24 CSS px (WCAG 2.2 AA 2.5.8); this toolkit's web baseline is 44 px (`code-standards.md`) |
 | Focus visible | do not remove outlines without a visible replacement; sticky headers must not hide focused elements (2.4.11) |
 | Motion | respect `prefers-reduced-motion` (token collapse above; test with `emulateMedia({ reducedMotion: 'reduce' })`) |

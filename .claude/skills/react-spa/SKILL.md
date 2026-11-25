@@ -1,15 +1,15 @@
 ---
 name: react-spa
-description: "React 19.3 single-page app development (Actions, use, Suspense, ViewTransition, Fragment refs, Trusted Types) with Vite 8, TypeScript 6.0.3, React Router 8 (data mode), TanStack Query 5, React Hook Form + zod 4, Vitest + Testing Library + MSW, and Playwright + axe. Use when building or changing React web components, hooks, routes, forms, server state, API clients, auth plumbing, performance or tests. Not for React Native (mobile-developer) and not a Next.js/SSR guide."
+description: "React 19.3 single-page app development (Actions, use, Suspense, ViewTransition, Fragment refs, Trusted Types) with Vite 8, TypeScript 6.0.3, Tailwind CSS v4 + shadcn/ui (Base UI), React Router 8 (data mode), TanStack Query 5, React Hook Form + zod 4, Vitest + Testing Library + MSW, and Playwright + axe. Use when building or changing React web components, hooks, routes, forms, styling and theming, server state, API clients, auth plumbing, performance or tests. Not for React Native (mobile-developer) and not a Next.js/SSR guide."
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch
 metadata:
-  triggers: React, React 19, React 19.3, useActionState, useOptimistic, useFormStatus, ViewTransition, Fragment ref, Trusted Types, Vite, React SPA, tsx component, React hook, useEffect, React Router, TanStack Query, React Query, React Hook Form, zod, Vitest React, Testing Library, MSW, React Compiler
-  related-skills: accessibility-audit, browser-testing, design-system, security-reviewer, ai-chat, web-performance-optimization, typescript-expert
+  triggers: React, React 19, React 19.3, useActionState, useOptimistic, useFormStatus, ViewTransition, Fragment ref, Trusted Types, Vite, React SPA, tsx component, React hook, useEffect, React Router, TanStack Query, React Query, React Hook Form, zod, Vitest React, Testing Library, MSW, React Compiler, Tailwind CSS v4, shadcn/ui, Base UI, dark mode, TanStack Table
+  related-skills: shadcn, tailwind-patterns, accessibility-audit, browser-testing, design-system, security-reviewer, ai-chat, web-performance-optimization, typescript-expert
   domain: frontend
   role: specialist
   scope: implementation
   output-format: code
-last-reviewed: "2026-11-23"
+last-reviewed: "2026-11-24"
 ---
 
 # React SPA Development Skill
@@ -17,7 +17,10 @@ last-reviewed: "2026-11-23"
 > **RECOMMENDED PRACTICE.** This toolkit has no production React history. Everything here is current
 > official guidance plus patterns that were compiled and executed in a disposable Vite app on
 > 2026-11-22/23 (`tsc -b`, ESLint, Vitest, `vite build`, Playwright + axe in Chromium: all exit 0; re-run
-> on React 19.3.1, TypeScript 6.0.3 and Node 26.13.1, 2026-11-23: 33 Vitest tests, 12 Playwright tests).
+> on React 19.3.1, TypeScript 6.0.3 and Node 26.13.1, 2026-11-23; current test counts and evidence: `reference/tailwind-shadcn.md` → Evidence).
+> Tailwind CSS 4.3.5 + shadcn/ui (CLI 4.23.0, Base UI) layer validated 2026-11-24 in a fresh app built with
+> `/scaffold-react-app`'s steps: every gate exit 0, light and dark axe scans, planted faults fail each gate
+> (`reference/tailwind-shadcn.md`).
 > It is not a record of what any team shipped. Where something could not be executed it says
 > **UNVERIFIED — check before use**.
 
@@ -33,7 +36,11 @@ An effect exists only to synchronise with something outside React (a browser API
 |---|---|---|
 | `react`, `react-dom` | `19.3.1` | npm `latest` (19.3.0: 2026-09-09; 19.3.1: 2026-10-14). APIs in "React 19 / 19.3 APIs" below |
 | `vite` / `@vitejs/plugin-react` | `8.3.8` / `6.3.0` | creator `create-vite@9.3.4` (template `react-ts`) |
-| `typescript` | `6.0.3` | **pin it**: the Vite `react-ts` template (creator 9.3.4) ships `typescript ~7.0.2` and no `strict`; `typescript-eslint@8.74.0` peers `typescript >=4.8.4 <6.1.0`, so 6.0.3 is the newest lintable version (decision and evidence: `reference/tooling.md`) |
+| `typescript` | `6.0.3` | **pin it**: the Vite `react-ts` template (creator 9.3.4) ships `typescript ~7.0.2` and no `strict`; `typescript-eslint@8.74.0` peers `typescript >=4.8.4 <6.1.0`, so 6.0.3 is the newest lintable version. TypeScript 7.0.2 (`latest`) type-checks the reference app (`tsc -b` exit 0, 2026-11-24) but cannot be linted: stay on 6.0.3 until `npm view typescript-eslint peerDependencies` admits 7 (evidence: `reference/tooling.md`, `reference/tailwind-shadcn.md`) |
+| `tailwindcss` / `@tailwindcss/vite` / `tw-animate-css` | `4.3.5` / `4.3.5` / `1.4.0` | CSS-first: `@import "tailwindcss"`, no `tailwind.config.js` (`reference/tailwind-shadcn.md`) |
+| `shadcn` (CLI, dev) / `@base-ui/react` / `cn` | `4.23.0` / `1.9.0` / `0.5.2` | Base UI primitives (shadcn default since 2026-07); components are copied into `src/components/ui` and owned by the app |
+| `class-variance-authority` / `lucide-react` / `@fontsource-variable/geist` | `0.7.1` / `1.79.0` / `5.3.0` | written by `shadcn init` (style `base-nova`, icons `lucide`) |
+| `@tanstack/react-table` | `9.3.1` | v9 API (`useTable`, `tableFeatures`); not the v8 `useReactTable` |
 | `react-router` | `8.5.2` | **not** `react-router-dom` (see Routing) |
 | `@tanstack/react-query` (+ eslint plugin) | `5.108.4` | |
 | `react-hook-form` / `@hookform/resolvers` / `zod` | `7.92.0` / `7.0.8` / `4.6.7` | |
@@ -86,7 +93,9 @@ Sources: react.dev/blog "React 19.3" (2026-09-09), react.dev/versions ("Latest v
 
 ```text
 src/
-  main.tsx                     createRoot + StrictMode + QueryClientProvider + RouterProvider
+  main.tsx                     applyStoredTheme + createRoot + StrictMode + ThemeProvider + QueryClientProvider + RouterProvider
+  components/ui/               shadcn components (CLI-added, app-owned; update with add --diff)
+  lib/utils.ts                 cn() (shadcn)
   app/                         routes.tsx, lazy-route.ts, AppLayout.tsx, RouteErrorPage.tsx, query-client.ts, session.ts
   features/<feature>/
     routes/                    route components (lazy-loaded)
@@ -95,9 +104,11 @@ src/
     model/                     zod schemas + inferred types (shared by form and API parse)
   shared/
     ui/                        presentational only: props in, callbacks out. No useQuery, no router hooks, no fetch
+                               (theme-context.ts, theme-provider.tsx, mode-toggle.tsx live here)
     lib/                       http.ts, logger.ts, safe-url.ts (pure utilities; Rule of Three before adding)
   test/                        setup.ts, msw-server.ts, render.tsx
 e2e/                           Playwright specs
+build-tests/                   assertions on the built CSS/JS (Tailwind utilities, React Compiler output)
 ```
 
 A feature imports `shared/*` and its own folders; it never reaches into another feature's internals.
@@ -132,7 +143,7 @@ A feature imports `shared/*` and its own folders; it never reaches into another 
 | Fetch server data | TanStack Query (`useQuery`) |
 | Remount a form each time a dialog opens | render it conditionally with a `key` (see `ProjectsPage` in `reference/server-state-and-api.md`) |
 
-Legitimate effects: sync with a browser API (`<dialog>.showModal()`, focus after navigation),
+Legitimate effects: sync with a browser API (the theme class on `<html>`, focus after navigation),
 subscribe/unsubscribe, third-party widgets. Every effect that starts async work cleans up
 (`AbortController` or an `ignore` flag); otherwise the slower, stale response wins.
 Details and examples: `reference/architecture-and-state.md`.
@@ -180,8 +191,8 @@ in an allow-list. Code: `reference/server-state-and-api.md`.
 ## Routing (React Router 8, data mode)
 
 - Import everything from `react-router` (and `RouterProvider` from `react-router/dom`). v8 removed the
-  `react-router-dom` package from the v8 line; `npm i react-router-dom@latest` installs **7.18.6**, which
-  brings its own `react-router@7.18.6` beside your 8.5.2 (two routers in one bundle; verified).
+  `react-router-dom` package from the v8 line; `npm i react-router-dom@latest` installs a 7.x release
+  (7.18.6 when verified), which brings its own `react-router@7.x` beside your 8.5.2 (two routers in one bundle; verified).
 - Data mode: `createBrowserRouter(routes)` + `<RouterProvider router={router} />`. Declarative mode
   (`<BrowserRouter>`) and Framework mode (Vite plugin, optional SSR) exist; this skill uses data mode.
 - Lazy routes: `lazy: async () => ({ Component: (await import('...')).Page })`. Prefer the function form
@@ -200,8 +211,9 @@ Code: `reference/routing.md`.
 
 ## Forms
 
-React Hook Form + `zodResolver`; one zod schema per form (zod 4: `z.email()`, `z.infer`), shared with the
-API layer. `noValidate`, `aria-invalid` and error text linked with `aria-describedby`, focus moves to the
+React Hook Form + `zodResolver` + `Controller` inside shadcn `FieldGroup`/`Field`; one zod schema per form
+(zod 4: `z.email()`, `z.infer`), shared with the API layer. `Field` does not link ids: set `aria-invalid` and
+`aria-describedby` (hint + error ids) on the control yourself. `noValidate`, focus moves to the
 first invalid field (RHF default `shouldFocusError`), submit disabled while `isSubmitting`, server
 errors set with `setError('root.server', …)` and rendered in `role="alert"`, never swallowed.
 Code: `reference/forms.md`.
@@ -223,6 +235,23 @@ Code: `reference/forms.md`.
 
 Code, attack payloads and their controls: `reference/security.md`.
 
+## Styling, components and theming (Tailwind CSS v4 + shadcn/ui)
+
+- Tailwind v4 is CSS-first: `@tailwindcss/vite` plugin, `@import "tailwindcss"`, tokens under `@theme inline`,
+  dark mode by `@custom-variant dark (&:is(.dark *))`. No `tailwind.config.js`, no `@tailwind` directives, no
+  autoprefixer, no v3 names (`shadow-sm`→`shadow-xs`, `outline-none`→`outline-hidden`, `bg-opacity-*`→`bg-black/50`).
+- shadcn/ui components are source code in `src/components/ui`, generated by the pinned CLI and owned by the
+  app. Update with `add <name> --dry-run` then `--diff`; never `--overwrite` without approval. Follow the
+  `shadcn` skill's critical rules (FieldGroup + Field, DialogTitle, items inside groups, semantic tokens).
+- One primitive library per project: Base UI (`-b base`, default) for new apps; Radix only where a project
+  already uses it. Base UI triggers take `render={<Button />}`, not `asChild`.
+- Theme: `ThemeProvider` puts `light`/`dark` on `<html>` (system follows `prefers-color-scheme`); the choice
+  may sit in `localStorage` (a preference, not a secret). Axe runs in both themes.
+- Keep the 44 px control minimum and reduced-motion rules from the base layer; a shadcn token that fails axe
+  contrast is fixed in the token, not per component.
+
+Code, install steps, update strategy and evidence: `reference/tailwind-shadcn.md`.
+
 ## Performance
 
 - React Compiler 1.0 (stable) via `@rolldown/plugin-babel` + `reactCompilerPreset()` from
@@ -243,7 +272,8 @@ Details: `reference/performance.md`.
 Canonical checklist: `accessibility-audit` skill (`reference/wcag22-checklist.md`); automated-test
 patterns in `accessibility-audit/reference/angular-a11y-automated.md` apply to React too (axe +
 Playwright are framework-neutral). React specifics: semantic elements, never `div onClick`; labels
-bound with `htmlFor`/`useId`; native `<dialog>` + `showModal()` for modals; move focus to `<main>` after
+bound with `htmlFor`/`useId`; the shadcn `Dialog` (Base UI: focus trap, Escape, focus return; a
+`DialogTitle` always) or, without a component library, native `<dialog>` + `showModal()`; move focus to `<main>` after
 client-side navigation; `eslint-plugin-jsx-a11y-x` in lint. Automated results never prove conformance:
 report "no automated violations; manual checks required".
 Details and i18n basics (`Intl`, `lang`/`dir`, RTL via logical CSS): `reference/accessibility-and-i18n.md`,
@@ -310,5 +340,6 @@ env-var, token and routing guidance does not transfer to a server-rendered app u
 | `reference/performance.md` | compiler decision, memo policy, ViewTransition, splitting, virtualization, profiling |
 | `reference/accessibility-and-i18n.md` | focus, dialog, forms, axe, i18n basics |
 | `reference/testing.md` | Vitest/RTL/MSW setup, Playwright + axe spec |
-| `reference/tooling.md` | scaffold pins, tsconfig, Vite config, ESLint flat config |
+| `reference/tooling.md` | scaffold pins, tsconfig, Vite config, ESLint flat config, `index.css` |
+| `reference/tailwind-shadcn.md` | Tailwind v4 + shadcn/ui: install, `components.json`, Base UI vs Radix, theme, Field, Dialog, menu, data table, toast, updates, official skill/MCP decision, TypeScript 7 probe |
 | `reference/generative-ui-a2ui.md` | A2UI 1.0 / v0.9 renderer, catalog views, guards, host, CopilotKit options |

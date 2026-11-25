@@ -1,8 +1,9 @@
 # Architecture, components, hooks, effects and state
 
-> RECOMMENDED PRACTICE. Snippets marked "tested" were exercised by unit tests in the validation app
-> (React 19.3.1; Vitest, `tsc -b`, ESLint: exit 0, 2026-11-23). Blocks with a file path are copied from
-> that app with their tests; short fragments (the context example) show usage only.
+> RECOMMENDED PRACTICE. "tested" = exercised by unit tests in the current reference app (React 19.3.1;
+> Vitest, `tsc -b`, ESLint: exit 0, 2026-11-24); blocks with a file path are byte-identical copies of it.
+> "tested 2026-11-23" = exercised in the earlier validation app, which the Tailwind/shadcn reference app
+> replaced: re-test before relying on those blocks. Short fragments show usage only.
 
 ## Choose the architecture by app complexity
 
@@ -29,7 +30,7 @@ See the tree in `SKILL.md`. Rules that make it hold:
   must print nothing.
 - Cross-feature reuse goes through `shared/` (Rule of Three) or a feature's public `index.ts`.
 
-## Components and composition — tested (`src/shared/ui/Card.tsx` + `Card.test.tsx`)
+## Components and composition — tested 2026-11-23 (`Card.tsx` + `Card.test.tsx`; not in the current app)
 
 ```tsx
 import { useId, type ComponentProps, type ReactNode } from 'react'
@@ -58,7 +59,7 @@ export function TextInput({ ref, ...props }: ComponentProps<'input'>) {
 - Avoid defining components inside components (state resets every render; `react-hooks/static-components`
   in the `recommended` preset of `eslint-plugin-react-hooks` 7 flags it).
 
-## Context (React 19) — tested
+## Context (React 19) — tested (current app: `src/shared/ui/theme-context.ts`, `mode-toggle.test.tsx`)
 
 ```tsx
 const ThemeContext = createContext('light')
@@ -82,6 +83,8 @@ consumer. Server data stays in the query cache.
 ```tsx
 import { Suspense, use } from 'react'
 import { ErrorBoundary, type FallbackProps } from 'react-error-boundary'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { logger } from '@/shared/lib/logger'
 
 type ReleaseNotesProps = { notesPromise: Promise<string[]>; onRetry: () => void }
@@ -100,12 +103,12 @@ function NotesList({ notesPromise }: { notesPromise: Promise<string[]> }) {
 
 function NotesError({ resetErrorBoundary }: FallbackProps) {
   return (
-    <div role="alert">
-      <p>Release notes could not be loaded.</p>
-      <button type="button" onClick={resetErrorBoundary}>
+    <Alert variant="destructive" className="flex flex-col items-start gap-2">
+      <AlertDescription>Release notes could not be loaded.</AlertDescription>
+      <Button variant="outline" onClick={resetErrorBoundary}>
         Retry
-      </button>
-    </div>
+      </Button>
+    </Alert>
   )
 }
 
@@ -256,7 +259,7 @@ const fullName = `${first} ${last}`
 <ProfileEditor key={userId} userId={userId} />
 ```
 
-### Fetching without a query library — tested (with a control)
+### Fetching without a query library — tested 2026-11-23 (with a control; not in the current app)
 
 ```tsx
 function useDocument(id: string, load: (id: string, signal: AbortSignal) => Promise<string>) {
@@ -266,10 +269,14 @@ function useDocument(id: string, load: (id: string, signal: AbortSignal) => Prom
     const controller = new AbortController()
     load(id, controller.signal)
       .then((d) => {
-        if (!controller.signal.aborted) setDoc(d) // a loader may ignore the signal: drop stale results
+        if (controller.signal.aborted) return // a loader may ignore the signal: drop stale results
+        setDoc(d)
+        setError(null) // a later success clears an earlier failure
       })
       .catch((err: unknown) => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err : new Error(String(err)))
+        if (controller.signal.aborted) return
+        setDoc(null)
+        setError(err instanceof Error ? err : new Error(String(err)))
       })
     return () => controller.abort()
   }, [id, load])
@@ -278,10 +285,11 @@ function useDocument(id: string, load: (id: string, signal: AbortSignal) => Prom
 ```
 
 Control: the same hook without the cleanup shows `doc 1` after switching from id 1 (slow) to id 2 (fast)
-— the stale response wins. In application code prefer TanStack Query, which does this for you when the
+— the stale response wins. The previous `doc` stays visible while the next id loads; to show a blank
+state instead, give the consumer `key={id}` so it remounts. In application code prefer TanStack Query, which does this for you when the
 `queryFn` forwards `signal`.
 
-### Non-reactive values inside an effect: `useEffectEvent` — tested
+### Non-reactive values inside an effect: `useEffectEvent` — tested 2026-11-23 (not in the current app)
 
 ```tsx
 function useConnection(roomId: string, theme: string, onLog: (msg: string) => void) {
@@ -297,7 +305,7 @@ Never call an effect event from render or pass it to children; never silence `ex
 
 ### Legitimate effects in the validation app
 
-- `Dialog`: `showModal()`/`close()` follow the `open` prop (imperative browser API).
+- `ThemeProvider`: the `light`/`dark` class on `<html>` and the `prefers-color-scheme` listener follow the theme state (`tailwind-shadcn.md`).
 - `AppLayout`: focus `<main>` after the pathname changes.
 
 ## State ownership

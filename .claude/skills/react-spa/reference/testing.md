@@ -19,7 +19,7 @@ export default mergeConfig(
     test: {
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
-      include: ['src/**/*.test.{ts,tsx}'],
+      include: ['src/**/*.test.{ts,tsx}', 'build-tests/**/*.test.ts'],
       restoreMocks: true,
     },
   }),
@@ -31,13 +31,44 @@ export default mergeConfig(
 ```ts
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterAll, afterEach, beforeAll } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest'
 import { server } from './msw-server'
 
 beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
+
+// jsdom implements neither matchMedia (ThemeProvider reads prefers-color-scheme) nor ResizeObserver (Base UI).
+// build-tests/ run in the node environment: no DOM there.
+const hasDom = typeof window !== 'undefined'
+
+beforeEach(() => {
+  if (!hasDom) return
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+})
+
 afterEach(() => {
+  if (!hasDom) return
   cleanup()
   server.resetHandlers()
+  window.localStorage.clear()
+  document.documentElement.className = ''
 })
 afterAll(() => server.close())
 ```
@@ -57,11 +88,21 @@ export const server = setupServer()
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
+import { Toaster } from '@/components/ui/toast'
+import { ThemeProvider } from '@/shared/ui/theme-provider'
 
-/** Fresh QueryClient per test, retries off so error states appear immediately. */
+/** Fresh QueryClient per test, retries off so error states appear immediately. Theme provider and toaster as in main.tsx. */
 export function renderWithQuery(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) }
+  return {
+    client,
+    ...render(
+      <ThemeProvider>
+        <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+        <Toaster />
+      </ThemeProvider>,
+    ),
+  }
 }
 ```
 
@@ -88,7 +129,7 @@ const port = 5179
 export default defineConfig({
   testDir: './e2e',
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: 0, // a flake must fail (the /verify gate also passes --fail-on-flaky-tests)
   reporter: [['list']],
   use: { baseURL: `http://localhost:${port}`, trace: 'on-first-retry' },
   projects: [
@@ -107,33 +148,16 @@ export default defineConfig({
 `e2e/projects.spec.ts`
 
 ```ts
-import AxeBuilder from '@axe-core/playwright'
-import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.ts'
-
-const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
-
-async function axeViolations(page: Page) {
-  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
-  return violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
-}
-
-async function signIn(page: Page) {
-  await page.goto('/app/projects')
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
-  expect(new URL(page.url()).searchParams.get('returnUrl')).toBe('/app/projects')
-  await page.getByLabel('Name').fill('Dana')
-  await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
-}
+import { axeViolations, mockProjects, signIn } from './support.ts'
 
 test.describe('projects feature', () => {
-  test('loaded list, dialog form validation and axe (no automated violations)', async ({ page }) => {
-    await page.route('**/api/projects', (route) =>
-      route.fulfill({ json: [{ id: '1', name: 'Alpha', ownerEmail: 'a@example.com' }] }),
-    )
+  test('loaded table, dialog form validation and axe (no automated violations)', async ({ page }) => {
+    await mockProjects(page)
     await signIn(page)
-    await expect(page.getByRole('list', { name: 'Projects' })).toContainText('Alpha')
+    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/app/projects')
+    await expect(page.getByRole('table', { name: 'Projects' })).toContainText('Alpha')
     expect(await axeViolations(page)).toEqual([])
 
     const opener = page.getByRole('button', { name: 'New project' })
@@ -143,13 +167,41 @@ test.describe('projects feature', () => {
     await dialog.getByRole('button', { name: 'Create project' }).click()
     const name = dialog.getByLabel('Project name')
     await expect(name).toHaveAttribute('aria-invalid', 'true')
-    await expect(name).toHaveAccessibleDescription('Name must be at least 3 characters')
+    await expect(name).toHaveAccessibleDescription(/Name must be at least 3 characters/)
     await expect(name).toBeFocused()
     expect(await axeViolations(page)).toEqual([])
 
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(opener).toBeFocused()
+  })
+
+  test('sorting by the Name header reorders the rows and sets aria-sort', async ({ page }) => {
+    await mockProjects(page)
+    await signIn(page)
+    const rows = page.getByRole('table', { name: 'Projects' }).getByRole('row')
+    await expect(rows.nth(1)).toContainText('Alpha')
+    await page.getByRole('button', { name: 'Name' }).click()
+    await expect(page.getByRole('columnheader', { name: /Name/ })).toHaveAttribute('aria-sort', 'ascending')
+    await expect(rows.nth(1)).toContainText('Alpha')
+    await expect(rows.nth(3)).toContainText('Gamma')
+    await page.getByRole('button', { name: 'Name' }).click()
+    await expect(page.getByRole('columnheader', { name: /Name/ })).toHaveAttribute('aria-sort', 'descending')
+    await expect(rows.nth(1)).toContainText('Gamma')
+  })
+
+  test('creating a project shows a toast and the new row', async ({ page }) => {
+    await mockProjects(page)
+    await signIn(page)
+    await page.getByRole('button', { name: 'New project' }).click()
+    const dialog = page.getByRole('dialog', { name: 'New project' })
+    await dialog.getByLabel('Project name').fill('Delta')
+    await dialog.getByLabel('Owner email').fill('d@example.com')
+    await dialog.getByRole('button', { name: 'Create project' }).click()
+    await expect(page.getByText('Project "Delta" created')).toBeVisible()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole('table', { name: 'Projects' })).toContainText('Delta')
+    expect(await axeViolations(page)).toEqual([])
   })
 
   test.describe('server error', () => {
@@ -167,14 +219,15 @@ test.describe('projects feature', () => {
   })
 
   test('empty list shows an empty state', async ({ page }) => {
-    await page.route('**/api/projects', (route) => route.fulfill({ json: [] }))
+    await mockProjects(page, [])
     await signIn(page)
     await expect(page.getByText('No projects yet')).toBeVisible()
   })
 
   test('positive control: axe detects a planted violation in real Chromium', async ({ page }) => {
-    await page.route('**/api/projects', (route) => route.fulfill({ json: [] }))
+    await mockProjects(page, [])
     await signIn(page)
+    await expect(page.getByText('No projects yet')).toBeVisible()
     await page.evaluate(() => {
       const button = document.createElement('button') // no accessible name
       // DOM APIs, not innerHTML: the page enforces Trusted Types, which blocks raw string HTML.
@@ -224,10 +277,85 @@ E2E tsconfig (`tsconfig.e2e.json`, referenced from the root solution file so `ts
 `nodenext` requires explicit extensions on relative imports (`./fixtures.ts`); without
 `allowImportingTsExtensions` `tsc -b` fails with TS2835.
 
+## Shared E2E helpers
+
+Sign-in, API mocking and the axe scan live in one module so every spec uses the same WCAG tags. The scan
+waits for finite animations first: axe flagged `color-contrast` once on a menu that was still fading in.
+
+`e2e/support.ts`
+
+```ts
+import AxeBuilder from '@axe-core/playwright'
+import type { Page } from '@playwright/test'
+import { expect } from './fixtures.ts'
+
+export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
+
+export type ProjectRow = { id: string; name: string; ownerEmail: string }
+export const seed: ProjectRow[] = [
+  { id: '1', name: 'Alpha', ownerEmail: 'a@example.com' },
+  { id: '2', name: 'Gamma', ownerEmail: 'g@example.com' },
+  { id: '3', name: 'Beta', ownerEmail: 'b@example.com' },
+]
+
+export async function axeViolations(page: Page): Promise<string[]> {
+  // Let enter/exit animations (dialog, menu, toast) finish: axe reads colours mid-fade otherwise (false color-contrast).
+  // Infinite animations (skeleton pulse, spinner) never finish and are skipped.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  )
+  const { violations } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
+  return violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+}
+
+/** GET returns the rows, POST appends the created one: a tiny in-memory API for the page under test. */
+export async function mockProjects(page: Page, initial: ProjectRow[] = seed) {
+  const rows = [...initial]
+  await page.route('**/api/projects', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as Omit<ProjectRow, 'id'>
+      const created = { id: String(rows.length + 1), ...body }
+      rows.push(created)
+      await route.fulfill({ status: 201, json: created })
+      return
+    }
+    await route.fulfill({ json: rows })
+  })
+}
+
+export async function signIn(page: Page, path = '/app/projects') {
+  await page.goto(path)
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  await page.getByLabel('Name').fill('Dana')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+}
+
+/** Opens the app shell's menu button when the viewport shows the collapsed (mobile) nav. */
+export async function openNavIfCollapsed(page: Page) {
+  const menu = page.getByRole('button', { name: 'Menu' })
+  if (await menu.isVisible()) await menu.click()
+}
+
+export async function chooseTheme(page: Page, label: 'Light' | 'Dark' | 'System') {
+  await page.getByRole('button', { name: /Toggle theme/ }).click()
+  await page.getByRole('menuitemradio', { name: label }).click()
+  await expect(page.getByRole('menu')).toBeHidden()
+}
+```
+
 ## Fail on console and network errors
 
-`e2e/fixtures.ts`: specs import `test`/`expect` from `./fixtures.ts` instead of `@playwright/test` (as
-`projects.spec.ts` above does; 12/12 green with it, Node 26.13.1, TypeScript 6.0.3).
+Specs import `test`/`expect` from `./fixtures.ts` instead of `@playwright/test`. `net::ERR_ABORTED` is
+ignored: it is a client cancel (a navigation leaving a page mid-load, an `AbortController`), and counting it
+made the 375 px overflow test fail 11 of 30 runs under `--fail-on-flaky-tests`. A refused request
+(`route.abort('connectionrefused')`) still fails the test (control run 2026-11-24).
+
+`e2e/fixtures.ts`
 
 ```ts
 import { test as base, expect } from '@playwright/test'
@@ -247,7 +375,13 @@ export const test = base.extend<{ allowedErrors: RegExp | null; failOnPageErrors
         if (msg.type() === 'error') errors.push(`console: ${msg.text()}`)
       })
       page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`))
-      page.on('requestfailed', (req) => errors.push(`requestfailed: ${req.url()} ${req.failure()?.errorText ?? ''}`))
+      page.on('requestfailed', (req) => {
+        const reason = req.failure()?.errorText ?? ''
+        // net::ERR_ABORTED is a client-side cancel (a navigation leaving the page mid-load, or an AbortController
+        // such as TanStack Query's on unmount), not a network failure. Every other reason still fails the test.
+        if (reason === 'net::ERR_ABORTED') return
+        errors.push(`requestfailed: ${req.url()} ${reason}`)
+      })
       page.on('response', (res) => {
         if (res.status() >= 500) errors.push(`http ${res.status()}: ${res.url()}`)
       })

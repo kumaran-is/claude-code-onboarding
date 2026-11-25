@@ -6,7 +6,8 @@
 ## Package facts (verified 2026-11-23)
 
 - `npm view react-router dist-tags`: `latest` 8.5.2, `version-7` 7.18.6.
-- `npm view react-router-dom dist-tags`: `latest` **7.18.6** (no v8). The v8 CHANGELOG says
+- `npm view react-router-dom dist-tags`: `latest` **7.18.6** on 2026-11-24 (no v8; later 7.x releases keep
+  the same problem). The v8 CHANGELOG says
   "Remove `react-router-dom` package". Installing `react-router-dom@latest` beside `react-router@8.5.2`
   produced `node_modules/react-router-dom/node_modules/react-router@7.18.6` — a second router copy.
   Import from `react-router` only; `RouterProvider` comes from `react-router/dom`.
@@ -26,6 +27,9 @@ import { RouterProvider } from 'react-router/dom'
 import { z } from 'zod'
 import { createQueryClient } from './app/query-client'
 import { routes } from './app/routes'
+import { Toaster } from './components/ui/toast'
+import { applyStoredTheme } from './shared/ui/theme-context'
+import { ThemeProvider } from './shared/ui/theme-provider'
 import './index.css'
 
 // zod 4 probes `new Function` for its JIT; under a Trusted Types / no-eval CSP the probe logs a violation.
@@ -36,11 +40,16 @@ const router = createBrowserRouter(routes)
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('#root element missing from index.html')
 
+applyStoredTheme() // before the first render: no flash of the wrong theme
+
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+      <Toaster />
+    </ThemeProvider>
   </StrictMode>,
 )
 ```
@@ -207,6 +216,9 @@ import { useForm } from 'react-hook-form'
 import { useNavigate, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { session } from '@/app/session'
+import { Button } from '@/components/ui/button'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { safeReturnPath } from '@/shared/lib/safe-url'
 
 const loginSchema = z.object({ userName: z.string().trim().min(1, 'Enter your name') })
@@ -228,25 +240,23 @@ export function LoginPage() {
   }
 
   return (
-    <main>
+    <main className="flex flex-col gap-4">
       <h1>Sign in</h1>
       <form onSubmit={handleSubmit(signIn)} noValidate>
-        <div className="field">
-          <label htmlFor="login-name">Name</label>
-          <input
-            id="login-name"
-            autoComplete="username"
-            aria-invalid={errors.userName ? true : undefined}
-            aria-describedby={errors.userName ? 'login-name-error' : undefined}
-            {...register('userName')}
-          />
-          {errors.userName && (
-            <p id="login-name-error" className="field-error">
-              {errors.userName.message}
-            </p>
-          )}
-        </div>
-        <button type="submit">Sign in</button>
+        <FieldGroup>
+          <Field data-invalid={!!errors.userName}>
+            <FieldLabel htmlFor="login-name">Name</FieldLabel>
+            <Input
+              id="login-name"
+              autoComplete="username"
+              aria-invalid={errors.userName ? true : undefined}
+              aria-describedby={errors.userName ? 'login-name-error' : undefined}
+              {...register('userName')}
+            />
+            {errors.userName && <FieldError id="login-name-error" errors={[errors.userName]} />}
+          </Field>
+          <Button type="submit">Sign in</Button>
+        </FieldGroup>
       </form>
     </main>
   )
@@ -258,15 +268,29 @@ export function LoginPage() {
 `src/app/AppLayout.tsx`
 
 ```tsx
-import { useEffect, useRef } from 'react'
+import { MenuIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { cn } from 'cn'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { ModeToggle } from '@/shared/ui/mode-toggle'
 import { session } from './session'
 
-/** Authenticated shell. Moves focus to <main> after client-side navigation so keyboard and screen-reader users land on the new page. */
+const links = [
+  { to: '/app/projects', label: 'Projects' },
+  { to: '/app/settings', label: 'Settings' },
+]
+
+/**
+ * Authenticated shell. Moves focus to <main> after client-side navigation so keyboard and screen-reader users land on the new page.
+ * Responsive: viewport breakpoint `sm:` (640px) switches the nav between a collapsible menu and an inline row;
+ * the `@container` on the header row decides (by its own width) whether "Signed in as" is shown.
+ */
 export function AppLayout() {
   const mainRef = useRef<HTMLElement>(null)
   const { pathname } = useLocation()
   const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     mainRef.current?.focus()
@@ -279,14 +303,43 @@ export function AppLayout() {
 
   return (
     <>
-      <header className="shell-header">
-        <nav aria-label="Main">
-          <NavLink to="/app/projects">Projects</NavLink> <NavLink to="/app/settings">Settings</NavLink>
-        </nav>
-        <span>Signed in as {session.get()?.userName}</span>
-        <button type="button" onClick={signOut}>
-          Sign out
-        </button>
+      <header className="border-b">
+        <div className="@container mx-auto flex max-w-4xl flex-wrap items-center gap-2 p-3" data-testid="header-container">
+          <Button
+            variant="outline"
+            className="sm:hidden"
+            aria-expanded={menuOpen}
+            aria-controls="main-nav"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MenuIcon data-icon="inline-start" aria-hidden="true" /> Menu
+          </Button>
+          <nav
+            id="main-nav"
+            aria-label="Main"
+            className={cn('order-last w-full flex-col gap-1 sm:order-none sm:flex sm:w-auto sm:flex-row', menuOpen ? 'flex' : 'hidden')}
+          >
+            {links.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                onClick={() => setMenuOpen(false)}
+                className={({ isActive }) =>
+                  cn(buttonVariants({ variant: isActive ? 'secondary' : 'ghost' }), 'justify-start')
+                }
+              >
+                {link.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="hidden text-sm text-muted-foreground @lg:inline">Signed in as {session.get()?.userName}</span>
+            <ModeToggle />
+            <Button variant="outline" onClick={signOut}>
+              Sign out
+            </Button>
+          </div>
+        </div>
       </header>
       <main ref={mainRef} tabIndex={-1}>
         <Outlet />
@@ -355,6 +408,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
+import { ThemeProvider } from '@/shared/ui/theme-provider'
 import { server } from '@/test/msw-server'
 import { routes } from './routes'
 import { session } from './session'
@@ -363,9 +417,11 @@ function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <QueryClientProvider client={client}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <ThemeProvider>
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ThemeProvider>,
   )
   return router
 }

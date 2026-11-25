@@ -1,13 +1,13 @@
 # NestJS Debugging — Production Monitoring
 
-Production debugging patterns, structured logging, health checks, and request tracing for NestJS 11.x. For performance profiling and memory debugging, see `nestjs-debugging-performance.md`.
+Production debugging patterns, structured logging, health checks, and request tracing for NestJS 12.x. For performance profiling and memory debugging, see `nestjs-debugging-performance.md`.
 
 ## 1. Structured Logging with Context
 
 ```typescript
 // src/common/logging/logger.service.ts
 import { Injectable, Logger, LoggerService } from '@nestjs/common';
-import { getCorrelationId, getUserId } from '../context/request-context.service';
+import { getCorrelationId, getUserId } from '../context/request-context.service.js';
 
 @Injectable()
 export class StructuredLogger implements LoggerService {
@@ -55,8 +55,8 @@ export class StructuredLogger implements LoggerService {
 ```typescript
 // src/health/health.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
-import { CircuitBreakerRegistry } from '../resilience/circuit-breaker.registry';
+import { PrismaService } from '../database/prisma.service.js';
+import { CircuitBreakerRegistry } from '../resilience/circuit-breaker.registry.js';
 
 type CheckStatus = 'healthy' | 'degraded' | 'unhealthy';
 interface DatabaseCheck { status: CheckStatus; latency?: number; error?: string }
@@ -153,7 +153,7 @@ export class HealthService {
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
-import { getCorrelationId, updateContextMetadata } from '../context/request-context.service';
+import { getCorrelationId, updateContextMetadata } from '../context/request-context.service.js';
 
 @Injectable()
 export class TracingInterceptor implements NestInterceptor {

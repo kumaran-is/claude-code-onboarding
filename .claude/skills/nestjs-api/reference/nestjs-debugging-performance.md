@@ -1,6 +1,6 @@
 # NestJS Debugging — Performance & Memory
 
-Memory leak detection, performance profiling, and circuit breaker state debugging for NestJS 11.x. For production debugging and monitoring, see `nestjs-debugging-production.md`.
+Memory leak detection, performance profiling, and circuit breaker state debugging for NestJS 12.x. For production debugging and monitoring, see `nestjs-debugging-production.md`.
 
 ## 1. Memory Leak Detection
 
@@ -9,7 +9,7 @@ Memory leak detection, performance profiling, and circuit breaker state debuggin
 ```typescript
 // src/health/health.controller.ts
 import { Controller, Get } from '@nestjs/common';
-import { SkipAuth } from '../common/decorators/skip-auth.decorator';
+import { SkipAuth } from '../common/decorators/skip-auth.decorator.js';
 
 @Controller('api/v1/health')
 export class HealthController {
@@ -178,7 +178,7 @@ export class PerformanceInterceptor implements NestInterceptor {
 
 ```typescript
 import { Logger } from '@nestjs/common';
-import { type PrismaClient } from '../generated/prisma/client';
+import { type PrismaClient } from '../generated/prisma/client.js';
 
 const logger = new Logger('Prisma');
 
@@ -227,7 +227,7 @@ node --trace-event-categories v8,node,node.async_hooks dist/main.js
 ```typescript
 // src/resilience/resilience.controller.ts
 import { Controller, Get, Post, Param } from '@nestjs/common';
-import { CircuitBreakerRegistry } from './circuit-breaker.registry';
+import { CircuitBreakerRegistry } from './circuit-breaker.registry.js';
 
 @Controller('api/v1/resilience')
 export class ResilienceController {

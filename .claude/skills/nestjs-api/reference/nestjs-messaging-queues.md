@@ -133,8 +133,8 @@ export class RabbitMQModule implements OnModuleInit {
 
 import { Injectable, Logger } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { EXCHANGES, ROUTING_KEYS } from '../rabbitmq.module';
-import { getCorrelationId } from '../../../../common/context/request-context.service';
+import { EXCHANGES, ROUTING_KEYS } from '../rabbitmq.module.js';
+import { getCorrelationId } from '../../../../common/context/request-context.service.js';
 
 export interface PublishOptions {
   correlationId?: string;
@@ -293,9 +293,9 @@ export class RabbitMQPublisherService {
 
 import { Injectable, Logger } from '@nestjs/common';
 import { RabbitSubscribe, Nack } from '@golevelup/nestjs-rabbitmq';
-import { EXCHANGES, QUEUES, ROUTING_KEYS } from '../rabbitmq.module';
-import { runWithContext, RequestContext } from '../../../../common/context/request-context.service';
-import { EmailService } from '../../../email/email.service';
+import { EXCHANGES, QUEUES, ROUTING_KEYS } from '../rabbitmq.module.js';
+import { runWithContext, RequestContext } from '../../../../common/context/request-context.service.js';
+import { EmailService } from '../../../email/email.service.js';
 
 interface EmailMessage {
   to: string | string[];

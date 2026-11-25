@@ -1,6 +1,6 @@
 # NestJS Debugging — Context, DI & Configuration
 
-AsyncLocalStorage context debugging, dependency injection troubleshooting, environment configuration, and a quick-reference troubleshooting table for NestJS 11.x with Fastify and Prisma ORM.
+AsyncLocalStorage context debugging, dependency injection troubleshooting, environment configuration, and a quick-reference troubleshooting table for NestJS 12.x with Fastify and Prisma ORM.
 
 ## 4. AsyncLocalStorage & Request Context Debugging
 
@@ -97,8 +97,8 @@ export class RequestContextService {
 ```typescript
 // src/core/database/prisma-context.extension.ts
 import { Logger } from '@nestjs/common';
-import { type PrismaClient } from '../generated/prisma/client';
-import { type RequestContextService } from './request-context.service';
+import { type PrismaClient } from '../generated/prisma/client.js';
+import { type RequestContextService } from './request-context.service.js';
 
 const logger = new Logger('PrismaContext');
 
@@ -129,7 +129,7 @@ context in the worker. Use `@nestjs/bullmq` (`WorkerHost`); the legacy `@nestjs/
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import { RequestContextService } from './request-context.service';
+import { RequestContextService } from './request-context.service.js';
 
 export interface EmailJob {
   readonly correlationId: string;
@@ -169,8 +169,8 @@ export class EmailProcessor extends WorkerHost {
 // src/queues/email.processor.spec.ts
 import type { Job } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
-import { EmailProcessor, type EmailJob } from './email.processor';
-import { RequestContextService } from './request-context.service';
+import { EmailProcessor, type EmailJob } from './email.processor.js';
+import { RequestContextService } from './request-context.service.js';
 
 describe('EmailProcessor', () => {
   it('runs the send inside the job’s correlation context and propagates failures', async () => {
@@ -246,6 +246,9 @@ export class NotificationService {
 }
 
 // GOOD: Use @Optional() decorator
+// NestJS 12: @Optional() is no longer inherited when a subclass REDECLARES its constructor
+// (UnknownDependenciesException at bootstrap). Re-declare @Optional() on the subclass parameter.
+// 12.1+ restores inheritance only when the subclass has no constructor of its own.
 @Injectable()
 export class NotificationService {
   constructor(@Optional() private readonly smsProvider?: SmsProvider) {}
@@ -321,10 +324,10 @@ logger.log(`Configuration loaded for environment: ${Config.nodeEnv}`);
 
 ```bash
 # Check which variables are SET — print names and presence only, never values (values are secrets)
-node -e "require('dotenv').config(); console.log(Object.keys(process.env).sort().join('\n'))"
+node --env-file=.env -e "console.log(Object.keys(process.env).sort().join('\n'))"
 
 # Check one variable is present without echoing it
-node -e "require('dotenv').config(); console.log('DATABASE_URL set:', Boolean(process.env.DATABASE_URL))"
+node --env-file=.env -e "console.log('DATABASE_URL set:', Boolean(process.env.DATABASE_URL))"
 
 # Environment variable precedence (highest to lowest):
 # 1. System environment variables (export VAR=value)
@@ -343,13 +346,15 @@ node -e "require('dotenv').config(); console.log('DATABASE_URL set:', Boolean(pr
 |-------|---------|-----|
 | Route not found | 404 for valid endpoint | Check controller path prefix, ensure module is imported in AppModule |
 | Request body is undefined | `req.body` is `{}` | Register `@nestjs/platform-fastify` body parser, ensure `Content-Type: application/json` |
-| Validation not working | Invalid data passes through | Apply `ValidationPipe` globally in `main.ts`, ensure DTO has `class-validator` decorators |
+| Validation not working | Invalid data passes through | Register `StandardSchemaValidationPipe` as `APP_PIPE`, and declare `{ schema }` on the parameter (`@Body({ schema })`): a parameter without a schema is not validated |
+| `onModuleInit` / shutdown order changed after upgrading to 12 | A provider used another module's resource before it was ready, or after it closed | NestJS 12 calls lifecycle hooks by module hierarchy level; make the dependency explicit (import the module, inject the provider) instead of relying on registration order |
+| `ERR_MODULE_NOT_FOUND` / TS2307 on a relative import | ESM project cannot resolve `./x` | Relative imports need the `.js` extension under `nodenext` (`./orders.service.js`) |
 | Circular dependency | Module initialization fails | Use `forwardRef(() => Module)` in imports and `@Inject(forwardRef(() => Service))` in constructor |
 | Prisma "Connection pool timeout" | Queries hang indefinitely | Increase `connection_limit` in `DATABASE_URL`, check for unclosed transactions, ensure `$disconnect()` in tests |
 | Context lost in async operations | `contextService.get()` returns `undefined` | Use `contextService.wrapAsync()` or manually propagate context with `als.run()` |
-| Config value is undefined | `Config.someValue` is `undefined` | Check `.env` file exists, variable name matches, dotenv loaded before config import |
+| Config value is undefined | `Config.someValue` is `undefined` | Check the variable is set in the environment (shell, `node --env-file=.env`, CI, container) and named in the `validationSchema`; `ConfigModule` validates at import time |
 | Fastify validation error | `FST_ERR_VALIDATION` in logs | Check route schema matches DTO, ensure JSON schema plugin installed, validate request body manually |
 | Middleware not executing | Custom middleware skipped | Ensure middleware applied globally or to specific routes, check execution order |
 | JWT authentication fails | 401 Unauthorized for valid token | Check JWT secret matches, verify token not expired, ensure AuthGuard applied correctly |
 | Prisma migration fails | `Migration failed` error | Check schema syntax, ensure database accessible, rollback failed migration, check for conflicting migrations |
-| Bull queue job fails silently | Job completes but no effect | Check processor decorated with `@Processor()`, ensure queue registered in module, add error logging in `@OnQueueFailed()` |
+| BullMQ job fails silently | Job completes but no effect | Check the processor extends `WorkerHost` with `@Processor(name)`, the queue is registered (`BullModule.registerQueue`), and log in `@OnWorkerEvent('failed')`. BullMQ 6: `ioredis` must be a direct dependency or the queue fails at runtime |

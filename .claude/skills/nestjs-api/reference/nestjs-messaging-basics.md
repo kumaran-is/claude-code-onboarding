@@ -14,6 +14,11 @@ Core messaging patterns for background job processing using BullMQ with Redis.
 
 ## BullMQ — Background Job Processing
 
+Verified pins (2026-11-24): `@nestjs/bullmq` 12.0.2, `bullmq` 6.7.10, **`ioredis` 6.1.0 as a direct dependency**.
+BullMQ 6 made `ioredis` optional: without it the app compiles and then fails when the queue starts
+(`BullMQ could not load the optional 'ioredis' package`). Dashboard: `@bull-board/nestjs` + `@bull-board/fastify`
+9.14.0 (peer `@nestjs/core` `^12.0.0`).
+
 ### Queue Module
 
 ```typescript
@@ -33,10 +38,10 @@ import { ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { BullBoardModule } from '@bull-board/nestjs';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
-import { ExpressAdapter } from '@bull-board/express';
+import { FastifyAdapter } from '@bull-board/fastify'; // this stack runs on Fastify, not Express
 
-import { QueueConfigurationService } from './configs/queue-configuration.service';
-import { QueueOrchestratorService } from './services/queue-orchestrator.service';
+import { QueueConfigurationService } from './configs/queue-configuration.service.js';
+import { QueueOrchestratorService } from './services/queue-orchestrator.service.js';
 
 // Queue names as constants
 export const QUEUE_NAMES = {
@@ -88,7 +93,7 @@ export const QUEUE_NAMES = {
     // Bull Board dashboard (optional, disable in production if needed)
     BullBoardModule.forRoot({
       route: '/admin/queues',
-      adapter: ExpressAdapter,
+      adapter: FastifyAdapter,
     }),
     BullBoardModule.forFeature(
       { name: QUEUE_NAMES.EMAIL, adapter: BullMQAdapter },
@@ -132,8 +137,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue, Job, JobsOptions } from 'bullmq';
 
-import { QUEUE_NAMES } from '../queues.module';
-import { getCorrelationId } from '../../../common/context/request-context.service';
+import { QUEUE_NAMES } from '../queues.module.js';
+import { getCorrelationId } from '../../../common/context/request-context.service.js';
 
 export interface JobData {
   [key: string]: unknown;
@@ -338,7 +343,7 @@ export class QueueOrchestratorService {
 
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { runWithContext, RequestContext } from '../../../common/context/request-context.service';
+import { runWithContext, RequestContext } from '../../../common/context/request-context.service.js';
 
 export interface JobMeta {
   correlationId: string;

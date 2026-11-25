@@ -141,8 +141,8 @@ export class KafkaModule implements OnModuleInit, OnModuleDestroy {
 
 import { Injectable, Inject, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Producer, CompressionTypes, Message } from 'kafkajs';
-import { TOPICS } from '../kafka.module';
-import { getCorrelationId, getRequestContext } from '../../../../common/context/request-context.service';
+import { TOPICS } from '../kafka.module.js';
+import { getCorrelationId, getRequestContext } from '../../../../common/context/request-context.service.js';
 
 export interface KafkaEvent<T = unknown> {
   key?: string;
@@ -314,9 +314,9 @@ export class KafkaProducerService implements OnModuleDestroy {
 
 import { Injectable, Inject, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Kafka, Consumer, EachMessagePayload } from 'kafkajs';
-import { TOPICS, CONSUMER_GROUPS } from '../kafka.module';
-import { KafkaProducerService } from './kafka-producer.service';
-import { runWithContext, RequestContext } from '../../../../common/context/request-context.service';
+import { TOPICS, CONSUMER_GROUPS } from '../kafka.module.js';
+import { KafkaProducerService } from './kafka-producer.service.js';
+import { runWithContext, RequestContext } from '../../../../common/context/request-context.service.js';
 
 export interface MessageHandler<T = unknown> {
   (payload: T, metadata: MessageMetadata): Promise<void>;

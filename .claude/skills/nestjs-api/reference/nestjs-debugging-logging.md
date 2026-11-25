@@ -1,6 +1,6 @@
 # NestJS Debugging — Logging & Request Lifecycle
 
-Logging setup, Prisma query debugging, and Fastify request lifecycle tracing for NestJS 11.x with Fastify, Prisma ORM, and TypeScript 5.x.
+Logging setup, Prisma query debugging, and Fastify request lifecycle tracing for NestJS 12.x with Fastify, Prisma ORM, and TypeScript 6.0.
 
 ## 1. NestJS Debug Mode
 
@@ -11,8 +11,8 @@ Logging setup, Prisma query debugging, and Fastify request lifecycle tracing for
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Logger, LogLevel } from '@nestjs/common';
-import { AppModule } from './app.module';
-import { Config } from './config/static-config';
+import { AppModule } from './app.module.js';
+import { Config } from './config/static-config.js';
 
 async function bootstrap() {
   const logLevels: Record<string, LogLevel[]> = {
@@ -28,12 +28,12 @@ async function bootstrap() {
   logger.log(`Starting application in ${currentEnv} mode with log levels: ${levels.join(', ')}`);
 
   const fastifyAdapter = new FastifyAdapter({
+    // Fastify 5 / pino 10: `prettyPrint` no longer exists; pretty output is a transport (dev only).
     logger: currentEnv === 'development' ? {
       level: 'info',
-      prettyPrint: {
-        colorize: true,
-        translateTime: 'HH:MM:ss Z',
-        ignore: 'pid,hostname',
+      transport: {
+        target: 'pino-pretty',
+        options: { colorize: true, translateTime: 'HH:MM:ss Z', ignore: 'pid,hostname' },
       },
     } : false,
     requestIdHeader: 'x-correlation-id',
@@ -68,7 +68,8 @@ async function bootstrap() {
   logger.log(`Application listening on port ${Config.port}`, 'Bootstrap');
 }
 
-bootstrap();
+// ESM entry: top-level await, so a startup failure rejects the module and exits non-zero.
+await bootstrap();
 ```
 
 ### Per-Module Logger Instances
@@ -97,6 +98,25 @@ export class UsersService {
 }
 ```
 
+### NestJS 12 ConsoleLogger: JSON and structured params
+
+`ConsoleLogger` is enough for most services (verified on `@nestjs/common` 12.6.0):
+
+```typescript
+const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
+  logger: new ConsoleLogger({ json: true, redact: ['authorization', 'password', 'passwordHash'] }),
+});
+
+// NestJS 12: structured params are ON by default; a plain object after the message is attached to the
+// entry (nested under `params` in JSON; `flattenParams: true` spreads it into the root object).
+this.logger.log('order created', { orderId, tenantId });
+```
+
+Upgrading from 11: a plain object after the message used to be logged as a separate message. Log pipelines that parse
+that shape change; `new ConsoleLogger({ structuredParams: false })` restores the v11 behaviour while they migrate.
+`redact` masks keys at any depth in params and non-string messages; string messages and stack traces are printed as is,
+so never interpolate secrets into the message text.
+
 ## 2. Prisma Query Logging & Debugging
 
 ### Event-Based Query Logging
@@ -104,8 +124,8 @@ export class UsersService {
 ```typescript
 // src/database/prisma.service.ts
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient, Prisma } from '@prisma/client';
-import { Config } from '../config/static-config';
+import { PrismaClient, Prisma } from '../generated/prisma/client.js';
+import { Config } from '../config/static-config.js';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -206,7 +226,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 npx prisma studio
 
 # Introspect existing database schema
-DATABASE_URL="postgresql://user:pass@localhost:5432/db" npx prisma db pull
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/db" npx prisma db pull
 
 # Validate schema without migrations
 npx prisma validate

@@ -24,6 +24,10 @@ Replicate a UI screenshot as a production-ready Flutter widget with pixel-perfec
 
 ---
 
+### Step 0 — Project DESIGN.md (before analysing the screenshot)
+
+The screenshot owns WHAT the screen shows; the project's `DESIGN.md` owns HOW. Find it and read only the token, component and state sections this screen needs (`.claude/skills/design-system/reference/design-md-governance.md`). Map every colour, size and spacing to the project's tokens, never to the mock's raw values; reuse its shared components (and their tiers) before creating new ones. No DESIGN.md: say so, use the existing theme, invent no brand values. A value with no matching token is a gap: use the closest token and list it under "Design gaps" in the output for the human. New shared components follow `atomic-decision-tree.md` (line-1 `// Tier:`, presentational). Finish with `python3 .claude/scripts/check-design-system.py --root .`.
+
 ## Phase 1 — Screenshot Analysis (mandatory before writing code)
 
 Extract these properties visually from the screenshot. Document them before coding.

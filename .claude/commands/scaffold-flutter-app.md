@@ -34,10 +34,11 @@ Toolchain: Flutter 3.50.x / Dart 3.14.0 (verified on 3.50.1). Check `flutter --v
    - `lib/core/utils/` — logger, formatters, validators
    - `lib/core/extensions/` — Dart extension methods
    - `lib/core/l10n/` — Localisation .arb files and generated l10n delegates
-   - `lib/design_system/tokens/` — one file per token type (see flutter-templates.md)
+   - `lib/design_system/tokens/` — one file per token family, ONE scale each (see flutter-templates.md): `color_tokens.dart` (raw palette, theme files only), `app_spacing.dart` (`AppSpacing`, `AppSize`), `app_radius.dart`, `app_elevation.dart`, `app_motion.dart` (`AppMotion.of` collapses durations under reduced motion)
    - `lib/design_system/typography/` — `font_families.dart`, `app_text_styles.dart`, `app_text_theme.dart`
    - `lib/design_system/theme/` — `app_theme.dart`, `app_color_scheme.dart`, `app_theme_extension.dart`, `theme_provider.dart`
-   - `lib/design_system/components/` — buttons/, inputs/, cards/, dialogs/, loaders/
+   - `lib/design_system/components/` — buttons/, inputs/, cards/, dialogs/, loaders/: presentational `StatelessWidget`s whose line 1 is `// Tier: Atom|Molecule|Organism` (`design-system/reference/atomic-decision-tree.md`)
+   - `DESIGN.md` at the app root — the skeleton from `design-system/reference/design-md-governance.md` §5, filled from the generated token files and marked `status: toolkit-default` (never invent brand values; the human approves or replaces them)
    - `lib/features/<feature>/data/datasources/` — remote + local datasources
    - `lib/features/<feature>/data/models/` — DTOs with `.g.dart` codegen
    - `lib/features/<feature>/data/repositories/` — repository impl
@@ -64,6 +65,7 @@ Toolchain: Flutter 3.50.x / Dart 3.14.0 (verified on 3.50.1). Check `flutter --v
     flutter test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"
     flutter build apk --debug > /tmp/apk.log 2>&1; echo "APK EXIT:$?"
     flutter build ios --simulator --debug > /tmp/ios.log 2>&1; echo "IOS SIM EXIT:$?"   # macOS + Xcode only; otherwise NOT RUN
+    python3 .claude/scripts/check-design-system.py --root <app path> > /tmp/ds.log 2>&1; echo "DESIGN GATE EXIT:$?"; tail -5 /tmp/ds.log   # from the Claude project root
     ```
     `flutter analyze` must report zero issues: a leftover `package:flutter/material.dart` import is a `deprecated_member_use` info and fails the gate. Expected native floors from the 3.50 templates: Android Gradle 9.5.0, AGP 9.3.1, Kotlin 2.4.20, Java 17, minSdk 24, compile/target SDK 36; iOS deployment target 15.0 with Swift Package Manager enabled (see `flutter-platform-gotchas.md`).
     Device UI/E2E is Maestro only (`.claude/rules/testing-tool-selection.md`); without a booted emulator/simulator it is BLOCKED, never a browser substitute.

@@ -131,6 +131,13 @@ A non-zero exit is a failed step: report it, fix the cause, never continue as if
    old `@Injectable`; do not use it for new singletons); guards/interceptors are functions
    (`signed-in-guard.ts`, `auth-interceptor.ts`). A shared library, only when asked:
    `npm exec --no -- ng generate library <name>` (adds `projects/<name>`, a tsconfig path, its own eslint config).
+   Shared presentational components go in `src/app/shared/components/<name>/` (`ng generate component shared/components/<name>`),
+   line 1 `// Tier: Atom|Molecule|Organism`, signal `input()`/`output()` only (`design-system/reference/atomic-decision-tree.md`).
+   Icons (`spartan`/`hybrid`, or any mode that uses an icon package): `ng generate component shared/components/icon` is the ONLY
+   file that imports the icon package and calls `provideIcons`; the Spartan skill's `provideIcons` examples apply inside it, never
+   in feature components (gate rules `DS-ICON-ISOLATION`, `DS-ICON-FAMILY`; `design-system/reference/token-governance.md` §2).
+   Write `DESIGN.md` at the workspace root from `design-system/reference/design-md-governance.md` §5, filled from the
+   generated theme (daisyUI theme block / Spartan variables) and marked `status: toolkit-default`; invent no brand values.
 
 ### Custom application code (only what the CLI cannot generate)
 
@@ -179,6 +186,7 @@ interface. Replace every placeholder before step 12 — never ship them.
     npm exec --no -- tsc -p tsconfig.spec.json --noEmit; echo "tsc spec exit=$?"
     # from the Claude project root (where .claude/ lives), not inside the app:
     bash .claude/scripts/angular-ui-mode.sh detect <name>; echo "ui-mode exit=$?"   # mode recorded and consistent
+    python3 .claude/scripts/check-design-system.py --root <name>; echo "design gate exit=$?"   # DESIGN.md found, no literals/tier/boundary findings
     npm audit --audit-level=high; echo "audit exit=$?"
     ```
     TypeScript 6 is strict by default (probe on 6.0.3: a file with an implicit `any` and a
@@ -188,7 +196,7 @@ interface. Replace every placeholder before step 12 — never ship them.
     E2E (recommended, required once the app has a real journey; triggers in `.claude/rules/web-frontend.md`):
     `npm i -D --save-exact @playwright/test@1.65.1 @axe-core/playwright@4.14.1`, `npx playwright install chromium`,
     then `playwright.config.ts` from `browser-testing/reference/playwright-test-suite.md` with
-    `webServer.command: 'npm exec --no -- ng serve --port 4200'`; gitignore `playwright/.auth/` and `.playwright-cli/`.
+    `webServer.command: 'npm exec --no -- ng serve --host 127.0.0.1 --port 4200'` (the baseURL host; `ng serve` may bind only `[::1]`); gitignore `playwright/.auth/` and `.playwright-cli/`.
     The same install gives Claude the Playwright CLI (`npx --no-install playwright cli`).
 13. **Summary** — the UI mode and how it was chosen (flag, question, project, non-interactive default),
     which files the CLI and the Spartan generators produced vs which were hand-written (steps 5–11), the exit

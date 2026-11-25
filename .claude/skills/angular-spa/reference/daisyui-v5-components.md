@@ -26,6 +26,12 @@
 @theme {
   --color-brand: oklch(58% 0.19 255);
 }
+
+/* daisyUI loading indicators animate through SMIL inside mask-image, which ignores prefers-reduced-motion:
+   under reduced motion they become a static dot (the status text carries the meaning). Gate: DS-REDUCED-MOTION. */
+@media (prefers-reduced-motion: reduce) {
+  .loading { mask-image: none; -webkit-mask-image: none; border-radius: var(--radius-selector); opacity: 0.6; }
+}
 ```
 > **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in Tailwind CSS 4.3.5.
 > Verified on Angular 22.3 + Tailwind 4.3.5 + daisyUI 5.8.2 (2026-11-24): the built CSS contains

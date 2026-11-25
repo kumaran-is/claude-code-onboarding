@@ -61,7 +61,7 @@ export default defineConfig({
     { name: 'firefox', default: false, use: { ...devices['Desktop Firefox'], storageState: 'playwright/.auth/user.json' }, dependencies: ['setup'] },
   ],
   webServer: {
-    command: 'npm exec --no -- ng serve --port 4200', // local CLI only; React/Vite: 'npx vite --port 5173 --strictPort'
+    command: 'npm exec --no -- ng serve --host 127.0.0.1 --port 4200', // ng serve may bind only [::1]: pin the host baseURL uses; React/Vite: 'npx vite --host 127.0.0.1 --port 5173 --strictPort'
     url: `${baseURL}/`,
     reuseExistingServer: !process.env['CI'],        // CI always starts a fresh server; see "Stale-build guard"
   },

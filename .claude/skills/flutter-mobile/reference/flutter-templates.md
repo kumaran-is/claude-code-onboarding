@@ -10,10 +10,10 @@ Tokens flow in one direction — never reference raw values in widget code.
 lib/design_system/
 ├── tokens/
 │   ├── color_tokens.dart       # Raw hex palette constants — NEVER used directly in widgets
-│   ├── spacing_tokens.dart     # 4pt grid: xs=4, sm=8, md=12, lg=16, xl=24, xxl=32, xxxl=48
-│   ├── radius_tokens.dart      # Corner radius constants
-│   ├── elevation_tokens.dart   # Elevation levels
-│   ├── motion_tokens.dart      # Duration + Curve constants
+│   ├── app_spacing.dart        # AppSpacing + AppSize: the ONE spacing scale (values: ui-standards-tokens)
+│   ├── app_radius.dart         # AppRadius: the ONE corner-radius scale
+│   ├── app_elevation.dart      # AppElevation levels
+│   ├── app_motion.dart         # AppMotion durations + curves (reduced motion collapses them)
 │   └── index.dart              # Barrel export
 ├── typography/
 │   ├── font_families.dart      # Font name string constants only
@@ -34,7 +34,7 @@ color_tokens.dart  →  app_color_scheme.dart  →  app_theme_extension.dart  �
 **Rules:**
 - Widget code: `Theme.of(context).extension<AppThemeExtension>()!.brandPrimary` for custom colors
 - Widget code: `Theme.of(context).colorScheme.*` for M3 semantic colors
-- Widget code: `SpacingTokens.lg` or `AppSpacing.lg` for spacing — never raw `16.0`
+- Widget code: `AppSpacing.lg` for spacing, `AppRadius.md` for corners — never raw `16.0`. One scale per token family: a second spacing/radius/motion class is a blocking finding (`check-design-system.py` DS-SCALE)
 - Widget code: `Theme.of(context).textTheme.*` for typography
 - Never add `examples/` or `demo/` files under `lib/` — they ship in the production build
 
@@ -654,43 +654,49 @@ abstract final class ColorTokens {
 }
 ```
 
-### spacing_tokens.dart
+### app_spacing.dart
 
 ```dart
-// design_system/tokens/spacing_tokens.dart
-/// 4-point grid. Use these — never raw double literals — in padding, gap, and margin.
-/// Widget: EdgeInsets.all(SpacingTokens.lg)  SizedBox(height: SpacingTokens.xl)
-abstract final class SpacingTokens {
-  static const double xs   =  4.0;
-  static const double sm   =  8.0;
-  static const double md   = 12.0;
-  static const double lg   = 16.0;
-  static const double xl   = 24.0;
-  static const double xxl  = 32.0;
-  static const double xxxl = 48.0;
+// design_system/tokens/app_spacing.dart
+/// The project's ONE spacing scale (4-point grid). Values are the toolkit defaults from
+/// ui-standards-tokens/reference/ui-design-tokens.md until the project's DESIGN.md approves its own.
+/// Widget: EdgeInsets.all(AppSpacing.md)  SizedBox(height: AppSpacing.lg)
+abstract final class AppSpacing {
+  static const double xs  = 4;
+  static const double sm  = 8;
+  static const double md  = 16;
+  static const double lg  = 24;
+  static const double xl  = 32;
+  static const double xxl = 48;
+}
+
+abstract final class AppSize {
+  static const double iconSm = 16;
+  static const double icon = 24;
+  static const double iconLg = 32;
+  static const double touchTarget = 48; // minimum; never a fixed height on a text-bearing box
 }
 ```
 
-### radius_tokens.dart
+### app_radius.dart
 
 ```dart
-// design_system/tokens/radius_tokens.dart
-abstract final class RadiusTokens {
-  static const double none = 0.0;
-  static const double sm   = 4.0;
-  static const double md   = 8.0;
-  static const double lg   = 12.0;
-  static const double xl   = 16.0;
-  static const double xxl  = 24.0;
-  static const double full = 999.0;
+// design_system/tokens/app_radius.dart
+abstract final class AppRadius {
+  static const double none = 0;
+  static const double sm   = 4;
+  static const double md   = 8;
+  static const double lg   = 16;
+  static const double xl   = 24;
+  static const double full = 999;
 }
 ```
 
-### elevation_tokens.dart
+### app_elevation.dart
 
 ```dart
-// design_system/tokens/elevation_tokens.dart
-abstract final class ElevationTokens {
+// design_system/tokens/app_elevation.dart
+abstract final class AppElevation {
   static const double none    = 0.0;
   static const double low     = 1.0;
   static const double medium  = 3.0;
@@ -699,20 +705,28 @@ abstract final class ElevationTokens {
 }
 ```
 
-### motion_tokens.dart
+### app_motion.dart
 
 ```dart
-// design_system/tokens/motion_tokens.dart
-abstract final class MotionTokens {
-  // Durations — aligned with Material 3 motion spec
+// design_system/tokens/app_motion.dart
+import 'package:material_ui/material_ui.dart';
+
+/// Under reduced motion (MediaQuery.disableAnimationsOf(context)) use Duration.zero:
+/// `AppMotion.of(context, AppMotion.durationNormal)`.
+abstract final class AppMotion {
+  // Durations — the toolkit defaults in ui-standards-tokens/reference/ui-design-tokens.md §6 (one source)
   static const durationFast   = Duration(milliseconds: 150);
-  static const durationNormal = Duration(milliseconds: 250);
-  static const durationSlow   = Duration(milliseconds: 400);
+  static const durationNormal = Duration(milliseconds: 200);
+  static const durationSlow   = Duration(milliseconds: 300);
 
   // Curves
   static const curveStandard = Curves.easeInOut;  // UI transitions
   static const curveEnter    = Curves.easeOut;    // elements entering the screen
   static const curveExit     = Curves.easeIn;     // elements leaving the screen
+
+  /// Reduced motion (OS setting) collapses every duration to zero; skeleton shimmer and loops stop.
+  static Duration of(BuildContext context, Duration duration) =>
+      MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
 }
 ```
 
@@ -930,4 +944,4 @@ export 'dialogs/app_dialog.dart';
 export 'loaders/app_shimmer.dart';
 ```
 
-**Component file placement rule:** All shared UI primitives (buttons, inputs, cards, dialogs, loaders) live in `design_system/components/<category>/`. Feature-specific widgets that are not reused across features live in `features/<name>/presentation/widgets/`. Never put shared components inside a feature folder.
+**Component file placement rule:** All shared UI primitives (buttons, inputs, cards, dialogs, loaders) live in `design_system/components/<category>/`, each file starting with `// Tier: Atom|Molecule|Organism` and presentational (no `ref`, repositories or `features/` imports). Feature-specific widgets that are not reused across features live in `features/<name>/presentation/widgets/`. Never put shared components inside a feature folder.

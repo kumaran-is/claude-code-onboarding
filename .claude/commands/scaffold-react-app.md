@@ -85,7 +85,9 @@ sample feature.
    and `npm i -DE shadcn@4.23.0 tw-animate-css@1.4.0` (this also moves both to `devDependencies`; check that
    `tailwindcss` and `@tailwindcss/vite` are in `devDependencies` too). Replace `src/index.css` with the merged file in `reference/tooling.md`
    (shadcn tokens + 44 px controls, focus outline, reduced motion). Add `src/shared/ui/theme-context.ts`,
-   `theme-provider.tsx` and `mode-toggle.tsx`. Never add Radix packages next to Base UI.
+   `theme-provider.tsx`, `icons.ts` and `mode-toggle.tsx` (every shared component block starts with its `// Tier:` line; providers/contexts carry none).
+   Write `DESIGN.md` at the project root from `design-system/reference/design-md-governance.md` §5, filled from the
+   `:root`/`.dark` variables in `src/index.css` and marked `status: toolkit-default`; invent no brand values. Never add Radix packages next to Base UI.
 5. **Folders**: `src/app/`, `src/features/`, `src/shared/{ui,lib}/`, `src/components/ui/` (CLI-owned),
    `src/test/`, `e2e/`, `build-tests/`. Delete the template files the app no longer uses: `src/App.tsx`,
    `src/App.css`, `src/assets/`, `.oxlintrc.json`.
@@ -126,8 +128,11 @@ sample feature.
     npx vitest run; echo "vitest exit=$?"
     npx vite build; echo "build exit=$?"
     npx playwright test; echo "e2e exit=$?"
+    python3 <claude project root>/.claude/scripts/check-design-system.py --root .; echo "design gate exit=$?"
     ```
-11. **Summary** — created files, the five exit codes (plus `npm audit --audit-level=high`), how to run (`npm run dev`), next steps (real auth
+    Shared components in `src/shared/ui/` start with `// Tier: Atom|Molecule|Organism` and stay presentational
+    (props in, callbacks out; no query hooks, stores or `fetch`): `design-system/reference/atomic-decision-tree.md`.
+11. **Summary** — created files, the six exit codes (plus `npm audit --audit-level=high`), how to run (`npm run dev`), next steps (real auth
     endpoint, API origin in `VITE_API_BASE_URL`, CSP at the host).
 
 ## Choosing SPA vs full-stack

@@ -1,6 +1,6 @@
 # Smart vs Dumb Widget Pattern
 
-Container/Presentational widget separation for Flutter + Riverpod 3.x.
+Container/Presentational widget separation for Flutter + Riverpod 3.x. Shared-library widgets also carry a line-1 `// Tier: Atom|Molecule|Organism` marker; tier decisions and the cross-stack pass/fail examples: `.claude/skills/design-system/reference/atomic-decision-tree.md`. Gate: `check-design-system.py` (`DS-TIER`, `DS-PRESENTATIONAL`).
 
 ---
 

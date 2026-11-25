@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: design
   output-format: document
-last-reviewed: "2026-03-15"
+last-reviewed: "2026-11-25"
 ---
 
 ## Iron Law
@@ -20,7 +20,7 @@ Never use raw color hex values, spacing literals, or inline TextStyles — alway
 
 # UI Standards - Design Tokens & Patterns
 
-Design token system and accessibility patterns for Flutter applications.
+Design token system and accessibility patterns for Flutter applications. The values here are **toolkit defaults**: a project's own `DESIGN.md` and token code outrank them (`design-system/reference/design-md-governance.md` §2), and a default used where DESIGN.md is silent is reported as unapproved. `check-design-system.py` rule `DS-SCALE` enforces Iron Law 2.
 
 **When to use:** Auditing UI compliance, implementing spacing/radius/size tokens, theme usage, accessibility, or responsive layouts.
 

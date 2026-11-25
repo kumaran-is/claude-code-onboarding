@@ -23,7 +23,7 @@ Correct Riverpod patterns for Flutter state management with code_generation styl
 **Version:** verified together on Flutter 3.50.1 / Dart 3.14.0: `flutter_riverpod: 3.5.0`, `riverpod_annotation: 4.0.8`, dev `riverpod_generator: 4.0.10`, `riverpod_lint: 3.2.0` (needs Dart >= 3.13), `build_runner: 2.17.1`. Pin exact versions; the full pubspec is in [flutter-templates.md](../flutter-mobile/reference/flutter-templates.md). Riverpod 3 changes that affect code in this skill:
 
 - Generated providers take a plain `Ref` (`Future<X> foo(Ref ref)`); the generated `FooRef` types are gone.
-- `AsyncValue.valueOrNull` was renamed to `value`; the old `value` getter was removed. Use `.value` (nullable).
+- `AsyncValue.valueOrNull` was removed; `.value` is nullable, never throws, and keeps the previous data while a refresh is loading or has failed (verified on riverpod 3.5.0, `async_value.dart:562`). `asData` is `null` in the error state, so it drops cached data on a refresh error.
 - `StateProvider`, `StateNotifierProvider`, `ChangeNotifierProvider` moved to `package:flutter_riverpod/legacy.dart`. They still exist but are discouraged — use `Notifier` / `AsyncNotifier` (`@riverpod class`) in new code.
 - Using a `Ref` after its provider was disposed throws; guard post-`await` work with `ref.mounted` (see Provider lifecycle).
 - Failing providers are retried automatically (default: up to 10 attempts, 200 ms → 6.4 s backoff; `Error`s and `ProviderException`s are not retried). Opt out per provider with `retry`.
@@ -98,7 +98,7 @@ ref.watch(userListProvider).when(
 @override
 Widget build(BuildContext context, WidgetRef ref) {
   final users = ref.watch(userListProvider); // rebuilds on change
-  return UserListWidget(users: users.value ?? []); // Riverpod 3: `.value` (was valueOrNull)
+  return UserListView(state: users); // pass the AsyncValue; `users.value ?? []` would render loading and error as empty
 }
 
 // ✅ ref.read — only inside callbacks/event handlers

@@ -175,6 +175,11 @@ Dark mode: the preset declares `@custom-variant dark (&:is(.dark *))` and the va
 system-preference logic as the daisyUI service; `classList.toggle('dark', isDark)` instead of
 `setAttribute('data-theme', …)`). Toaster: `<hlm-toaster [theme]="theme.current()">`.
 
+Focus on non-Helm elements: the preset's base `outline-ring/50` leaves plain links and buttons with the browser's 1 px
+half-opacity outline, which failed a ≥ 2 px visible-focus check in the verification app. Give them a token focus style in
+`src/styles.css` (`a, button, [tabindex] { @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring; }`)
+and keep the Playwright keyboard check.
+
 ## 4. Component map per mode
 
 | Need | daisyui | spartan | hybrid owner |
@@ -246,6 +251,12 @@ overlay open in both themes).
 }
 @theme inline { --color-border: var(--color-base-300); }
 @layer base { * { @apply border-border outline-ring/50; } body { @apply bg-background text-foreground; } }
+
+/* daisyUI loading indicators animate through SMIL inside mask-image, which ignores prefers-reduced-motion:
+   under reduced motion they become a static dot (the status text carries the meaning). Gate: DS-REDUCED-MOTION. */
+@media (prefers-reduced-motion: reduce) {
+  .loading { mask-image: none; -webkit-mask-image: none; border-radius: var(--radius-selector); opacity: 0.6; }
+}
 ```
 
 | Finding (measured in the reference app) | Rule |

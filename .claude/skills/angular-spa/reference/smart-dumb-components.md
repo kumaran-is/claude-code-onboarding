@@ -23,7 +23,7 @@ A **dumb component** renders what it is given and emits what the user does — n
 
 - Receives ALL data via `input()`
 - Emits events via `output()`
-- Injects **nothing** — zero `inject()` calls
+- Injects no services, stores, facades, `HttpClient`, `Router` or `ActivatedRoute` (DOM-level tokens such as `ElementRef` or `DestroyRef` are allowed when the component needs them)
 - Contains zero business logic
 - Contains zero HTTP calls
 - Lives in `shared/components/` directory
@@ -237,7 +237,7 @@ src/app/
             └── index.ts            (barrel export — optional)
 ```
 
-**Rule:** If a component file lives under `shared/components/`, it is dumb by contract. Code review blocks any `inject()` call found there.
+**Rule:** If a component file lives under `shared/components/`, it is dumb by contract and its line 1 is `// Tier: Atom|Molecule|Organism`. `check-design-system.py` (rule `DS-PRESENTATIONAL`) blocks an injected service, store, `HttpClient`, `Router`, `httpResource` or `features/` import there. Tier decisions: `.claude/skills/design-system/reference/atomic-decision-tree.md`.
 
 ---
 

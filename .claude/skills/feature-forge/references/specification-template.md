@@ -143,7 +143,7 @@ The brief answers "Should we build this at all?" — the EARS spec answers "How 
 [What changed that makes this urgent? Options: new user feedback spike / competitor shipped it / compliance deadline / tech debt unblocking / growth milestone]
 
 ## 4. What layer does this land on?
-- [ ] REST API only (NestJS 11.x endpoint + Prisma DTO)
+- [ ] REST API only (NestJS 12.x endpoint + Prisma DTO)
 - [ ] REST API + Angular UI (NestJS + Angular 22.3.x component)
 - [ ] REST API + Flutter mobile (NestJS + Flutter 3.50.x screen)
 - [ ] Full stack (NestJS + Angular + Flutter + DB migration)

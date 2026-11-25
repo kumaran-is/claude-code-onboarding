@@ -1,6 +1,6 @@
 # API Performance Testing
 
-Latency benchmarking for our backend APIs: NestJS 11.x (Fastify), Spring Boot 4.2 (MVC default, WebFlux when justified), FastAPI.
+Latency benchmarking for our backend APIs: NestJS 12.x (Fastify), Spring Boot 4.2 (MVC default, WebFlux when justified), FastAPI.
 
 ## When to Use
 

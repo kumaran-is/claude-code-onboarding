@@ -117,7 +117,7 @@ spring.datasource.password=${DB_PASSWORD}
 ```markdown
 # ${SERVICE_NAME} — NestJS Service
 
-Node.js 24.14.x, NestJS 11.2.x, Fastify, Prisma 7, TypeScript 5.9.x
+Node.js 26.13.x, NestJS 12.6.x, Fastify, Prisma 7, TypeScript 6.0.x
 
 ## Prerequisites
 

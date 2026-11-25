@@ -20,7 +20,7 @@ Fail at startup → Cloud Run health check fails → new revision never gets tra
 
 ---
 
-## NestJS 11.x — Zod Startup Validation
+## NestJS 12.x — Zod Startup Validation
 
 ```typescript
 // src/config/env.ts
@@ -255,7 +255,7 @@ Keep it in parity with what the code reads, presence only (it never opens `.env`
 
 ```bash
 # Required — app will not start without these
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/myapp
+DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/myapp
 JWT_SECRET=<replace-with-32-char-minimum-secret>
 
 # Required — set to: development | staging | production

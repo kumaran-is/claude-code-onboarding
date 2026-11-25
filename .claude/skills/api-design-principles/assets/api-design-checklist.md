@@ -1,6 +1,6 @@
 # API Design Checklist
 
-Pre-implementation checklist for REST APIs. Run before writing any controller or route handler. Covers all 3 backend stacks: Python FastAPI, NestJS 11.x, Spring Boot 4.2 (MVC default, WebFlux when justified).
+Pre-implementation checklist for REST APIs. Run before writing any controller or route handler. Covers all 3 backend stacks: Python FastAPI, NestJS 12.x, Spring Boot 4.2 (MVC default, WebFlux when justified).
 
 ---
 

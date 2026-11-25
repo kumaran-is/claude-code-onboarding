@@ -5,15 +5,15 @@ Copy-ready multi-stage Dockerfiles and .dockerignore for all backend stacks. Eve
 
 ---
 
-## NestJS 11.x / Node 24 (pnpm + Prisma)
+## NestJS 12.x / Node 26 (pnpm + Prisma)
 
 ```dockerfile
-# my-service — Multi-Stage Production Dockerfile (NestJS 11.x / Node 24)
+# my-service — Multi-Stage Production Dockerfile (NestJS 12.x / Node 26)
 
 # ============================================
-# Stage 1: Base — node:24-alpine + pnpm + non-root user
+# Stage 1: Base — node:26-alpine + pnpm + non-root user
 # ============================================
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
@@ -236,7 +236,7 @@ Executed in the hardened container above (`--read-only --tmpfs /tmp --memory 512
 
 ## TypeScript / Fastify / MCP server — Node 26
 
-Verified 2026-11-23 against Node 26.13.1, npm 11.20.0 and Docker Engine 29.8.0: built, run with `--read-only --cap-drop ALL --memory 512m`, healthy, called from the host by an MCP SDK client, `docker stop` in 1 s with exit 0. Uses the image's built-in `node` user (uid 1000) instead of creating one. NestJS stays on the Node 24 pattern above.
+Verified 2026-11-23 against Node 26.13.1, npm 11.20.0 and Docker Engine 29.8.0: built, run with `--read-only --cap-drop ALL --memory 512m`, healthy, called from the host by an MCP SDK client, `docker stop` in 1 s with exit 0. Uses the image's built-in `node` user (uid 1000) instead of creating one. NestJS stays on the Node 26 pattern above.
 
 ```dockerfile
 # syntax=docker/dockerfile:1

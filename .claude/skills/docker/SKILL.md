@@ -1,6 +1,6 @@
 ---
 name: docker
-description: "Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 24, Spring Boot 4.2/Java 25, Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26."
+description: "Use when writing or reviewing Dockerfiles, docker-compose files, or .dockerignore for any backend service. Covers multi-stage builds, container security hardening, compose orchestration, advanced build patterns, and a Docker review checklist for all 4 stacks: NestJS/Node 26, Spring Boot 4.2/Java 25, Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26."
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Dockerfile, docker-compose, containerize, docker build, multi-stage build, docker image, container, dockerignore, docker run, docker scout
@@ -18,7 +18,7 @@ last-reviewed: "2026-03-14"
 
 # Docker
 
-Production-ready containerization for NestJS/Node 24, Spring Boot 4.2/Java 25 (MVC default, WebFlux when justified), Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26. All patterns follow: multi-stage build, non-root user, HEALTHCHECK, .dockerignore.
+Production-ready containerization for NestJS/Node 26, Spring Boot 4.2/Java 25 (MVC default, WebFlux when justified), Python FastAPI 3.14, and TypeScript/Fastify and MCP servers on Node 26. All patterns follow: multi-stage build, non-root user, HEALTHCHECK, .dockerignore.
 
 ## When to Use
 
@@ -48,7 +48,7 @@ Read `reference/dockerfiles.md` for the complete, copy-ready Dockerfile for your
 
 | Stack | Base Image | Build Tool | Port |
 |-------|-----------|-----------|------|
-| NestJS 11.x / Node 24 | node:24-alpine | pnpm | 3000 |
+| NestJS 12.x / Node 26 | node:26-alpine | pnpm | 3000 |
 | Spring Boot 4.2 / Java 25 | eclipse-temurin:25-jdk → eclipse-temurin:25-jre | Maven wrapper (`./mvnw`, Maven 3.10.2) | 8080 |
 | Python FastAPI 3.14 | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 | 8080 |
 | Python Agentic AI | python:3.14.10-slim-trixie@sha256 | uv 0.13.9 (+ `uvicorn --workers N` off Cloud Run) | 8080 |

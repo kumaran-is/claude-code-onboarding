@@ -8,9 +8,11 @@ Every deployed service MUST expose health endpoints (liveness; readiness when it
 
 ---
 
-## NestJS 11.x — Liveness and Readiness (`@nestjs/terminus` 12.2.0)
+## NestJS 12.x — Liveness and Readiness (`@nestjs/terminus` 12.2.0)
 
-Executed 2026-11-23 with `@nestjs/common`/`core`/`platform-fastify` 11.2.11, `@nestjs/terminus` 12.2.0, TypeScript 5.9.3 strict. Plain Node (no Nest) and MCP servers: `../../mcp-builder/reference/production-runtime-shutdown-health.md`.
+Executed 2026-11-23 with `@nestjs/terminus` 12.2.0 on Nest 11.2.11, TypeScript 5.9.3 strict; on NestJS 12.6.0 (2026-11-24; `@nestjs/terminus` 12.2.0, TypeScript 6.0.3, ESM, Fastify) the reference app ran the same `HealthIndicatorService` API (`check().attempt()`; this page's indicator itself was not re-run), and Terminus 12 has **removed** the legacy `HealthIndicator` base class, `HealthCheckError` and `getStatus()` (importing them fails with TS2724). Plain Node (no Nest) and MCP servers: `../../mcp-builder/reference/production-runtime-shutdown-health.md`.
+
+A shorter form of the same check, verified on 12.6.0 for Redis: `this.indicator.check(key).attempt(() => this.db.$queryRawUnsafe("SELECT 1")).withTimeout(1_000).withFailureData({ message: "unavailable" })`. `withFailureData` replaces the driver's message in the response body; Terminus still logs it.
 
 ```typescript
 // src/health/health.controller.ts

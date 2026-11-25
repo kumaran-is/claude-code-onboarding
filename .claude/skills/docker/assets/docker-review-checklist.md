@@ -1,6 +1,6 @@
 # Docker Review Checklist
 
-Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 24, Spring Boot 4.2 / Java 25, Python FastAPI, TypeScript/Fastify and MCP servers on Node 26.
+Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. Run before every Docker-related PR. Covers all stacks: NestJS/Node 26, Spring Boot 4.2 / Java 25, Python FastAPI, TypeScript/Fastify and MCP servers on Node 26.
 
 ---
 
@@ -11,7 +11,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 - [ ] Production stage contains ONLY runtime artifacts — no build tools, no dev dependencies
 - [ ] `.dockerignore` present and excludes: `node_modules/`, `dist/`, `target/`, `.git/`, `.env*`, `**/*.test.*`, `docs/`
 - [ ] Base image selection matches stack:
-  - NestJS: `node:24-alpine` (not node:18, not node:22)
+  - NestJS: `node:26-alpine` (not node:18, not node:22)
   - TypeScript/Fastify services and MCP servers: `node:26.13.1-trixie-slim` (or `node:26.13.1-alpine3.23` when every native dependency ships musl builds; runtime may be `gcr.io/distroless/nodejs26-debian13:nonroot`); builder and runtime on the same Node major and libc
   - Spring Boot: `eclipse-temurin:25-jre` runtime (JRE, not JDK)
   - Python: `python:3.14.10-slim-trixie@sha256:<index-digest>` (patch tag matches `.python-version`; not the full image, not bookworm/bullseye)
@@ -71,7 +71,7 @@ Pre-commit checklist for Dockerfiles, docker-compose files, and .dockerignore. R
 
 ## Stack-Specific Checks
 
-### NestJS / Node 24
+### NestJS / Node 26
 - [ ] Uses `pnpm` (not npm) — `corepack enable && corepack prepare pnpm@latest --activate`
 - [ ] Prisma client generated in builder stage (`pnpm prisma generate`)
 - [ ] `pnpm prune --prod` run before copying node_modules to runner

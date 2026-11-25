@@ -20,7 +20,7 @@ Run this checklist before deploying any Cloud Run Function. Every HIGH or CRITIC
 | Global mutable state across requests (Python) | MEDIUM | FastAPI is multi-threaded — guard shared state with locks or use immutable module-level singletons |
 | Missing structured logging (plain print/console.log) | MEDIUM | One JSON object per line on stdout with `severity`, `message`, `event` — Cloud Logging parses single-line JSON; alerts filter on the event name. Never log `str(exc)` (PII). See `deployment-ci-cd/reference/python-observability.md` |
 | No max-instances set | MEDIUM | Unbounded scaling can exhaust Pub/Sub quota or DB connections — always set `--max-instances` |
-| node:20 or python:3.11 base images | MEDIUM | Use `node:24-alpine` and `python:3.14.10-slim-trixie@sha256:<digest>` — workspace mandates current runtime versions; distroless python3 images carry Debian's 3.13 |
+| node:20 or python:3.11 base images | MEDIUM | Use `node:26-alpine` and `python:3.14.10-slim-trixie@sha256:<digest>` — workspace mandates current runtime versions; distroless python3 images carry Debian's 3.13 |
 | Running as root in container | MEDIUM | Add non-root user in Dockerfile — see `docker` skill `reference/dockerfiles.md` |
 | Secrets in environment variables (plaintext) | MEDIUM | Mount secrets from Secret Manager via `--set-secrets` flag or volume mount |
 | No retry budget on Pub/Sub subscription | LOW | Set `--max-delivery-attempts` on subscription to prevent infinite retry loops on poison pills |

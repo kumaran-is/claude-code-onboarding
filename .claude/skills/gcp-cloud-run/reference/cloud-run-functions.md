@@ -138,7 +138,7 @@ Use the Python multi-stage template in the `docker` skill `reference/dockerfiles
 
 ---
 
-## NestJS / Fastify (node:24-alpine)
+## NestJS / Fastify (node:26-alpine)
 
 ### Pub/Sub Push Handler
 
@@ -199,7 +199,7 @@ bootstrap();
 
 ### Dockerfile Reference
 
-Use `node:24-alpine` base — see `docker` skill `reference/dockerfiles.md` for the full NestJS multi-stage template.
+Use `node:26-alpine` base — see `docker` skill `reference/dockerfiles.md` for the full NestJS multi-stage template.
 
 ---
 
@@ -261,7 +261,7 @@ Use `eclipse-temurin:25-jre` runtime stage — see `docker` skill `reference/doc
 
 ---
 
-## TypeScript / Fastify (node:24-alpine)
+## TypeScript / Fastify (node:26-alpine)
 
 ### Pub/Sub Push Handler
 
@@ -313,7 +313,7 @@ app.listen({ port, host: '0.0.0.0' }).catch((err) => {
 
 ### Dockerfile Reference
 
-Use `node:24-alpine` base — see `docker` skill `reference/dockerfiles.md` for the Node/TypeScript multi-stage template.
+Use `node:26-alpine` base — see `docker` skill `reference/dockerfiles.md` for the Node/TypeScript multi-stage template.
 
 ---
 

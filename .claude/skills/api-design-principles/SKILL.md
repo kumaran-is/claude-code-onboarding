@@ -1,6 +1,6 @@
 ---
 name: api-design-principles
-description: Use before designing any REST API endpoint — covers URL structure, HTTP method semantics, pagination, caching, idempotency, and bulk operations across Python FastAPI, NestJS 11.x, and Spring Boot 4.2 (MVC default, WebFlux when justified). Complements openapi-spec-generation (spec format) and stack-specific implementation skills (code patterns).
+description: Use before designing any REST API endpoint — covers URL structure, HTTP method semantics, pagination, caching, idempotency, and bulk operations across Python FastAPI, NestJS 12.x, and Spring Boot 4.2 (MVC default, WebFlux when justified). Complements openapi-spec-generation (spec format) and stack-specific implementation skills (code patterns).
 allowed-tools: Read
 metadata:
   triggers: REST API design, API versioning, idempotency key, ETag caching, bulk operations, pagination pattern, API checklist, URL design, HTTP methods, REST principles, CORS, rate limiting header
@@ -18,7 +18,7 @@ last-reviewed: "2026-03-14"
 
 # API Design Principles
 
-Stack-agnostic REST design principles for APIs built with Python FastAPI, NestJS 11.x, or Spring Boot 4.2 (MVC default, WebFlux when justified). Use this skill during the design phase — before writing controllers or route handlers.
+Stack-agnostic REST design principles for APIs built with Python FastAPI, NestJS 12.x, or Spring Boot 4.2 (MVC default, WebFlux when justified). Use this skill during the design phase — before writing controllers or route handlers.
 
 ## When to Use
 

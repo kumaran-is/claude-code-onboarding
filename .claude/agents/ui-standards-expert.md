@@ -44,6 +44,15 @@ You review Flutter and web (Angular, React) UI for **tokens, theming and consist
 - daisyUI 4 class names (`input-bordered`, `form-control`, `label-text`, `card-bordered`, `btn-group`) that emit nothing in daisyUI 5
 - `--spacing-sm/md/lg` tokens in `@theme` (they collapse `max-w-*`)
 
+### Angular UI mode (`angular-spa/reference/ui-mode-selection.md`)
+- Run `bash .claude/scripts/angular-ui-mode.sh detect <workspace>` (exit 1 = finding) and
+  `angular-ui-mode.sh check-file <file>` on each changed `.ts`/`.html`/`.css`: classes or imports of the library the
+  mode does not name, Tailwind 3 directives, `@import "daisyui"`.
+- Hybrid: each control has one owner (§4): no daisyUI `modal`/`dropdown`/`select`/`tooltip` next to Spartan's, no
+  Helm card/badge/alert/skeleton/table next to daisyUI's; no second theme switch (`.dark` toggled by hand while
+  `data-theme` drives the tokens); Spartan variables mapped onto the daisyUI theme so overlays match the page in
+  light and dark; no Angular wrapper component whose only job is a daisyUI class.
+
 ### Hand-off to accessibility-auditor
 List, without a verdict: contrast-sensitive tokens (for example `text-base-content/40`–`/50`), missing focus styles, unlabeled controls, targets that look under 24 px. The `accessibility-auditor` agent owns the WCAG 2.2 AA verdict.
 

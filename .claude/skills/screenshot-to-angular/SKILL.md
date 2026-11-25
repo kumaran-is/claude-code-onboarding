@@ -14,13 +14,17 @@ last-reviewed: "2026-04-04"
 
 ## Iron Law
 
-**NEVER output hardcoded hex colors, raw px spacing, or `NgModule`. ALL colors → daisyUI semantic classes (`bg-primary`, `text-base-content`), ALL spacing → Tailwind scale (`p-4`, `mt-2`), ALL components → standalone with `@if`/`@for` control flow, ALL state → `signal()`.**
+**NEVER output hardcoded hex colors, raw px spacing, or `NgModule`. ALL colors → the workspace UI mode's semantic tokens (daisyUI: `bg-primary`, `text-base-content`; Spartan: `bg-background`, `text-foreground`), ALL spacing → Tailwind scale (`p-4`, `mt-2`), ALL components → standalone with `@if`/`@for` control flow, ALL state → `signal()`.**
 
 # Screenshot-to-Angular Skill
 
 ## Purpose
 
-Replicate a UI screenshot as a production-ready Angular 22.x standalone component with pixel-perfect visual accuracy, compliant with Angular standards (daisyUI + Tailwind 4.x).
+Replicate a UI screenshot as a production-ready Angular 22.x standalone component with pixel-perfect visual accuracy, compliant with Angular standards (Tailwind 4.x + the workspace UI mode).
+
+First run `bash .claude/scripts/angular-ui-mode.sh detect <workspace>` and build with that mode's components (`angular-spa/reference/ui-mode-selection.md` §4): the
+daisyUI mapping below applies to `daisyui` and to the daisyUI-owned parts of `hybrid`; dialogs, menus, selects and
+popovers in `spartan`/`hybrid` use Spartan Helm.
 
 > **Scope reminder:** Confirm whether this screenshot is for a marketing/web app or a mobile app feature. If it shows app-level CRUD features (dashboards, forms, ticket management) intended for mobile, consider implementing in Flutter instead of Angular.
 
@@ -141,7 +145,7 @@ export class [Name]Component {
 }
 ```
 
-### daisyUI Component Mapping
+### daisyUI Component Mapping (`daisyui` mode; `hybrid` for daisyUI-owned components)
 
 | Screenshot Element | daisyUI / Tailwind Implementation |
 |---|---|

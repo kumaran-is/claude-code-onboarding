@@ -14,7 +14,7 @@ last-reviewed: "2026-11-22"
 
 ## Iron Law
 
-**LOAD `angular-spa` FIRST for daisyUI component classes and Tailwind CSS 4.3.5 tokens. This skill provides UI state doctrine — use `angular-spa` reference files for the actual component HTML/CSS.**
+**LOAD `angular-spa` FIRST for the workspace UI mode's component classes (daisyUI, Spartan or hybrid: `angular-spa/reference/ui-mode-selection.md`) and Tailwind CSS 4.3.5 tokens. This skill provides UI state doctrine — use `angular-spa` reference files for the actual component HTML/CSS.**
 
 ## When to Use This Skill
 
@@ -86,9 +86,11 @@ Before completing any UI component:
 
 ---
 
-## daisyUI Integration
+## UI library integration (per workspace mode)
 
-This skill provides the doctrine. Use these daisyUI classes from `angular-spa` skill:
+This skill provides the doctrine; the markup comes from the workspace UI mode (`ui-mode-selection.md` §4). In
+`daisyui` and `hybrid` (where daisyUI owns loading, alerts and toasts) use these daisyUI classes; in `spartan` use
+the Helm equivalents (`hlmSpinner`/`hlmSkeleton`, `hlmAlert`, `hlm-toaster`):
 - Loading: `<span class="loading loading-spinner loading-lg" aria-hidden="true"></span>` inside a `role="status"` container with visible or `sr-only` text
 - Alert: `class="alert alert-error"` / `class="alert alert-success"`
 - Button loading: `<span class="loading loading-spinner loading-sm">` inside a disabled `btn`

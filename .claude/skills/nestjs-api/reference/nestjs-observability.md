@@ -19,29 +19,29 @@ Configuration for structured logging with cloud provider support and request log
  */
 
 import { registerAs } from '@nestjs/config';
-import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader.js';
+import { getOptionalString, getRequiredBoolean, getRequiredString } from './static-config-reader.js';
 
 export default registerAs('logging', () => ({
   // Log level: error, warn, log, debug, verbose
-  level: getOptionalString('LOG_LEVEL') ?? 'info',
+  level: getRequiredString('LOG_LEVEL'),
 
   // Output format: json, pretty
-  format: getOptionalString('LOG_FORMAT') ?? 'json',
+  format: getRequiredString('LOG_FORMAT'),
 
   // Include timestamps in logs
-  timestamps: getOptionalBoolean('LOG_TIMESTAMPS') ?? true,
+  timestamps: getRequiredBoolean('LOG_TIMESTAMPS'),
 
   // Service context for structured logging
   serviceContext: {
     service: getRequiredString('APP_NAME'),
-    version: process.env.npm_package_version ?? '0.0.0',
+    version: getRequiredString('APP_VERSION'),
     environment: getRequiredString('NODE_ENV'),
   },
 
   // Cloud logging configuration
   cloudLogging: {
     // Enable cloud logging integration
-    enabled: getOptionalBoolean('CLOUD_LOGGING_ENABLED') ?? false,
+    enabled: getRequiredBoolean('CLOUD_LOGGING_ENABLED'),
 
     // GCP-specific
     gcpProjectId: getOptionalString('GCP_PROJECT_ID'),
@@ -54,7 +54,7 @@ export default registerAs('logging', () => ({
   // Request logging
   requestLogging: {
     // Log all requests
-    enabled: getOptionalBoolean('LOG_REQUESTS') ?? true,
+    enabled: getRequiredBoolean('LOG_REQUESTS'),
 
     // Fields to exclude from request body logging
     excludeFields: ['password', 'token', 'secret', 'apiKey', 'authorization'],
@@ -66,6 +66,19 @@ export default registerAs('logging', () => ({
     slowRequestThreshold: 3000,
   },
 }));
+```
+
+Defaults for the factory above, in `src/config/env.ts` (one place; `@nestjs/config` applies them before the
+factory runs):
+
+```typescript
+  APP_NAME: z.string().min(1),
+  APP_VERSION: z.string().min(1),                       // set by CI from the image tag; no fake default
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'log', 'debug', 'verbose']).default('log'),   // Nest LogLevel values
+  LOG_FORMAT: z.enum(['json', 'pretty']).default('json'),
+  LOG_TIMESTAMPS: z.stringbool().default(true),
+  CLOUD_LOGGING_ENABLED: z.stringbool().default(false),
+  LOG_REQUESTS: z.stringbool().default(true),
 ```
 
 ## OpenTelemetry Configuration
@@ -85,28 +98,28 @@ Configuration for distributed tracing and metrics collection via OpenTelemetry.
  */
 
 import { registerAs } from '@nestjs/config';
-import { getOptionalString, getOptionalBoolean, getOptionalNumber } from './static-config-reader.js';
+import { getOptionalString, getRequiredBoolean, getRequiredNumber, getRequiredString } from './static-config-reader.js';
 
 export default registerAs('observability', () => ({
   // Master switch for observability
-  enabled: getOptionalBoolean('OTEL_ENABLED') ?? false,
+  enabled: getRequiredBoolean('OTEL_ENABLED'),
 
   // Service identification
-  serviceName: getOptionalString('OTEL_SERVICE_NAME') ?? process.env.APP_NAME ?? 'unknown-service',
-  serviceVersion: process.env.npm_package_version ?? '0.0.0',
-  deploymentEnvironment: process.env.NODE_ENV ?? 'development',
+  // Precedence between two declared variables (OTel spec), not a literal default.
+  serviceName: getOptionalString('OTEL_SERVICE_NAME') ?? getRequiredString('APP_NAME'),
+  serviceVersion: getRequiredString('APP_VERSION'),
+  deploymentEnvironment: getRequiredString('NODE_ENV'),
 
   // Tracing configuration
   tracing: {
-    enabled: getOptionalBoolean('OTEL_TRACING_ENABLED') ?? true,
+    enabled: getRequiredBoolean('OTEL_TRACING_ENABLED'),
 
     // OTLP exporter endpoint
     endpoint: getOptionalString('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT') ??
-              getOptionalString('OTEL_EXPORTER_OTLP_ENDPOINT') ??
-              'http://localhost:4318/v1/traces',
+              `${getRequiredString('OTEL_EXPORTER_OTLP_ENDPOINT')}/v1/traces`,
 
     // Sampling rate (0.0 to 1.0)
-    samplingRatio: getOptionalNumber('OTEL_TRACES_SAMPLER_ARG') ?? 1.0,
+    samplingRatio: getRequiredNumber('OTEL_TRACES_SAMPLER_ARG'),
 
     // Always sample errors
     alwaysSampleErrors: true,
@@ -114,15 +127,14 @@ export default registerAs('observability', () => ({
 
   // Metrics configuration
   metrics: {
-    enabled: getOptionalBoolean('OTEL_METRICS_ENABLED') ?? true,
+    enabled: getRequiredBoolean('OTEL_METRICS_ENABLED'),
 
     // OTLP exporter endpoint
     endpoint: getOptionalString('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT') ??
-              getOptionalString('OTEL_EXPORTER_OTLP_ENDPOINT') ??
-              'http://localhost:4318/v1/metrics',
+              `${getRequiredString('OTEL_EXPORTER_OTLP_ENDPOINT')}/v1/metrics`,
 
     // Export interval (ms)
-    exportIntervalMs: getOptionalNumber('OTEL_METRIC_EXPORT_INTERVAL') ?? 60000,
+    exportIntervalMs: getRequiredNumber('OTEL_METRIC_EXPORT_INTERVAL'),
   },
 
   // Instrumentation options
@@ -135,6 +147,20 @@ export default registerAs('observability', () => ({
     fs: false, // Usually too noisy
   },
 }));
+```
+
+Its schema entries (defaults once, in `src/config/env.ts`; the OTLP variable names follow the OpenTelemetry spec):
+
+```typescript
+  OTEL_ENABLED: z.stringbool().default(false),
+  OTEL_TRACING_ENABLED: z.stringbool().default(true),
+  OTEL_METRICS_ENABLED: z.stringbool().default(true),
+  OTEL_SERVICE_NAME: z.string().min(1).optional(),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().default('http://localhost:4318'),
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.url().optional(),
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.url().optional(),
+  OTEL_TRACES_SAMPLER_ARG: z.coerce.number().min(0).max(1).default(1),
+  OTEL_METRIC_EXPORT_INTERVAL: z.coerce.number().int().positive().default(60_000),
 ```
 
 ## OpenTelemetry Tracing Bootstrap

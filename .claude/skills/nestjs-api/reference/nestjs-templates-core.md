@@ -18,12 +18,13 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { join } from 'node:path';
 
 import { ConsoleLogger, Logger, type LogLevel, VersioningType } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module.js';
+import { envSchema } from './config/env.js';
 import { MiddlewareConfigurationService } from './common/middleware/config/middleware-configuration.service.js';
 import { registerSecurityMiddleware } from './common/middleware/security.middleware.js';
 
@@ -44,7 +45,10 @@ const packageJson = JSON.parse(
 ) as IPackageJson;
 const version = packageJson.version ?? '0.0.0';
 const serviceName = packageJson.name ?? 'my-service';
-const nodeEnv = process.env['NODE_ENV'] ?? 'development';
+// Logger options are needed before the container exists: wait until ConfigModule has loaded .env (importing
+// AppModule started it), then read the env schema (its NODE_ENV default applies).
+await ConfigModule.envVariablesLoaded;
+const nodeEnv = envSchema.parse(process.env).NODE_ENV;
 
 // NestJS 12: JSON lines; structured params (logger.log('msg', { key })) are on by default.
 const logger = new ConsoleLogger({

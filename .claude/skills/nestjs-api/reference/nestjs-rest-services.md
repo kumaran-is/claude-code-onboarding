@@ -36,11 +36,8 @@ Schemas, `toPage` and `toProductResponse`: `nestjs-rest-dto-pagination.md`.
 ```typescript
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import axios from 'axios';
-import { firstValueFrom } from 'rxjs';
 import { ResilienceOrchestratorService } from '../../core/resilience/resilience-orchestrator.service.js';
-import { mapPaymentError } from '../../common/http/http-errors.js';
+import { HttpStatusError, mapPaymentError } from '../../common/http/http-errors.js';
 
 export interface PaymentRequest {
   orderId: string;
@@ -65,13 +62,12 @@ export class PaymentServiceClient {
   private readonly timeout: number;
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly resilienceOrchestrator: ResilienceOrchestratorService,
     private readonly configService: ConfigService,
   ) {
     this.baseUrl = this.configService.getOrThrow<string>('paymentService.baseUrl');
     this.apiKey = this.configService.getOrThrow<string>('paymentService.apiKey');
-    this.timeout = this.configService.get<number>('paymentService.timeout', 5000);
+    this.timeout = this.configService.getOrThrow<number>('paymentService.timeout');
   }
 
   async processPayment(request: PaymentRequest): Promise<PaymentResponse> {
@@ -85,18 +81,19 @@ export class PaymentServiceClient {
     const url = `${this.baseUrl}/v1/payments`;
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post<PaymentResponse>(url, request, {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: this.timeout,
-        })
-      );
+      // fetch has no default timeout: every outbound call carries a deadline (typescript-expert `references/node-service-engineering.md` §5).
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(this.timeout),
+      });
+      if (!response.ok) throw new HttpStatusError(response.status);
+      // Parse with the response's Zod schema in real code (boundary rule); the cast keeps the example short.
+      const payment = (await response.json()) as PaymentResponse;
 
-      this.logger.log(`Payment processed: ${response.data.transactionId}`);
-      return response.data;
+      this.logger.log(`Payment processed: ${payment.transactionId}`);
+      return payment;
 
     } catch (error: unknown) {
       mapPaymentError(error); // typed mapping below; never forward the upstream body
@@ -114,17 +111,15 @@ export class PaymentServiceClient {
     const url = `${this.baseUrl}/v1/payments/${transactionId}`;
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get<PaymentResponse>(url, {
-          headers: { 'Authorization': `Bearer ${this.apiKey}` },
-          timeout: this.timeout,
-        })
-      );
-
-      return response.data;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        signal: AbortSignal.timeout(this.timeout),
+      });
+      if (!response.ok) throw new HttpStatusError(response.status);
+      return (await response.json()) as PaymentResponse;
 
     } catch (error: unknown) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (error instanceof HttpStatusError && error.status === 404) {
         throw new NotFoundException('Payment transaction not found');
       }
       mapPaymentError(error);
@@ -141,6 +136,7 @@ export class PaymentServiceClient {
 
 ```typescript
 import { registerAs } from '@nestjs/config';
+import { getRequiredInt, getRequiredString } from './static-config-reader.js';
 
 export interface PaymentServiceConfig {
   baseUrl: string;
@@ -149,21 +145,17 @@ export interface PaymentServiceConfig {
   retryAttempts: number;
 }
 
-export default registerAs('paymentService', (): PaymentServiceConfig => {
-  const baseUrl = process.env.PAYMENT_SERVICE_BASE_URL;
-  const apiKey = process.env.PAYMENT_SERVICE_API_KEY;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error('PAYMENT_SERVICE_BASE_URL and PAYMENT_SERVICE_API_KEY are required');
-  }
-
-  return {
-    baseUrl,
-    apiKey,
-    timeout: parseInt(process.env.PAYMENT_SERVICE_TIMEOUT ?? '5000', 10),
-    retryAttempts: parseInt(process.env.PAYMENT_SERVICE_RETRY_ATTEMPTS ?? '3', 10),
-  };
-});
+// src/config/env.ts entries: required URL and key (no default), optional tuning with its default declared once:
+//   PAYMENT_SERVICE_BASE_URL: z.url({ protocol: /^https$/ }),
+//   PAYMENT_SERVICE_API_KEY: z.string().min(1),
+//   PAYMENT_SERVICE_TIMEOUT: z.coerce.number().int().positive().default(5_000),
+//   PAYMENT_SERVICE_RETRY_ATTEMPTS: z.coerce.number().int().min(0).max(5).default(3),
+export default registerAs('paymentService', (): PaymentServiceConfig => ({
+  baseUrl: getRequiredString('PAYMENT_SERVICE_BASE_URL'),
+  apiKey: getRequiredString('PAYMENT_SERVICE_API_KEY'),
+  timeout: getRequiredInt('PAYMENT_SERVICE_TIMEOUT'),
+  retryAttempts: getRequiredInt('PAYMENT_SERVICE_RETRY_ATTEMPTS'),
+}));
 ```
 
 ---
@@ -366,20 +358,28 @@ export class OrderService {
 
 ### Retry Decorator
 
-Typed error mapping and a `Retry` decorator — strict `tsc`, ESLint and unit tests pass (4xx → 502, 5xx/network → 503,
-retry rethrows the last error). `axios.isAxiosError` via the default import works for CommonJS and ESM builds.
+Typed error mapping and a `Retry` decorator: 4xx → 502, 5xx/network/timeout → 503, retry rethrows the last error.
+Outbound calls use `fetch` (no `@nestjs/axios`, per the nestjs-api skill); a non-2xx response is raised as
+`HttpStatusError` so the mapping sees the status.
 
 ```typescript
 // src/common/http/http-errors.ts
 import { BadGatewayException, Logger, ServiceUnavailableException } from '@nestjs/common';
-import axios from 'axios';
 
 const logger = new Logger('PaymentClient');
 
+/** A non-2xx upstream response; carries only the status, never the upstream body. */
+export class HttpStatusError extends Error {
+  constructor(readonly status: number) {
+    super(`upstream responded ${status}`);
+    this.name = 'HttpStatusError';
+  }
+}
+
 /** Map an outbound HTTP failure to a typed error. Never forward the upstream body to clients. */
 export function mapPaymentError(error: unknown): never {
-  if (axios.isAxiosError(error) && error.response !== undefined) {
-    const status = error.response.status;
+  if (error instanceof HttpStatusError) {
+    const status = error.status;
     logger.error({ event: 'payment_http_error', status });
     if (status >= 400 && status < 500) throw new BadGatewayException('Payment request rejected');
     throw new ServiceUnavailableException('Payment service is unavailable');

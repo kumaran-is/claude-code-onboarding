@@ -20,11 +20,13 @@ Provides feature flag evaluation with support for boolean toggles, percentage-ba
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 
 import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service.js';
 import { getRequestContext } from '../../../common/context/request-context.service.js';
+import type { Env } from '../../../config/env.js';
 
 interface FeatureFlagConfig {
   enabled: boolean;
@@ -47,6 +49,7 @@ export class FeatureFlagsService implements OnModuleInit {
 
   constructor(
     private readonly dynamicConfig: DynamicConfigurationService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -112,7 +115,7 @@ export class FeatureFlagsService implements OnModuleInit {
 
       // Environment targeting
       if (flag.targetRules.environments?.length) {
-        const env = process.env.NODE_ENV ?? 'development';
+        const env = this.config.get('NODE_ENV', { infer: true });
         if (!flag.targetRules.environments.includes(env)) {
           return false;
         }
@@ -216,12 +219,14 @@ For multi-instance deployments, this version uses Redis as a shared cache to ens
  */
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 
 import { L2CacheService } from '../../cache/services/l2-cache.service.js';
 import { DynamicConfigurationService } from '../../dynamic-configuration/services/dynamic-configuration.service.js';
 import { getRequestContext } from '../../../common/context/request-context.service.js';
+import type { Env } from '../../../config/env.js';
 
 interface FeatureFlagConfig {
   enabled: boolean;
@@ -246,6 +251,7 @@ export class FeatureFlagsRedisService implements OnModuleInit {
   constructor(
     private readonly dynamicConfig: DynamicConfigurationService,
     private readonly redisCache: L2CacheService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -308,7 +314,7 @@ export class FeatureFlagsRedisService implements OnModuleInit {
       if (flag.targetRules.userIds?.includes(userId ?? '')) return true;
       if (flag.targetRules.tenantIds?.includes(tenantId ?? '')) return true;
       if (flag.targetRules.environments?.length) {
-        const env = process.env.NODE_ENV ?? 'development';
+        const env = this.config.get('NODE_ENV', { infer: true });
         if (!flag.targetRules.environments.includes(env)) return false;
       }
     }

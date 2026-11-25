@@ -186,11 +186,13 @@ async function bootstrap() {
   );
 
   const config = app.get(ConfigService);
-  const port = config.get<number>('application.port', 3000);
-  const apiPrefix = config.get<string>('application.apiPrefix', 'api');
-  const version = config.get<string>('application.version', '1.0.0');
-  const enableSwagger = config.get<boolean>('application.enableSwagger', true);
-  const swaggerPath = config.get<string>('application.swaggerPath', 'api/docs');
+  // Defaults (PORT 3000, API_PREFIX 'api', SWAGGER_ENABLED true, SWAGGER_PATH 'api/docs') live in src/config/env.ts;
+  // APP_VERSION is required. The `application` registerAs factory maps them with getRequired*().
+  const port = config.getOrThrow<number>('application.port');
+  const apiPrefix = config.getOrThrow<string>('application.apiPrefix');
+  const version = config.getOrThrow<string>('application.version');
+  const enableSwagger = config.getOrThrow<boolean>('application.enableSwagger');
+  const swaggerPath = config.getOrThrow<string>('application.swaggerPath');
 
   app.setGlobalPrefix(apiPrefix);
 

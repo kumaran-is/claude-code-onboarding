@@ -18,9 +18,9 @@ export class SafeRedirectService {
   private readonly allowedHosts: Set<string>;
 
   constructor(private readonly config: ConfigService) {
-    // Load allowed redirect hosts from config
+    // Allowed redirect hosts: ALLOWED_REDIRECT_HOSTS: z.string().default('') in src/config/env.ts (empty = none allowed)
     this.allowedHosts = new Set(
-      this.config.get<string>('ALLOWED_REDIRECT_HOSTS', '')
+      this.config.getOrThrow<string>('ALLOWED_REDIRECT_HOSTS')
         .split(',')
         .filter(Boolean)
         .map((h) => h.trim().toLowerCase()),
@@ -60,16 +60,18 @@ export class SafeRedirectService {
 ### Usage in Auth Controller
 
 ```typescript
+// LoginSchema = z.strictObject({ email: z.email(), password: z.string().min(1).max(256) })
+// LoginQuerySchema = z.strictObject({ redirect: z.string().max(2048).optional() })
 @Post('login')
 async login(
-  @Body() dto: LoginDto,
-  @Query('redirect') redirect?: string,
+  @Body({ schema: LoginSchema }) dto: Login,
+  @Query({ schema: LoginQuerySchema }) query: LoginQuery,
 ) {
   const tokens = await this.authService.login(dto);
 
   // Validate redirect URL if provided
-  const safeRedirect = redirect
-    ? this.safeRedirectService.validateRedirectUrl(redirect)
+  const safeRedirect = query.redirect
+    ? this.safeRedirectService.validateRedirectUrl(query.redirect)
     : '/dashboard';
 
   return { ...tokens, redirectTo: safeRedirect };
@@ -252,13 +254,13 @@ export class AuthController {
   // Stricter rate limiting: 5 requests per 15 minutes
   @Throttle({ default: { limit: 5, ttl: 900000 } })
   @Post('login')
-  async login(@Body() loginDto: LoginDto) {
+  async login(@Body({ schema: LoginSchema }) loginDto: Login) {
     // Login logic
   }
 
   @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 per hour
   @Post('forgot-password')
-  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+  async forgotPassword(@Body({ schema: ForgotPasswordSchema }) forgotPasswordDto: ForgotPassword) {
     // Forgot password logic
   }
 }
@@ -296,7 +298,7 @@ and `nestjs-rate-limiting.md`. Corrections to older guidance:
 export class AuthController {
   @Throttle({ burst: { limit: 5, ttl: 900_000 } }) // 5 attempts / 15 min
   @Post('login')
-  login(@Body() dto: LoginDto): Promise<TokenPair> {
+  login(@Body({ schema: LoginSchema }) dto: Login): Promise<TokenPair> {
     return this.auth.login(dto);
   }
 

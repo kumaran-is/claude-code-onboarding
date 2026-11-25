@@ -42,7 +42,7 @@ Standards for readable, maintainable TypeScript code in NestJS 12.x (verified on
 | **Testing** | AAA pattern (Arrange-Act-Assert); one assertion focus per test |
 | **Null Handling** | Use `null` over `undefined` for explicit absence; schemas say which fields are `.nullable()` vs `.optional()` |
 | **Generics** | Explicit return types on public methods; use type inference for locals |
-| **Environment** | All required env vars in `.env` with working defaults; no `??` fallbacks in config code; `.env` written via Bash (hooks block Write/Edit) |
+| **Environment** | One Zod env schema: required settings have no default (boot fails without them), optional settings get `.default()` there, once; config factories and services never use `?? literal` for configuration (`nestjs-api` › `nestjs-config-basics.md`); `.env` written via Bash (hooks block Write/Edit) |
 | **Auth & tenancy** | Global auth guard (opt out with `@Public()`, built with `Reflector.createDecorator`); JWT verified with pinned `algorithms`, `issuer`, `audience`; tenant/owner id only from the verified token; cross-tenant read → 404 |
 | **Tests** | Vitest (`vi.fn()`), never Jest APIs; e2e through the production `configureApp()`; every guard/validation rule has a negative test |
 | **Prisma 7.x** | `provider = "prisma-client"` with `output` path; no `url` in schema; use `prisma.config.ts`; PrismaService via composition (not inheritance) with `@prisma/adapter-pg` |
@@ -133,6 +133,6 @@ const stats = await this.statsService.forUser(userId)
 
 ## Error Handling
 
-**Exception hierarchy**: Use `HttpException` subclasses (`NotFoundException`, `BadRequestException`). Global exception filter returns RFC 9457 ProblemDetail.
+**Exception hierarchy**: Use `HttpException` subclasses (`NotFoundException`, `BadRequestException`). An RFC 9457 ProblemDetail filter is optional (nestjs-api `nestjs-rest-upload-errors.md`); Nest's default error body is acceptable.
 
 **Validation failures**: Declare a Zod schema on every parameter. The global `StandardSchemaValidationPipe` returns **400** with `"path: message"` entries (default `errorHttpStatusCode` 400, not 422) and never echoes the input; unknown request keys are rejected by `z.strictObject`. A parameter without `{ schema }` is not validated at all. In a class-validator codebase the same 400 comes from `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`.

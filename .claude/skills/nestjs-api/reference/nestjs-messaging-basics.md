@@ -62,7 +62,8 @@ export const QUEUE_NAMES = {
           host: configService.getOrThrow<string>('cache.redis.host'),
           port: configService.getOrThrow<number>('cache.redis.port'),
           password: configService.get<string>('cache.redis.password'),
-          db: configService.get<number>('cache.redis.queueDb') ?? 1,
+          // From REDIS_QUEUE_DB: z.coerce.number().int().min(0).default(1) in src/config/env.ts, mapped by the cache config.
+          db: configService.getOrThrow<number>('cache.redis.queueDb'),
         },
         defaultJobOptions: {
           attempts: 3,

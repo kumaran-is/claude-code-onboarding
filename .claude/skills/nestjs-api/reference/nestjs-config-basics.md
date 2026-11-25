@@ -13,10 +13,9 @@ All environment variable validation happens in a centralized reader with fail-fa
  * Static Configuration Reader
  *
  * PRINCIPLES:
- * - NO hardcoded defaults
- * - NO fallback values
- * - ALL validation happens here
- * - Application FAILS FAST if configs are missing
+ * - Defaults live ONLY in the Zod env schema (`.default()`), never as `?? literal` here or in services
+ * - Required settings have no default: a missing one fails bootstrap
+ * - getOptional*() is for settings that may be genuinely absent (feature off), never for "absent means X"
  */
 
 import { StaticConfigurationException } from '../common/exceptions/static-configuration.exception.js';
@@ -255,7 +254,7 @@ The root configuration module aggregates ALL individual config files.
 import { Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 
-import { envSchema } from './env.schema.js';
+import { envSchema } from './env.js';
 
 // Core application configurations
 import apiConfig from './api.config.js';
@@ -307,15 +306,15 @@ export {
 };
 ```
 
-### Environment schema (`src/config/env.schema.ts`)
+### Environment schema (`src/config/env.ts`)
 
 ```typescript
 import { z } from 'zod';
 
 /** Every variable the service reads. Unknown variables are ignored; missing or malformed ones fail bootstrap. */
 export const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']),
-  PORT: z.coerce.number().int().min(1).max(65535),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   JWT_ISSUER: z.url(),
@@ -324,6 +323,11 @@ export const envSchema = z.object({
 });
 export type Env = z.infer<typeof envSchema>;
 ```
+
+Required settings have no `.default()`. An optional setting gets its default here, once, with a reason when it is not
+obvious. Defaults live only in the env schema (`.default()`): `@nestjs/config` validates it and writes the parsed values, defaults included, back to `process.env` before any `registerAs` factory runs, so factories read with `getRequired*()`. A value needed before the Nest container exists (adapter options in `main.ts`) comes
+from `envSchema.parse(process.env)` after `await ConfigModule.envVariablesLoaded` (before that, values that exist only
+in `.env` are missing), the same schema, never a second literal.
 
 Read typed values with `ConfigService<Env, true>`: `config.get('PORT', { infer: true })` is a `number`. Joi still works
 in `@nestjs/config` 12 but needs Joi 18+, and Joi-only options (`allowUnknown`, `abortEarly`) move to
@@ -347,29 +351,29 @@ Each config file uses `registerAs()` from `@nestjs/config` and the static config
  */
 
 import { registerAs } from '@nestjs/config';
-import { getRequiredString, getOptionalString, getOptionalBoolean } from './static-config-reader.js';
+import { getOptionalString, getRequiredBoolean, getRequiredString } from './static-config-reader.js';
 
 export default registerAs('logging', () => ({
   // Log level: error, warn, log, debug, verbose
-  level: getOptionalString('LOG_LEVEL') ?? 'info',
+  level: getRequiredString('LOG_LEVEL'),
 
   // Output format: json, pretty
-  format: getOptionalString('LOG_FORMAT') ?? 'json',
+  format: getRequiredString('LOG_FORMAT'),
 
   // Include timestamps in logs
-  timestamps: getOptionalBoolean('LOG_TIMESTAMPS') ?? true,
+  timestamps: getRequiredBoolean('LOG_TIMESTAMPS'),
 
   // Service context for structured logging
   serviceContext: {
     service: getRequiredString('APP_NAME'),
-    version: process.env.npm_package_version ?? '0.0.0',
+    version: getRequiredString('APP_VERSION'),
     environment: getRequiredString('NODE_ENV'),
   },
 
   // Cloud logging configuration
   cloudLogging: {
     // Enable cloud logging integration
-    enabled: getOptionalBoolean('CLOUD_LOGGING_ENABLED') ?? false,
+    enabled: getRequiredBoolean('CLOUD_LOGGING_ENABLED'),
 
     // GCP-specific
     gcpProjectId: getOptionalString('GCP_PROJECT_ID'),
@@ -382,7 +386,7 @@ export default registerAs('logging', () => ({
   // Request logging
   requestLogging: {
     // Log all requests
-    enabled: getOptionalBoolean('LOG_REQUESTS') ?? true,
+    enabled: getRequiredBoolean('LOG_REQUESTS'),
 
     // Fields to exclude from request body logging
     excludeFields: ['password', 'token', 'secret', 'apiKey', 'authorization'],
@@ -396,12 +400,25 @@ export default registerAs('logging', () => ({
 }));
 ```
 
+Defaults for the factory above, in `src/config/env.ts` (one place; `@nestjs/config` applies them before the
+factory runs):
+
+```typescript
+  APP_NAME: z.string().min(1),
+  APP_VERSION: z.string().min(1),                       // set by CI from the image tag; no fake default
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'log', 'debug', 'verbose']).default('log'),   // Nest LogLevel values
+  LOG_FORMAT: z.enum(['json', 'pretty']).default('json'),
+  LOG_TIMESTAMPS: z.stringbool().default(true),
+  CLOUD_LOGGING_ENABLED: z.stringbool().default(false),
+  LOG_REQUESTS: z.stringbool().default(true),
+```
+
 ## Key Patterns
 
 | Pattern | Description |
 |---------|-------------|
 | Fail-fast validation | All required env vars validated at startup: `validationSchema` (Zod Standard Schema) on `ConfigModule.forRoot`, plus the static config reader for derived values |
-| No hardcoded defaults | Every value comes from environment or explicit fallback in config |
+| Defaults in one place | Optional settings default in the env schema (`.default()`); no `?? literal` in config factories or services |
 | Type-safe configs | Use `registerAs()` for namespaced, type-safe config access |
 | Global config module | `isGlobal: true` makes ConfigService available everywhere |
 

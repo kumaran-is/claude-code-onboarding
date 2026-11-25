@@ -44,10 +44,12 @@ export const CONSUMER_GROUPS = {
       provide: 'KAFKA_CLIENT',
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        // src/config/env.ts: KAFKA_BROKERS: z.string().min(1) (required), KAFKA_CLIENT_ID: z.string().default('nestjs-app'),
+        // KAFKA_SSL: z.stringbool().default(false). ConfigService returns the validated, typed values.
         return new Kafka({
-          clientId: config.get<string>('KAFKA_CLIENT_ID', 'nestjs-app'),
+          clientId: config.getOrThrow<string>('KAFKA_CLIENT_ID'),
           brokers: config.getOrThrow<string>('KAFKA_BROKERS').split(','),
-          ssl: config.get<boolean>('KAFKA_SSL', false),
+          ssl: config.getOrThrow<boolean>('KAFKA_SSL'),
           sasl: config.get<string>('KAFKA_SASL_USERNAME')
             ? {
                 mechanism: 'plain',

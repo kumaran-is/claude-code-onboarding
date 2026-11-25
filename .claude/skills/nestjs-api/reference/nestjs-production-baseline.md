@@ -30,7 +30,7 @@ Full pins: `nestjs-config-npm-ts.md`.
 | Decorator metadata | `emitDecoratorMetadata: true` without an SWC plugin | turning it off failed the e2e suite |
 | Fail-fast config | Zod env schema as the `ConfigModule` `validationSchema` (Standard Schema) | invalid `DATABASE_URL` + empty `JWT_AUDIENCE` → bootstrap fails with `Config validation error` naming both fields, never their values |
 | Tracing | OpenTelemetry `NodeSDK` loaded with `node --import` before the app | 4 HTTP requests → 4 server spans (`kind: 1`) in the console exporter |
-| Image | multi-stage `node:26-alpine`, prod deps only, `USER node` | `docker build` exit 0 (log kept); the container run with `/health` 200 as `node` was reported by the verification run without a kept log |
+| Image | multi-stage, base pinned by digest (`node:26.13.1-alpine3.23@sha256:<index digest>`), prod deps only, `USER node` | `docker build` exit 0 (log kept); the container run with `/health` 200 as `node` was reported by the verification run without a kept log |
 
 Not re-run on 12.6 and therefore not in this file: an RFC 9457 problem+json exception filter (the default Nest error body
 `{ statusCode, message, errorCode }` is what the tests assert; for problem+json see `nestjs-rest-upload-errors.md`) and
@@ -425,20 +425,24 @@ export class UsersController {
 // src/main.ts
 import 'reflect-metadata';
 import { ConsoleLogger, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.js';
-import type { Env } from './config/env.js';
+import { envSchema, type Env } from './config/env.js';
 import { configureApp } from './configure-app.js';
 
 const logger = new ConsoleLogger({ json: true, redact: ['authorization', 'password', 'passwordHash'] });
 
 try {
+  // The adapter is built before the container exists. Wait until ConfigModule has loaded .env into process.env
+  // (importing AppModule started it), then read the same schema, defaults included, never a second literal.
+  await ConfigModule.envVariablesLoaded;
+  const bootEnv = envSchema.parse(process.env);
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     // bodyLimit caps request size (413 above it); trustProxy only behind a known proxy.
-    new FastifyAdapter({ bodyLimit: Number(process.env['BODY_LIMIT_BYTES'] ?? 65_536), trustProxy: false }),
+    new FastifyAdapter({ bodyLimit: bootEnv.BODY_LIMIT_BYTES, trustProxy: false }),
     // v12: fail bootstrap on identical routes, warn on shadowing ones (both default to 'off').
     { logger, routeConflictPolicy: { duplicate: 'error', shadow: 'warn' } },
   );
@@ -1272,7 +1276,11 @@ repository against PostgreSQL: same-tenant round trip, no cross-tenant read by i
 
 ```dockerfile
 # syntax=docker/dockerfile:1
-FROM node:26-alpine AS build
+# Base image pinned by multi-arch index digest (node:26.13.1-alpine3.23, resolved 2026-11-24).
+# Renovate/Dependabot bump tag and digest together; never a floating tag.
+ARG NODE_IMAGE=node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f
+
+FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -1282,12 +1290,12 @@ COPY src ./src
 # prisma.config.ts reads DATABASE_URL at load; generate never connects, so a placeholder is enough.
 RUN DATABASE_URL=postgresql://placeholder@localhost:5432/placeholder npx prisma generate && npx nest build
 
-FROM node:26-alpine AS prod-deps
+FROM ${NODE_IMAGE} AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-FROM node:26-alpine
+FROM ${NODE_IMAGE}
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules

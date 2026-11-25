@@ -98,8 +98,9 @@
 - Feature modules are self-contained (own controller, service, repository, schemas)
 - No business logic in controllers
 - Configuration externalized via `@nestjs/config` with fail-fast validation
-- `.env` file contains ALL required env vars with working defaults — no `??` fallbacks in config code
-- Every `getRequired*()` call in config files has a matching entry in `.env`
+- Optional settings have their default once, as `.default()` in the Zod env schema; required settings have none, and no
+  `?? literal` or `config.get('KEY', literal)` fallbacks appear in config code
+- Every `getRequired*()` key is either a schema default or a required variable present in the dev `.env`
 - `DATABASE_URL` in `.env` matches `docker-compose.dev.yml` credentials
 - Prisma 7.x: `provider = "prisma-client"` (not `prisma-client-js`), no `url` in schema, `prisma.config.ts` present
 - PrismaService uses composition with `@prisma/adapter-pg` (not `extends PrismaClient`)

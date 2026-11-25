@@ -342,7 +342,7 @@ SECURITY_CORS_ORIGINS=http://localhost:4200
 EOF
 ```
 
-Every `getRequired*()` call in config files **must** have a matching entry in `.env`. If a config uses `getOptionalString('FOO') ?? 'default'`, it does NOT need a `.env` entry. If it uses `getRequiredString('FOO')`, it MUST have `FOO=value` in `.env`.
+Every `getRequired*()` call in config files needs either a `.env` entry or a `.default()` in the env schema (the schema, never `?? 'default'` in the config file, is where an optional setting gets its default). A required setting with no schema default MUST have `FOO=value` in `.env`.
 
 ### Extended `.env` (when features are added)
 

@@ -61,7 +61,8 @@ src/
 
 ## Environment File Rules
 
-- `.env` must be populated with working defaults at scaffold time so the app boots immediately
+- `.env` holds the required variables (no schema default) with local dev values at scaffold time, so the app boots
+  immediately; optional settings take their `.default()` from the Zod env schema and stay out of `.env`
 - **Write `.env` via Bash** (not Write/Edit tools) — hooks block direct `.env` modifications
 - `DATABASE_URL` must match credentials in `docker-compose.dev.yml`
 - All `getRequired*()` env vars must have corresponding entries in `.env`

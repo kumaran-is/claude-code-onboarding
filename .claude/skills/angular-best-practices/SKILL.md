@@ -23,6 +23,9 @@ Verify every Angular API against the `angular-cli` MCP before citing it in a rev
 - `get_best_practices` **with `workspacePath`** (an `angular.json` folder inside the client's project).
   Without it the tool returns the bundled generic guide, which may not match the installed major.
 
+- Angular's official AI-context rules, https://angular.dev/assets/context/best-practices.md: every rule is
+  mapped in `angular-spa/reference/angular-conventions.md` (check it there; do not restate it here).
+
 Context7 is a fallback for non-Angular libraries.
 
 **Version facts for 22.3** (checked against `@angular/*@22.3.0` `.d.ts` and `get_best_practices` for v22):
@@ -303,8 +306,8 @@ class ItemList {
 The stack uses **signal services**, not a store library (no NgRx). Rules:
 
 - Private writable `signal()`, public read-only via `asReadonly()` or `computed()` for derived values.
-- Feature-scoped state: `@Injectable()` (no `providedIn: 'root'`) provided in the feature route or page
-  component — it is created and destroyed with that feature.
+- Feature-scoped state: `@Service({ autoProvided: false })` provided in the feature route or page
+  component — it is created and destroyed with that feature (verified on 22.3).
 - Derived state is `computed()` / `linkedSignal()`; never mirror state with `effect()`.
 - Server state is read through resources (stable in v22) and mutated through `HttpClient` + `reload()`.
 

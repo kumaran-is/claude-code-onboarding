@@ -85,7 +85,7 @@ export class SessionPrefs {
 
 ```typescript
 // ✅ CORRECT - Feature-scoped: created and destroyed with the page
-@Injectable() // NOT providedIn: 'root'
+@Service({ autoProvided: false }) // page-scoped: listed in the page's providers
 export class ProductFilters {
   readonly query = signal('');
 }

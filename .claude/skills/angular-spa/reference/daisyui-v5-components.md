@@ -8,15 +8,30 @@
 /* src/styles.css (NOT .scss — Tailwind CSS 4.3.5 directives conflict with Sass) */
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", "system-ui", sans-serif;
+/* light is the default; dark applies under prefers-color-scheme: dark until data-theme is set */
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
 }
 
-@plugin "daisyui" {
-  themes: light --default, dark --prefersdark, corporate, business;
+/* Customise a built-in theme (or add one: a new name plus every --color-*). Unlisted variables are
+   inherited. The default light error colour is below 4.5:1 on base-100, so error text fails WCAG 1.4.3. */
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  --color-error: oklch(50% 0.2 27);
+  --color-error-content: oklch(98% 0.01 27);
+}
+
+/* App tokens: each --color-* generates bg-*/text-*/border-* utilities (bg-brand, text-brand) */
+@theme {
+  --color-brand: oklch(58% 0.19 255);
 }
 ```
 > **Note:** Do NOT add `@import "daisyui"` — daisyUI is loaded via the `@plugin` directive in Tailwind CSS 4.3.5.
+> Verified on Angular 22.3 + Tailwind 4.3.5 + daisyUI 5.8.2 (2026-11-24): the built CSS contains
+> `.btn`, `[data-theme=dark]`, `@media (prefers-color-scheme:dark){:root:not([data-theme])…}`, the
+> overridden `--color-error` after the built-in light block, and `.border-brand`; axe reports 0
+> violations in both themes. Component classes and options: the official `daisyui` skill.
 
 ### daisyUI 5.8.2 Modal (required pattern)
 
@@ -29,9 +44,15 @@
       <form method="dialog"><button class="btn">Close</button></form>
     </div>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <!-- backdrop click closes; out of the Tab order and named, or it is an unlabelled tab stop -->
+  <form method="dialog" class="modal-backdrop"><button tabindex="-1" aria-label="Close">close</button></form>
 </dialog>
 ```
+
+Open it with `viewChild<ElementRef<HTMLDialogElement>>()` and `showModal()`: the native dialog traps
+focus, closes on Esc and returns focus to the trigger (Chromium). Add `aria-labelledby` pointing at the
+heading. A button inside `<form method="dialog">` with a `value` sets `dialog.returnValue`
+(`'confirm'` / `'cancel'`). jsdom 31 has no `showModal()`/`close()`: stub them in unit tests.
 
 ### daisyUI 5.8.2 Drawer (required pattern)
 
@@ -60,31 +81,72 @@ border-base-300         — default borders
 ## Theme System
 
 ```html
-<!-- Set theme on HTML element -->
-<html lang="en" data-theme="light">
-
+<!-- index.html: no data-theme, so `--prefersdark` applies until the app sets one -->
+<html lang="en">
 ```
 
-`<html>` is outside the Angular root, so it cannot be template-bound. Set the attribute from a service:
+`<html>` is outside the Angular root, so it cannot be template-bound. Canonical service (`core/theme/theme.ts`;
+tested: 7 unit tests and Playwright first-load dark, toggle, reload persistence). Initialise from the stored
+choice, else the system preference: a hard-coded `signal('light')` plus an effect that always writes
+`data-theme` switches off a user's dark preference on first load.
 
 ```typescript
 import { DOCUMENT, Service, effect, inject, signal } from '@angular/core';
+import { Logger } from '../logging/logger';
 
 export type ThemeName = 'light' | 'dark';
+const STORAGE_KEY = 'app-theme';
+const isThemeName = (value: unknown): value is ThemeName => value === 'light' || value === 'dark';
 
 @Service()
-export class ThemeService {
-  private readonly document = inject(DOCUMENT); // SSR-safe: no global `document`
-  readonly theme = signal<ThemeName>('light');
+export class Theme {
+  private readonly document = inject(DOCUMENT); // SSR-safe: no global document/window
+  private readonly logger = inject(Logger);
+
+  readonly current = signal<ThemeName>(this.readStored() ?? this.systemPreference());
 
   constructor() {
-    // effect() pushes state OUT to the DOM — its legitimate use.
-    effect(() => this.document.documentElement.setAttribute('data-theme', this.theme()));
+    // effect() pushes state OUT to the DOM: its legitimate use.
+    effect(() => this.document.documentElement.setAttribute('data-theme', this.current()));
+  }
+
+  toggle(): void {
+    const next: ThemeName = this.current() === 'dark' ? 'light' : 'dark';
+    this.current.set(next);
+    this.persist(next);
+  }
+
+  private systemPreference(): ThemeName {
+    return this.document.defaultView?.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  // Storage throws in privacy modes or with blocked site data: log, then fall back (a preference, never a secret).
+  // Even the `localStorage` getter throws (SecurityError) when site data is blocked, so it is read inside the
+  // try, never in a field initializer: an initializer that touches it stops the app from booting.
+  private readStored(): ThemeName | null {
+    try {
+      const stored = this.document.defaultView?.localStorage.getItem(STORAGE_KEY);
+      return isThemeName(stored) ? stored : null;
+    } catch (error) {
+      this.logger.warn('theme: localStorage read failed, using system preference', { error });
+      return null;
+    }
+  }
+
+  private persist(theme: ThemeName): void {
+    try {
+      this.document.defaultView?.localStorage.setItem(STORAGE_KEY, theme);
+    } catch (error) {
+      this.logger.warn('theme: localStorage write failed, choice kept for this session', { error });
+    }
   }
 }
 ```
 
-Persisting the preference and avoiding a flash on load: `tailwind-patterns` skill §5.
+Toggle button: [angular-ui-feedback-components.md](angular-ui-feedback-components.md#theme-toggle). First-paint
+flash when the stored choice differs from the system preference: `tailwind-patterns` skill §5 (inline script,
+CSP hash). Unit tests stub `window.matchMedia` (absent in jsdom) and make `getItem`/`setItem` **and the
+`localStorage` getter itself** throw; the E2E suite blocks storage in an init script and asserts the app boots.
 
 ## Color System
 
@@ -107,7 +169,8 @@ text-base-content        /* Primary text */
 text-base-content/70     /* Secondary text (on base-200/300 too) */
 text-base-content/60     /* Muted text on base-100 — the lowest opacity that keeps 4.5:1; never /40 */
 /* text-error on the default light theme measures 2.87:1 on base-100 — fails AA for body text.
-   For error messages use text-base-content with an error icon, or darken --color-error in the theme. */
+   Override --color-error with @plugin "daisyui/theme" (Tailwind setup above), or use
+   text-base-content with an error icon. */
 text-primary-content     /* Text on primary bg */
 
 /* Borders */
@@ -140,34 +203,15 @@ border-error             /* Error border */
 ## Required Patterns (v5.8.2)
 
 ### Modal
-```html
-<dialog id="my_modal" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Title</h3>
-    <p class="py-4">Content</p>
-    <div class="modal-action">
-      <form method="dialog"><button class="btn">Close</button></form>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-```
+Required pattern and focus behaviour: [daisyUI 5.8.2 Modal](#daisyui-582-modal-required-pattern) above.
 
 ### Drawer
-```html
-<div class="drawer lg:drawer-open">
-  <input id="my-drawer" type="checkbox" class="drawer-toggle" />
-  <div class="drawer-content">
-    <label for="my-drawer" class="btn btn-primary drawer-button lg:hidden">Open</label>
-  </div>
-  <div class="drawer-side">
-    <label for="my-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
-    <ul class="menu bg-base-200 text-base-content min-h-full w-80 p-4">
-      <li><a>Item</a></li>
-    </ul>
-  </div>
-</div>
-```
+Required pattern: [daisyUI 5.8.2 Drawer](#daisyui-582-drawer-required-pattern) above.
+
+### Menu items at 44px
+daisyUI `menu` items are `display:grid`, so `items-center` does not centre a `min-h-11` link vertically: use
+`content-center` (`<li><a class="min-h-11 content-center">`). Keep `routerLinkActive="menu-active"` with
+`ariaCurrentWhenActive="page"`.
 
 ### Loading States
 ```html
@@ -181,18 +225,8 @@ border-error             /* Error border */
 ```
 
 ### Theme Controller (CSS-only theme switching)
-```html
-<!-- Dark/light toggle with swap -->
-<label class="swap swap-rotate">
-  <input type="checkbox" class="theme-controller" value="dark" />
-  <svg class="swap-off h-8 w-8 fill-current" viewBox="0 0 24 24"><!-- sun --></svg>
-  <svg class="swap-on h-8 w-8 fill-current" viewBox="0 0 24 24"><!-- moon --></svg>
-</label>
-
-<!-- Radio buttons for multiple themes -->
-<input type="radio" name="theme" class="btn theme-controller" aria-label="Light" value="light" />
-<input type="radio" name="theme" class="btn theme-controller" aria-label="Dark" value="dark" />
-```
+Not used in Angular apps here: `theme-controller` inputs switch the theme in CSS only, so the `Theme` service,
+the stored choice and the rendered theme drift apart. Use the service and toggle in [Theme System](#theme-system).
 
 ## Complete Component Listing
 
@@ -250,9 +284,14 @@ border-error             /* Error border */
   <input type="email" class="input" />
 </fieldset>
 
-<!-- Validator (v5): the class goes on the input -->
-<input type="email" class="input validator" required aria-describedby="email-hint" />
-<p id="email-hint" class="validator-hint">Please enter a valid email</p>
+<!-- Validator (v5): the class goes on the input. It turns red on :user-invalid OR [aria-invalid="true"],
+     so with Signal Forms bind aria-invalid yourself (FormField sets no aria-* attributes). -->
+<input type="email" class="input validator" required
+       [attr.aria-invalid]="email().touched() && email().invalid()"
+       [attr.aria-describedby]="email().invalid() ? 'email-error' : null" />
+<!-- validator-hint is visibility:hidden until invalid and coloured with --color-error: override that
+     colour (above) or the hint fails contrast in the default light theme -->
+<p id="email-error" class="validator-hint">Please enter a valid email</p>
 
 <!-- Filter (v5) -->
 <div class="filter">
@@ -283,7 +322,7 @@ border-error             /* Error border */
 <div class="status status-error"></div>
 
 <!-- Tabs -->
-<div role="tablist" class="tabs tabs-boxed">
+<div role="tablist" class="tabs tabs-box">
   <a role="tab" class="tab tab-active">Tab 1</a>
   <a role="tab" class="tab">Tab 2</a>
 </div>

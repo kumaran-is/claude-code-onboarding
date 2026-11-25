@@ -234,7 +234,7 @@ Every `actionHandler` call goes through one gateway. Unknown action names and in
  * The server re-authorizes from the session (nothing in `context` grants permission) and holds
  * every `requiresHumanApproval` action, answering 202 with a server-authored ConfirmationDialog.
  */
-@Injectable({ providedIn: 'root' })
+@Service() // Angular 22 singleton (not @Injectable({ providedIn: 'root' }))
 export class ActionGateway {
   private readonly backend = inject(GENUI_BACKEND);
   private readonly auth = inject(AuthSession);

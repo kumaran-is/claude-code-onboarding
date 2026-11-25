@@ -88,8 +88,9 @@ export const PAGING_CONFIG = new InjectionToken<PagingConfig>('PAGING_CONFIG', {
 
 - Use `inject()` in field initializers; constructor parameter injection still works but is not the
   house style.
-- `providedIn: 'root'` for app-wide singletons; `@Injectable()` + component `providers: [...]` for a
-  store scoped to one page (destroyed with it).
+- `@Service()` for app-wide singletons (Angular 22; `providedIn: 'root'` stays only on `InjectionToken`
+  factories like the one above); `@Service({ autoProvided: false })` + component or route `providers: [...]`
+  for a store scoped to one page (destroyed with it).
 
 ---
 

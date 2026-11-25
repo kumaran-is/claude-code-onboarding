@@ -18,7 +18,7 @@ Manual checks that automated tools cannot catch. Run after automated scan confir
 | Focus indicator always visible | No `outline: none` without replacement | Focus decoration visible |
 | No keyboard traps | Tab does not get stuck | Focus does not get stuck |
 | Logical tab order | DOM order or tabindex | `FocusTraversalGroup` order |
-| Skip link at top of page | `href="#main-content"` first element | Not applicable (native nav) |
+| Skip link at top of page | first focusable element; in an SPA with `<base href="/">` a bare `href="#main-content"` resolves to `/#main-content` and navigates: handle the click (`preventDefault`) and focus `<main tabindex="-1">` | Not applicable (native nav) |
 
 **Manual test steps:**
 1. Open page, press Tab — first focusable element should receive focus

@@ -63,96 +63,26 @@ export class ToastContainerComponent {
 }
 ```
 
-## Theme Toggle Component
+## Theme Toggle
 
-```typescript
-import { Component, signal, inject, PLATFORM_ID, afterNextRender } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+The theme service is canonical in [daisyui-v5-components.md](daisyui-v5-components.md#theme-system)
+(stored choice, else `prefers-color-scheme`; guarded `localStorage`; `data-theme` on `<html>`). Do not
+add a second service here. The toggle is a plain button bound to it:
 
-@Component({
-  selector: 'app-theme-toggle',
-  template: `
-    <label class="swap swap-rotate">
-      <input type="checkbox" class="theme-controller" value="dark"
-        [checked]="isDark()" (change)="onToggle($event)" aria-label="Toggle dark mode" />
-      <!-- sun icon svg class="swap-off h-8 w-8 fill-current" aria-hidden="true" -->
-      <!-- moon icon svg class="swap-on h-8 w-8 fill-current" aria-hidden="true" -->
-    </label>
-  `,
-})
-export class ThemeToggleComponent {
-  private readonly platformId = inject(PLATFORM_ID);
-  protected readonly isDark = signal(false);
-
-  constructor() {
-    afterNextRender(() => {
-      if (isPlatformBrowser(this.platformId)) {
-        const saved = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        this.isDark.set(saved ? saved === 'dark' : prefersDark);
-      }
-    });
-  }
-
-  protected onToggle(event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    this.isDark.set(checked);
-    if (isPlatformBrowser(this.platformId)) {
-      localStorage.setItem('theme', checked ? 'dark' : 'light');
-    }
-  }
-}
+```html
+<!-- shell template; theme = inject(Theme) -->
+<button type="button" class="btn btn-ghost btn-square min-h-11 min-w-11"
+        aria-label="Dark theme" [attr.aria-pressed]="theme.current() === 'dark'" (click)="theme.toggle()">
+  <svg aria-hidden="true" class="size-5 fill-current"><!-- sun/moon icon --></svg>
+</button>
 ```
 
-## Theme Service
-
-```typescript
-import { Service, signal, computed, inject, PLATFORM_ID, effect } from '@angular/core';
-import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-
-export const DAISY_THEMES = [
-  { name: 'light', label: 'Light', isDark: false },
-  { name: 'dark', label: 'Dark', isDark: true },
-  { name: 'corporate', label: 'Corporate', isDark: false },
-  { name: 'business', label: 'Business', isDark: true },
-] as const;
-
-export type ThemeName = typeof DAISY_THEMES[number]['name'];
-
-@Service()
-export class ThemeService {
-  private readonly document = inject(DOCUMENT);
-  private readonly platformId = inject(PLATFORM_ID);
-
-  readonly themes = DAISY_THEMES;
-  private readonly _current = signal<ThemeName>('light');
-  readonly currentTheme = this._current.asReadonly();
-  readonly isDarkMode = computed(() => this.themes.find(t => t.name === this._current())?.isDark ?? false);
-
-  constructor() {
-    if (isPlatformBrowser(this.platformId)) {
-      const saved = localStorage.getItem('theme') as ThemeName;
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      this._current.set(saved && this.themes.some(t => t.name === saved) ? saved : prefersDark ? 'dark' : 'light');
-    }
-    effect(() => {
-      const theme = this._current();
-      const isDark = this.themes.find(t => t.name === theme)?.isDark ?? false;
-      this.document.documentElement.setAttribute('data-theme', theme);
-      this.document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-    });
-  }
-
-  setTheme(theme: ThemeName): void {
-    this._current.set(theme);
-    if (isPlatformBrowser(this.platformId)) localStorage.setItem('theme', theme);
-  }
-
-  toggleDarkMode(): void {
-    this.setTheme(this.isDarkMode() ? 'light' : 'dark');
-  }
-}
-```
+- One stable accessible name plus `aria-pressed` (state), not a label that flips between "Dark" and "Light".
+- Not daisyUI's `theme-controller` checkbox: it switches the theme in CSS only, so the service, the
+  stored choice and the rendered theme drift apart.
+- More than two themes: widen `ThemeName` and its `isThemeName` guard, and render a `<select>` or a
+  `menu` of buttons with `aria-pressed`; the service shape stays the same.
+- No `style.colorScheme` writes: each daisyUI theme already sets `color-scheme`.
 
 ## Confirm Dialog Service & Component
 

@@ -1,4 +1,6 @@
-> **Canonical source:** https://angular.dev/style-guide — this project strictly follows this guide. When in doubt, the official style guide takes precedence over any convention listed here.
+> **Canonical sources:** https://angular.dev/style-guide and Angular's official AI-context rules
+> https://angular.dev/assets/context/best-practices.md (35 rules; every one is covered below, checked
+> 2026-11-24). When in doubt, the official text takes precedence over any convention listed here.
 
 # Angular Conventions & Project Structure
 
@@ -8,19 +10,20 @@ Source: https://angular.dev/style-guide
 
 ### File Naming
 
-- Separate words in file names with hyphens: `user-profile.component.ts`, not `UserProfile.component.ts`
+- Separate words in file names with hyphens: `user-profile.ts`, not `UserProfile.ts`
 - File name must reflect the primary class/concept — avoid `helpers.ts`, `utils.ts`, `common.ts`
-- Test files use `.spec.ts` matching the source: `user-profile.component.spec.ts`
+- Test files use `.spec.ts` matching the source: `user-profile.spec.ts`
 - Component file group shares the same base name: `user-profile.ts`, `user-profile.html`, `user-profile.css`
-- Named pattern: `<feature>.<type>.ts` — e.g. `hero-list.component.ts`, `auth.service.ts`, `app.routes.ts`
+- No type suffix in file names (the 2025 style guide, what CLI 22.3 generates): `ng generate component
+  features/orders/orders-page` → `orders-page.ts`; `ng generate service core/theme/theme` → `theme.ts`.
+  Keep `<name>.routes.ts` and `app.config.ts`. An existing workspace that uses `.component.ts` keeps it consistently
 
 ### Class Naming
 
-- Components: `UpperCamelCase` + `Component` suffix — `UserProfileComponent`
-- Services: `UpperCamelCase` + `Service` suffix — `AuthService`, `UserService`
-- Directives: `UpperCamelCase` + `Directive` suffix — `TooltipDirective`
-- Pipes: `UpperCamelCase` + `Pipe` suffix — `DateFormatPipe`
-- Guards: `UpperCamelCase` + `Guard` suffix — `AuthGuard`
+- Components, services, directives: `UpperCamelCase`, no type suffix (CLI 22.3 output) — `OrdersPage`,
+  `Theme`, `OrdersApi`, `Tooltip`. Name by role when the bare noun is ambiguous (`OrdersStore`, `AuthSession`)
+- Pipes keep the suffix (CLI 22.3: `ng g pipe shared/date-format` → `date-format-pipe.ts`, class `DateFormatPipe`)
+- Guards and interceptors are functions: `signedInGuard`, `authInterceptor`
 - Interfaces: `UpperCamelCase`, no `I` prefix — `User`, not `IUser`
 - Enums: `UpperCamelCase` — `UserRole`
 
@@ -50,7 +53,8 @@ Co-locate closely related files (component + template + styles + spec) in the sa
 ### `@Service` / Dependency Injection
 
 - Singleton services use `@Service()` (Angular 22; what `ng generate service` emits) — avoids manual registration.
-  `@Injectable()` without `providedIn` remains for services provided in a component or route `providers` array
+  A service scoped to a page or route uses `@Service({ autoProvided: false })` and is listed in that
+  component's or route's `providers` (verified on 22.3: a page-scoped store, fresh per page instance)
 - Prefer the `inject()` function over constructor parameter injection for clarity and tree-shakability
 - Group injected dependencies at the top of class declarations before methods
 
@@ -90,7 +94,10 @@ Name handlers for the **action performed**, not the triggering event: `saveUserD
 - Use `signal()` / `computed()` / `linkedSignal()` for state; `effect()` only to push state out to non-reactive code (never to set another signal). Canonical rules: `angular/references/signals-core.md`
 - Use `inject()` function over constructor injection
 - Use `input()` and `output()` functions — NOT `@Input`/`@Output` decorators
-- Use `NgOptimizedImage` for all static images
+- Use `NgOptimizedImage` for all static images (it does not work for inline base64 images)
+- Use `model()` for two-way bound properties (`[(prop)]`) instead of pairing `input()` with `output()`
+- Do NOT import `CommonModule` — import only the directives and pipes the template uses (`AsyncPipe`, `DatePipe`)
+- External templates/styles: `templateUrl` / `styleUrl` paths relative to the component TS file (`./orders-page.html`)
 - Do NOT use `@HostBinding`/`@HostListener` — use the `host` object in the decorator
 - Do NOT use `ngClass`/`ngStyle` — use `class`/`style` bindings
 - All interactive elements must have loading, error, empty, and success states
@@ -114,12 +121,18 @@ Full pattern guide: `smart-dumb-components.md`
 - Keep templates simple; avoid complex logic
 - Do not write arrow functions in templates (not supported)
 - Do not assume globals like `new Date()` are available in templates
+
+## State
+
+- Signals for local component state; `computed()` for derived state
+- Keep state transformations pure and predictable
+- Do NOT use `mutate` on signals — use `update` or `set`
 - Use the async pipe for observables in templates
 
 ## Services & Routing
 
 - Design services around a single responsibility
-- Use `providedIn: 'root'` for singleton services
+- Use `@Service()` for singletons (not `@Injectable({ providedIn: 'root' })` in new code)
 - Use `inject()` instead of constructor injection
 - Use `HttpClient` with RxJS operators — return `Observable<T>` from services and let errors propagate to the page
 - Auth (interceptor allow-list, refresh, guards, returnUrl): `web-security.md`
@@ -132,7 +145,7 @@ Full pattern guide: `smart-dumb-components.md`
 
 ## Styling
 
-- **daisyUI semantic colors only** — never hardcode hex values (`bg-primary`, not `bg-[#3b82f6]`)
+- **Semantic colors of the workspace UI mode only** (daisyUI theme classes, or Spartan variables such as `bg-background`; `ui-mode-selection.md`) — never hardcode hex values (`bg-primary`, not `bg-[#3b82f6]`)
 - **Tailwind CSS 4.3.5** uses CSS-native config (`@theme {}` in CSS, no `tailwind.config.js`)
 - **PostCSS config** must be `.postcssrc.json` — Angular's `@angular/build:application` builder ignores `postcss.config.js`
 - **Global styles** must be `.css` (not `.scss`) — Sass intercepts Tailwind CSS 4.3.5 directives (`@import`, `@theme`, `@plugin`)
@@ -172,7 +185,7 @@ Exception marker: `<!-- ignore-design: [reason] -->` in templates, `// ignore-de
 ## Design Principles
 
 1. **Visual hierarchy** — size, color, spacing, contrast guide attention
-2. **Consistency** — reuse daisyUI components, don't invent custom variants
+2. **Consistency** — reuse the UI mode's components (daisyUI classes or Spartan Helm), don't invent custom variants
 3. **Feedback** — instant response (<100ms hover/click), loading states for >300ms async
 4. **Progressive disclosure** — primary actions visible, secondary behind menus/accordions
 5. **Affordance** — buttons look clickable, inputs have borders, interactive elements change cursor
@@ -208,14 +221,14 @@ src/app/
 │   └── directives/
 ├── features/           # Feature modules (lazy loaded)
 │   ├── dashboard/
-│   │   ├── dashboard.component.ts
-│   │   ├── dashboard.component.html
-│   │   ├── dashboard.component.scss
-│   │   └── dashboard.component.spec.ts
+│   │   ├── dashboard.ts
+│   │   ├── dashboard.html
+│   │   ├── dashboard.css
+│   │   └── dashboard.spec.ts
 │   ├── users/
 │   │   ├── users.routes.ts
-│   │   ├── user-list.component.ts
-│   │   └── user-detail.component.ts
+│   │   ├── user-list.ts
+│   │   └── user-detail.ts
 │   └── settings/
 ├── app.ts
 ├── app.html

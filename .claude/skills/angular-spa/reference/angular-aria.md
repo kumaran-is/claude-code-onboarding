@@ -335,5 +335,7 @@ Verified with a `RouterTestingHarness` spec: focus lands on the new `<h1>` (tag 
 a query-param-only link (`/dashboard?tab=2`) keeps focus on the link, a path change focuses the new
 `<h1>`; the earlier version that focused on every `NavigationEnd` failed the first check. For
 query-param-only updates inside the same page (filters, tabs) announce the result with `LiveAnnouncer`
-instead of moving focus. Keep a visible skip link to `<main>`. Full WCAG 2.2 AA checklist:
+instead of moving focus. Keep a visible skip link to `<main>`: with `<base href="/">` a bare `href="#main"`
+resolves to `/#main` and navigates away, so handle the click in the shell (`(click)="skipToMain($event)"`:
+`preventDefault()`, then focus `<main #main id="main" tabindex="-1">`); Playwright asserts the URL is unchanged. Full WCAG 2.2 AA checklist:
 `accessibility-audit` skill.

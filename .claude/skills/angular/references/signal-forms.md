@@ -36,6 +36,16 @@
 There is **no** `signalForm`, `signalInput`, `@angular/forms/signal`, `[control]` or `[field]` binding
 in 22.3 — those names appear in older blog posts and earlier drafts of this file and do not compile.
 
+**Accessibility is yours to bind.** `FormField` sets native `required`/`min`/`max`/`minLength`/`maxLength`/
+`disabled`/`readonly`/`name` but **no `aria-*` attribute** (`@angular/forms` 22.3 contains no `aria-` string).
+Bind `[attr.aria-invalid]="f.email().touched() && f.email().invalid()"` and
+`[attr.aria-describedby]="f.email().invalid() ? 'email-error' : null"` on each control, and render the error in
+`<p id="email-error">`. `<form [formRoot]="f">` (`FormRoot`) sets `novalidate` and calls `submit()` on submit.
+Focus the first invalid field with `form(model, schemaFn, { submission: { action, onInvalid: (tree) =>
+tree().errorSummary()[0]?.fieldTree().focusBoundControl() } })`. Never disable the submit button while
+invalid: the user gets no error list and focus cannot return to it after a confirm dialog. Verified in a
+Playwright + axe run on Angular 22.3 (2026-11-24).
+
 Field state is read by calling the field: `f.email().value()`, `.valid()`, `.invalid()`,
 `.touched()`, `.dirty()`, `.disabled()`, `.errors()`, `.pending()`; the root adds
 `f().submitting()`. Errors are `{ kind: string; message?: string }`.

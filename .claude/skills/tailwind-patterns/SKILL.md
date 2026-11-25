@@ -194,29 +194,17 @@ The workspace standard is **daisyUI semantic colours switched by `data-theme` on
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 ```
 
-```typescript
-// theme.service.ts: set the attribute on <html> via DOCUMENT (SSR-safe; a component
-// template cannot bind attributes on <html> because the root component lives in <body>)
-import { DOCUMENT, Service, inject } from '@angular/core';
-
-export type Theme = 'light' | 'dark';
-
-@Service()
-export class ThemeService {
-  private readonly doc = inject(DOCUMENT);
-
-  setTheme(theme: Theme): void {
-    this.doc.documentElement.setAttribute('data-theme', theme);
-    this.doc.defaultView?.localStorage.setItem('theme', theme); // a preference only; never store sensitive data here
-  }
-}
-```
+The theme service (stored choice, else `prefers-color-scheme`; guarded `localStorage`; `data-theme` on
+`<html>` via `DOCUMENT`) is canonical in `angular-spa/reference/daisyui-v5-components.md` → Theme System.
+Do not write a second one: a service that always starts at `'light'` switches off a user's dark preference.
 
 **Prevent the theme flash.** The service runs after bootstrap, so the first paint uses the default theme. Add a tiny blocking script in `index.html` `<head>` that sets `data-theme` before paint. Under a strict CSP, allow it with a `'sha256-…'` hash, not `'unsafe-inline'`.
 
 ```html
 <script>
-  var t = localStorage.getItem('theme');
+  /* same key as the Theme service; storage can throw (privacy mode), so fall back to the system preference */
+  var t = null;
+  try { t = localStorage.getItem('app-theme'); } catch (e) { /* runs before Logger exists; Theme.readStored() logs the same failure at bootstrap */ }
   if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', t);
 </script>

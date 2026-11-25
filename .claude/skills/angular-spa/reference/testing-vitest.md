@@ -37,6 +37,8 @@ diff; remove every `fakeAsync`/`waitForAsync` by hand (see below). Browser mode 
 | `fixture.detectChanges()` after every change | Works, but hides scheduling bugs | `await fixture.whenStable()` (lets the zoneless scheduler render) |
 | Set a plain field, expect the DOM to update | Does not render zoneless | Make it a signal or use `componentRef.setInput()` |
 | `await fixture.whenStable()` with an unflushed `HttpClient` request | **Hangs**: in-flight requests are pending tasks | Flush via `HttpTestingController` first, then await |
+| Signal Forms `submission.action` that awaits `firstValueFrom(http…)` | `whenStable()` returns before the action resolves | Flush the request, then `await vi.waitFor(() => expect(…))` |
+| `dialog.showModal()` / `window.matchMedia` in jsdom 31 | Not implemented (`showModal is not a function`, `matchMedia` undefined) | Stub per spec: `HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; })`, `close` likewise; `vi.stubGlobal('matchMedia', …)`. Real dialog focus and theme behaviour belong in Playwright |
 
 ## Component with HttpTestingController and a CDK harness
 

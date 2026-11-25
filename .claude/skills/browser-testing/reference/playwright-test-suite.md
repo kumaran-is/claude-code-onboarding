@@ -35,11 +35,11 @@ export default defineConfig({
   testDir: './e2e',
   outputDir: 'test-results/playwright',          // Playwright-only: it is emptied at the start of every run
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly: !!process.env['CI'],
+  retries: process.env['CI'] ? 2 : 0,
   retryStrategy: 'isolated',                     // 1.62+: retries run at the end, one by one, away from the rest of the suite
-  failOnFlakyTests: !!process.env.CI,            // a test that passes only on retry fails the CI run
-  reporter: process.env.CI
+  failOnFlakyTests: !!process.env['CI'],            // a test that passes only on retry fails the CI run
+  reporter: process.env['CI']
     ? [['blob'], ['github'], ['junit', { outputFile: 'test-results/junit.xml' }]]
     : [['failures'], ['html', { open: 'never' }]],   // 1.65+: 'failures' prints only failures and flaky retries
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
@@ -61,12 +61,17 @@ export default defineConfig({
     { name: 'firefox', default: false, use: { ...devices['Desktop Firefox'], storageState: 'playwright/.auth/user.json' }, dependencies: ['setup'] },
   ],
   webServer: {
-    command: 'npx ng serve --port 4200',         // React/Vite: 'npx vite --port 5173 --strictPort'
+    command: 'npm exec --no -- ng serve --port 4200', // local CLI only; React/Vite: 'npx vite --port 5173 --strictPort'
     url: `${baseURL}/`,
-    reuseExistingServer: !process.env.CI,        // CI always starts a fresh server; see "Stale-build guard"
+    reuseExistingServer: !process.env['CI'],        // CI always starts a fresh server; see "Stale-build guard"
   },
 });
 ```
+
+`process.env['CI']`, not `process.env.CI`: an `e2e/tsconfig.json` that extends an Angular workspace's root
+tsconfig inherits `noPropertyAccessFromIndexSignature`, and `tsc -p e2e/tsconfig.json` fails with TS4111.
+`ng new` does not install `@types/node`; add it pinned (`npm i -D --save-exact @types/node@26.6.7`) and list
+`"types": ["node"]` in the e2e tsconfig. Verified on Angular 22.3 + Playwright 1.65.1 (2026-11-24).
 
 Why each setting:
 

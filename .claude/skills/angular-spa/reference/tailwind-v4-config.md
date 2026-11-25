@@ -43,7 +43,7 @@ For SCSS projects, add to `src/styles.scss`:
 
 | Angular Official Guide | This project | Reason |
 |------------------------|-------------------------------|--------|
-| `ng add tailwindcss` automated | Manual setup | More control over daisyUI integration |
+| `ng add tailwindcss` | `ng add tailwindcss`, then re-pin exact versions | `ng add` writes caret ranges (`^4.1.12`); `/scaffold-angular-app` pins `tailwindcss@4.3.5` |
 | SCSS `@use 'tailwindcss'` supported | CSS only (`src/styles.css`) | Sass intercepts `@import`/`@theme`/`@plugin` — CSS is required |
 | `@import "tailwindcss"` | `@import "tailwindcss";` + `@plugin "daisyui";` | daisyUI 5 is a Tailwind 4 plugin |
 
@@ -89,7 +89,7 @@ TailwindCSS v4 is a complete rewrite using CSS-native configuration:
 | `@apply` directive | Still works, but discouraged | Use CSS variables instead |
 | `theme.extend` | `@theme { --custom: value }` | CSS custom properties |
 | `screens` config | `--breakpoint-*` variables | CSS-native breakpoints |
-| `colors` config | Use daisyUI semantic colors | Don't define custom colors |
+| `colors` config | `@theme { --color-brand: oklch(…) }` | Brand/app tokens only; UI-library colours come from the mode's theme (daisyUI theme or Spartan variables) |
 
 ## PostCSS Configuration
 

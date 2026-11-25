@@ -68,7 +68,7 @@ export const none: None = { type: 'none' }
 /**
  * Make all properties deeply readonly.
  */
-export type DeepReadonly<T> = T extends (...args: any[]) => any
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
     ? T
     : T extends object
     ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
@@ -180,14 +180,14 @@ export type Arguments<T> = T extends (...args: infer A) => any ? A : never
 /**
  * Get first argument of function.
  */
-export type FirstArgument<T> = T extends (first: infer F, ...args: any[]) => any
+export type FirstArgument<T> = T extends (first: infer F, ...args: never[]) => unknown
     ? F
     : never
 
 /**
  * Async version of function.
  */
-export type AsyncFunction<T extends (...args: any[]) => any> = (
+export type AsyncFunction<T extends (...args: never[]) => unknown> = (
     ...args: Parameters<T>
 ) => Promise<Awaited<ReturnType<T>>>
 
@@ -308,7 +308,7 @@ export type JsonValue = JsonPrimitive | JsonArray | JsonObject
  */
 export type Jsonify<T> = T extends JsonPrimitive
     ? T
-    : T extends undefined | ((...args: any[]) => any) | symbol
+    : T extends undefined | ((...args: never[]) => unknown) | symbol
     ? never
     : T extends { toJSON(): infer R }
     ? R

@@ -78,7 +78,7 @@ type B = IsString<number>;    // false
 
 **Extracting Return Types:**
 ```typescript
-type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+type ReturnType<T> = T extends (...args: never[]) => infer R ? R : never; // never[]: matches every parameter list without any
 
 function getUser() {
   return { id: 1, name: "John" };
@@ -257,7 +257,7 @@ type EventMap = {
   "user:deleted": { id: string };
 };
 
-class TypedEventEmitter<T extends Record<string, any>> {
+class TypedEventEmitter<T extends Record<string, unknown>> {
   private listeners: {
     [K in keyof T]?: Array<(data: T[K]) => void>;
   } = {};
@@ -290,7 +290,20 @@ emitter.emit("user:created", { id: "1", name: "John" });
 ### Pattern 2: Type-Safe API Client
 
 ```typescript
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
 type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+/** One endpoint: params and body are optional; response is what the server returns. */
+interface EndpointSpec {
+  params?: object;
+  body?: unknown;
+  response: unknown;
+}
 
 type EndpointConfig = {
   "/users": {
@@ -308,42 +321,44 @@ type ExtractParams<T> = T extends { params: infer P } ? P : never;
 type ExtractBody<T> = T extends { body: infer B } ? B : never;
 type ExtractResponse<T> = T extends { response: infer R } ? R : never;
 
-class APIClient<Config extends Record<string, Record<HTTPMethod, any>>> {
-  async request<
-    Path extends keyof Config,
-    Method extends keyof Config[Path]
-  >(
+// [X] extends [never]: the tuple wrap stops distribution, so "no params" is detected reliably.
+type RequestOptions<E> =
+  [ExtractParams<E>] extends [never]
+    ? [ExtractBody<E>] extends [never]
+      ? []
+      : [options: { body: ExtractBody<E> }]
+    : [ExtractBody<E>] extends [never]
+      ? [options: { params: ExtractParams<E> }]
+      : [options: { params: ExtractParams<E>; body: ExtractBody<E> }];
+
+// Each path maps only the methods it supports (Partial), and every method must match EndpointSpec.
+class APIClient<Config extends { [Path in keyof Config]: Partial<Record<HTTPMethod, EndpointSpec>> }> {
+  async request<Path extends keyof Config & string, Method extends keyof Config[Path] & HTTPMethod>(
     path: Path,
     method: Method,
-    ...[options]: ExtractParams<Config[Path][Method]> extends never
-      ? ExtractBody<Config[Path][Method]> extends never
-        ? []
-        : [{ body: ExtractBody<Config[Path][Method]> }]
-      : [{
-          params: ExtractParams<Config[Path][Method]>;
-          body?: ExtractBody<Config[Path][Method]>;
-        }]
+    ...options: RequestOptions<Config[Path][Method]>
   ): Promise<ExtractResponse<Config[Path][Method]>> {
-    // Implementation here
-    return {} as any;
+    // Type-level example: the transport is out of scope. A real client fetches, then parses the body with the
+    // endpoint's schema (Boundaries rule 1) instead of asserting the type.
+    throw new Error(`APIClient.request ${method} ${path}: transport not implemented in this example (${options.length} options)`);
   }
 }
 
 const api = new APIClient<EndpointConfig>();
 
-// Type-safe API calls
-const users = await api.request("/users", "GET");
-// Type: User[]
-
-const newUser = await api.request("/users", "POST", {
-  body: { name: "John", email: "john@example.com" }
-});
-// Type: User
-
-const user = await api.request("/users/:id", "GET", {
-  params: { id: "123" }
-});
-// Type: User
+// Type-safe API calls (the transport throws in this example, so they are wrapped in a function).
+export async function examples(): Promise<void> {
+  const users: User[] = await api.request("/users", "GET");
+  const newUser: User = await api.request("/users", "POST", { body: { name: "John", email: "john@example.com" } });
+  const user: User = await api.request("/users/:id", "GET", { params: { id: "123" } });
+  // @ts-expect-error DELETE is not defined for "/users"
+  await api.request("/users", "DELETE");
+  // @ts-expect-error POST needs a body
+  await api.request("/users", "POST");
+  // @ts-expect-error params.id must be a string
+  await api.request("/users/:id", "GET", { params: { id: 123 } });
+  void [users, newUser, user];
+}
 ```
 
 The `response` types above are compile-time promises only: the implementation must parse each body with a schema before returning it (see "Boundaries" in `../SKILL.md`), otherwise any payload is accepted.
@@ -351,40 +366,28 @@ The `response` types above are compile-time promises only: the implementation mu
 ### Pattern 3: Builder Pattern with Type Safety
 
 ```typescript
-type BuilderState<T> = {
-  [K in keyof T]: T[K] | undefined;
-};
-
+// Keys whose property is not optional.
 type RequiredKeys<T> = {
   [K in keyof T]-?: {} extends Pick<T, K> ? never : K;
 }[keyof T];
 
-type OptionalKeys<T> = {
-  [K in keyof T]-?: {} extends Pick<T, K> ? K : never;
-}[keyof T];
+// Immutable builder: every set() returns a new builder whose type records the keys set so far (S).
+class Builder<T, S extends Partial<T> = {}> {
+  private constructor(private readonly state: S) {}
 
-type IsComplete<T, S> =
-  RequiredKeys<T> extends keyof S
-    ? S[RequiredKeys<T>] extends undefined
-      ? false
-      : true
-    : false;
-
-class Builder<T, S extends BuilderState<T> = {}> {
-  private state: S = {} as S;
-
-  set<K extends keyof T>(
-    key: K,
-    value: T[K]
-  ): Builder<T, S & Record<K, T[K]>> {
-    this.state[key] = value;
-    return this as any;
+  static for<T>(): Builder<T, {}> {
+    return new Builder<T, {}>({});
   }
 
-  build(
-    this: IsComplete<T, S> extends true ? this : never
-  ): T {
-    return this.state as T;
+  set<K extends keyof T>(key: K, value: T[K]): Builder<T, S & Pick<T, K>> {
+    // A computed key widens the object type; the assertion restores the exact shape this line builds.
+    const next = { ...this.state, [key]: value } as S & Pick<T, K>;
+    return new Builder<T, S & Pick<T, K>>(next);
+  }
+
+  // Callable only when S holds every required key of T; otherwise `this` does not match and the call fails.
+  build(this: Builder<T, S & Pick<T, RequiredKeys<T>>>): S & Pick<T, RequiredKeys<T>> {
+    return { ...this.state };
   }
 }
 
@@ -395,17 +398,19 @@ interface User {
   age?: number;
 }
 
-const builder = new Builder<User>();
-
-const user = builder
+const user: User = Builder.for<User>()
   .set("id", "1")
   .set("name", "John")
   .set("email", "john@example.com")
-  .build();  // OK: all required fields set
+  .build(); // OK: all required fields set
 
-// const incomplete = builder
-//   .set("id", "1")
-//   .build();  // Error: missing required fields
+// @ts-expect-error missing required fields: name, email
+Builder.for<User>().set("id", "1").build();
+
+// @ts-expect-error age must be a number
+Builder.for<User>().set("age", "40");
+
+export { user };
 ```
 
 ### Pattern 4: Deep Readonly/Partial
@@ -468,7 +473,7 @@ type ValidationErrors<T> = {
   [K in keyof T]?: string[];
 };
 
-class FormValidator<T extends Record<string, any>> {
+class FormValidator<T extends object> {
   constructor(private rules: FieldValidation<T>) {}
 
   validate(data: T): ValidationErrors<T> | null {
@@ -676,7 +681,7 @@ function processValue(value: unknown) {
 ## Type Testing
 
 ```typescript
-// Type assertion tests
+// Type assertion tests: they run in `tsc`, so a wrong type fails the build.
 type AssertEqual<T, U> =
   [T] extends [U]
     ? [U] extends [T]
@@ -684,15 +689,19 @@ type AssertEqual<T, U> =
       : false
     : false;
 
-type Test1 = AssertEqual<string, string>;        // true
-type Test2 = AssertEqual<string, number>;        // false
-type Test3 = AssertEqual<string | number, string>; // false
+type Expect<T extends true> = T;
 
-// Expect error helper
-type ExpectError<T extends never> = T;
+type Test1 = Expect<AssertEqual<string, string>>;
+type Test2 = Expect<AssertEqual<ReturnType<() => number>, number>>;
 
-// Example usage
-type ShouldError = ExpectError<AssertEqual<string, number>>;
+// A failing assertion is a compile error. An expect-error directive documents an expected failure
+// and itself fails the build if the line below it ever starts compiling.
+// @ts-expect-error string is not number
+type Test3 = Expect<AssertEqual<string, number>>;
+// @ts-expect-error a union is not equal to one of its members
+type Test4 = Expect<AssertEqual<string | number, string>>;
+
+export type { Test1, Test2, Test3, Test4 };
 ```
 
 ## Common Pitfalls

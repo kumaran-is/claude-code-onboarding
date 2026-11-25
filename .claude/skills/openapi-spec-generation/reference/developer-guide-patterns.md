@@ -230,9 +230,9 @@ HTTP stack.
 
 ---
 
-#### TypeScript / NestJS (HttpService / fetch)
+#### TypeScript / NestJS (fetch)
 
-Matches the NestJS conventions of the `nestjs-api` skill.
+Matches the NestJS conventions of the `nestjs-api` skill: `fetch` with a deadline, no `@nestjs/axios`.
 
 ```typescript
 // Types — match interfaces from code-first-patterns.md
@@ -256,28 +256,7 @@ interface ErrorResponse {
   message: string;
 }
 
-// Using NestJS HttpService (injectable)
-import { Injectable } from "@nestjs/common";
-import { HttpService } from "@nestjs/axios";
-import { firstValueFrom } from "rxjs";
-
-@Injectable()
-export class UserApiClient {
-  constructor(private readonly httpService: HttpService) {}
-
-  async createUser(request: CreateUserRequest, accessToken: string): Promise<User> {
-    const response = await firstValueFrom(
-      this.httpService.post<User>(
-        "https://api.example.com/api/v1/users",
-        request,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
-      ),
-    );
-    return response.data;
-  }
-}
-
-// Using native fetch (Node 18+ / browser)
+// Native fetch (Node 26 / browser). fetch has no default timeout: always pass a deadline.
 async function createUser(
   request: CreateUserRequest,
   accessToken: string,
@@ -289,6 +268,7 @@ async function createUser(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
+    signal: AbortSignal.timeout(5_000),
   });
 
   if (!response.ok) {

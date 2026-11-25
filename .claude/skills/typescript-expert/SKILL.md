@@ -45,9 +45,9 @@ Use this skill for project-level TypeScript decisions:
 - Do not use for implementation-level type patterns — load `typescript-advanced-types` instead
 - Do not use for runtime debugging — load `systematic-debugging` instead
 
-## Strict baseline (TypeScript 5.9 / 6.0)
+## Strict baseline (TypeScript 6.0)
 
-New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 5.9.3 (2026-11-22). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). TypeScript 6.0 also defaults `types` to `[]` (add `"types": ["node"]` or `process` is TS2591) and `strict` to on. Pin TypeScript per project: Angular 22 requires `>=6.0.0 <6.1.0` (`@angular/compiler-cli` peer; pin 6.0.3); the React toolchain, plain Node services and MCP servers pin 6.0.3 (verified 2026-11-23 on Node 26.13.1) because typescript-eslint 8.74.0 has the peer `typescript <6.1.0`; NestJS stays on the pin in `nestjs-api`. create-vite 9.3.4 templates install `typescript@~7.0`, which none of these stacks accept, so always pin explicitly. TypeScript 7.0.2 is npm `latest` and compiled the Node sample, but stays deferred until typescript-eslint supports it (`node-service-engineering.md` §1).
+New web and API projects start from `references/tsconfig-strict.json`. Keep what the Angular CLI generates (`strict`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `strictTemplates` under `angularCompilerOptions`) and add `noUncheckedIndexedAccess`. Turn on `exactOptionalPropertyTypes` only after checking that the libraries you pass optional props to accept it. All of these flags compiled together under TS 6.0.3 (2026-11-24; the strict template plus every code block of this skill and typescript-advanced-types). Do not add `baseUrl`: `paths` work without it, and TypeScript 6.0.3 rejects it (TS5101). TypeScript 6.0 also defaults `types` to `[]` (add `"types": ["node"]` or `process` is TS2591) and `strict` to on. Pin TypeScript per project: Angular 22 requires `>=6.0.0 <6.1.0` (`@angular/compiler-cli` peer; pin 6.0.3); the React toolchain, plain Node services and MCP servers pin 6.0.3 (verified 2026-11-23 on Node 26.13.1) because typescript-eslint 8.74.0 has the peer `typescript <6.1.0`; NestJS stays on the pin in `nestjs-api`. create-vite 9.3.4 templates install `typescript@~7.0`, which none of these stacks accept, so always pin explicitly. TypeScript 7.0.2 is npm `latest` and compiled the Node sample, but stays deferred until typescript-eslint supports it (`node-service-engineering.md` §1).
 
 ## Type-check commands that actually check
 
@@ -119,7 +119,7 @@ type OrderId = Brand<string, 'OrderId'>;
 Recursive type manipulation and template literal type magic. Use for library APIs, type-safe event systems, compile-time validation.
 
 ```typescript
-type DeepReadonly<T> = T extends (...args: any[]) => any
+type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
   : T extends object
     ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
@@ -223,7 +223,7 @@ Verified patterns with tests and negative controls: `references/node-service-eng
 |------|---------|
 | `references/typescript-cheatsheet.md` | Quick reference for type basics, utility types, generics, type guards, and best practices |
 | `references/utility-types.ts` | Production-ready utility type library (branded types, Result/Option types, deep utilities, JSON types) |
-| `references/tsconfig-strict.json` | Strict TypeScript 5.9 tsconfig template for **bundled** apps and libraries (`moduleResolution: bundler`); Node services use the `nodenext` config in `node-service-engineering.md` §1 |
+| `references/tsconfig-strict.json` | Strict TypeScript 6.0 tsconfig template (no option or deprecation errors on 6.0.3, 2026-11-24) for **bundled** apps and libraries (`moduleResolution: bundler`); Node services use the `nodenext` config in `node-service-engineering.md` §1 |
 | `references/node-service-engineering.md` | Node 26 + TypeScript 6.0 service engineering: ESM/CJS and bundling measurements, Node 26 features, heap sizing, config and secrets, errors, deadlines, DI, logging, workers, streams, `await using`, graceful shutdown, profiling, testing, dependency governance; every snippet compiled, linted and tested |
 | `scripts/ts_diagnostic.py` | Python diagnostic script — analyzes tsconfig, tooling, monorepo setup, any-type usage, and type check performance |
 

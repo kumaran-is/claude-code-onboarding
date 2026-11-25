@@ -55,7 +55,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module';
+import { AppModule } from './app.module.js';
 
 async function emit(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { logger: false });
@@ -106,7 +106,7 @@ Read `reference/validation-and-linting.md` for:
 Read `reference/developer-guide-patterns.md` for:
 - 9-section documentation structure (Introduction → Authentication → Quick Start → Endpoints → Data Models → Errors → Rate Limiting → Changelog → SDKs)
 - Auth flow documentation template (obtain → use → refresh token)
-- Multi-language code examples for all 3 backend stacks: Java/Spring Boot WebFlux (WebClient), Python/FastAPI (httpx async), TypeScript/NestJS (HttpService + fetch)
+- Multi-language code examples for all 3 backend stacks: Java/Spring Boot WebFlux (WebClient), Python/FastAPI (httpx async), TypeScript/NestJS (fetch with `AbortSignal.timeout`)
 - Error handling reference (status codes, error response format, per-stack handling patterns)
 - 4 common pitfalls with solutions (sync drift, missing errors, broken examples, unclear parameters)
 

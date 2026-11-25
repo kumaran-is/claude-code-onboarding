@@ -1,6 +1,6 @@
 {
     "$schema": "https://json.schemastore.org/tsconfig",
-    "display": "Strict TypeScript 5.9 for bundled apps and libraries (moduleResolution bundler). Node services run by node directly: use the nodenext config in node-service-engineering.md section 1. Angular/Vite solution layouts: see SKILL.md",
+    "display": "Strict TypeScript 6.0 (verified on 6.0.3) for bundled apps and libraries (moduleResolution bundler). Node services run by node directly: use the nodenext config in node-service-engineering.md section 1. Angular/Vite solution layouts: see SKILL.md",
     "compilerOptions": {
         // =========================================================================
         // STRICTNESS (Maximum Type Safety)

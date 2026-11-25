@@ -1,6 +1,6 @@
 ---
 name: typescript-advanced-types
-description: "Canonical TypeScript type-design skill (TS 5.9 / 6.0) for Angular 22.x, React, NestJS 12.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
+description: "Canonical TypeScript type-design skill (TS 6.0) for Angular 22.x, React, NestJS 12.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
 allowed-tools: Read
 metadata:
   triggers: "Generic types, Conditional types, Mapped types, Utility types, Template literal types, Type-safe API client, Type-safe form, DeepPartial, DeepReadonly, Branded types, type inference, Zod, runtime validation, DTO mapping, discriminated union, exhaustive check, assertNever, TypeScript architecture, type safety hardening, shared types"
@@ -52,7 +52,7 @@ Compile-time types describe what you EXPECT; they check nothing that arrives at 
 5. **Failures are typed:** a `Result` union or a typed error kind, never `catch (e: any)`.
 6. **Server side, the environment is a boundary too:** parse `process.env` once with a schema at startup. Zod 4 gotchas: `z.string().url()`/`.email()` are deprecated (use `z.url()`, `z.email()`); `z.httpUrl()` rejects IPs, `localhost` and service names like `http://orders:8080`; `z.coerce.number()` turns `''` into `0`; `z.coerce.boolean()` turns `"false"` into `true` (use `z.stringbool()`). Verified examples: `typescript-expert/references/node-service-engineering.md` §3–§5.
 
-Compiled with TypeScript 5.9.3 + Zod 4.6.7 under `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature` (2026-11-22). Removing a `case` (or adding a variant without one) fails with TS2345 at `assertNever`.
+Compiled with TypeScript 6.0.3 + Zod 4.6.7 + @types/node 26.6.7 under `typescript-expert/references/tsconfig-strict.json` (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`), together with every block of `resources/implementation-playbook.md`, each as its own module; the two fragments that use the `User` type from an earlier block were compiled with that declaration in scope (2026-11-24). Removing a `case` (or adding a variant without one) fails with TS2345 at `assertNever`.
 
 ```typescript
 import { z } from 'zod';

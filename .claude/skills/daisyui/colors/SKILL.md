@@ -3,9 +3,14 @@ name: daisyui-colors
 description: Color rules that you must use with daisyUI 5
 metadata:
   triggers: daisyui colors, semantic color, base-100, base-content, primary-content, oklch theme color
-source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo"
+source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo; plus a house Iron Law"
 last-reviewed: "2026-11-24"
+allowed-tools: Read, Edit, Write, Glob, Grep
 ---
+
+## Iron Law
+
+USE daisyUI COLOR NAMES (`primary`, `base-100`, ...), NEVER `dark:` ON THEM AND NO FIXED TAILWIND COLORS FOR THEMED UI.
 
 ## daisyUI 5 colors
 

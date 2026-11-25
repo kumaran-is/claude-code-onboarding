@@ -107,7 +107,7 @@ reversible, low-risk actions.
 
 ## Documentation Sources
 
-Verify Angular APIs with the `angular-cli` MCP: `search_documentation` with `version: 21`, and
+Verify Angular APIs with the `angular-cli` MCP: `search_documentation` with `version: 22`, and
 `get_best_practices` **with the workspace path** (without it the tool returns the latest-major guide —
 the bundled generic guide). Context7 remains a fallback for other libraries.
 

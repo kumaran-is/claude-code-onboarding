@@ -20,7 +20,7 @@ When the MCP server is enabled, AI agents have access to the following tools:
 
 ## Configuration
 
-To use the MCP server, you configure your host environment (IDE or CLI) to run `npx @angular/cli mcp`.
+To use the MCP server, you configure your host environment (IDE or CLI) to run `npx @angular/cli@22.3.0 mcp` (pin the workspace's CLI version).
 
 ### Antigravity IDE
 
@@ -31,7 +31,7 @@ Create a file named `.antigravity/mcp.json` in your project's root:
   "mcpServers": {
     "angular-cli": {
       "command": "npx",
-      "args": ["-y", "@angular/cli", "mcp"]
+      "args": ["-y", "@angular/cli@22.3.0", "mcp"]
     }
   }
 }
@@ -46,7 +46,7 @@ Create `.gemini/settings.json` in the project root:
   "mcpServers": {
     "angular-cli": {
       "command": "npx",
-      "args": ["-y", "@angular/cli", "mcp"]
+      "args": ["-y", "@angular/cli@22.3.0", "mcp"]
     }
   }
 }
@@ -61,7 +61,7 @@ Create `.cursor/mcp.json` in the project root (or globally at `~/.cursor/mcp.jso
   "mcpServers": {
     "angular-cli": {
       "command": "npx",
-      "args": ["-y", "@angular/cli", "mcp"]
+      "args": ["-y", "@angular/cli@22.3.0", "mcp"]
     }
   }
 }
@@ -76,7 +76,7 @@ Create `.vscode/mcp.json`:
   "servers": {
     "angular-cli": {
       "command": "npx",
-      "args": ["-y", "@angular/cli", "mcp"]
+      "args": ["-y", "@angular/cli@22.3.0", "mcp"]
     }
   }
 }

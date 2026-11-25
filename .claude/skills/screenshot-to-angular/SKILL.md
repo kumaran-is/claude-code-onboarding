@@ -170,7 +170,8 @@ export class [Name]Component {
 <button class="btn btn-primary">
 
 <!-- Focus states — always include for accessibility -->
-<input class="input focus:input-primary focus:outline-none">
+<!-- keep a visible indicator: never focus:outline-none without a replacement (WCAG 2.4.7) -->
+<input class="input focus:input-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
 
 <!-- Active/pressed state -->
 <button class="btn btn-primary active:scale-95 transition-transform">

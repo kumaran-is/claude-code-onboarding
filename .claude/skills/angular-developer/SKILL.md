@@ -3,7 +3,7 @@ name: angular-developer
 description: "Official Angular team skill (angular.dev/ai/agent-skills): Angular 22.3 code generation and architecture reference — components, inputs/outputs, host elements, queries and projection, @defer, @boundary error boundaries, signals, linkedSignal, resource/httpResource, effects, HttpClient, Signal/reactive/template forms, DI and @Service, pipes, Angular Aria, routing, SSR/hydration, animations, styling, Tailwind, Vitest, harnesses, router testing, CLI, migrations, MCP. Load alongside angular-spa (house rules) when writing or reviewing Angular code. House overrides: new workspaces only via /scaffold-angular-app (pinned CLI, never @latest); E2E is Playwright only (testing-tool-selection.md); UI components follow the workspace UI mode."
 license: MIT
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation
-source: "official (angular/skills branch 22.3.x, commit 5902a18, build 1002d09 = angular.dev v22.3.0; MIT). Body vendored unchanged except one house-override note at the top of SKILL.md and of references/e2e-testing.md; frontmatter adapted for this repo (description scope, source, last-reviewed, triggers)"
+source: "official (angular/skills branch 22.3.x, commit 5902a18, build 1002d09 = angular.dev v22.3.0; MIT). Body vendored with house edits: override notes at the top of SKILL.md and references/e2e-testing.md, \"Creating New Projects\" replaced by /scaffold-angular-app, and exact version pins in references/cli.md, mcp.md and tailwind-css.md; frontmatter adapted for this repo (description scope, source, last-reviewed, triggers); plus a house Iron Law"
 last-reviewed: "2026-11-24"
 metadata:
   author: Copyright 2026 Google LLC
@@ -16,7 +16,11 @@ metadata:
 
 > **House override (this repo):** create workspaces only with `/scaffold-angular-app` (pinned `@angular/cli@22.3.0`, never `@latest`, UI mode question); E2E is Playwright only. Everything else below applies as written.
 
-1. Always analyze the project's Angular version before providing guidance, as best practices and available features can vary significantly between versions. If creating a new project with Angular CLI, do not specify a version unless prompted by the user.
+## Iron Law
+
+CHECK THE WORKSPACE'S ANGULAR VERSION BEFORE ANY GUIDANCE; NEW WORKSPACES ONLY VIA `/scaffold-angular-app`.
+
+1. Always analyze the project's Angular version before providing guidance, as best practices and available features can vary significantly between versions. New projects come from `/scaffold-angular-app` (see Creating New Projects).
 
 2. When generating code, follow Angular's style guide and best practices for maintainability and performance. Use the Angular CLI for scaffolding components, services, directives, pipes, and routes to ensure consistency.
 
@@ -24,29 +28,10 @@ metadata:
 
 ## Creating New Projects
 
-If no guidelines are provided by the user, here are some default rules to follow when creating a new Angular project:
-
-1. Use the latest stable version of Angular unless the user specifies otherwise.
-2. Use Signal Forms for form management in new projects (stable in Angular v22 and newer) [Find out more](references/signal-forms.md).
-
-**Execution Rules for `ng new`:**
-When asked to create a new Angular project, you must determine the correct execution command by following these strict steps:
-
-**Step 1: Check for an explicit user version.**
-
-- **IF** the user requests a specific version (e.g., Angular 15), bypass local installations and strictly use `npx`.
-- **Command:** `npx @angular/cli@<requested_version> new <project-name>`
-
-**Step 2: Check for an existing Angular installation.**
-
-- **IF** no specific version is requested, run `ng version` in the terminal to check if the Angular CLI is already installed on the system.
-- **IF** the command succeeds and returns an installed version, use the local/global installation directly.
-- **Command:** `ng new <project-name>`
-
-**Step 3: Fallback to Latest.**
-
-- **IF** no specific version is requested AND the `ng version` command fails (indicating no Angular installation exists), you must use `npx` to fetch the latest version.
-- **Command:** `npx @angular/cli@latest new <project-name>`
+House rule (replaces the upstream "Execution Rules for `ng new`"): create workspaces only with
+`/scaffold-angular-app` (pinned `@angular/cli@22.3.0`; never `ng new`, `npx @angular/cli@latest new` or a global
+CLI; the `block-raw-scaffold` hook blocks them). In new projects use Signal Forms for form management (stable in
+Angular v22 and newer) [Find out more](references/signal-forms.md).
 
 ## Components
 

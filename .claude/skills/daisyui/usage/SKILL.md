@@ -3,9 +3,14 @@ name: daisyui-usage
 description: Usage rules that you must use with daisyUI 5
 metadata:
   triggers: daisyui usage, daisyui class rules, component modifiers, daisyui customization
-source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo"
+source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo; plus a house Iron Law"
 last-reviewed: "2026-11-24"
+allowed-tools: Read, Edit, Write, Glob, Grep
 ---
+
+## Iron Law
+
+daisyUI CLASSES FIRST, TAILWIND UTILITIES SECOND, CUSTOM CSS LAST; `!` OVERRIDES ONLY WHEN SPECIFICITY LEAVES NO OTHER WAY.
 
 ## daisyUI 5 usage rules
 1. To style an HTML element, add daisyUI class names to it. Add the necessary component class name. Also add the applicable part and modifier class names.

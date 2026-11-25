@@ -8,14 +8,14 @@ The Angular CLI (`ng`) is the primary tool for managing an Angular workspace. Al
 
 ```bash
 ng add @angular/material
-ng add tailwindcss
+ng add tailwindcss@4.3.5
 ng add @angular/fire
 ```
 
 To update the application and its dependencies (which automatically runs code migrations):
 
 ```bash
-ng update @angular/core@<latest or specific version> @angular/cli@<latest or specific version>
+ng update @angular/core@22.3.0 @angular/cli@22.3.0   # the stack pin; never an unpinned "latest"
 ```
 
 ## 2. Generating Code (`ng generate` or `ng g`)

@@ -3,19 +3,24 @@ name: daisyui-install
 description: Installation instructions for daisyUI 5
 metadata:
   triggers: install daisyui, add daisyui, daisyui setup, daisyui cdn
-source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo"
+source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored with house edits: exact daisyui@5.8.2 / @tailwindcss/browser@4.3.5 pins in the install command and CDN URLs; frontmatter adapted for this repo; plus a house Iron Law"
 last-reviewed: "2026-11-24"
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash(npm i -D -E daisyui@5.8.2)
 ---
+
+## Iron Law
+
+INSTALL THE PINNED VERSION (`npm i -D -E daisyui@5.8.2`); THE CDN IS FOR PROTOTYPES, NEVER A PRODUCTION APP.
 
 ## Install daisyUI 5
 [Installation guide](https://daisyui.com/docs/install/)
 1. You must use Tailwind CSS 4 with daisyUI 5.
 2. The `tailwind.config.js` file is deprecated in Tailwind CSS v4. Do not use `tailwind.config.js`. If Tailwind CSS v4 is a Node.js dependency, add only `@import "tailwindcss";` to the CSS file.
-3. To install daisyUI 5, run `npm i -D daisyui@latest`. Then, add `@plugin "daisyui";` to the CSS file.
+3. To install daisyUI 5, run `npm i -D -E daisyui@5.8.2`. Then, add `@plugin "daisyui";` to the CSS file.
 4. Install daisyUI as a dependency when possible. If you have a specific reason to use a CDN instead, use the Tailwind CSS and daisyUI CDN files:
 ```html
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5.8.2" rel="stylesheet" type="text/css" />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.5"></script>
 ```
 5. If Tailwind CSS and daisyUI are Node.js dependencies, use this CSS file:
 ```css
@@ -28,14 +33,14 @@ last-reviewed: "2026-11-24"
 For a browser setup with no installation, load the precompiled daisyUI CSS and the Tailwind browser build:
 
 ```html
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5.8.2" rel="stylesheet" type="text/css" />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.5"></script>
 ```
 
 The main CDN file includes the light and dark themes. To load all built-in themes, use:
 
 ```html
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5.8.2/themes.css" rel="stylesheet" type="text/css" />
 ```
 
 You can also combine separate daisyUI CSS modules from the CDN. The CDN files do not include the `is-drawer-open:` and `is-drawer-close:` variants.

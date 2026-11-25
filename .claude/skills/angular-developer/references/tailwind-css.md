@@ -9,7 +9,7 @@ Tailwind CSS is a utility-first CSS framework that integrates seamlessly with An
 The easiest way to add Tailwind CSS to an Angular project is via the Angular CLI:
 
 ```shell
-ng add tailwindcss
+ng add tailwindcss@4.3.5
 ```
 
 This will automatically:
@@ -27,7 +27,7 @@ If setting up manually, use the following Tailwind v4 pattern:
 Install Tailwind CSS and PostCSS:
 
 ```shell
-npm install tailwindcss @tailwindcss/postcss postcss
+npm install -E tailwindcss@4.3.5 @tailwindcss/postcss@4.3.5 postcss@8.5.33
 ```
 
 ### 2. Configure PostCSS

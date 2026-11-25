@@ -134,14 +134,17 @@ export class MyFormComponent {
 Use for server-side uniqueness checks (username, email).
 
 ```typescript
+// src/app/shared/validators/unique-email.validator.ts
 import { AbstractControl, AsyncValidatorFn, ValidationErrors } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Observable, of } from 'rxjs';
+import { Logger } from '../../core/logging/logger';
 import { map, catchError, debounceTime, switchMap, first } from 'rxjs/operators';
 
 export function uniqueEmailValidator(): AsyncValidatorFn {
   const http = inject(HttpClient);
+  const logger = inject(Logger);
 
   return (control: AbstractControl): Observable<ValidationErrors | null> => {
     if (!control.value) return of(null);
@@ -151,7 +154,13 @@ export function uniqueEmailValidator(): AsyncValidatorFn {
       switchMap(value =>
         http.get<{ available: boolean }>(`/api/check-email?email=${encodeURIComponent(value)}`).pipe(
           map(res => res.available ? null : { emailTaken: true }),
-          catchError(() => of(null)) // network failure: allow — server validates on submit
+          // The check itself failed: log it and return a distinct error instead of reporting the address as
+          // available. The control stays invalid (submit blocked) until a retry succeeds; the server still
+          // enforces uniqueness on submit.
+          catchError((error: unknown) => {
+            logger.error('uniqueEmailValidator: availability check failed', { error });
+            return of({ emailCheckUnavailable: true });
+          })
         )
       ),
       first()
@@ -166,6 +175,7 @@ export function uniqueEmailValidator(): AsyncValidatorFn {
 **Error message for async validator:**
 ```typescript
 if (c.errors?.['emailTaken']) return 'This email is already registered — try signing in instead';
+if (c.errors?.['emailCheckUnavailable']) return 'We could not check this email right now. Try again in a moment.';
 ```
 
 ---

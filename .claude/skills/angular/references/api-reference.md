@@ -13,10 +13,11 @@ TypeScript 6.0.3, `strictTemplates`.
 ### Route matching, resolvers and component input binding
 
 ```typescript
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, Service, inject, input, signal } from '@angular/core';
 import { CanMatchFn, RedirectCommand, ResolveFn, Router, Routes } from '@angular/router';
-import { catchError, of } from 'rxjs';
+import { catchError, of, throwError } from 'rxjs';
+import { Logger } from './core/logging/logger';
 
 export interface Product { readonly id: string; readonly name: string }
 
@@ -36,12 +37,22 @@ export class FeatureFlags {
 // canMatch: decides whether the route matches at all (the lazy chunk is not downloaded).
 export const betaMatch: CanMatchFn = () => inject(FeatureFlags).isOn('beta-reports');
 
-// Resolver: a missing record becomes a redirect, not an unhandled navigation error.
+// Resolver: a missing record (404) becomes a redirect; every other failure is logged and rethrown so the
+// router's navigation error handling shows it (never disguised as "not found").
 export const productResolver: ResolveFn<Product> = (route) => {
   const router = inject(Router);
+  const logger = inject(Logger);
   return inject(ProductsApi)
     .get(route.paramMap.get('id') ?? '')
-    .pipe(catchError(() => of(new RedirectCommand(router.parseUrl('/not-found')))));
+    .pipe(
+      catchError((error: unknown) => {
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          return of(new RedirectCommand(router.parseUrl('/not-found')));
+        }
+        logger.error('productResolver failed', { error });
+        return throwError(() => error);
+      }),
+    );
 };
 
 @Component({

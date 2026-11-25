@@ -5,18 +5,23 @@ license: MIT
 compatibility: Requires node, npm, and access to the internet
 disable-model-invocation: true
 user-invocable: false
-source: "official (angular/skills branch 22.3.x, commit 5902a18, build 1002d09 = angular.dev v22.3.0; MIT). Body vendored unchanged except one house-override note at the top; frontmatter adapted for this repo (description scope, source, last-reviewed, triggers)"
+source: "official (angular/skills branch 22.3.x, commit 5902a18, build 1002d09 = angular.dev v22.3.0; MIT). Body vendored with house edits: an override note at the top and steps 1, 2 and 5 pointed at /scaffold-angular-app (no global CLI, no raw ng new); frontmatter adapted for this repo (description scope, source, last-reviewed, triggers); plus a house Iron Law"
 last-reviewed: "2026-11-24"
 metadata:
   author: Angular Team @ Google
   version: '1.0'
   upstream-version-label: "22.3.x"
   triggers: angular-new-app, official Angular new app skill
+allowed-tools: Read
 ---
 
 # Angular New App
 
 > **House override (this repo):** do not run these steps directly. `/scaffold-angular-app` applies them with a pinned CLI (no global install, no `@latest`, no raw `ng new`, which `block-raw-scaffold.sh` blocks) plus the UI-mode question and verification.
+
+## Iron Law
+
+REFERENCE ONLY: NEVER RUN THESE STEPS. `/scaffold-angular-app` CREATES ANGULAR WORKSPACES IN THIS REPO.
 
 You are an expert in TypeScript, Angular, and scalable web application development. You write functional, maintainable, performant, and accessible code following Angular and TypeScript best practices. You have access to tools to create new Angular apps.
 
@@ -28,13 +33,13 @@ When creating a new Angular application for a user, always follow the following 
 
    If it is present, skip to step 2, if not, ask the user if they'd like to install it globally for the user with the following command:
 
-   `npm install -g @angular/cli`
+   House rule: no global CLI. `/scaffold-angular-app` runs the pinned `@angular/cli@22.3.0` through `npx`.
 
    _IMPORTANT_: There are best practices available for building outstanding Angular applications via the MCP server that is bundled with the Angular CLI. Available through `ng mcp` and the `get_best_practices`.
 
 2. **Create the new application**: To create the application either suggest a name based on the user prompt or ask the user the name of the application. Create the application with the following command:
 
-   `npx ng new <app-name> [list of flags based on the description of the app] --interactive=false --ai-config=[agents, claude, copilot, cursor, gemini, jetbrains, none, windsurf]`
+   House rule: run `/scaffold-angular-app <app-name>` (it chooses the flags and the UI mode; raw `ng new` is blocked by the `block-raw-scaffold` hook).
 
    _Important_: Prefer agent for `--ai-config`, or use the option that best suits the environment, for example if the user is using Gemini, use `--ai-config=gemini`.
 
@@ -65,6 +70,6 @@ When creating a new Angular application for a user, always follow the following 
 
    Use the Angular CLI to generate the code, then augment the code to meet the needs of the application.
 
-5. To add tailwind, run `npx ng add tailwindcss`. After that, you do not have to do anything else, you can start using tailwind classes in your Angular application. Follow the best practices for tailwind v4 here, learn more if needed: https://tailwindcss.com/docs/upgrade-guide.
+5. Tailwind CSS 4.3.5 is added by `/scaffold-angular-app` (to add it to an older workspace: `npx ng add tailwindcss@4.3.5`). After that, you do not have to do anything else, you can start using tailwind classes in your Angular application. Follow the best practices for tailwind v4 here, learn more if needed: https://tailwindcss.com/docs/upgrade-guide.
 
 _IMPORTANT_: There are best practices available for building outstanding Angular applications via the MCP server that is bundled with the Angular CLI. Available through `npx ng mcp` and the `get_best_practices`.

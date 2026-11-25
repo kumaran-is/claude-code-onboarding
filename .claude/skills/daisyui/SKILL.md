@@ -3,22 +3,24 @@ name: daisyui
 description: "Official daisyUI 5 component-library skill (component classes, syntax, colors, config). Use when writing HTML/JSX/Angular templates in a project that has daisyUI installed (`daisyui` in package.json or `@plugin \"daisyui\"` in the global CSS) — the default UI layer for Angular apps here. Use it when the workspace's `config.uiMode` is `daisyui` or `hybrid` (in hybrid, only for the daisyUI-owned components in angular-spa/reference/ui-mode-selection.md §4); never in a `spartan` workspace. Angular wiring (PostCSS file, themes, tokens) lives in angular-spa/reference/tailwind-v4-config.md and daisyui-v5-components.md."
 metadata:
   triggers: daisyui, daisyUI 5, daisyui component, btn, card, modal, drawer, navbar, fieldset, validator, data-theme, @plugin "daisyui"
-  upstream-version-label: 5.7.x (upstream label; files taken from the v5.8.2 tag)
   source: https://daisyui.com/SKILL.md
-source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo"
+source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged except the \"When to use\" scope (house scope); frontmatter adapted for this repo; plus a house Iron Law"
 last-reviewed: "2026-11-24"
+allowed-tools: Read, Edit, Write, Glob, Grep
 ---
 
 # daisyUI 5
+## Iron Law
+
+ONLY IN A daisyUI OR HYBRID WORKSPACE; daisyUI SEMANTIC COLOR NAMES AND CURRENT CLASS NAMES ONLY.
+
 daisyUI 5 is a CSS library for Tailwind CSS 4. It supplies class names for common UI components, semantic colors, and themes.
 
 ## When to use this skill
 
-- Use this skill each time you write HTML or JSX code.
-- Use this skill for all Tailwind CSS UI work.
-- If the user uses one of these terms or requests related work, use this skill:
-  daisyUI, component, UI, Tailwind, layout, template, theme, color, design
-- Even if the user does not request this skill, use it.
+House scope (replaces the upstream "use it for all HTML/JSX and Tailwind work" lines): only in a project that
+has daisyUI installed and, for Angular, whose UI mode is `daisyui` or `hybrid` (description above). Never for
+React/shadcn apps (shadcn skill) or `spartan` workspaces (spartan skill).
 
 ## References that you must read
 

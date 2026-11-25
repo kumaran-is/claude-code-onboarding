@@ -3,9 +3,14 @@ name: daisyui-config
 description: Configuration options for daisyUI 5
 metadata:
   triggers: daisyui config, @plugin daisyui options, themes, prefix, include, exclude, logs
-source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo"
+source: "official (saadeghi/daisyui skills/daisyui at tag v5.8.2, commit e4c1f77; MIT). Body vendored unchanged; frontmatter adapted for this repo; plus a house Iron Law"
 last-reviewed: "2026-11-24"
+allowed-tools: Read, Edit, Write, Glob, Grep
 ---
+
+## Iron Law
+
+CONFIGURE daisyUI IN CSS (`@plugin "daisyui"`); NO `tailwind.config.js` IN TAILWIND CSS v4.
 
 ## Configuration
 

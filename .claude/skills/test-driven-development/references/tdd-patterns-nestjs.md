@@ -1,8 +1,8 @@
-# TDD Patterns — NestJS 11 / TypeScript (Vitest)
+# TDD Patterns — NestJS 12 / TypeScript (Vitest)
 
 NestJS services in this toolkit test with **Vitest** on the **Fastify** adapter. This file covers the
-red-green loop only. Configuration (`vitest.config.mts`, `unplugin-swc`, coverage `thresholds`), deep mocks
-and the Testcontainers e2e setup are owned by the `nestjs-api` skill:
+red-green loop only. Configuration (`vitest.config.ts`, no SWC plugin on Vitest 5, coverage `thresholds`), deep mocks
+and the real-PostgreSQL e2e setup are owned by the `nestjs-api` skill (verified on NestJS 12.6.0, ESM):
 `nestjs-api/reference/nestjs-testing-unit-basics.md`, `nestjs-testing-unit-mocks.md`,
 `nestjs-testing-integration-setup.md`.
 
@@ -13,8 +13,8 @@ and the Testcontainers e2e setup are owned by the `nestjs-api` skill:
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { UserService } from './user.service';
-import { UserRepository } from './user.repository';
+import { UserService } from './user.service.js'; // ESM: relative imports carry .js
+import { UserRepository } from './user.repository.js';
 
 describe('UserService', () => {
   let service: UserService;
@@ -44,7 +44,8 @@ describe('UserService', () => {
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../src/app.module.js';
+import { configureApp } from '../src/configure-app.js';
 
 describe('Users (e2e)', () => {
   let app: NestFastifyApplication;
@@ -52,6 +53,7 @@ describe('Users (e2e)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    await configureApp(app, { swagger: false }); // the production pipeline: prefix, versioning, helmet
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });
@@ -61,7 +63,7 @@ describe('Users (e2e)', () => {
   it('POST /users with a valid body and token returns 201', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/users',
+      url: '/api/v1/users',
       payload: validCreateUserDto(),
       headers: { authorization: `Bearer ${adminToken()}` },
     });
@@ -70,13 +72,13 @@ describe('Users (e2e)', () => {
   });
 
   it('POST /users without a token returns 401', async () => {
-    const res = await app.inject({ method: 'POST', url: '/users', payload: validCreateUserDto() });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/users', payload: validCreateUserDto() });
     expect(res.statusCode).toBe(401);
   });
 });
 ```
 
-Every protected route gets the negative cases (401, 403, 404, 400) — see `nestjs-api` for the full list.
+Every protected route gets the negative cases (401, 403, cross-tenant 404, 400 for an invalid or smuggled field, 413, 429) — see `nestjs-api/reference/nestjs-testing-integration-setup.md` for the verified suite.
 
 ## Mocking Rules
 
@@ -100,4 +102,4 @@ npx vitest run src/modules/users/user.service.spec.ts -t "throws ConflictExcepti
 npx vitest run; echo "exit=$?"
 ```
 
-`-t` is Vitest's `--testNamePattern` shorthand (SOURCE-PROVEN against the vitest 4.1 CLI definition).
+`-t` is Vitest's `--testNamePattern` shorthand (SOURCE-PROVEN against the vitest 4.1 CLI definition; unchanged in Vitest 5.1.1).

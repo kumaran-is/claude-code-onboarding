@@ -1,6 +1,6 @@
-# NestJS 11.x Unit Testing — Controllers & Test Data Factories
+# NestJS 12.x Unit Testing — Controllers & Test Data Factories
 
-Controller unit testing patterns and test data factory setup for NestJS 11.x with Vitest and Prisma ORM. Covers controller tests with mocked services, builder-pattern factories, and seed helpers.
+Controller unit testing patterns and test data factory setup for NestJS 12.x with Vitest and Prisma ORM. Covers controller tests with mocked services, builder-pattern factories, and seed helpers.
 
 ## Controller Unit Test Pattern
 
@@ -8,10 +8,10 @@ Controller unit testing patterns and test data factory setup for NestJS 11.x wit
 // src/features/users/users.controller.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { UsersController } from './users.controller';
-import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto } from './dto';
-import { User } from '@prisma/client';
+import { UsersController } from './users.controller.js';
+import { UsersService } from './users.service.js';
+import type { CreateUser, UpdateUser } from './users.schemas.js';
+import type { User } from '../../generated/prisma/client.js';
 import { NotFoundException } from '@nestjs/common';
 
 describe('UsersController', () => {
@@ -55,7 +55,7 @@ describe('UsersController', () => {
 
   describe('create', () => {
     it('should create a user and return 201', async () => {
-      const createUserDto: CreateUserDto = {
+      const createUserInput: CreateUser = {
         email: 'test@example.com',
         name: 'Test User',
         role: 'USER',
@@ -63,10 +63,10 @@ describe('UsersController', () => {
 
       mockUsersService.create.mockResolvedValue(mockUser);
 
-      const result = await controller.create(createUserDto);
+      const result = await controller.create(createUserInput);
 
       expect(result).toEqual(mockUser);
-      expect(service.create).toHaveBeenCalledWith(createUserDto);
+      expect(service.create).toHaveBeenCalledWith(createUserInput);
     });
   });
 
@@ -113,15 +113,15 @@ describe('UsersController', () => {
 
   describe('update', () => {
     it('should update a user', async () => {
-      const updateUserDto: UpdateUserDto = { name: 'Updated Name' };
+      const updateUserInput: UpdateUser = { name: 'Updated Name' };
       const updatedUser = { ...mockUser, name: 'Updated Name' };
 
       mockUsersService.update.mockResolvedValue(updatedUser);
 
-      const result = await controller.update(mockUser.id, updateUserDto);
+      const result = await controller.update(mockUser.id, updateUserInput);
 
       expect(result).toEqual(updatedUser);
-      expect(service.update).toHaveBeenCalledWith(mockUser.id, updateUserDto);
+      expect(service.update).toHaveBeenCalledWith(mockUser.id, updateUserInput);
     });
   });
 
@@ -142,7 +142,7 @@ describe('UsersController', () => {
 ```typescript
 // test/factories/user.factory.ts
 // Prisma 7 `prisma-client` generator: types come from the generated output, not '@prisma/client'
-import type { PrismaClient, Role, User } from '../../src/generated/prisma/client';
+import type { PrismaClient, Role, User } from '../../src/generated/prisma/client.js';
 import { faker } from '@faker-js/faker';
 
 export class UserFactory {
@@ -178,7 +178,7 @@ export class UserFactory {
 }
 
 // Usage in tests
-import { UserFactory } from './factories/user.factory';
+import { UserFactory } from './factories/user.factory.js';
 
 describe('User Tests', () => {
   it('should create test user with factory', async () => {
@@ -206,8 +206,8 @@ describe('User Tests', () => {
 
 ```typescript
 // test/helpers/seed.ts
-import { PrismaClient } from '@prisma/client';
-import { UserFactory } from '../factories/user.factory';
+import type { PrismaClient } from '../../src/generated/prisma/client.js';
+import { UserFactory } from '../factories/user.factory.js';
 
 export class TestSeeder {
   constructor(private readonly prisma: PrismaClient) {}

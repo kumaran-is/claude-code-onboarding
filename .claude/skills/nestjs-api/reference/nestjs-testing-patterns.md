@@ -1,14 +1,14 @@
-# NestJS 11.x Advanced Testing — Circuit Breaker & Request Context
+# NestJS 12.x Advanced Testing — Circuit Breaker & Request Context
 
-Advanced test patterns for NestJS 11.x including circuit breaker state transitions (CLOSED, OPEN, HALF_OPEN) and AsyncLocalStorage request context propagation with Vitest.
+Advanced test patterns for NestJS 12.x including circuit breaker state transitions (CLOSED, OPEN, HALF_OPEN) and AsyncLocalStorage request context propagation with Vitest.
 
 ## Circuit Breaker Testing
 
 ```typescript
 // src/core/circuit-breaker/circuit-breaker.spec.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CircuitBreaker } from './circuit-breaker';
-import { CircuitBreakerOpenException } from './circuit-breaker.exception';
+import { CircuitBreaker } from './circuit-breaker.js';
+import { CircuitBreakerOpenException } from './circuit-breaker.exception.js';
 
 describe('CircuitBreaker', () => {
   let breaker: CircuitBreaker;
@@ -165,8 +165,8 @@ describe('CircuitBreaker', () => {
 // src/core/context/request-context.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RequestContextService } from './request-context.service';
-import { RequestContextMiddleware } from './request-context.middleware';
+import { RequestContextService } from './request-context.service.js';
+import { RequestContextMiddleware } from './request-context.middleware.js';
 
 describe('RequestContextService', () => {
   let service: RequestContextService;

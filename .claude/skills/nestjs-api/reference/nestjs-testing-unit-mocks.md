@@ -1,6 +1,6 @@
-# NestJS 11.x Unit Testing — Mock Patterns & Conventions
+# NestJS 12.x Unit Testing — Mock Patterns & Conventions
 
-Mocking strategies, naming conventions, and test execution for NestJS 11.x unit tests with Vitest. Covers Prisma client mocks, cache mocks, HTTP service mocks with nock, and ConfigService mocks.
+Mocking strategies, naming conventions, and test execution for NestJS 12.x unit tests with Vitest. Covers Prisma client mocks, cache mocks, HTTP service mocks with nock, and ConfigService mocks.
 
 ## Mocking Patterns
 
@@ -9,7 +9,7 @@ Mocking strategies, naming conventions, and test execution for NestJS 11.x unit 
 ```typescript
 // test/mocks/prisma.mock.ts
 import { vi } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../../src/generated/prisma/client.js';
 import { mockDeep, mockReset, DeepMockProxy } from 'vitest-mock-extended';
 
 export type MockPrismaClient = DeepMockProxy<PrismaClient>;
@@ -19,7 +19,7 @@ export const createMockPrismaClient = (): MockPrismaClient => {
 };
 
 // Usage
-import { createMockPrismaClient } from './mocks/prisma.mock';
+import { createMockPrismaClient } from './mocks/prisma.mock.js';
 
 describe('Service with Prisma', () => {
   let mockPrisma: MockPrismaClient;
@@ -68,7 +68,7 @@ mockCache.get.mockResolvedValue({ id: '1', name: 'Cached User' });
 // test/external-api.spec.ts
 import nock from 'nock';
 import { describe, it, expect, afterEach } from 'vitest';
-import { ExternalApiService } from '@/services/external-api.service';
+import { ExternalApiService } from '../services/external-api.service.js';
 
 describe('ExternalApiService', () => {
   afterEach(() => {

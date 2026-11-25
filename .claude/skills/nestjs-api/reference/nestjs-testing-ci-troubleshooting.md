@@ -1,6 +1,6 @@
-# NestJS 11.x Advanced Testing — CI/CD, Coverage & Troubleshooting
+# NestJS 12.x Advanced Testing — CI/CD, Coverage & Troubleshooting
 
-Coverage standards, CI/CD pipeline configuration, testing checklist, troubleshooting guide, performance testing, and snapshot testing for NestJS 11.x with Vitest.
+Coverage standards, CI/CD pipeline configuration, testing checklist, troubleshooting guide, performance testing, and snapshot testing for NestJS 12.x with Vitest 5.
 
 ## Coverage Standards
 
@@ -24,7 +24,7 @@ open coverage/index.html
 npm run test:cov -- --coverage.thresholds.lines=90
 ```
 
-### Coverage Configuration in vitest.config.mts
+### Coverage Configuration in vitest.config.ts
 
 ```typescript
 export default defineConfig({
@@ -42,7 +42,7 @@ export default defineConfig({
         'src/**/*.entity.ts',
         'src/migrations/**',
       ],
-      // Vitest 1+: limits under `thresholds` (top-level `lines` etc. is a type error and is ignored)
+      // Limits go under `thresholds` (top-level `lines` etc. is a type error and is ignored)
       thresholds: { lines: 90, functions: 90, branches: 80, statements: 90 },
     },
   },
@@ -53,68 +53,76 @@ export default defineConfig({
 
 ### GitHub Actions Workflow
 
+Same command sequence as the NestJS 12.6.0 reference app (each step was run locally there, exit 0); the workflow file
+itself was not executed on GitHub. Actions are pinned by commit SHA.
+
 ```yaml
 # .github/workflows/test.yml
 name: Test
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
   pull_request:
-    branches: [main, develop]
+
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18
         env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: testdb
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: orders
         options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
         ports:
           - 5432:5432
+      redis:
+        image: redis:8
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+        ports:
+          - 6379:6379
+
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/orders
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version: '26.13.1'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run Prisma migrations
-        run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/testdb
-
-      - name: Run unit tests
-        run: npm run test
-
-      - name: Run integration tests
-        run: npm run test:e2e
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/testdb
-
-      - name: Generate coverage
-        run: npm run test:cov
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npx prisma generate          # the generated client is gitignored; tsc needs it
+      - run: npm run typecheck            # tsconfig.json: includes specs (the build config does not)
+      - run: npm run lint                 # oxlint --type-aware --deny-warnings
+      - run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile=reports/unit.xml
+      - run: npx prisma migrate deploy
+      - run: npm run test:e2e -- --reporter=default --reporter=junit --outputFile=reports/e2e.xml
+      - run: npm run build
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage/lcov.info
 ```
+
+- The CI user and password are throwaway service-container values, not secrets.
+- Vitest exits 0 when every test is skipped: the JUnit report gives a countable executed total (`/verify` checks it).
 
 ### NPM Scripts
 
@@ -123,8 +131,8 @@ jobs:
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "test:e2e": "vitest run --config vitest.e2e.config.mts",
-    "test:e2e:watch": "vitest watch --config vitest.e2e.config.mts",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:e2e:watch": "vitest watch --config ./vitest.config.e2e.ts",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism"
   }
@@ -141,7 +149,7 @@ jobs:
 - [ ] Circuit breaker patterns are tested (happy path, open, half-open, fallback)
 - [ ] Request context propagation is verified
 - [ ] External API calls are mocked or use contract tests
-- [ ] Database queries are verified against actual PostgreSQL (Testcontainers)
+- [ ] Database queries are verified against actual PostgreSQL (CI service container or Testcontainers)
 - [ ] Coverage thresholds are met (90% lines, 80% branches)
 - [ ] Tests run in CI/CD pipeline
 - [ ] Test data factories are used for entity creation
@@ -157,8 +165,11 @@ jobs:
 | **Fastify Not Ready** | `app.getHttpServer() returns undefined` | Call `await app.init()` and `await app.getHttpAdapter().getInstance().ready()` before tests |
 | **Prisma Connection Error** | `Can't reach database server` | Check `DATABASE_URL` is set; verify Testcontainer is started; run migrations before tests |
 | **Test Timeout** | `Test timed out after 5000ms` | Increase `testTimeout` in vitest config; ensure async operations complete; check for unresolved promises |
-| **Decorator Metadata Missing** | injected dependency is `undefined` (e.g. `Cannot read properties of undefined (reading 'getAllAndOverride')`) | Set `emitDecoratorMetadata: true` in the tsconfig the runner reads (both `unplugin-swc` and Vite 8's Oxc transform read it); keep `unplugin-swc` as in `nestjs-config-npm-ts.md` |
-| **Module Not Found** | `Cannot find module '@/...'` | Add path alias to `resolve.alias` in vitest config matching tsconfig paths |
+| **Decorator Metadata Missing** | injected dependency is `undefined` (e.g. `Cannot read properties of undefined (reading 'getAllAndOverride')`) | Set `emitDecoratorMetadata: true` in `tsconfig.json`; Vite 8's Oxc transform reads it, so no SWC plugin is needed (verified on Vitest 5.1.1) |
+| **Stale results after a tsconfig change** | tests skipped or old behaviour after editing `tsconfig.json` | `npx vitest --clearCache`: Vitest 5's file-system module cache served stale transforms (20 tests skipped until cleared) |
+| **`ERR_REQUIRE_ASYNC_MODULE` under Jest** | Jest cannot load the ESM-only NestJS 12 packages | Use Vitest; NestJS docs say Jest loads them only on Node >= 24.9 (CommonJS projects) |
+| **Module Not Found** | `Cannot find module '../app.module'` (TS2307) | ESM with `nodenext`: relative imports need the `.js` extension (`'./app.module.js'`) |
+| **Path alias not found** | `Cannot find module '@/...'` | Add the alias to `resolve.alias` in the vitest config matching tsconfig `paths` |
 | **Coverage Threshold Failed** | `Coverage for lines (85%) does not meet threshold (90%)` | Write missing tests; exclude irrelevant files in `coverage.exclude` |
 | **Database State Pollution** | Tests fail when run together but pass individually | Reset database in `beforeEach`; ensure transactions rollback; use `vi.clearAllMocks()` |
 | **Mock Not Called** | `expect(mock).toHaveBeenCalled()` fails | Verify mock is injected correctly; check if actual implementation is called instead; reset mocks in `beforeEach` |

@@ -1,600 +1,439 @@
-# NestJS 11.x Integration Testing — Setup & Testcontainers
+# NestJS 12.x Integration Testing — Setup, E2E and Real Services
 
-Integration test configuration, full app bootstrapping with supertest and Fastify, and Testcontainers PostgreSQL setup for NestJS 11.x.
+Integration and E2E test setup for NestJS 12.x on Fastify: the production `configureApp()`, `app.inject()`, real
+PostgreSQL 18 and Redis 8, Standard Schema (Zod) validation and the negative cases every API must prove.
 
-## Vitest Configuration for Integration Tests
+Verified 2026-11-24 on NestJS 12.6.0, Fastify 5.12.8, Vitest 5.1.1, TypeScript 6.0.3, Node 26.13.1, Prisma 7.10.1,
+BullMQ 6.7.10, PostgreSQL 18 and Redis 8 in Docker: 23 of 23 integration + E2E tests passed (JSON report), and each
+planted bug below made the expected tests fail. Source app: the reference behind `nestjs-production-baseline.md`.
 
-### vitest.e2e.config.mts (verified, Vitest 4.1.12)
+## Vitest configuration — `vitest.config.e2e.ts`
 
 ```typescript
-import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
-    include: ['test/**/*.e2e-spec.ts'],
     root: './',
+    include: ['test/**/*.e2e-spec.ts', 'test/**/*.int-spec.ts'],
     fileParallelism: false,
-    // ConfigModule.forRoot({ validate }) runs when AppModule is IMPORTED, before any beforeAll:
-    // test env must exist at load time, so it is set here, not in the spec.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
+    // ConfigModule validates when AppModule is IMPORTED: env must exist at load time.
+    // DATABASE_URL and REDIS_URL come from the shell/CI (real PostgreSQL and Redis).
     env: {
       NODE_ENV: 'test',
       JWT_ISSUER: 'https://issuer.test',
       JWT_AUDIENCE: 'orders-api',
       JWT_JWKS_URL: 'https://issuer.test/.well-known/jwks.json',
-      THROTTLE_LIMIT: '5',
+      THROTTLE_LIMIT: '20',
       THROTTLE_TTL_MS: '60000',
+      BODY_LIMIT_BYTES: '2048',
     },
   },
-  plugins: [swc.vite({ module: { type: 'es6' } })],
 });
 ```
 
-- Vitest 4 removed `test.poolOptions` (`poolOptions.threads.singleThread` → TS2769 and a runtime "removed in Vitest 4" notice). Use top-level `fileParallelism: false` / `maxWorkers: 1` to serialise suites that share a database.
-- `ConfigModule.forRoot({ validate })` runs when `AppModule` is imported. Set test env in `test.env` (or a `setupFiles` module) — assigning `process.env` inside `beforeAll` is too late and the import throws.
-- Build the app through the same `configureApp()` as `main.ts`; re-declaring `ValidationPipe` in each spec lets test and production config drift.
+- `ConfigModule.forRoot({ validationSchema })` validates when `AppModule` is **imported**: set test env in `test.env`
+  (or a `setupFiles` module). Assigning `process.env` inside `beforeAll` is too late and the import throws.
+- `fileParallelism: false` (or `maxWorkers: 1`) serialises suites that share a database; `test.poolOptions` no longer exists.
+- No SWC plugin (Vite 8's Oxc transform honours `emitDecoratorMetadata`). After a `tsconfig.json` change run
+  `npx vitest --clearCache`: Vitest 5's module cache served stale transforms and skipped 20 tests until cleared.
+- Build the app through the same `configureApp()` as `main.ts`; re-declaring pipes or prefixes in a spec lets test and
+  production drift.
 
-## Verified suite: guard, tenant, validation, throttling, WebSocket
+## Real services, not mocks
 
-```typescript
-// test/jwt-fixture.ts
-import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey, SignJWT } from 'jose';
+`DATABASE_URL` and `REDIS_URL` come from the shell or CI. Locally:
 
-export const ISSUER = 'https://issuer.test';
-export const AUDIENCE = 'orders-api';
-
-export interface JwtFixture {
-  readonly keys: JWTVerifyGetKey;
-  sign(claims: Record<string, unknown>, opts?: { audience?: string; issuer?: string; expiresIn?: string; foreignKey?: boolean }): Promise<string>;
-}
-
-/** Real RS256 keys and a local JWKS: the verifier runs unmocked. */
-export async function createJwtFixture(): Promise<JwtFixture> {
-  const trusted = await generateKeyPair('RS256');
-  const foreign = await generateKeyPair('RS256');
-  const jwk = { ...(await exportJWK(trusted.publicKey)), kid: 'k1', alg: 'RS256' };
-  return {
-    keys: createLocalJWKSet({ keys: [jwk] }),
-    sign: (claims, opts = {}) =>
-      new SignJWT(claims)
-        .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
-        .setIssuer(opts.issuer ?? ISSUER)
-        .setAudience(opts.audience ?? AUDIENCE)
-        .setIssuedAt()
-        .setExpirationTime(opts.expiresIn ?? '5m')
-        .sign(opts.foreignKey === true ? foreign.privateKey : trusted.privateKey),
-  };
-}
+```bash
+# DB_USER / DB_PASSWORD: local-only values exported in your shell (never committed)
+docker run -d --name orders-pg -e POSTGRES_USER="$DB_USER" -e POSTGRES_PASSWORD="$DB_PASSWORD" -e POSTGRES_DB=orders -p 55432:5432 postgres:18
+docker run -d --name orders-redis -p 56379:6379 redis:8
+export DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@localhost:55432/orders REDIS_URL=redis://localhost:56379
+npx prisma migrate deploy && npm run test:e2e
 ```
 
-```typescript
-// src/auth/token-verifier.spec.ts
-import { SignJWT } from 'jose';
-import { beforeAll, describe, expect, it } from 'vitest';
-import { AUDIENCE, createJwtFixture, ISSUER, type JwtFixture } from '../../test/jwt-fixture';
-import { InvalidTokenError, TokenVerifier } from './token-verifier';
+In GitHub Actions use `services:` containers (`postgres:18`, `redis:8`) with health checks; see
+`nestjs-testing-ci-troubleshooting.md`. A Testcontainers-based `globalSetup` is an alternative when CI has no service
+containers (below).
 
-describe('TokenVerifier', () => {
-  let jwt: JwtFixture;
-  let verifier: TokenVerifier;
+## Verified E2E suite — `test/app.e2e-spec.ts`
 
-  beforeAll(async () => {
-    jwt = await createJwtFixture();
-    verifier = new TokenVerifier(jwt.keys, { issuer: ISSUER, audience: AUDIENCE });
-  });
-
-  it('returns the principal from a valid token', async () => {
-    const token = await jwt.sign({ sub: 'u1', tenant_id: 't1', roles: ['orders:write', 7] });
-    const principal = await verifier.verify(token);
-    expect(principal.subject).toBe('u1');
-    expect(principal.tenantId).toBe('t1');
-    expect([...principal.roles]).toEqual(['orders:write']);
-  });
-
-  it.each([
-    ['wrong audience', { audience: 'other-api' }],
-    ['wrong issuer', { issuer: 'https://evil.test' }],
-    ['expired', { expiresIn: '-1m' }],
-    ['signed by an untrusted key', { foreignKey: true }],
-  ])('rejects a token with %s', async (_label, opts) => {
-    const token = await jwt.sign({ sub: 'u1', tenant_id: 't1' }, opts);
-    await expect(verifier.verify(token)).rejects.toBeInstanceOf(InvalidTokenError);
-  });
-
-  it('rejects a token without tenant_id', async () => {
-    await expect(verifier.verify(await jwt.sign({ sub: 'u1' }))).rejects.toBeInstanceOf(InvalidTokenError);
-  });
-
-  it('rejects an HS256 token (algorithm pinning)', async () => {
-    const token = await new SignJWT({ sub: 'u1', tenant_id: 't1' })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuer(ISSUER)
-      .setAudience(AUDIENCE)
-      .setExpirationTime('5m')
-      .sign(new TextEncoder().encode('a-shared-secret-of-at-least-32-bytes!!'));
-    await expect(verifier.verify(token)).rejects.toBeInstanceOf(InvalidTokenError);
-  });
-
-  it('refuses to build with an empty audience', () => {
-    expect(() => new TokenVerifier(jwt.keys, { issuer: ISSUER, audience: ' ' })).toThrow(/non-empty/);
-  });
-});
-```
+Only the JWKS key source is overridden (`JWT_KEY_RESOLVER` → a local JWKS); guard, verifier, Standard Schema pipe,
+serializer, throttler, BullMQ worker and gateway are the production ones.
 
 ```typescript
-// test/app.e2e-spec.ts
+import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose';
 import { io } from 'socket.io-client';
-import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppModule } from '../src/app.module';
-import { JWT_KEY_RESOLVER } from '../src/auth/token-verifier';
-import { configureApp } from '../src/configure-app';
-import { createJwtFixture, type JwtFixture } from './jwt-fixture';
+import { AppModule } from '../src/app.module.js';
+import { JWT_KEY_RESOLVER } from '../src/auth/token-verifier.js';
+import { configureApp } from '../src/configure-app.js';
+import { PrismaService } from '../src/database/prisma.service.js';
+import { OrderEventsProcessor } from '../src/jobs/order-events.processor.js';
+import { OrdersService } from '../src/orders/orders.service.js';
 
-async function bootApp(jwt: JwtFixture): Promise<NestFastifyApplication> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+const ISSUER = 'https://issuer.test';
+const AUDIENCE = 'orders-api';
+const TENANT_A = randomUUID();
+const TENANT_B = randomUUID();
+const USER_A = randomUUID();
+
+interface Keys {
+  privateKey: CryptoKey;
+  jwk: JWK;
+}
+
+async function newKeys(kid: string): Promise<Keys> {
+  const pair = await generateKeyPair('ES256');
+  return { privateKey: pair.privateKey, jwk: { ...(await exportJWK(pair.publicKey)), kid, alg: 'ES256' } };
+}
+
+let trusted: Keys;
+let untrusted: Keys;
+
+/** Every token gets a fresh jti, so each one has its own throttle bucket. */
+function token(opts: { tenantId?: string; sub?: string; roles?: string[]; aud?: string; exp?: string | number; keys?: Keys } = {}) {
+  const keys = opts.keys ?? trusted;
+  return new SignJWT({ tenant_id: opts.tenantId ?? TENANT_A, roles: opts.roles ?? ['orders:write'] })
+    .setProtectedHeader({ alg: 'ES256', kid: keys.jwk.kid ?? 'k' })
+    .setIssuer(ISSUER)
+    .setAudience(opts.aud ?? AUDIENCE)
+    .setSubject(opts.sub ?? USER_A)
+    .setJti(randomUUID())
+    .setIssuedAt()
+    .setExpirationTime(opts.exp ?? '5m')
+    .sign(keys.privateKey);
+}
+
+async function createApp(overrides: (b: ReturnType<typeof Test.createTestingModule>) => void = () => {}) {
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(JWT_KEY_RESOLVER)
-    .useValue(jwt.keys) // only the key source is swapped; guard, verifier and pipes are real
-    .compile();
-  const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
-  await configureApp(app);
+    .useValue(createLocalJWKSet({ keys: [trusted.jwk] }));
+  overrides(builder);
+  const moduleRef = await builder.compile();
+  const app = moduleRef.createNestApplication<NestFastifyApplication>(
+    new FastifyAdapter({ bodyLimit: Number(process.env['BODY_LIMIT_BYTES']) }),
+    { logger: ['error', 'warn'] },
+  );
+  await configureApp(app, { swagger: true });
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;
 }
 
-describe('orders API (Fastify, real guard + ValidationPipe)', () => {
-  let jwt: JwtFixture;
+describe('Orders API (e2e, Fastify inject, real PostgreSQL + Redis)', () => {
   let app: NestFastifyApplication;
-  let writerA: string;
-  let readerB: string;
-  let readerA: string;
+  let orderOfA: string;
 
   beforeAll(async () => {
-    jwt = await createJwtFixture();
-    app = await bootApp(jwt);
-    writerA = await jwt.sign({ sub: 'u1', tenant_id: 'tenant-a', roles: ['orders:write'] });
-    readerA = await jwt.sign({ sub: 'u3', tenant_id: 'tenant-a', roles: [] });
-    readerB = await jwt.sign({ sub: 'u2', tenant_id: 'tenant-b', roles: ['orders:write'] });
+    trusted = await newKeys('trusted');
+    untrusted = await newKeys('untrusted');
+    app = await createApp();
+    await app.get(PrismaService).client.user.create({
+      data: { id: USER_A, tenantId: TENANT_A, email: `a-${USER_A}@example.test`, passwordHash: '$argon2id$v=19$secret-hash' },
+    });
   });
+
   afterAll(async () => {
     await app.close();
   });
 
-  const post = (token: string | undefined, payload: unknown) =>
-    app.inject({ method: 'POST', url: '/v1/orders', payload: payload as Record<string, unknown>, headers: token === undefined ? {} : { authorization: `Bearer ${token}` } });
+  const post = async (body: unknown, auth?: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/v1/orders',
+      headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
+      payload: typeof body === 'string' ? body : JSON.stringify(body),
+    });
 
-  it('public health route works and carries helmet headers', async () => {
-    const res = await app.inject({ method: 'GET', url: '/health/live' });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
+  describe('happy path', () => {
+    it('creates an order (201), strips tenantId from the response, and the BullMQ worker processes it', async () => {
+      const res = await post({ sku: 'SKU-1', quantity: 2 }, await token());
+      expect(res.statusCode).toBe(201);
+      const body = res.json<Record<string, unknown>>();
+      expect(Object.keys(body).sort()).toEqual(['createdAt', 'id', 'quantity', 'sku']);
+      orderOfA = String(body['id']);
+
+      const processor = app.get(OrderEventsProcessor);
+      const deadline = Date.now() + 10_000;
+      while (!processor.handled.has(orderOfA) && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(processor.handled.has(orderOfA)).toBe(true);
+    });
+
+    it('lists and gets the order in the same tenant', async () => {
+      const t = await token();
+      const list = await app.inject({ method: 'GET', url: '/api/v1/orders', headers: { authorization: `Bearer ${t}` } });
+      expect(list.statusCode).toBe(200);
+      expect(list.json<{ id: string }[]>().map((o) => o.id)).toContain(orderOfA);
+      const one = await app.inject({ method: 'GET', url: `/api/v1/orders/${orderOfA}`, headers: { authorization: `Bearer ${t}` } });
+      expect(one.statusCode).toBe(200);
+    });
+
+    it('health reports database and redis up', async () => {
+      const res = await app.inject({ method: 'GET', url: '/health' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json<{ status: string; details: Record<string, { status: string }> }>();
+      expect(body.status).toBe('ok');
+      expect(body.details['database']?.status).toBe('up');
+      expect(body.details['redis']?.status).toBe('up');
+    });
+
+    it('OpenAPI documents the Zod request and response schemas', async () => {
+      const res = await app.inject({ method: 'GET', url: '/docs-json' });
+      const doc = res.json<{ paths: Record<string, Record<string, { requestBody?: unknown }>>; components: { schemas: Record<string, { properties: Record<string, unknown>; additionalProperties?: boolean }> } }>();
+      expect(doc.paths['/api/v1/orders']?.['post']?.requestBody).toMatchObject({
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateOrder' } } },
+      });
+      expect(Object.keys(doc.components.schemas['CreateOrder']?.properties ?? {}).sort()).toEqual(['quantity', 'sku']);
+      expect(doc.components.schemas['CreateOrder']?.additionalProperties).toBe(false);
+      expect(Object.keys(doc.components.schemas['UserResponse']?.properties ?? {})).not.toContain('passwordHash');
+    });
   });
 
-  it('401 without a token, as problem+json', async () => {
-    const res = await post(undefined, { sku: 'SKU-1', quantity: 1 });
-    expect(res.statusCode).toBe(401);
-    expect(res.headers['content-type']).toContain('application/problem+json');
+  describe('authentication (401)', () => {
+    const get = (auth?: string) =>
+      app.inject({ method: 'GET', url: '/api/v1/orders', headers: auth ? { authorization: `Bearer ${auth}` } : {} });
+
+    it('missing token', async () => {
+      expect((await get()).statusCode).toBe(401);
+    });
+    it('expired token', async () => {
+      expect((await get(await token({ exp: Math.floor(Date.now() / 1000) - 60 }))).statusCode).toBe(401);
+    });
+    it('wrong signature (untrusted key)', async () => {
+      expect((await get(await token({ keys: untrusted }))).statusCode).toBe(401);
+    });
+    it('wrong audience', async () => {
+      expect((await get(await token({ aud: 'billing-api' }))).statusCode).toBe(401);
+    });
   });
 
-  it('401 for a token signed by an untrusted key and for a wrong audience', async () => {
-    expect((await post(await jwt.sign({ sub: 'x', tenant_id: 'tenant-a', roles: ['orders:write'] }, { foreignKey: true }), { sku: 'SKU-1', quantity: 1 })).statusCode).toBe(401);
-    expect((await post(await jwt.sign({ sub: 'x', tenant_id: 'tenant-a', roles: ['orders:write'] }, { audience: 'other' }), { sku: 'SKU-1', quantity: 1 })).statusCode).toBe(401);
+  describe('authorization and tenancy', () => {
+    it('wrong role -> 403', async () => {
+      expect((await post({ sku: 'SKU-1', quantity: 1 }, await token({ roles: ['orders:read'] }))).statusCode).toBe(403);
+    });
+
+    it("other tenant's order -> 404 with errorCode, not 403", async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/orders/${orderOfA}`,
+        headers: { authorization: `Bearer ${await token({ tenantId: TENANT_B })}` },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({ statusCode: 404, errorCode: 'ORDER_NOT_FOUND' });
+    });
+
+    it("other tenant's list does not contain the order", async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/orders', headers: { authorization: `Bearer ${await token({ tenantId: TENANT_B })}` } });
+      expect(res.json<{ id: string }[]>().map((o) => o.id)).not.toContain(orderOfA);
+    });
   });
 
-  it('403 when the role is missing', async () => {
-    expect((await post(readerA, { sku: 'SKU-1', quantity: 1 })).statusCode).toBe(403);
+  describe('validation (Standard Schema / Zod)', () => {
+    it('invalid body -> 400 with field errors, no stack, no echo of the input', async () => {
+      const res = await post({ sku: '<script>alert(1)</script>', quantity: 0 }, await token());
+      expect(res.statusCode).toBe(400);
+      const body = res.json<{ message: string[] }>();
+      expect(body.message).toEqual(expect.arrayContaining([expect.stringMatching(/^sku: /), expect.stringMatching(/^quantity: /)]));
+      expect(res.body).not.toContain('<script>');
+      expect(res.body).not.toMatch(/stack|at \w+ \(/);
+    });
+
+    it('unknown field (smuggled tenantId) is REJECTED with 400, not stripped', async () => {
+      const res = await post({ sku: 'SKU-1', quantity: 1, tenantId: TENANT_B }, await token());
+      expect(res.statusCode).toBe(400);
+      expect(res.json<{ message: string[] }>().message.join(' ')).toMatch(/tenantId/);
+    });
+
+    it('invalid path id -> 400', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/orders/123', headers: { authorization: `Bearer ${await token()}` } });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('oversized body -> 413', async () => {
+      const res = await post({ sku: 'SKU-1', quantity: 1, pad: 'x'.repeat(4096) }, await token());
+      expect(res.statusCode).toBe(413);
+    });
   });
 
-  it('400 for an unknown field (tenantId smuggled in the body) and for invalid values', async () => {
-    const smuggled = await post(writerA, { sku: 'SKU-1', quantity: 1, tenantId: 'tenant-b' });
-    expect(smuggled.statusCode).toBe(400);
-    expect(JSON.stringify(smuggled.json())).toContain('property tenantId should not exist');
-    expect((await post(writerA, { sku: 'SKU-1', quantity: 0 })).statusCode).toBe(400);
-    expect((await post(writerA, { sku: 'bad sku!', quantity: 1 })).statusCode).toBe(400);
+  describe('serialization', () => {
+    it('never leaks passwordHash even though the handler returns the full DB row', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/users/me', headers: { authorization: `Bearer ${await token()}` } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ id: USER_A, tenantId: TENANT_A, email: `a-${USER_A}@example.test` });
+      expect(res.body).not.toContain('passwordHash');
+      expect(res.body).not.toContain('argon2');
+    });
   });
 
-  it('creates for tenant A; tenant A reads it, tenant B gets 404', async () => {
-    const created = await post(writerA, { sku: 'SKU-1', quantity: 3 });
-    expect(created.statusCode).toBe(201);
-    const { id } = created.json<{ id: string }>();
-    const own = await app.inject({ method: 'GET', url: `/v1/orders/${id}`, headers: { authorization: `Bearer ${readerA}` } });
-    expect(own.statusCode).toBe(200);
-    const other = await app.inject({ method: 'GET', url: `/v1/orders/${id}`, headers: { authorization: `Bearer ${readerB}` } });
-    expect(other.statusCode).toBe(404);
-  });
-
-  it('400 for a malformed id (ParseUUIDPipe)', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/orders/not-a-uuid', headers: { authorization: `Bearer ${readerA}` } });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it('works through supertest against the Fastify server too', async () => {
-    await request(app.getHttpServer()).get('/v1/orders/not-a-uuid').expect(401);
-  });
-
-  it('OpenAPI document lists the versioned route with bearer auth', () => {
-    const doc = SwaggerModule.createDocument(app, new DocumentBuilder().addBearerAuth().build());
-    expect(Object.keys(doc.paths)).toContain('/v1/orders');
-    expect(doc.components?.securitySchemes).toHaveProperty('bearer');
-  });
-});
-
-describe('rate limiting with Fastify', () => {
-  it('returns 429 after the limit, keyed per credential', async () => {
-    const jwt = await createJwtFixture();
-    const app = await bootApp(jwt) // THROTTLE_LIMIT=5 from vitest.e2e.config.mts;
-    try {
-      const token = await jwt.sign({ sub: 'u1', tenant_id: 'tenant-a', roles: [] });
+  describe('rate limiting', () => {
+    it('the 21st request with the same credential -> 429; another credential is unaffected', async () => {
+      const t = await token();
       const codes: number[] = [];
-      for (let i = 0; i < 6; i += 1) {
-        codes.push((await app.inject({ method: 'GET', url: '/v1/orders/00000000-0000-4000-8000-000000000000', headers: { authorization: `Bearer ${token}` } })).statusCode);
+      for (let i = 0; i < 21; i++) {
+        codes.push((await app.inject({ method: 'GET', url: '/api/v1/orders', headers: { authorization: `Bearer ${t}` } })).statusCode);
       }
-      expect(codes).toEqual([404, 404, 404, 404, 404, 429]);
-      const other = await jwt.sign({ sub: 'u2', tenant_id: 'tenant-a', roles: [] });
-      const fresh = await app.inject({ method: 'GET', url: '/v1/orders/00000000-0000-4000-8000-000000000000', headers: { authorization: `Bearer ${other}` } });
-      expect(fresh.statusCode).toBe(404); // separate bucket for a different credential
-    } finally {
-      await app.close();
-    }
+      expect(codes.slice(0, 20).every((c) => c === 200)).toBe(true);
+      expect(codes[20]).toBe(429);
+      const other = await app.inject({ method: 'GET', url: '/api/v1/orders', headers: { authorization: `Bearer ${await token()}` } });
+      expect(other.statusCode).toBe(200);
+    });
+  });
+
+  describe('WebSocket gateway', () => {
+    let url: string;
+    beforeAll(async () => {
+      await app.listen({ port: 0, host: '127.0.0.1' });
+      url = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}/orders`;
+    });
+
+    it('rejects a bad token at connection time', async () => {
+      const socket = io(url, { auth: { token: 'garbage' }, transports: ['websocket'], reconnection: false });
+      const error = await new Promise<Error>((resolve) => socket.on('connect_error', resolve));
+      socket.close();
+      expect(error.message).toBe('unauthorized');
+    });
+
+    it('accepts a valid token and scopes the socket to its tenant', async () => {
+      const socket = io(url, { auth: { token: await token() }, transports: ['websocket'], reconnection: false });
+      await new Promise<void>((resolve, reject) => {
+        socket.on('connect', resolve);
+        socket.on('connect_error', reject);
+      });
+      const reply = await socket.emitWithAck('whoami', {});
+      socket.close();
+      expect(reply).toEqual({ tenantId: TENANT_A });
+    });
   });
 });
 
-describe('WebSocket gateway auth (socket.io over Fastify)', () => {
-  it('rejects a handshake without a valid token and admits a valid one', async () => {
-    const jwt = await createJwtFixture();
-    const app = await bootApp(jwt);
-    await app.listen({ port: 0, host: '127.0.0.1' });
-    const { port } = app.getHttpServer().address() as AddressInfo;
-    const url = `http://127.0.0.1:${port}/orders`;
-    try {
-      const rejected = await new Promise<string>((resolve) => {
-        const socket = io(url, { transports: ['websocket'], auth: { token: 'garbage' }, reconnection: false });
-        socket.on('connect_error', (err) => { socket.close(); resolve(err.message); });
-        socket.on('connect', () => { socket.close(); resolve('connected'); });
-      });
-      expect(rejected).toBe('unauthorized');
-
-      const token = await jwt.sign({ sub: 'u1', tenant_id: 'tenant-a' });
-      const reply = await new Promise<unknown>((resolve, reject) => {
-        const socket = io(url, { transports: ['websocket'], auth: { token }, reconnection: false });
-        socket.on('connect_error', (err) => { socket.close(); reject(err); });
-        socket.on('connect', () => {
-          socket.emit('whoami', {}, (ack: unknown) => { socket.close(); resolve(ack); });
-        });
-      });
-      expect(reply).toEqual({ tenantId: 'tenant-a' });
-    } finally {
-      await app.close();
-    }
-  });
-});
-```
-
-`app.inject()` (Fastify light-my-request) needs no listening port; `supertest(app.getHttpServer())` also works after
-`await app.getHttpAdapter().getInstance().ready()`. Only the key source is overridden — guard, verifier, pipe and filter are the production ones.
-
-### Sandbox results (2026-11-23)
-
-| Check | Result | Negative control |
-|---|---|---|
-| `tsc --noEmit` (strict) | exit 0 | planted type error → exit 2 |
-| `eslint .` | exit 0 | `console.log`, `as any`, floating promise → exit 1 (3 errors) |
-| `vitest run` (unit) | 19 passed | audience check removed → 1 failed; tenant filter removed → 1 failed |
-| `vitest run --config vitest.e2e.config.mts` | 11 passed | `forbidNonWhitelisted` removed → 1 failed; WS middleware removed → 1 failed; `emitDecoratorMetadata: false` → 11 failed |
-| `node dist/main.js` | `/health/live` 200, unauthenticated POST 401, `/docs-json` lists 3 paths, SIGTERM exit 143 | empty env → exit 1 |
-| `npm audit --audit-level=high` | exit 0 with override | exit 1 without |
-| Prisma transaction / BullMQ worker against real services | NOT RUN | no PostgreSQL or Redis available |
-
-## Full App Bootstrap with supertest and Testcontainers
-
-> Not re-run in this toolkit's sandbox (no Docker). Two fixes apply to the example below: provide `DATABASE_URL` before `AppModule` is imported (start the container in a Vitest `globalSetup` and pass the URL through `provide`/env), and call the shared `configureApp(app)` instead of re-creating the pipe.
-
-```typescript
-// test/users.e2e-spec.ts
-import { Test, TestingModule } from '@nestjs/testing';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import request from 'supertest';
-import { AppModule } from '@/app.module';
-import { ValidationPipe } from '@nestjs/common';
-import { DatabaseService } from '@/core/database/database.service';
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
-
-describe('Users API (e2e)', () => {
+describe('broken response contract (e2e)', () => {
   let app: NestFastifyApplication;
-  let databaseService: DatabaseService;
-  let postgresContainer: StartedTestContainer;
 
   beforeAll(async () => {
-    // Start PostgreSQL container
-    postgresContainer = await new GenericContainer('postgres:16-alpine')
-      .withEnvironment({
-        POSTGRES_USER: 'test',
-        POSTGRES_PASSWORD: 'test',
-        POSTGRES_DB: 'testdb',
-      })
-      .withExposedPorts(5432)
-      .start();
-
-    const port = postgresContainer.getMappedPort(5432);
-    const databaseUrl = `postgresql://test:test@localhost:${port}/testdb`;
-
-    // Set environment variable for Prisma
-    process.env.DATABASE_URL = databaseUrl;
-
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication<NestFastifyApplication>(
-      new FastifyAdapter(),
-    );
-
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-
-    databaseService = app.get<DatabaseService>(DatabaseService);
-
-    // Run migrations
-    const { execSync } = await import('child_process');
-    execSync('npx prisma migrate deploy', {
-      env: { ...process.env, DATABASE_URL: databaseUrl },
+    trusted ??= await newKeys('trusted');
+    app = await createApp((b) => {
+      b.overrideProvider(OrdersService).useValue({
+        get: () => Promise.resolve({ id: 'not-a-uuid', sku: 'SKU-1', quantity: 'two', tenantId: TENANT_A }),
+      });
     });
-
-    await app.init();
-    await app.getHttpAdapter().getInstance().ready();
   });
-
   afterAll(async () => {
-    await databaseService.$disconnect();
     await app.close();
-    await postgresContainer.stop();
   });
 
-  beforeEach(async () => {
-    // Clean database before each test
-    await databaseService.user.deleteMany();
-  });
-
-  describe('/api/v1/users (POST)', () => {
-    it('should create a new user', async () => {
-      const createUserDto = {
-        email: 'test@example.com',
-        name: 'Test User',
-        role: 'USER',
-      };
-
-      const response = await request(app.getHttpServer())
-        .post('/api/v1/users')
-        .send(createUserDto)
-        .expect(201);
-
-      expect(response.body).toMatchObject({
-        email: createUserDto.email,
-        name: createUserDto.name,
-        role: createUserDto.role,
-        isActive: true,
-      });
-      expect(response.body.id).toBeDefined();
-      expect(response.body.createdAt).toBeDefined();
-
-      // Verify in database
-      const user = await databaseService.user.findUnique({
-        where: { id: response.body.id },
-      });
-      expect(user).not.toBeNull();
-      expect(user?.email).toBe(createUserDto.email);
+  it('a handler returning data that violates the response schema -> opaque 500, nothing leaked', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/orders/${randomUUID()}`,
+      headers: { authorization: `Bearer ${await token()}` },
     });
-
-    it('should return 400 for invalid email', async () => {
-      const invalidDto = {
-        email: 'invalid-email',
-        name: 'Test User',
-        role: 'USER',
-      };
-
-      const response = await request(app.getHttpServer())
-        .post('/api/v1/users')
-        .send(invalidDto)
-        .expect(400);
-
-      expect(response.body.message).toContain('email');
-    });
-
-    it('should return 409 for duplicate email', async () => {
-      const createUserDto = {
-        email: 'duplicate@example.com',
-        name: 'Test User',
-        role: 'USER',
-      };
-
-      // Create first user
-      await request(app.getHttpServer())
-        .post('/api/v1/users')
-        .send(createUserDto)
-        .expect(201);
-
-      // Try to create duplicate
-      await request(app.getHttpServer())
-        .post('/api/v1/users')
-        .send(createUserDto)
-        .expect(409);
-    });
-  });
-
-  describe('/api/v1/users (GET)', () => {
-    it('should return paginated users', async () => {
-      // Create test users
-      await databaseService.user.createMany({
-        data: [
-          { email: 'user1@example.com', name: 'User 1', role: 'USER' },
-          { email: 'user2@example.com', name: 'User 2', role: 'ADMIN' },
-        ],
-      });
-
-      const response = await request(app.getHttpServer())
-        .get('/api/v1/users')
-        .query({ page: 1, limit: 10 })
-        .expect(200);
-
-      expect(response.body.data).toHaveLength(2);
-      expect(response.body.meta).toMatchObject({
-        total: 2,
-        page: 1,
-        limit: 10,
-        totalPages: 1,
-      });
-    });
-  });
-
-  describe('CRUD Flow', () => {
-    it('should complete full CRUD lifecycle', async () => {
-      // CREATE
-      const createResponse = await request(app.getHttpServer())
-        .post('/api/v1/users')
-        .send({
-          email: 'crud@example.com',
-          name: 'CRUD User',
-          role: 'USER',
-        })
-        .expect(201);
-
-      const userId = createResponse.body.id;
-
-      // READ
-      const getResponse = await request(app.getHttpServer())
-        .get(`/api/v1/users/${userId}`)
-        .expect(200);
-
-      expect(getResponse.body.email).toBe('crud@example.com');
-
-      // UPDATE
-      const updateResponse = await request(app.getHttpServer())
-        .patch(`/api/v1/users/${userId}`)
-        .send({ name: 'Updated CRUD User' })
-        .expect(200);
-
-      expect(updateResponse.body.name).toBe('Updated CRUD User');
-
-      // Verify update in database
-      const updatedUser = await databaseService.user.findUnique({
-        where: { id: userId },
-      });
-      expect(updatedUser?.name).toBe('Updated CRUD User');
-
-      // DELETE
-      await request(app.getHttpServer())
-        .delete(`/api/v1/users/${userId}`)
-        .expect(200);
-
-      // Verify soft delete
-      const deletedUser = await databaseService.user.findUnique({
-        where: { id: userId },
-      });
-      expect(deletedUser?.isActive).toBe(false);
-    });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ statusCode: 500, message: 'Internal server error' });
   });
 });
 ```
 
-## Testcontainers — Real PostgreSQL
+## Repository against PostgreSQL — `test/orders.int-spec.ts`
 
 ```typescript
-// test/helpers/testcontainers.ts
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
+import { randomUUID } from 'node:crypto';
+import { afterAll, describe, expect, it } from 'vitest';
+import { PrismaService } from '../src/database/prisma.service.js';
+import { OrdersRepository } from '../src/orders/orders.repository.js';
 
-export class PostgresTestContainer {
-  private container: StartedTestContainer | null = null;
+const databaseUrl = process.env['DATABASE_URL'];
+if (databaseUrl === undefined || databaseUrl === '') throw new Error('DATABASE_URL is required for integration tests');
 
-  async start(): Promise<string> {
-    this.container = await new GenericContainer('postgres:16-alpine')
-      .withEnvironment({
-        POSTGRES_USER: 'test',
-        POSTGRES_PASSWORD: 'test',
-        POSTGRES_DB: 'testdb',
-      })
-      .withExposedPorts(5432)
-      .withStartupTimeout(120000)
-      .start();
+describe('OrdersRepository against PostgreSQL', () => {
+  const prisma = new PrismaService(databaseUrl);
+  const repo = new OrdersRepository(prisma);
+  const tenantA = randomUUID();
+  const tenantB = randomUUID();
 
-    const host = this.container.getHost();
-    const port = this.container.getMappedPort(5432);
+  afterAll(async () => {
+    await prisma.onModuleDestroy();
+  });
 
-    return `postgresql://test:test@${host}:${port}/testdb`;
-  }
+  it('persists an order and reads it back in the same tenant', async () => {
+    const created = await repo.create(tenantA, { sku: 'SKU-INT', quantity: 3 });
+    const found = await repo.findById(tenantA, created.id);
+    expect(found?.quantity).toBe(3);
+  });
 
-  async stop(): Promise<void> {
-    if (this.container) {
-      await this.container.stop();
-    }
-  }
+  it('never returns another tenant order (by id or in a list)', async () => {
+    const created = await repo.create(tenantA, { sku: 'SKU-INT', quantity: 1 });
+    expect(await repo.findById(tenantB, created.id)).toBeNull();
+    expect((await repo.list(tenantB, 50)).map((o) => o.id)).not.toContain(created.id);
+  });
 
-  async reset(databaseUrl: string): Promise<void> {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: databaseUrl,
-        },
-      },
-    });
+  it('rejects a non-uuid tenant at the database (uuid column)', async () => {
+    await expect(repo.create('not-a-uuid', { sku: 'SKU-INT', quantity: 1 })).rejects.toThrow();
+  });
+});
+```
 
-    // Get all table names
-    const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
-      SELECT tablename FROM pg_tables WHERE schemaname='public'
-    `;
+## Results and planted-bug controls (2026-11-24)
 
-    // Truncate all tables
-    for (const { tablename } of tables) {
-      if (tablename !== '_prisma_migrations') {
-        await prisma.$executeRawUnsafe(
-          `TRUNCATE TABLE "${tablename}" CASCADE`,
-        );
-      }
-    }
+| Check | Result |
+|---|---|
+| `tsc --noEmit -p tsconfig.json` (specs included) | exit 0 |
+| `oxlint --type-aware --deny-warnings src/ test/` | exit 0 |
+| `vitest run` (unit) | 9 / 9 passed |
+| `vitest run --config ./vitest.config.e2e.ts` | 23 / 23 passed |
 
-    await prisma.$disconnect();
-  }
+| Planted bug | Tests that failed |
+|---|---|
+| tenant filter removed from the repository | 2 of 23 (cross-tenant get and list) |
+| `z.strictObject` → `z.object` on the request schema | 2 of 23 (smuggled `tenantId` accepted) |
+| serializer interceptor removed | 1 of 23 (`passwordHash` leaked) |
+| audience check removed from the verifier | 1 of 23 e2e, 1 of 9 unit |
+| roles check disabled in the guard | 1 of 23 (403 case) |
+| `emitDecoratorMetadata: false` | every e2e test (class-typed injection resolved `undefined`) |
+
+`app.inject()` (Fastify light-my-request) needs no listening port. `supertest(app.getHttpServer())` also works after
+`await app.getHttpAdapter().getInstance().ready()`, but adds a dependency for no extra coverage.
+
+## Testcontainers alternative (`globalSetup`) — NOT RUN
+
+Not run in the 2026-11-24 verification (Docker service containers were used instead). Start the database **before**
+any spec imports `AppModule`, from a Vitest `globalSetup`, and hand the URL to the workers with `provide`:
+
+```typescript
+// test/global-setup.ts  (vitest.config.e2e.ts: test.globalSetup: ['./test/global-setup.ts'])
+import { execFileSync } from 'node:child_process';
+import { GenericContainer, type StartedTestContainer } from 'testcontainers';
+import type { TestProject } from 'vitest/node';
+
+let postgres: StartedTestContainer;
+
+export async function setup(project: TestProject): Promise<void> {
+  postgres = await new GenericContainer('postgres:18')
+    .withEnvironment({ POSTGRES_PASSWORD: 'test', POSTGRES_DB: 'testdb' })
+    .withExposedPorts(5432)
+    .start();
+  const url = `postgresql://postgres:test@${postgres.getHost()}:${postgres.getMappedPort(5432)}/testdb`;
+  execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url }, stdio: 'inherit' });
+  project.provide('databaseUrl', url); // read in a setupFiles module with inject('databaseUrl') and copy to process.env
 }
 
-// Usage in test setup
-import { PostgresTestContainer } from './helpers/testcontainers';
-
-describe('Integration Tests', () => {
-  const postgres = new PostgresTestContainer();
-  let databaseUrl: string;
-
-  beforeAll(async () => {
-    databaseUrl = await postgres.start();
-    process.env.DATABASE_URL = databaseUrl;
-
-    // Run migrations
-    const { execSync } = await import('child_process');
-    execSync('npx prisma migrate deploy', {
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-    });
-  });
-
-  afterAll(async () => {
-    await postgres.stop();
-  });
-
-  beforeEach(async () => {
-    await postgres.reset(databaseUrl);
-  });
-});
+export async function teardown(): Promise<void> {
+  await postgres.stop();
+}
 ```
+
+- Prisma 7 has no `datasources` constructor option: a test client is `new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })`
+  from the generated client (`src/generated/prisma/client.js`).
+- Isolate tests with per-test unique tenant ids (as the suite above does) rather than truncating tables between tests;
+  it keeps suites independent and works on a shared CI database.
+

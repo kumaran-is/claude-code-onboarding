@@ -202,10 +202,9 @@ Before declaring any workflow type complete, the following gates must pass. Thes
 - [ ] No raw spacing values — all spacing uses semantic tokens (Flutter: `AppSpacing`, Angular: Tailwind scale)
 - [ ] No inline TextStyles — all typography uses theme text styles
 - [ ] Target size >= 24×24 CSS px (WCAG 2.2 AA); house standard 48dp (Flutter) / 44px (web)
-- [ ] `/lint-design-system` run with zero violations
+- [ ] Project `DESIGN.md` sections read (or its absence reported); no invented brand values
+- [ ] `/lint-design-system` exits 0 (tier on line 1, shared components presentational, one icon family)
 - [ ] Exception markers (`// ignore-design: [reason]`) reviewed and justified
-- [ ] Angular: `shared/components/` components have zero `inject()` calls (dumb rule enforced)
-- [ ] Flutter: `packages/shared_ui/` widgets extend `StatelessWidget` — no `ConsumerWidget` (dumb rule enforced)
 
 ### Release / Merge Gate
 - [ ] `/review-code` verdict = **APPROVE** (NEEDS_REVIEW requires written justification in PR; BLOCK = hard block)

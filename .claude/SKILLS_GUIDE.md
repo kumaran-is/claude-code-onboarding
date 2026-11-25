@@ -27,6 +27,7 @@
 | Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |
 | Web performance + SEO (public sites only) | `.claude/skills/web-performance-optimization/` | `performance-oracle` | — |
 | Web delivery (static hosting, runtime config, cache headers, post-deploy checks) | `.claude/skills/deployment-ci-cd/reference/web-frontend-delivery.md` | `deployment-engineer` | — |
+| Design system (all UI stacks: project `DESIGN.md` discovery and precedence, tokens, icons, motion, Atomic tiers, smart/dumb, async states, refresh strategy) | `.claude/skills/design-system/` (`reference/design-md-governance.md`, `atomic-decision-tree.md`, `token-governance.md`, `interaction-contracts.md` §6b–6c), Flutter token scales `.claude/skills/ui-standards-tokens/` | `ui-standards-expert`, `design-system-reviewer` | `/lint-design-system` (`.claude/scripts/check-design-system.py`) |
 | Accessibility (WCAG 2.2 AA, web + Flutter) | `.claude/skills/accessibility-audit/` | `accessibility-auditor` | `/fixing-accessibility` |
 | Flutter | `.claude/skills/flutter-mobile/` | `flutter-mobile` | `/scaffold-flutter-app` |
 | Flutter GenUI (A2UI) | `.claude/skills/flutter-genui/` | `flutter-genui` | `/scaffold-genui` |

@@ -1,9 +1,9 @@
 ---
 name: design-system
-description: "Cross-stack design-system router for Flutter, Angular and React: tokens, interaction contracts, the async-state standard (loading, skeleton, empty, error, offline) and i18n/RTL. Use when building or auditing any user-facing surface. Flutter token scales live in ui-standards-tokens; WCAG in accessibility-audit."
+description: "Cross-stack design-system router for Flutter, Angular and React: the project DESIGN.md (discovery, precedence, gaps), tokens, icons, motion, Atomic tiers and smart/dumb boundaries, the async-state standard (loading, skeleton, refresh, empty, error, offline) and i18n/RTL. Use when building or auditing any user-facing surface. Flutter token scales live in ui-standards-tokens; WCAG in accessibility-audit."
 allowed-tools: Read, Glob, Grep, Write, Edit
 metadata:
-  triggers: design system, UI audit, design tokens, design review, design lint, visual consistency, theme compliance, design drift, loading state, skeleton, empty state, error state, offline state, i18n, localization, RTL, Intl
+  triggers: DESIGN.md, design system, atomic design, tier, smart dumb, presentational, icon system, refresh strategy, pull to refresh, motion, Lottie, Rive, UI audit, design tokens, design review, design lint, visual consistency, theme compliance, design drift, loading state, skeleton, empty state, error state, offline state, i18n, localization, RTL, Intl
   related-skills: ui-standards-tokens, angular-spa, flutter-mobile, frontend-design, accessibility-audit, tailwind-patterns
   domain: frontend
   role: specialist
@@ -14,11 +14,11 @@ last-reviewed: "2026-11-22"
 
 ## Iron Law
 
-Never hardcode colors, spacing, or typography — always use design tokens; run /lint-design-system before declaring any UI change complete.
+Read the project's DESIGN.md sections for the task before writing UI, never hardcode colors, spacing or typography, and run `/lint-design-system` (the `check-design-system.py` gate) before declaring any UI change complete.
 
 # Design System — Unified Routing Hub
 
-Single entry point for all design system enforcement across Flutter and Angular.
+Single entry point for all design system enforcement across Flutter, Angular and React.
 
 **When to use:** Any UI task — building screens, reviewing components, auditing design drift, or running design lint.
 
@@ -28,6 +28,15 @@ Determine the stack from file context, then load the correct references:
 
 ```
 What are you working on?
+    |
+    +-- ANY UI task: find and read the project's DESIGN.md first (precedence, gaps, missing file)
+    |   → Read: .claude/skills/design-system/reference/design-md-governance.md
+    |
+    +-- Shared components (tier, smart/dumb, slots, tone mapping)
+    |   → Read: .claude/skills/design-system/reference/atomic-decision-tree.md
+    |
+    +-- Token authority per stack, icons, motion/animation engines
+    |   → Read: .claude/skills/design-system/reference/token-governance.md
     |
     +-- Flutter (lib/**/*.dart, pubspec.yaml)
     |   |
@@ -63,7 +72,10 @@ What are you working on?
         |   → Read: .claude/skills/design-system/reference/interaction-contracts.md
         |
         +-- Loading / skeleton / empty / error / offline states (canonical standard)
-        |   → Read: interaction-contracts.md §6b
+        |   → Read: interaction-contracts.md §6b (+ §6b.1 framework mapping and transition tests)
+        |
+        +-- Refresh strategy per screen (background, automatic, realtime, pull-to-refresh, explicit, none)
+        |   → Read: interaction-contracts.md §6c
         |
         +-- i18n, l10n, RTL, Intl formatting
         |   → Read: .claude/skills/design-system/reference/i18n-rtl-intl.md
@@ -79,7 +91,8 @@ What are you working on?
 
 Answer before writing; a "no" means fix the plan first.
 
-1. Does a shared component or screen already solve this? (Reuse before create.)
+0. Which DESIGN.md sections govern this surface, and did I read them? (No DESIGN.md: say so, follow existing tokens, invent nothing.)
+1. Does a shared component or screen already solve this? (Reuse before create.) New shared component: which tier, and is it presentational?
 2. Are all values tokens, with no parallel one-off style?
 3. Is every state designed? See the async-state contract in [interaction-contracts.md](reference/interaction-contracts.md) §6b (loading class, empty, error, offline, pending).
 4. Does it show only truthful state (nothing reads as confirmed before the server confirms)?
@@ -91,7 +104,7 @@ Answer before writing; a "no" means fix the plan first.
 
 ## Design Rules — Hard Policy (Both Stacks)
 
-These are non-negotiable. Violations are caught by hookify rules at write-time.
+These are non-negotiable. Hookify rules warn at write time (advisory: the write still happens); `check-design-system.py` (`/lint-design-system`, `/verify`) is the blocking check.
 
 ### Colors
 - **NEVER** hardcode hex values (`#3b82f6`, `Color(0xFF...)`)
@@ -125,7 +138,7 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 
 ## Machine Enforcement
 
-### Hookify Rules (fire on every Write/Edit by Claude)
+### Hookify Rules (warn on Write/Edit by Claude; advisory, never a gate)
 
 | Rule | Stack | What It Catches |
 |------|-------|-----------------|
@@ -136,6 +149,10 @@ These are non-negotiable. Violations are caught by hookify rules at write-time.
 | `hookify.design-no-raw-spacing-angular` | Web (Angular, React) | arbitrary `p-[13px]`, `gap-x-[1.1rem]`, inline `style="margin: 12px"` (numeric `p-4` is allowed: it is the scale) |
 | `hookify.design-no-raw-typography-angular` | Web (Angular, React) | `text-[14px]`, `font-[...]`, `font-size: N` |
 | `hookify.design-no-raw-form-inputs` | Angular | `<input>`/`<select>`/`<textarea>` without `formControl`, `formField` or `ngModel` (checkbox, radio, file and button types allowed) |
+| `hookify.design-tier-comment-{dart,angular,react}` | All | shared-library component written without a line-1 `// Tier: Atom\|Molecule\|Organism` (full-file writes) |
+| `hookify.design-presentational-imports` | All | shared-library component importing state, data access or feature code |
+
+Dart rules skip token-definition files (`tokens/`, `theme/`, `typography/`, `app_colors.dart`, `*_theme.dart`); web rules skip `*token*`/`*theme*` stylesheets.
 
 All rules respect `ignore-design: <reason>` markers on the same line or the line above; the reason is required. Label association is an accessibility check, not a regex check: use the `accessibility-auditor` agent.
 
@@ -143,7 +160,7 @@ All rules respect `ignore-design: <reason>` markers on the same line or the line
 
 | Command | Scope |
 |---------|-------|
-| `/lint-design-system` | Orchestrator — runs all checks for detected stack(s) |
+| `/lint-design-system` | Runs `python3 .claude/scripts/check-design-system.py --root .` (blocking gate, all three stacks; selftest first) |
 | `dart analyze` | Flutter static analysis |
 | `ng lint` | Angular static analysis |
 
@@ -158,6 +175,7 @@ Before declaring any UI work done, these must pass (from `verification-and-repor
 - [ ] Every async region implements the §6b state matrix (cold loading, cached refresh, empty, error with and without data, offline)
 - [ ] `/lint-design-system` run with zero violations
 - [ ] Exception markers (`// ignore-design: [reason]`) reviewed and justified
+- [ ] Shared-library components carry a line-1 tier and are presentational; each data screen records its refresh strategy (§6c)
 
 ## Shared Component Documentation
 
@@ -168,7 +186,7 @@ Document every shared component with: its tier (Atom / Molecule / Organism), eve
 When a design rule must be violated intentionally:
 
 1. Add inline marker: `// ignore-design: [short reason]` or `<!-- ignore-design: [reason] -->`
-2. Reason must explain WHY (e.g., "platform-specific iOS styling", "third-party widget constraint")
+2. Reason must explain WHY (e.g., "platform-specific iOS styling", "third-party widget constraint"); the gate requires at least 12 characters
 3. Exceptions are reviewed like code debt
 4. Periodically audit: search for `ignore-design` and remove stale exceptions
 5. If 5+ exceptions accumulate in one file → the design system may need extending, flag it
@@ -197,8 +215,9 @@ When a design rule must be violated intentionally:
 
 | Stack | Included | Excluded |
 |-------|----------|----------|
-| Flutter | `lib/` | `test/`, `*.g.dart`, `*.freezed.dart`, build output |
-| Angular | `src/app/` | `node_modules/`, `*.spec.ts`, config files |
+| Flutter | `lib/` of every package/app | `test/`, `*.g.dart`, `*.freezed.dart`, token/theme files, build output |
+| Angular | `src/` | `node_modules/`, `*.spec.ts`, token/theme stylesheets, CSS custom-property definitions, Spartan `libs/ui/` |
+| React | `src/` | `*.test.tsx`, `*.stories.tsx`, `src/components/ui/` (shadcn, CLI-owned), CSS custom-property definitions |
 
 ## Visual Audit — 10-Dimension Scoring
 

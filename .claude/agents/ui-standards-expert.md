@@ -11,7 +11,7 @@ skills:
 vibe: "No hardcoded colors, no raw spacing — the design system exists for a reason"
 color: purple
 emoji: "🎯"
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-25"
 ---
 
 # UI Standards Expert Agent
@@ -30,6 +30,11 @@ You review Flutter and web (Angular, React) UI for **tokens, theming and consist
 - Motion consistency and reduced-motion fallbacks (design side)
 
 ## Capabilities
+
+### Step 0 — DESIGN.md and the gate
+- Find the canonical `DESIGN.md` (repo root, else `docs/`, else `design/`; never a worktree copy) and read only the sections the diff touches (`design-system/reference/design-md-governance.md`). Review against the project's values; toolkit defaults apply only where DESIGN.md is silent and are reported as unapproved.
+- Run `python3 .claude/scripts/check-design-system.py --root . > /tmp/ds.log 2>&1; echo "EXIT:$?"` and quote its findings by rule ID. Exit 2 = gate broken → report BLOCKED, not clean. Hand-checks below cover what a regex cannot see.
+- Code that disagrees with DESIGN.md (or DESIGN.md with its token front matter) is a **drift finding**: cite both, recommend no direction, the human decides.
 
 ### Token Audit
 - Scan for magic numbers in spacing/sizing
@@ -64,6 +69,12 @@ For every screen/section in the diff, list which of these states can occur and w
 - **VIOLATIONS FOUND**: a missing state from the list; a duplicate CTA for a destination already in persistent navigation; a card nested in a card or decorative chrome; truncated amount/status/action at 200% text; primary action covered by the keyboard; motion that fails the "Before you animate" gates (`flutter-animations` skill) or has no reduced-motion fallback; `.withOpacity(` (deprecated).
 - **Do not demand churn**: if the screen already meets the standard, say so; never recommend a redesign for its own sake.
 - Exceptions: `ignore-design: <reason>` counts only on the same line or the line above and only with a reason.
+
+### Refresh, icons and motion (review items)
+- Each remote-read screen in the diff records its refresh strategy (`interaction-contracts.md` §6c). VIOLATION: pull-to-refresh on a form, chat, map, wizard, confirmation/payment screen or desktop web; a gesture as the only refresh path; refresh that skeletons, blanks or resets scroll.
+- Icons: one family per app, imported only by the wrapper (gate `DS-ICON-*`); outline default, filled only for selected; directional glyphs mirror in RTL.
+- Motion: durations/curves from motion tokens; Lottie only decorative and Rive only interactive, each through one wrapper with a static fallback (gate `DS-ANIM`); reduced motion collapses durations and stops loops (`token-governance.md` §3).
+- UX quality (advisory unless it breaks a contract): one dominant primary action per view; no control that does nothing; human copy (no raw enums/IDs); in-progress input survives navigation; one destructive-confirm pattern; status/amount/action text never truncated.
 
 ### Theme Compliance
 - Validate ColorScheme usage

@@ -196,6 +196,45 @@ Applies to every screen or section that reads remote data.
 
 **State coverage to design per screen:** loaded · cold loading · cached refresh · empty · filtered-empty · pending · syncing · stale · offline · degraded network (slow ≠ offline, timeout ≠ failure) · permission denied (offer the system settings path) · partial (names what did not load) · error · success. No false success: nothing reads as paid/sent/complete before authoritative confirmation; optimistic UI only for reversible low-risk actions.
 
+**Never:** a full-screen spinner over content the user already has · a skeleton on refresh, retry, next page or reconnect · clear-then-refetch (wipe, blank, scroll reset) · an error that replaces cached content · "offline" for a slow or failed request · empty rendered before the first load settles · raw exception text · a shimmer without a reduced-motion stop · fake typing or fake determinate progress for AI output · two banners for one condition (one shell-owned status slot: write failure outranks offline) · a toast as the only error for a blocking failure.
+
+### 6b.1 Who owns the state (smart host, dumb view)
+
+The smart container (screen, route component, feature hook) owns the fetch, the cache, connectivity and the derived view state. It passes ONE value down. A shared presentational async view (`AsyncView` / `<app-async-view>` / `AsyncSection`) only renders the surface for that value and emits `retry`; it never fetches, never reads a store, and its skeleton, empty and error slots are inputs. Use each framework's own state type; do not port one stack's type to another.
+
+| Stack | Native source | Content-first mapping (keep the last good value) |
+|---|---|---|
+| Flutter (Riverpod 3) | `AsyncValue<T>` | `value` is the cached content (it keeps the previous data while refreshing or after a refresh error; `asData` is `null` on error and drops it; `valueOrNull` no longer exists in Riverpod 3); `isLoading` / `isRefreshing` / `hasError` are modifiers. Carry an explicit `hasEverLoaded` flag for empty vs never-fetched |
+| Angular 22 | `resource()` / `httpResource()` | `status()` is `idle \| loading \| reloading \| resolved \| error \| local`. `reloading` keeps `value()`; `loading` after a params change clears it and `error` makes `value()` throw, so keep the last good value in a `linkedSignal` fed by `hasValue() ? value() : undefined` and derive the surface in a `computed`. `reload()` is ignored while `loading` and starts another request while `reloading`: guard Retry with your own in-flight flag, and give a cold stall a new request (change a params signal), not `reload()` |
+| React 19 + TanStack Query 5 | `useQuery` | `data` with `placeholderData: keepPreviousData` keeps content across key changes; `isPending` (no data yet) → cold, `isFetching && data` → refreshing modifier, `isError && data` → inline error; pass the query's `signal` to `fetch` so a superseded request is cancelled. A refetch after a cold error resets `isError`, so a retrying cold error is `isFetching && errorUpdatedAt > 0` (keep the error surface with a busy Retry, not the skeleton); Retry/Refresh call `refetch({ cancelRefetch: false })` so repeated taps join the request in flight (the default cancels and restarts it) |
+
+**Races:** newest request wins. A response for a superseded key or an older request id is dropped (abort signal, request id or the library's cancellation), and a refresh/retry already in flight is reused (single flight) rather than duplicated. A stale response never overwrites newer content.
+
+**Required transition tests** (unit/widget level, fake clock for the timers): cold → skeleton after 150 ms, never before · skeleton held ≥ 400 ms once shown · content + refresh failure → content stays with inline error · content + offline → content stays with offline notice · cold + error → blocking error with Retry · settled zero → empty (and the error text is absent) · retry ×3 rapid taps → one request (render between taps: frameworks may merge same-tick calls and hide a missing guard) · older response arriving after a newer one → newer content kept · 10 s stall → "taking longer" with Retry · reduced motion → no shimmer animation. Riverpod 3 delivers provider changes to widgets on a zero-length timer: pump twice (or `pumpAndSettle` where no loop runs) before asserting.
+
+### 6b.2 Mutations, pagination and AI streams
+
+- Mutation progress lives in the control: label kept, width preserved, control disabled, determinate only with real progress. Consequential actions stay pending until the server confirms; failure restores the control and says what did not happen.
+- Pagination status is separate from the region state: a fixed-height footer with load-more / loading / error-with-retry / end. A page-N failure never touches pages already shown.
+- AI output is a stream with explicit states (`submitted → thinking → streaming → done | stopped | failed`) advanced only by real events; partial text stays on failure, and Stop is always available while streaming.
+
+## 6c. Refresh Strategy Decision Record
+
+Every screen that reads remote data records its refresh strategy (in the screen's doc comment, the feature README or the project's DESIGN.md screen table). No strategy is added "by default"; pull-to-refresh is never a default wrapper.
+
+| Strategy | Use when | Not when |
+|---|---|---|
+| Background (stale-while-revalidate on focus/resume/reconnect) | Data changes outside the user's action and a short lag is fine | The user needs to confirm freshness explicitly |
+| Automatic interval | Time-bound data (status boards) with a known change rate | Battery- or quota-sensitive data; hidden tabs/backgrounded apps (pause it) |
+| Realtime (socket/stream subscription) | Multi-user or live state where seconds matter | One-shot reads; it still needs a reconnect and a resync read |
+| Pull-to-refresh | Mobile list/feed, top-anchored scroll, read-only, user expects fresher data, an accessible equivalent exists | Forms, chat, maps, wizards, confirmation and payment screens, desktop web, nested scrollers |
+| Explicit action (Refresh button / menu) | Desktop web, reports, any screen where a gesture is unavailable or ambiguous | When background refresh already guarantees freshness |
+| None | Static, local or immediately-consistent content | Remote data that can change |
+
+Record (one block per screen): `screen · data source · change rate · freshness need · strategy(ies) · trigger(s) · scope (whole screen or sections) · failure behaviour (content stays + inline error) · accessible equivalent (or n/a with reason)`.
+
+Refresh rules: a refresh awaits the real work of every section it covers (all-settled, per-section isolation, indicator outlives the slowest section); it reconciles the leading page and keeps load-more pages separate; it never skeletons, blanks or resets scroll; offline refresh says so immediately instead of spinning; one pull = one refresh (no double fetch). Test each of those as a transition test (§6b.1).
+
 ---
 
 ## Applying These Contracts

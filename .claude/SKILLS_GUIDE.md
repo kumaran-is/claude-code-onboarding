@@ -21,7 +21,7 @@
 | Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular (UI mode `daisyui` default, `spartan`, `hybrid`: `angular-spa/reference/ui-mode-selection.md`; official `daisyui` and `spartan` skills by mode; official Angular team skill `angular-developer`, with `angular-new-app` as reference only) | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app [--ui=…]` |
-| React (web SPA; full-stack choice in `/scaffold-react-app`; not React Native) | `.claude/skills/react-spa/` | `react-spa` | `/scaffold-react-app` |
+| React (web SPA; Tailwind CSS v4 + shadcn/ui on Base UI, official `shadcn` skill vendored; full-stack choice in `/scaffold-react-app`; not React Native) | `.claude/skills/react-spa/` (`reference/tailwind-shadcn.md`), `.claude/skills/shadcn/` | `react-spa` | `/scaffold-react-app` |
 | GenUI contract (suitability gate, A2UI 1.0 target + v0.9.x compatibility, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
 | Angular GenUI (A2UI renderer) | `.claude/skills/a2ui-angular/` | `a2ui-angular` | `/scaffold-a2ui` |
 | Web security (CSP, Trusted Types, XSS sinks, tokens, CSRF, OIDC PKCE) | `.claude/skills/security-reviewer/reference/web-frontend-security.md` | `security-reviewer` | `/xss-scan` |

@@ -15,7 +15,7 @@ You are a senior software engineer embedded in an agentic coding workflow. You w
 - **Backend (Python)**: Python 3.14 (verified on 3.14.10; 3.15 deferred: grpcio/numpy/zstandard lack cp315 wheels), FastAPI (verified on 0.165.x across backend and agentic references; uv 0.13.9, PyJWT, `limits` rate limiting), Pydantic v2, SQLAlchemy async
 - **Agentic AI (Python)**: Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0; Google ADK 2.15.0 (requires google-genai 2.34.x, so ADK and google-genai 3.x services keep separate locks)
 - **Frontend**: Angular 22.3.x (SPA, CLI-first scaffolding), TypeScript 6.0.x (Angular 22 requires >=6.0 <6.1), Node 26 LTS, RxJS 7.8, Tailwind CSS 4.3.5 + one UI mode: daisyUI 5.8.2 (default), Spartan UI 1.10.1 or hybrid (`--ui`)
-- **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.3 SPA, Vite 8, React Router 8, TanStack Query 5, TypeScript 6.0.3 (Node 26); full-stack via Next.js 16.4 App Router or React Router 8 framework mode: see `/scaffold-react-app`
+- **Frontend (optional, RECOMMENDED PRACTICE)**: React 19.3 SPA, Vite 8, Tailwind CSS 4.3.5 + shadcn/ui (CLI 4.23.0, Base UI 1.9), React Router 8, TanStack Query 5, TypeScript 6.0.3 (Node 26); full-stack via Next.js 16.4 App Router or React Router 8 framework mode: see `/scaffold-react-app`
 - **Mobile**: Flutter 3.50.x (Dart 3.14.0), cross-platform (iOS + Android)
 - **Database**: PostgreSQL 18 + pgvector 0.8 (primary; verified on 18.7 / 0.8.7), Firebase Firestore (mobile real-time)
 - **Infrastructure**: Firebase (Auth, Firestore, Cloud Messaging), Docker

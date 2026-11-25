@@ -38,6 +38,7 @@ RULES=(
   'scaffold-python-api#django-admin[[:space:]]+startproject#django-admin startproject#Python / Django'
   'scaffold-spring-api#(spring[[:space:]]+init|mvn[[:space:]]+archetype:generate)#spring init / mvn archetype:generate#Java / Spring Boot'
   'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+vite(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-vite(@[^[:space:]]+)?|([^[:space:]]*/)?create-vite(@[^[:space:]]+)?)#npm create vite / npx create-vite#React (Vite)'
+  'scaffold-react-app#(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+(--[[:space:]]+)?shadcn(@[^[:space:]]+)?[[:space:]]+init([[:space:]]+[^;&|[:space:]]+)*[[:space:]]+(-t|--template|-n|--name)(=[^[:space:]]*)?#npx shadcn init --template / --name#React (shadcn new project)'
   'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+(next-app|react-router)(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-(next-app|react-router)(@[^[:space:]]+)?|([^[:space:]]*/)?create-(next-app|react-router)(@[^[:space:]]+)?)#npm create next-app / create-react-router#React full-stack (Next.js, React Router framework mode)'
 )
 
@@ -180,6 +181,11 @@ selftest() {
   chk "negative: authorized next scaffold is allowed"                    0 'CC_SCAFFOLD=scaffold-react-app npm exec --yes -- create-next-app@16.4.6 web --ts --app --yes'
   chk "negative: authorized react-router scaffold is allowed"            0 'CC_SCAFFOLD=scaffold-react-app npm exec --yes -- create-react-router@8.5.2 web --yes'
   chk "adversarial: angular marker does not authorize create-next-app"   2 'CC_SCAFFOLD=scaffold-angular-app npx create-next-app@16.4.6 web'
+  chk "positive: shadcn init --template (new project) is blocked"       2 'npx shadcn@4.23.0 init --name my-app --preset base-nova --template vite'
+  chk "positive: shadcn init -t=vite is blocked"                         2 'pnpm dlx shadcn@4.23.0 init -t=vite -y'
+  chk "negative: documented shadcn init in an existing app is allowed"   0 'npx shadcn@4.23.0 init --base base -p nova --yes --no-monorepo </dev/null'
+  chk "negative: shadcn add is untouched"                                0 'npx shadcn@4.23.0 add button card </dev/null'
+  chk "negative: authorized shadcn template init is allowed"             0 'CC_SCAFFOLD=scaffold-react-app npx shadcn@4.23.0 init --name web --template vite --base base -p nova -y'
   chk "negative: next build/start are untouched"                         0 'npx next build && npm run start'
   chk "negative: text that only mentions create-next-app"                0 'grep -rn "create-next-app" docs'
   chk "negative: vite build/dev commands are untouched"                  0 'npx vite build && npm run dev && npx vitest run'

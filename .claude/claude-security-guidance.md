@@ -7,7 +7,7 @@ Project-specific rules on top of the plugin's built-in checklist. Full review me
 
 ## Stack
 
-Java 25 / Spring Boot 4.2 (MVC default, WebFlux + R2DBC when justified) · NestJS 11 / Fastify / Prisma · Python 3.14 / FastAPI /
+Java 25 / Spring Boot 4.2 (MVC default, WebFlux + R2DBC when justified) · NestJS 12 / Fastify / Prisma · Python 3.14 / FastAPI /
 SQLAlchemy async · Angular 22 and React 19.3 SPAs · Flutter 3.50 (Firebase Auth, Firestore) ·
 PostgreSQL with RLS · LangChain/LangGraph and Google ADK agents · MCP servers.
 

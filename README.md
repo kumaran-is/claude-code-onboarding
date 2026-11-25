@@ -4,8 +4,8 @@
 [![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blueviolet?style=flat&logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 ![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.2-6DB33F?style=flat&logo=springboot&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-24.14-339933?style=flat&logo=nodedotjs&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-11.2.x-E0234E?style=flat&logo=nestjs&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-26.13-339933?style=flat&logo=nodedotjs&logoColor=white)
+![NestJS](https://img.shields.io/badge/NestJS-12.6.x-E0234E?style=flat&logo=nestjs&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.165.0-009688?style=flat&logo=fastapi&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.5.2-1C3C3C?style=flat&logo=langchain&logoColor=white)
@@ -37,7 +37,7 @@ This repository is a pre-configured starter kit packed with agents, skills, slas
 
 | Layer | Technologies |
 |---|---|
-| **Backend** | Java 25, Spring Boot v4.2 (MVC default, WebFlux when justified), Node.js v24.14, NestJS v11.2.x, Python v3.14 |
+| **Backend** | Java 25, Spring Boot v4.2 (MVC default, WebFlux when justified), Node.js v26.13, NestJS v12.6.x, Python v3.14 |
 | **Agentic AI** | Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, Google ADK 2.15, FastAPI 0.165.0 |
 | **Frontend** | Angular 22.3.x, TypeScript 6.0.x, React 19.3 (optional), A2UI 1.0 with a v0.9.x compatibility path (Agent-to-User Interface; canonical cross-platform catalog for Angular, React and Flutter), Three.js r160+ (3D/WebGL) |
 | **Mobile** | Flutter 3.50.x, Dart 3.14.0, three_dart (3D in Flutter) |
@@ -1957,7 +1957,7 @@ claude-code-onboarding/
         │                                 # testing (WebTestClient, Testcontainers), security hardening,
         │                                 # reactive debugging, Redis/SSE patterns (9 reference files)
         ├── java-coding-standard/         # Java naming, immutability, records, sealed types (1 reference file)
-        ├── nestjs-api/                   # NestJS 11.x: module structure, Prisma 7.x, config management,
+        ├── nestjs-api/                   # NestJS 12.x: module structure, Prisma 7.x, config management,
         │                                 # circuit breakers, feature flags, messaging (BullMQ/RabbitMQ/Kafka),
         │                                 # REST controllers, security, debugging, testing (23 reference files)
         ├── nestjs-coding-standard/       # NestJS naming, module patterns, DTO conventions (1 reference file)
@@ -3109,7 +3109,7 @@ The `deployment-engineer` agent generates production-ready GitHub Actions pipeli
 
 | Service | Pipeline it generates |
 |---|---|
-| NestJS (Node.js 24.14) | npm cache → lint/test → Docker build → Trivy scan → Prisma migrate → Cloud Run staging/prod |
+| NestJS (Node.js 26.13) | npm cache → lint/test → Docker build → Trivy scan → Prisma migrate → Cloud Run staging/prod |
 | Python FastAPI | uv cache → test → Docker build → Trivy scan → Alembic migrate → Cloud Run |
 | LangChain / LangGraph | Same as Python + Cloud Run `--memory=4Gi --timeout=300 --concurrency=1` |
 | Spring Boot | Maven cache → test → Buildpacks image → Cloud Run with `--cpu-boost` |

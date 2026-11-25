@@ -33,7 +33,7 @@ GCP Project (staging / production)
 ├── Artifact Registry
 │   └── Docker repository per service (nestjs-api, python-api, spring-api, ai-agent)
 ├── Cloud Run Services
-│   ├── nestjs-api       (Node.js 24.14.x, Prisma → Cloud SQL)
+│   ├── nestjs-api       (Node.js 26.13.x, Prisma → Cloud SQL)
 │   ├── python-api       (Python 3.14, FastAPI, Alembic → Cloud SQL)
 │   ├── spring-api       (Java 25, Spring Boot 4.2, Flyway → Cloud SQL)
 │   └── ai-agent         (LangChain/LangGraph, 4Gi memory, 300s timeout)

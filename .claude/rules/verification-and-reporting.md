@@ -134,7 +134,7 @@ behavior), every non-trivial claim MUST carry an explicit confidence level.
 [HIGH] The `useEffect` cleanup function runs before the next effect and on unmount.
        Source: React docs (MCP-verified this session, react.dev/reference/react/useEffect)
 
-[MEDIUM] This pattern should work with NestJS 11.x — the `@Module()` API hasn't changed
+[MEDIUM] This pattern should work with NestJS 12.x — the `@Module()` API hasn't changed
          in v10→v11 based on changelog review, but I haven't run it against this specific version.
 
 [LOW] I believe this package supports tree-shaking, but I haven't verified the bundle output.

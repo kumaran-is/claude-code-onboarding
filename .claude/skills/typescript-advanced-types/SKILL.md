@@ -1,6 +1,6 @@
 ---
 name: typescript-advanced-types
-description: "Canonical TypeScript type-design skill (TS 5.9 / 6.0) for Angular 22.x, React, NestJS 11.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
+description: "Canonical TypeScript type-design skill (TS 5.9 / 6.0) for Angular 22.x, React, NestJS 12.x and MCP servers: runtime validation at boundaries (Zod) vs compile-time types, DTO-to-domain mapping, discriminated unions with exhaustive never checks, typed errors, branded types, generics, conditional/mapped/template literal types. Use when designing shared types, typing API clients or UI state, hardening type safety, or migrating JS to TS."
 allowed-tools: Read
 metadata:
   triggers: "Generic types, Conditional types, Mapped types, Utility types, Template literal types, Type-safe API client, Type-safe form, DeepPartial, DeepReadonly, Branded types, type inference, Zod, runtime validation, DTO mapping, discriminated union, exhaustive check, assertNever, TypeScript architecture, type safety hardening, shared types"
@@ -147,7 +147,7 @@ TypeScript's built-in transformation utilities: `Partial<T>`, `Required<T>`, `Re
 |-------|-----------|-------|
 | Angular 22.x | Yes | Type-safe forms, component inputs, RxJS operator types, signal types, `httpResource` `parse` |
 | React 19 | Yes | Props and state unions, typed hooks, schema-parsed fetch results |
-| NestJS 11.x | Yes | Type-safe DTOs, guards, interceptors, Prisma query result types |
+| NestJS 12.x | Yes | Type-safe DTOs, guards, interceptors, Prisma query result types |
 | MCP Builder (TypeScript) | Yes | Type-safe tool definitions, request/response contracts |
 | Flutter / Dart | No | Dart has its own type system — use the flutter-mobile skill |
 | Java / Spring Boot | No | Java generics differ significantly — use the java-spring-api skill |

@@ -23,7 +23,7 @@ Created by `/plan-review`. Validated by `subagent-driven-development` Step 0-PRE
 
 ### Task 1: [Title]
 
-**Stack:** NestJS 11.x | Angular 22.3.x | React 19.3 | Flutter 3.50 | Spring Boot 4.2 | FastAPI | PostgreSQL | Firebase
+**Stack:** NestJS 12.x | Angular 22.3.x | React 19.3 | Flutter 3.50 | Spring Boot 4.2 | FastAPI | PostgreSQL | Firebase
 
 #### Context Brief
 

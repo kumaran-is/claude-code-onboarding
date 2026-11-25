@@ -12,7 +12,7 @@ Generates and updates `docs/CODEMAPS/` — compact, <1000-token snapshots of eac
 | File | Covers |
 |------|--------|
 | `docs/CODEMAPS/spring-api.md` | Java 25 / Spring Boot 4.2 service (MVC default, WebFlux when justified) |
-| `docs/CODEMAPS/nestjs-api.md` | NestJS 11.x / Fastify / Prisma service |
+| `docs/CODEMAPS/nestjs-api.md` | NestJS 12.x / Fastify / Prisma service |
 | `docs/CODEMAPS/mcp-server.md` | TypeScript MCP server (SDK v2, Node 26 LTS) |
 | `docs/CODEMAPS/angular-spa.md` | Angular 22.3.x SPA |
 | `docs/CODEMAPS/flutter-mobile.md` | Flutter 3.50.x mobile app |

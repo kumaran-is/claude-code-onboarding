@@ -1,6 +1,6 @@
 ---
 name: typescript-expert
-description: "TypeScript project engineering (5.9 for NestJS, 6.0 for plain Node services, MCP servers, Angular 22 and React) and Node.js 26 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
+description: "TypeScript project engineering (6.0 for NestJS 12, plain Node services, MCP servers, Angular 22 and React) and Node.js 26 runtime engineering: strict tsconfig, project references, real type-check commands, ESM/CJS interop, validated config, AbortSignal deadlines, typed errors, logging, worker_threads, streams, graceful shutdown, dependency governance, .d.ts and OpenAPI codegen. Use for project-level TS and plain Node decisions. Type-design patterns → typescript-advanced-types."
 allowed-tools: Read, Bash
 metadata:
   triggers: TypeScript performance, Type diagnostics, ESM CJS interop, require(esm), nodenext, TypeScript migration, Monorepo TypeScript, tsc optimization, .d.ts authoring, declaration files, incremental TypeScript, TypeScript project references, Node.js service, env config validation, graceful shutdown, SIGTERM, AbortSignal timeout, unhandled rejection, event loop blocking, worker_threads, stream pipeline backpressure, await using, memory leak, heap snapshot, cpu profile, pino logging, npm audit, npm ci, lockfile
@@ -210,7 +210,7 @@ Verified patterns with tests and negative controls: `references/node-service-eng
 | Stack | Applicable |
 |-------|-----------|
 | Angular 22.x | Yes — but load `angular-spa` for framework patterns |
-| NestJS 11.x | Yes — but load `nestjs-api` for framework patterns |
+| NestJS 12.x | Yes — but load `nestjs-api` for framework patterns |
 | MCP Builder TypeScript | Yes — Node service rules apply; MCP specifics in `mcp-builder` |
 | Plain Node.js 26 (services, CLIs, workers) | Yes — `references/node-service-engineering.md` |
 | Flutter | No |

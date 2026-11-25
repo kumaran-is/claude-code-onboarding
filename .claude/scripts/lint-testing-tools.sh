@@ -58,7 +58,10 @@ MUST_LINK_CANON = ["CLAUDE.md", ".claude/skills/flutter-mobile/SKILL.md",
 FLUTTER_CONTEXT = [p for p in MOBILE_CONTEXT if "mobile-developer" not in p]
 OTHER_E2E = re.compile(r"\b(detox|appium|patrol|espresso|xcuitest|flutter_driver)\b", re.I)
 GUARD_R6 = re.compile(GUARD.pattern.replace("|detox", ""), re.I)
-R4_SKIP = {CANON, ".claude/scripts/lint-testing-tools.sh", ".claude/hooks/pre-browser-tool-advisory.sh"}
+R4_SKIP = {CANON, ".claude/scripts/lint-testing-tools.sh", ".claude/hooks/pre-browser-tool-advisory.sh",
+           # vendored official daisyUI skill (body kept byte-identical to upstream): line 27 is iOS Safari web layout
+           # (viewport-fit=cover), not mobile-app testing. File-level, R4 only; the rest of the skill is still scanned.
+           ".claude/skills/daisyui/components/dock.md"}
 R4_SKIP_DIRS = (".claude/skills/ui-ux-pro-max/", ".git/", "node_modules/")
 VENV_PARTS = ("/.venv/", "/node_modules/", "/__pycache__/")  # local environments: third-party files, never toolkit text
 STALE = [

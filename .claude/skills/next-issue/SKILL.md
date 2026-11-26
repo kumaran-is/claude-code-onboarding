@@ -1,8 +1,8 @@
 ---
 name: next-issue
-description: "Use when the user says /next, next issue, start next issue, pick up next task, what should I work on, or /next-issue --wave N / --plan. Picks the next actionable work item from GitHub Project/issues, local plans, session tasks, and in-flight branches, honouring blockers, assignees, waves, layer order, and failed verification. Not /status-check (binary feature health), /project-status (inventory), or /checkpoint (session snapshots)."
+description: "Use when the user says /next, next issue, start next issue, pick up next task, what should I work on, or /next-issue --wave N / --plan / --auto. Picks the next actionable work item from GitHub Project/issues, local plans, session tasks, and in-flight branches, honouring blockers, assignees, waves, layer order, and failed verification. `/next --auto` is opt-in multi-story automation (explicit flag only). Not /status-check (binary feature health), /project-status (inventory), or /checkpoint (session snapshots)."
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
-argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [--fix-loop] [#N]"
+argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [--fix-loop] [--auto] [#N]"
 metadata:
   domain: workflow
   role: orchestrator
@@ -27,6 +27,7 @@ This SKILL.md is the spine. Detailed discovery and the implement/ship handoff li
 | `references/discovery.md` | Adapters: resume current work, GitHub Project, GitHub Issues, local plans. Candidate JSON. Blocker collection. |
 | `references/plan-and-handoff.md` | `--plan` gates, reuse-first, AC-to-live-code, stack dispatch, impact `/verify` + `/ship` readiness + `/create-pr` (no duplicated merge pipeline; `/ship` does not merge). |
 | `references/loop-and-qualify.md` | Opt-in `--fix-loop`: GO/NO-GO, real `--verify-cmd`, Ralph max 5, no next-issue chaining. |
+| `references/auto-loop.md` | Opt-in `/next --auto` only. HITL `/next` must not load this. |
 | `references/implementation-notes.md` | Sub-ADR decision log (`docs/plans/<N>-implementation-notes.md`). The `needs human review` flag is the product. |
 
 Mechanical ranking is `scripts/check-next-issue.py` — do not re-implement the sort in prose.
@@ -42,10 +43,11 @@ Mechanical ranking is `scripts/check-next-issue.py` — do not re-implement the 
 | `/next --build #N` | Load saved plan → implement → impact `/verify` → `/create-pr` → **stop at merge** |
 | `/next --finish #N` | After merge approval: `/ship` readiness (does not merge); after the human merges: board Done, unblock dependents |
 | `/next --fix-loop` | After a failing `/verify`: qualify (GO/NO-GO), then bounded Ralph fix/retest (max 5, required shell `--verify-cmd`). Still stops at merge. Never starts the next issue. |
+| `/next --auto --wave N` (or `--milestone` / `#N #M`) | Opt-in coordinator: bounded dependency-ordered stories. Load `references/auto-loop.md`. |
 
-Natural language ("what should I work on", "start next issue from Wave 3 with a plan") maps to the same flags.
+Natural language ("what should I work on", "start next issue from Wave 3 with a plan") maps to the same flags. Natural language never enables `--auto`.
 
-**Two human gates, every mode:** plan approval (`--plan`) and merge approval (all modes). Auto-merge is forbidden.
+**Two human gates for `/next` without `--auto`:** plan approval (`--plan`) and merge approval (all HITL modes). Auto-merge is forbidden. `--auto` applies only when the `--auto` flag is present (only the `--auto` flag; never implied).
 
 ## Step 0 — Selftest + sources
 
@@ -115,7 +117,7 @@ See `references/plan-and-handoff.md`. Short form:
 6. Implement via the stack skill. Reuse-first. No silent scope creep. Log sub-ADR decisions as they happen; auto-flag `needs human review: yes` on every `deviation`.
 6b. Plan ↔ diff evidence, then `python3 .claude/scripts/check-verify-impact.py --stage iteration` and `/verify` on reached stacks (unknown → all present). On FAIL, default **stop**. `--fix-loop` only after GO from `references/loop-and-qualify.md` (real shell `--verify-cmd`, max 5, `require_verify=true`). NO-GO → human. Do not pass `/verify` to Ralph. Do not start the next issue.
 7. Domain reviewers from SKILLS_GUIDE (`/review-code`). Independent review is required before `/ship`; SDD tasks also need ledger spec+quality PASS (`check-sdd-ledger.py --review-round`). Re-review is scoped (finding owners + newly appearing stacks + security when still applicable).
-8. Freeze the tree, `check-verify-impact.py --stage frozen`, `/verify pre-pr`, `/ship` for readiness (does not merge), `/create-pr` to print `gh pr create` (does not run it). **Stop.** Merge only after an explicit human keyword. Do not run `gh pr merge`.
+8. Freeze the tree, `check-verify-impact.py --stage frozen`, `/verify pre-pr`, `/ship` for readiness (does not merge), `/create-pr` to print `gh pr create` (does not run it). **Stop.** Merge only after an explicit human keyword. Do not run `gh pr merge`. (`/next --auto` is the sole exception: `references/auto-loop.md`.)
 
 ## Not this skill
 
@@ -144,4 +146,5 @@ A pick is valid only when:
 - [ ] `--plan` stopped at `PLAN READY` until approval
 - [ ] Merge waited for an explicit human keyword; `/ship` is readiness (does not merge); `/create-pr` does not run `gh pr create`
 - [ ] `--fix-loop` ran only after GO, with a shell `--verify-cmd` (not `/verify`) and max 5 iterations
+- [ ] `--auto` ran only when the exact `--auto` flag was present, with an explicit wave/milestone/issue scope
 - [ ] Implementation notes exist for the issue (or an explicit “no sub-ADR decisions”) and every `deviation` is flagged `needs human review: yes`

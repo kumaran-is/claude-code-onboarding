@@ -588,9 +588,23 @@ def scan_skill(skill_dir: Path) -> list[str]:
         findings.append("plan-and-handoff.md missing optional worktree")
     if "--fix-loop" not in handoff_body:
         findings.append("plan-and-handoff.md missing --fix-loop")
+    if "Auto-merge is forbidden" not in handoff_body:
+        findings.append("plan-and-handoff.md lost HITL auto-merge forbid")
     for needle in ("check-verify-impact.py", "/create-pr", "does not merge", "--stage iteration", "--stage frozen"):
         if needle not in handoff_body:
             findings.append(f"plan-and-handoff.md missing {needle}")
+    auto_ref = skill_dir / "references" / "auto-loop.md"
+    if not auto_ref.is_file():
+        findings.append("missing references/auto-loop.md")
+    else:
+        auto_body = auto_ref.read_text(encoding="utf-8")
+        for needle in ("never be activated implicitly", "Do not silently expand", "--admin"):
+            if needle not in auto_body:
+                findings.append(f"auto-loop.md missing {needle}")
+    if "only the `--auto` flag" not in text and "only when `--auto`" not in text:
+        findings.append("SKILL.md must say --auto is opt-in only")
+    if "Do not run `gh pr merge`" not in text:
+        findings.append("SKILL.md lost HITL merge gate")
     if "/brainstorm" not in skill_md.read_text(encoding="utf-8") and "brainstorm is never required" not in skill_md.read_text(encoding="utf-8").lower():
         findings.append("SKILL.md must state brainstorm is never required")
     claude_dir = skill_dir.parent.parent

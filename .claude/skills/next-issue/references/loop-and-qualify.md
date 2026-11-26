@@ -6,7 +6,8 @@ Does **not** start the next issue after this one. Does **not** commit, push, or 
 ## When it runs
 
 Default `/next` still stops after a failing `/verify` and reports. `--fix-loop` is the
-only unattended inner retry. `--plan` and merge remain human gates in every mode.
+only unattended inner retry. `--plan` and merge remain human gates in HITL `/next`.
+`/next --auto` (exact flag only) is a separate outer coordinator in `auto-loop.md`.
 
 ## Qualification (GO / NO-GO)
 

@@ -103,6 +103,36 @@ snapshot() {
     ' "$state_file" 2>/dev/null || true)
   fi
 
+  auto_line="(no /next --auto state)"
+  auto_json=""
+  if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    common=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null || true)
+    if [ -n "$common" ]; then
+      case "$common" in
+        /*) ;;
+        *) common="$root/$common" ;;
+      esac
+      auto_json="$common/claude-state/next-auto/state.json"
+    fi
+  fi
+  if [ -n "$auto_json" ] && [ -f "$auto_json" ]; then
+    auto_line=$(python3 -c '
+import json,sys
+p=sys.argv[1]
+try:
+    st=json.load(open(p))
+except Exception:
+    print("/next --auto state: unreadable")
+    raise SystemExit
+cur=st.get("current") or {}
+print("/next --auto status=%s issue=%s phase=%s" % (
+    st.get("status") or "unknown",
+    cur.get("issue") if cur else "-",
+    cur.get("phase") if cur else "-",
+))
+' "$auto_json" 2>/dev/null || echo "/next --auto state: present")
+  fi
+
   dest=""
   if [ -d "$root/.claude/temp/precompact" ]; then
     dest="$root/.claude/temp/precompact/latest.md"
@@ -128,10 +158,14 @@ snapshot() {
       if [ -n "$ralph_fm" ]; then printf '%s\n' "$ralph_fm"; else printf '%s\n' "(no active ralph-loop.local.md)"; fi
       if [ -n "$contract_block" ]; then printf '%s\n' "$contract_block"; fi
       printf '%s\n' ""
+      printf '%s\n' "## Next --auto coordinator"
+      printf '%s\n' "$auto_line"
+      printf '%s\n' ""
       printf '%s\n' "## Resume"
       printf '%s\n' "This file is the secret-free PreCompact snapshot. The matching /checkpoint log line is in .claude/checkpoints.log."
       printf '%s\n' "A ledger row is never verification proof. Do not redispatch a complete SDD task whose verify exit is 0."
       printf '%s\n' "If ralph-loop.local.md still exists after compact, copy ac_sha256, verify_cmd, and verify_cmd_sha256 from this snapshot back into its frontmatter if they differ — approved acceptance criteria and the exact verifier must survive PreCompact, resume, and context reset unchanged."
+      printf '%s\n' "If /next --auto status is running, after compact run python3 .claude/skills/next-issue/scripts/check-next-auto.py --resume and continue that phase; do not freeze a new scope."
     } > "$dest" 2>/dev/null || dest=""
   fi
 
@@ -231,6 +265,16 @@ selftest() {
   if grep -q 'ac_sha256: "abc123ac"' "$tmp/.claude/ralph-loop.local.md" && grep -q 'verify_cmd: "flutter test"' "$tmp/.claude/ralph-loop.local.md"; then
     echo "  ok   regression: PreCompact does not mutate live loop frontmatter"
   else echo "  FAIL PreCompact mutated ralph-loop.local.md"; fail=1; fi
+
+  common=$(git -C "$tmp" rev-parse --git-common-dir)
+  case "$common" in /*) ;; *) common="$tmp/$common" ;; esac
+  mkdir -p "$common/claude-state/next-auto"
+  printf '%s\n' '{"status":"running","current":{"issue":42,"phase":"verify"},"session_id":"s-precompact"}' > "$common/claude-state/next-auto/state.json"
+  out=$(printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self"); rc=$?
+  dest="$tmp/.claude/temp/precompact/latest.md"
+  if [ "$rc" -eq 0 ] && grep -q 'status=running' "$dest" && grep -q 'issue=42' "$dest" && grep -q 'phase=verify' "$dest"; then
+    echo "  ok   positive: /next --auto coordinator status survives PreCompact"
+  else echo "  FAIL PreCompact dropped next-auto status"; fail=1; fi
 
   # fail-open: broken git / missing jq still exit 0
   out=$(printf '%s' "$payload" | CLAUDE_PROJECT_DIR="/no/such/precompact-root-$$" "$BASH" "$self"); rc=$?

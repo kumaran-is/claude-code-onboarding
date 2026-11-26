@@ -930,6 +930,7 @@ This repo registers 45 unique hook scripts in `.claude/settings.json`. The ones 
 | **Secrets Scan (Output)** | `output-secrets-scanner.sh` | `PostToolUse` | Scans tool outputs (Bash, Read, WebFetch) for API keys, JWT tokens, DB connection strings, private keys. Closes the read-path gap — catches secrets in git history dumps, env reads, API responses. Warn only, never blocks. |
 | **Secret Scan** | `stop-secret-scan.sh` | `Stop` | Scans changed and untracked files with the shared `post-edit-secrets-scan` pattern table (+JWT) |
 | **Ralph Loop** | `stop-ralph-loop.sh` | `Stop` | Autonomous iteration — blocks exit and re-feeds prompt until task complete. Opt-in: only active when `/ralph-loop` was called. |
+| **Next auto** | `stop-next-auto.sh` | `Stop` | Outer `/next --auto` coordinator — continues the next dependency-ready story after the current one reaches a confirmed merge. Opt-in: exact `--auto` flag only; no-ops unless auto state is running; yields to Ralph when the inner loop is active. |
 | **Enforcement Kit** | `enforcement-kit.py` (+ `.claude/scripts/review_state.py`) | `SubagentStart`, `SubagentStop`, `PreToolUse` → Bash/Agent, `Stop` | Always: reminds once per tree state when UI code changed without executed Playwright/Maestro evidence, and notes stale verification on `gh pr create`/`merge`. Opt-in per branch (`review_state.py init`): findings ledger fed by reviewer `FINDING:` lines, evidence-classed closure, escalation after 2 failed fixes, round-3 severity cap, bounded Stop gate, and a `gh pr create`/`merge` deny without a fresh `/verify` stamp and current-tree reviewer evidence (recorded by the hook, never hand-written; wrapped forms such as `bash -c`, `eval` and `xargs` are unwrapped). See `verification-before-completion/reference/verification-loop.md` §4. |
 
 > After cloning: `chmod +x .claude/hooks/*.sh`
@@ -2979,7 +2980,14 @@ The setup is a living product. Treat it like code: version-controlled, PR-review
 
 This toolkit supplies engineering standards: the skills, agents, rules, hooks and review gates that define how code is designed, written, tested, secured and shipped. [AWS AI-DLC](https://github.com/awslabs/aidlc-workflows) (AI-Driven Development Life Cycle) is a separate open-source project from AWS Labs that provides adaptive workflow steering rules for AI coding agents. Teams can use it for optional lifecycle orchestration across cross-functional builder PODs.
 
-The two can be used together, but this repository does not install, embed or depend on AI-DLC. Install and version it from the official repository, and keep this toolkit's `CLAUDE.md` and `.claude/rules/` as the authority on engineering standards.
+The two can be used together. This repository does not embed or fork the AI-DLC engine. Use `/setup-aidlc` in a **target project** to discover, preflight, and (after human approval) install the official native `aidlc` CLI, then `aidlc config --harness claude`. Keep this toolkit's `CLAUDE.md` and `.claude/rules/` as the authority on engineering standards. `/next` and `/aidlc` stay independent: neither starts the other.
+
+```bash
+/setup-aidlc                 # plan → approve → official install/config → doctor
+/setup-aidlc --pin X.Y.Z     # pin an exact stable release
+/setup-aidlc --upgrade       # aidlc update + dry-run refresh
+/setup-aidlc --doctor        # installed vs latest stable
+```
 
 ## 18. Security Considerations
 

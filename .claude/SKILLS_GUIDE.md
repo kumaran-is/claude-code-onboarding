@@ -42,7 +42,8 @@
 | Architecture | `.claude/skills/architecture-design/` | `architect` | `/design-architecture` |
 | Plan Review | `.claude/skills/plan-mode-review/` | — | `/plan-review` |
 | Browser Testing | `.claude/skills/browser-testing/` | `browser-testing` | — |
-| Next work item (`/next`, GitHub issues/project, local plans, blockers, verification, implementation notes) | `.claude/skills/next-issue/` (`references/implementation-notes.md`) | — | `/next` |
+| Next work item (`/next`, GitHub issues/project, local plans, blockers, verification, implementation notes; opt-in `/next --auto`) | `.claude/skills/next-issue/` (`references/implementation-notes.md`, `references/auto-loop.md`) | — | `/next` |
+| AWS AI-DLC (optional; official `aidlc` CLI + `/aidlc`; not a copy of the engine; independent of `/next`) | `.claude/skills/aws-aidlc-integration/` | — | `/setup-aidlc` |
 | Partner testing (paired manual QA, findings ledger, fix/retest) | `.claude/skills/test-partner/` | — | `/test-partner` |
 | Session wrap (checkpoint snapshot + lessons + failed approaches + dirty/unpushed + resume prompt) | `/checkpoint` then `/promote-lessons` then handoff | — | `/end-session` |
 | Debugging | `.claude/skills/systematic-debugging/` | — | `/debug` |

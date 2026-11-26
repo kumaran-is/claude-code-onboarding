@@ -19,6 +19,7 @@ Thumbs.db
 .claude/settings.local.json
 .claude/temp/
 .claude/ralph-loop.local.md
+.claude/next-auto-loop.local.md
 # Shared design rules are committed although a global `*.local.md` ignore would hide them
 # (that is how the tier rules went missing while their tests were committed). Personal hookify rules stay local.
 !.claude/hookify.design-*.local.md

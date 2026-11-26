@@ -18,6 +18,8 @@ else
   echo "ℹ️  No active Ralph loop found."
 fi
 
+echo "   This command does not cancel /next --auto. Use /next --auto --cancel for the outer coordinator."
+
 # Surface progress + escalated items from the surviving state file
 RALPH_PROGRESS_FILE="$CLAUDE_PROJECT_DIR/.claude/ralph-state.local.md"
 if [[ -f "$RALPH_PROGRESS_FILE" ]]; then

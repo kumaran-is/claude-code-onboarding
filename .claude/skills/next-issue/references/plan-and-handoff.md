@@ -3,7 +3,7 @@
 ## Human gates (mandatory)
 
 1. **Plan approval** — `--plan` stops after the plan is saved. Wait for `approve` / `looks good`.
-2. **Merge approval** — after CI is green, stop. The human says `merge` / `ship it`. Auto-merge is forbidden. `/ship` is readiness (does not merge). Open the PR with `/create-pr` (prints `gh pr create`; does not run it). Never `gh pr merge` from this skill.
+2. **Merge approval** — after CI is green, stop. The human says `merge` / `ship it`. Auto-merge is forbidden. `/ship` is readiness (does not merge). Open the PR with `/create-pr` (prints `gh pr create`; does not run it). Never `gh pr merge` from this skill. `/next --auto` is documented in `auto-loop.md` and does not apply here.
 
 One stop per `--plan` run. Batch clarifying questions once before drafting. Do not serial-ask.
 

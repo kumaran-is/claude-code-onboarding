@@ -32,8 +32,8 @@ All fields are defined at the top of SKILL.md between `---` markers.
 name: flutter-mobile
 ```
 
-- Matches the directory name exactly
-- Lowercase, hyphenated
+- Matches the directory name exactly (nested plugin skills may use `{parent}-{leaf}`)
+- Agent Skills spec: 1–64 chars; lowercase `a-z0-9` and single hyphens; no leading, trailing, or consecutive hyphen
 - Should be a specific domain, not generic ("api-patterns" is bad; "nestjs-api" is good)
 
 ### `description` (Required)
@@ -43,9 +43,11 @@ description: Use when building Flutter screens...
 ```
 
 - This is the PRIMARY trigger mechanism -- Claude selects skills by matching description
+- Agent Skills spec: 1–1024 characters, non-empty; describe what it does **and** when to use it
 - Must include: what the skill does, when to use it, trigger words/phrases
 - Minimum 2 sentences; up to 8 sentences is fine
 - Include ALL synonyms a developer might type
+- Under-trigger (missing keywords) is as bad as over-trigger (vague keywords)
 
 ### `allowed-tools` (Strongly Recommended)
 

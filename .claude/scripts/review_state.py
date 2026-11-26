@@ -16,6 +16,7 @@ opt-in marker `enabled`. Hooks import this file; humans and Claude use the CLI.
                                                      /verify records its mode: quick | pre-commit | full | pre-pr)
   review_state.py stamp check NAME [--mode M1,M2]    (VALID | INSUFFICIENT | CHANGED | EXPIRED | MISSING | UNKNOWN;
                                                      exit 0 only on VALID; --mode requires one of those modes)
+  review_state.py history [--files a,b] [--uncommitted]   (optional git log/blame for /review-code)
   review_state.py --selftest
 
 Rules (verification-before-completion/reference/verification-loop.md §4):
@@ -317,6 +318,83 @@ def stamp_check(root: Path, name: str, modes: tuple[str, ...] = ()) -> tuple[str
     return "VALID", f"'{name}' matches the current tree ({rec.get('note') or 'no note'})"
 
 
+BUG_SUBJ = re.compile(r"\b(fix|fixed|fixes|bug|hotfix|regress|regression|npe)\b", re.I)
+
+
+def collect_history(
+    root: Path,
+    files: list[str] | None = None,
+    uncommitted: bool = True,
+    max_files: int = 20,
+    max_commits: int = 8,
+) -> dict:
+    """Optional git log/blame package for /review-code. Fail-open: never a review finding."""
+    try:
+        git("rev-parse", "--is-inside-work-tree", cwd=root)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        return {"skipped": True, "reason": str(exc)[:200], "files": []}
+    names = list(files or [])
+    if not names:
+        try:
+            diff = git("diff", "--name-only", "HEAD", cwd=root) if uncommitted else git("diff", "--name-only", cwd=root)
+            extra = git("ls-files", "--others", "--exclude-standard", cwd=root) if uncommitted else ""
+            names = [n for n in (diff + "\n" + extra).splitlines() if n.strip()]
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            names = []
+    rows: list[dict] = []
+    for path in names[:max_files]:
+        try:
+            tracked = git("ls-files", "--", path, cwd=root)
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            tracked = ""
+        if not tracked.strip():
+            rows.append({"path": path, "new_file": True, "commits": [], "bug_signals": [], "blame": []})
+            continue
+        try:
+            log = git(
+                "log", "-n", str(max_commits), "--follow",
+                "--format=%H%x09%s%x09%an", "--", path, cwd=root,
+            )
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            rows.append({"path": path, "new_file": False, "commits": [], "bug_signals": [f"log skipped: {exc}"[:120]], "blame": []})
+            continue
+        commits: list[dict] = []
+        authors: set[str] = set()
+        signals: list[str] = []
+        for line in log.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) < 3:
+                continue
+            sha, subject, author = parts
+            commits.append({"sha": sha[:12], "subject": subject, "author": author})
+            authors.add(author)
+            if BUG_SUBJ.search(subject):
+                signals.append(f"recent {subject} ({sha[:12]})")
+        if len(authors) >= 4:
+            signals.append(f"{len(authors)} authors on file")
+        blame: list[dict] = []
+        if signals:
+            try:
+                porcelain = git("blame", "-L", "1,20", "--line-porcelain", "--", path, cwd=root, timeout=15)
+                sha = ""
+                summary = ""
+                for line in porcelain.splitlines():
+                    if len(line) >= 40 and line[0] in "0123456789abcdef" and " " in line[:41]:
+                        sha = line.split(" ", 1)[0][:12]
+                    elif line.startswith("summary "):
+                        summary = line[8:]
+                        if sha and BUG_SUBJ.search(summary) and not any(b.get("sha") == sha for b in blame):
+                            blame.append({"sha": sha, "summary": summary})
+            except (RuntimeError, OSError, subprocess.TimeoutExpired):
+                blame = []  # blame is optional; log signals still stand
+        rows.append({"path": path, "new_file": False, "commits": commits, "bug_signals": signals, "blame": blame})
+    return {
+        "skipped": False,
+        "files": rows,
+        "note": "Optional. Cite in FINDING: SEVERITY | path:line | summary; missing history is not a finding.",
+    }
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
 def cli(argv: list[str]) -> int:
     p = argparse.ArgumentParser(prog="review_state.py")
@@ -334,8 +412,18 @@ def cli(argv: list[str]) -> int:
     sw = sp.add_parser("write"); sw.add_argument("name"); sw.add_argument("--note", default="")
     sw.add_argument("--mode", default="", choices=["", "quick", "pre-commit", "full", "pre-pr"])
     sc = sp.add_parser("check"); sc.add_argument("name"); sc.add_argument("--mode", default="")
+    hy = sub.add_parser("history")
+    hy.add_argument("--files", default="")
+    hy.add_argument("--uncommitted", action="store_true")
+    hy.add_argument("--max-files", type=int, default=20)
+    hy.add_argument("--max-commits", type=int, default=8)
     args = p.parse_args(argv)
     root = project_root()
+    if args.cmd == "history":
+        names = [x for x in args.files.split(",") if x.strip()]
+        pkg = collect_history(root, names or None, args.uncommitted, args.max_files, args.max_commits)
+        print(json.dumps(pkg, indent=2, sort_keys=True))
+        return 0
     if args.cmd == "init":
         d = state_dir(root); d.mkdir(parents=True, exist_ok=True); (d / "enabled").write_text("opt-in\n")
         print(f"enforcement kit ON for this branch ({d.relative_to(root)})"); return 0
@@ -483,6 +571,46 @@ def selftest() -> int:
             ok(review_check(root)[0] == "CHANGED", "positive: a report without a recorded tree never counts as current")
         except (RuntimeError, OSError) as exc:
             ok(False, f"stamp fixture: {exc}")
+
+    hist_line = "FINDING: HIGH | src/a.py:10 | recurring null deref; also in abc1234 fix"
+    ok(bool(FINDING_RE.match(hist_line)), "negative: history-citing FINDING line still matches the ledger contract")
+    review_cmd = Path(__file__).resolve().parent.parent / "commands" / "review-code.md"
+    cmd_text = review_cmd.read_text(encoding="utf-8") if review_cmd.is_file() else ""
+    for needle in ("review_state.py history", "FINDING:", "--no-history", "not a new reviewer"):
+        ok(needle in cmd_text, f"review-code.md keeps {needle!r}")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        try:
+            git("init", "-q", cwd=root)
+            ident = ("-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false")
+            (root / "src").mkdir()
+            (root / "src" / "a.py").write_text("x = 1\n")
+            git("add", "src/a.py", cwd=root)
+            git(*ident, "commit", "-q", "-m", "feat: add a.py", cwd=root)
+            feat = collect_history(root, ["src/a.py"], uncommitted=False)
+            ok(
+                feat.get("skipped") is False and feat["files"] and not feat["files"][0]["bug_signals"],
+                "negative: feat-only history has no bug_signals",
+            )
+            (root / "src" / "a.py").write_text("x = 2\n")
+            git("add", "src/a.py", cwd=root)
+            git(*ident, "commit", "-q", "-m", "fix: npe on empty input", cwd=root)
+            fixed = collect_history(root, ["src/a.py"], uncommitted=False)
+            ok(
+                bool(fixed["files"] and any("fix:" in s for s in fixed["files"][0]["bug_signals"])),
+                "positive: fix commit becomes a bug_signal",
+            )
+            (root / "src" / "new.py").write_text("y = 1\n")
+            fresh = collect_history(root, ["src/new.py"], uncommitted=True)
+            ok(
+                fresh["files"] and fresh["files"][0].get("new_file") and not fresh["files"][0]["bug_signals"],
+                "negative: untracked file is new_file with no bug_signals",
+            )
+        except (RuntimeError, OSError) as exc:
+            ok(False, f"history fixture: {exc}")
+    with tempfile.TemporaryDirectory() as ng:
+        skipped = collect_history(Path(ng), ["a.py"])
+        ok(skipped.get("skipped") is True, "negative: non-git dir skips history (exit 0 / fail-open)")
     print("selftest PASS" if fails == 0 else "selftest FAIL")
     return 1 if fails else 0
 

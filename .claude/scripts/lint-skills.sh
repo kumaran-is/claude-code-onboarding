@@ -45,14 +45,19 @@ if [[ "${1:-}" == "--selftest" ]]; then
   bash -n "$self" || { echo "  FAIL does not parse"; exit 1; }
   echo "  ok   parses (bash -n)"
   tmp=$(mktemp -d) || exit 1
-  mkdir -p "$tmp/good" "$tmp/bad"
+  mkdir -p "$tmp/good" "$tmp/bad" "$tmp/badname"
   printf -- '---\nname: good\ndescription: "Use when: x happens. Covers a, b."\nmetadata:\n  triggers: x, y\nallowed-tools: Read\n---\n# Good\n\n## Iron Law\nx\n' > "$tmp/good/SKILL.md"
-  out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+  out=$(bash "$self" --dir "$tmp/good" 2>&1); rc=$?
   fail=0
   if [[ $rc -eq 0 ]] && ! printf '%s' "$out" | grep -q "invalid YAML"; then echo "  ok   negative: valid frontmatter (quoted colon) passes"; else echo "  FAIL clean fixture: rc=$rc $out"; fail=1; fi
   printf -- '---\nname: bad\ndescription: Use when: x happens\nallowed-tools: Read\n---\n# Bad\n' > "$tmp/bad/SKILL.md"
-  out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+  out=$(bash "$self" --dir "$tmp/bad" 2>&1); rc=$?
   if [[ $rc -eq 1 ]] && printf '%s' "$out" | grep -q "bad/SKILL.md" && printf '%s' "$out" | grep -q "invalid YAML"; then echo "  ok   positive: unquoted ': ' in description fails with invalid YAML"; else echo "  FAIL planted bad YAML not caught: rc=$rc $out"; fail=1; fi
+  printf -- '---\nname: Bad_Name\ndescription: "Use when: handling a planted spec violation."\nmetadata:\n  triggers: x, y\nallowed-tools: Read\n---\n# Bad\n\n## Iron Law\nx\n' > "$tmp/badname/SKILL.md"
+  out=$(bash "$self" --dir "$tmp/badname" 2>&1); rc=$?
+  if [[ $rc -eq 1 ]] && printf '%s' "$out" | grep -q "Agent Skills spec"; then echo "  ok   positive: spec-illegal name fails via check-skill-spec"; else echo "  FAIL planted spec name not caught: rc=$rc $out"; fail=1; fi
+  spec_self=$(python3 "${SCRIPT_DIR}/../skills/writing-skills/scripts/check-skill-spec.py" --selftest 2>&1); spec_rc=$?
+  if [[ $spec_rc -eq 0 ]] && printf '%s' "$spec_self" | grep -q "selftest PASS"; then echo "  ok   negative: check-skill-spec.py --selftest PASS"; else echo "  FAIL check-skill-spec selftest: rc=$spec_rc $spec_self"; fail=1; fi
   rm -rf "$tmp"
   [[ $fail -eq 0 ]] && echo "selftest PASS" || echo "selftest FAIL"
   exit $fail
@@ -109,6 +114,17 @@ if [[ "$yaml_report" == *PYYAML_MISSING* ]]; then
 fi
 echo "YAML frontmatter: $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') file(s) parsed strictly"
 
+SPEC_HELPER="${SCRIPT_DIR}/../skills/writing-skills/scripts/check-skill-spec.py"
+if [[ ! -f "$SPEC_HELPER" ]]; then
+  echo "ERROR: missing Agent Skills spec checker: $SPEC_HELPER" >&2
+  exit 1
+fi
+spec_report=$(python3 "$SPEC_HELPER" --dir "$SKILLS_DIR" --activation --machine 2>&1); spec_rc=$?
+if [[ $spec_rc -eq 2 ]]; then
+  echo "ERROR: check-skill-spec.py usage failure: $spec_report" >&2
+  exit 1
+fi
+
 # Second pass: lint each file
 while IFS= read -r skill_file; do
   skill_dir_name=$(basename "$(dirname "$skill_file")")/SKILL.md
@@ -125,6 +141,13 @@ while IFS= read -r skill_file; do
   yaml_err=$(printf '%s\n' "$yaml_report" | awk -F'\t' -v f="$skill_file" '$1 == f { print $2; exit }')
   if [[ -n "$yaml_err" ]]; then
     errors="${errors}   → ERROR: frontmatter ${yaml_err}\n"
+  fi
+
+  spec_errs=$(printf '%s\n' "$spec_report" | awk -F'\t' -v f="$skill_file" '$1=="SPEC" && $2==f { print $3 }')
+  if [[ -n "$spec_errs" ]]; then
+    while IFS= read -r se; do
+      [[ -n "$se" ]] && errors="${errors}   → ERROR: ${se}\n"
+    done <<< "$spec_errs"
   fi
 
   # Check required field: name
@@ -217,6 +240,22 @@ done < <(find "$SKILLS_DIR" -name "SKILL.md" | sort)
 
 echo ""
 echo "RESULT: ${passed} passed, ${warned} warned, ${failed} failed"
+
+act_fail=0
+while IFS=$'\t' read -r kind status cid detail; do
+  [[ "$kind" == "ACTIVATION" ]] || continue
+  if [[ "$status" == "FAIL" ]]; then
+    act_fail=$((act_fail + 1))
+    echo "   → ERROR: activation ${cid}: ${detail}"
+  elif [[ "$QUIET" -eq 0 && "$status" == "PASS" ]]; then
+    echo "   activation ${cid}: PASS"
+  fi
+done <<< "$(printf '%s\n' "$spec_report")"
+
+if [[ "$act_fail" -gt 0 ]]; then
+  any_errors=1
+  echo "ACTIVATION: ${act_fail} failed (Agent Skills trigger eval)"
+fi
 
 if [[ $any_errors -eq 1 ]]; then
   exit 1

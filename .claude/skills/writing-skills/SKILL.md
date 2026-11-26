@@ -1,7 +1,7 @@
 ---
 name: writing-skills
-description: "Author or extend a Claude Code skill: anatomy, frontmatter, trigger-word descriptions, progressive disclosure, 500-line limit, creation checklist. Use when creating or restructuring a skill. Review a finished skill with skill-reviewer."
-allowed-tools: Read, Write, Edit, Glob, Grep
+description: "Author or extend a Claude Code skill: anatomy, frontmatter, Agent Skills spec (https://agentskills.io/specification), trigger-word descriptions, under-trigger vs over-trigger, progressive disclosure, 500-line limit, creation checklist, activation eval. Use when creating or restructuring a skill. Review a finished skill with skill-reviewer."
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 metadata:
   triggers: create a skill, write a skill, add a skill, new skill, skill structure, skill authoring, skill template, SKILL.md
   related-skills: subagent-driven-development, plan-mode-review, documentation-generation
@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: design
   output-format: document
-last-reviewed: "2026-03-16"
+last-reviewed: "2026-11-26"
 ---
 
 # Writing Skills
@@ -30,6 +30,8 @@ Read at least one existing SKILL.md in `.claude/skills/` before writing your own
   assets/                     <- Diagrams, templates, static files
   scripts/                    <- Executable helper scripts
 ```
+
+Authoritative format: [Agent Skills specification](https://agentskills.io/specification) (`name` + `description` required; progressive disclosure; SKILL.md ≤500 lines). Kit extras (`allowed-tools`, `metadata.triggers`, Iron Law) live in `references/skill-authoring-spec.md`.
 
 **Frontmatter fields** (see `references/skill-anatomy.md` for full spec):
 
@@ -87,6 +89,19 @@ description: Use when building Flutter screens, Riverpod providers, Freezed mode
 
 Rule: Include every word a developer would type when they need this skill.
 
+Two failure modes (the description is the only always-loaded signal):
+
+- **Under-trigger** — missing keywords, so the skill never loads for work it owns.
+- **Over-trigger** — vague keywords, so the skill loads for unrelated stacks.
+
+Eval is the existing linter, not a second framework:
+
+```bash
+python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --dir .claude/skills --activation
+python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --dir .claude/skills \
+  --prompt "your prompt" --expect this-skill --forbid sibling-a,sibling-b
+```
+
 ## Minimal Correct Skill Example
 
 ```yaml
@@ -118,13 +133,16 @@ The `description` gets the skill selected; the Iron Law prevents silent skips; t
                      .claude/skills/*/SKILL.md; if a skill already covers it in part,
                      extend that skill (new section or reference file) instead
 [] 1. NAME        -- matches directory, lowercase-hyphenated, specific domain
-[] 2. DESCRIPTION -- includes all trigger words; passes the CSO test above
+[] 2. DESCRIPTION -- includes all trigger words; passes CSO; name+description match
+                     https://agentskills.io/specification (1–64 / 1–1024, name charset)
 [] 3. ALLOWED-TOOLS -- listed explicitly; minimum needed for the skill's tasks
 [] 4. BODY        -- Iron Law first; decision trees > prose; <=500 lines
 [] 5. REFERENCES  -- deep patterns offloaded to the skill's reference folder
                      (`reference/` is the common convention here; keep whichever
                      the skill already uses); each file < 300 lines
-[] 6. TEST        -- load the skill, ask it a question, verify it triggers correctly
+[] 6. TEST        -- run check-skill-spec.py --dir .claude/skills --activation
+                     and an ad-hoc --prompt/--expect/--forbid pair; under-trigger
+                     and over-trigger both fail the gate
 [] 7. REGISTER    -- add a row to the `.claude/SKILLS_GUIDE.md` Routing table
                      (technology skills) and its reviewer table (if a reviewer agent
                      applies); add the skill under its domain there; touch CLAUDE.md
@@ -162,7 +180,16 @@ For skills that cover multiple tech stacks (Java, NestJS, Python, Flutter):
 
 Keep the body stack-agnostic. Push all stack-specific code into reference files.
 
+## Verify
+
+```bash
+python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --selftest
+bash .claude/scripts/lint-skills.sh --selftest
+```
+
 ## References
 
+- https://agentskills.io/specification -- Agent Skills format (name, description, progressive disclosure)
 - `references/skill-anatomy.md` -- full frontmatter field spec, directory conventions
-- `references/skill-authoring-spec.md` -- condensed official spec, what NOT to include, CSO rules
+- `references/skill-authoring-spec.md` -- condensed spec, under-trigger, what NOT to include, CSO rules
+- `scripts/check-skill-spec.py` -- spec + activation evaluator used by lint-skills and `/audit-skills`

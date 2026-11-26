@@ -1,6 +1,6 @@
 ---
 name: audit-skills
-description: Periodic health audit of all skills in .claude/skills/ and agents in .claude/agents/. Scores each against a 16-criterion rubric (32 points max), assigns A–F production readiness grade (80% = B = production ready), and outputs a prioritised fix list. Use when: auditing skill health, reviewing skill governance, finding stale skills, checking skill compliance, grading the skill library.
+description: Periodic health audit of all skills in .claude/skills/ and agents in .claude/agents/. Scores each against a 16-criterion rubric (32 points max), assigns A–F production readiness grade (80% = B = production ready), checks Agent Skills spec (https://agentskills.io/specification) and skill activation/non-activation via the existing lint-skills evaluator, and outputs a prioritised fix list. Use when: auditing skill health, reviewing skill governance, finding stale skills, checking skill compliance, grading the skill library, evaluating skill triggers.
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
@@ -15,15 +15,15 @@ Each criterion scores **0** (fail), **1** (partial), or **2** (pass).
 | # | Criterion | 2 (pass) | 1 (partial) | 0 (fail) |
 |---|-----------|----------|-------------|----------|
 | A1 | **Iron Law present** | `## Iron Law`, `**Iron Law:**`, or `> **Iron Law:**` found in body | Mandatory action present but not labelled Iron Law | Absent |
-| A2 | **Description has CSO trigger words** | Contains specific trigger verbs: "Use when", "Triggers when", "Invoke for" + concrete scenario | Has trigger words but vague ("use for general...") | Missing or < 10 words |
-| A3 | **Trigger is unambiguous** | Would NOT fire on tasks outside its domain | Could plausibly fire on 2+ unrelated task types | Fires on everything / too broad |
+| A2 | **Description has CSO trigger words** | Contains specific trigger verbs: "Use when", "Triggers when", "Invoke for" + concrete scenario; `check-skill-spec.py --activation` does **not** report under-trigger for this skill | Has trigger words but vague ("use for general...") | Missing, < 10 words, or under-trigger on a representative prompt it owns |
+| A3 | **Trigger is unambiguous** | Would NOT fire on tasks outside its domain; activation eval `must_not` holds for sibling stacks | Could plausibly fire on 2+ unrelated task types | Fires on everything / over-trigger on a representative prompt |
 | A4 | **No overlap with peer skills** | No functional duplication with another skill in `.claude/skills/` | Minor overlap, clearly differentiated | Significant duplication — consolidate |
 
 ### Category B — Structure & Size (8 pts)
 
 | # | Criterion | 2 (pass) | 1 (partial) | 0 (fail) |
 |---|-----------|----------|-------------|----------|
-| B1 | **Frontmatter complete** | `name`, `description`, `allowed-tools` all present | 2 of 3 present | Missing or malformed frontmatter |
+| B1 | **Frontmatter complete** | `name`, `description`, `allowed-tools` present **and** `name`/`description` satisfy https://agentskills.io/specification (charset, 1–64 / 1–1024, directory match) | 2 of 3 present, or spec fields present with a kit-only extra missing | Missing, malformed, or spec-illegal `name`/`description` |
 | B2 | **Body ≤ 500 lines** | ≤ 450 lines | 451–500 lines | > 500 lines |
 | B3 | **Progressive disclosure** | Content ordered: summary → key rules → examples → reference | Mostly ordered, minor issues | Dumps everything upfront with no structure |
 | B4 | **References section** | `references/` dir present OR inline links to MCP/docs | Referenced in body but dir missing | No references anywhere |
@@ -74,21 +74,27 @@ Today's date: use `currentDate` from context if available, otherwise run `date +
 
 ## Steps
 
-1. Run `glob .claude/skills/*/SKILL.md` — get all skill files
-2. Run `glob .claude/agents/*.md` — get all agent files
-3. For each file:
+1. Run the existing evaluator (do **not** introduce a second eval framework):
+   ```bash
+   python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --dir .claude/skills --activation
+   bash .claude/scripts/lint-skills.sh
+   ```
+   Capture spec FAIL lines and every `PASS|FAIL|SKIP activation <id>` line. Representative prompts cover Flutter, Angular, React, Java, Python, AI/MCP and startup-design, plus generic/wrong-stack negatives. Include this as **Activation eval** in the report (PASS/FAIL per case, not a 17th rubric column).
+2. Run `glob .claude/skills/*/SKILL.md` — get all skill files
+3. Run `glob .claude/agents/*.md` — get all agent files
+4. For each file:
    a. Read frontmatter + full body (use `limit: 60` first, expand if needed)
    b. Score all 16 criteria (0/1/2 each)
    c. Sum score, compute percentage, assign grade
-4. Sort results: F first, then D, C, B, A
-5. **Permissions and automation surface re-audit** (every run, and at least every 30 days): permissions accrete and are never re-examined, so re-check `.claude/settings.json` and `.claude/settings.local.json` against `.claude/skills/security-reviewer/reference/claude-config-security.md` §1 (permissions), §3 (hooks), §4 (MCP servers) and §5 (agents), deriving the current state with its §6 commands:
+5. Sort results: F first, then D, C, B, A
+6. **Permissions and automation surface re-audit** (every run, and at least every 30 days): permissions accrete and are never re-examined, so re-check `.claude/settings.json` and `.claude/settings.local.json` against `.claude/skills/security-reviewer/reference/claude-config-security.md` §1 (permissions), §3 (hooks), §4 (MCP servers) and §5 (agents), deriving the current state with its §6 commands:
    - every `permissions.allow` entry is attributable to a current workflow; unattributable entries are candidates for removal or demotion to `ask`
    - destructive classes (`rm`, `git reset/clean/restore`, force-push, `sudo`, `eval`, `ssh`) are still in `ask` or `deny`, none silently promoted to `allow`
    - every allow entry added since the last audit (`git log -p -- .claude/settings.json`) has a stated reason
    - every registered hook file exists and is executable (an orphaned hook entry is a silent enforcement gap)
    - every `mcp__*` allow entry maps to a server still in `.mcp.json` and still listed in `.claude/mcp-allowlist.txt` and the risk register (`.claude/skills/security-reviewer/reference/mcp-security.md` §7)
    Report this as its own section: PASS, or each flagged entry with its reason.
-6. Output report in format below
+7. Output report in format below
 
 ---
 
@@ -103,6 +109,14 @@ AGENTS:  {N} audited  |  A: {N}  B: {N}  C: {N}  D: {N}  F: {N}
 
 Production-ready (A+B): {N}/{TOTAL} ({PCT}%)
 Needs work (C+D+F):     {N}/{TOTAL} ({PCT}%)
+
+## Activation eval (lint-skills / check-skill-spec.py — not a second framework)
+Spec: https://agentskills.io/specification
+| Case | Result | Detail |
+|------|--------|--------|
+| flutter-positive | PASS/FAIL/SKIP | ... |
+| generic-negative | PASS/FAIL/SKIP | must_not stack skills |
+Under-trigger on a skill this audit scored A2=2 → cap A2 at 1. Over-trigger → cap A3 at 1.
 
 ## ❌ F Grade — Do Not Use (rewrite or delete)
 | Name | Score | Top 3 Missing |

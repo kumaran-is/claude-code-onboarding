@@ -2,7 +2,7 @@
 
 ## Source
 
-Condensed from the official Anthropic skill authoring specification. Used by the `writing-skills` skill as the authoritative reference for skill creation rules.
+Canonical format: [Agent Skills specification](https://agentskills.io/specification). Used by `writing-skills`, `lint-skills.sh` and `/audit-skills`. Do not vendor `skills-ref` or Anthropic plugins; the kit detector is `scripts/check-skill-spec.py`.
 
 ## The Core Principle: Context is a Public Good
 
@@ -18,8 +18,8 @@ Every token loaded into Claude's context window costs real money and occupies fi
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Matches directory name; used for identification |
-| `description` | string | Primary trigger text; determines when Claude loads this skill |
+| `name` | string | 1–64 chars; `a-z0-9` and single hyphens; no leading/trailing/consecutive hyphen; matches the skill directory (nested plugin skills may use `{parent}-{leaf}`, e.g. `daisyui-colors`) |
+| `description` | string | 1–1024 chars; what the skill does **and** when to use it; this is the always-loaded trigger |
 
 ### Optional Fields
 
@@ -45,6 +45,33 @@ BAD description:
 - Too short: "Flutter skill" -- no trigger words
 - Too vague: "Use for mobile development" -- doesn't match specific queries
 - Missing synonyms: Only mentions "testing" but not "TDD" or "test-driven"
+- Under-trigger: owns Flutter/Riverpod work but never says "Riverpod" or "widget test"
+- Over-trigger: "Use when writing code" -- fires on every stack
+```
+
+## Activation reliability
+
+The `description` (plus `metadata.triggers` in this kit) is the only always-loaded signal. Two failures:
+
+| Mode | Symptom | Eval |
+|------|---------|------|
+| **Under-trigger** | Skill never loads for work it owns | Representative prompt overlap < 2 distinctive tokens |
+| **Over-trigger** | Skill loads for an unrelated stack | Sibling skill overlap ≥ 2 distinctive tokens on that prompt |
+
+Same detector as `lint-skills.sh` (not a second eval framework):
+
+```bash
+python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --dir .claude/skills --activation
+```
+
+Representative suites (positive + negative): Flutter, Angular, React, Java, Python, AI/MCP, startup-design. A generic prompt ("What is today's date?") must not activate those stack skills.
+
+Ad-hoc, while authoring:
+
+```bash
+python3 .claude/skills/writing-skills/scripts/check-skill-spec.py --dir .claude/skills \
+  --prompt "Add a Riverpod provider for the Flutter login screen" \
+  --expect flutter-mobile --forbid angular-spa,react-spa
 ```
 
 ## What NOT to Include in a Skill Directory
@@ -171,7 +198,8 @@ Pick the question that matches your goal and follow the file pointers.
 
 ```
 [] Iron Law appears first?
-[] Description includes all trigger words?
+[] Description includes all trigger words (under-trigger test passes)?
+[] Name+description match https://agentskills.io/specification?
 [] allowed-tools listed and minimal?
 [] Body <=500 lines?
 [] Deep content in references/, not inline?

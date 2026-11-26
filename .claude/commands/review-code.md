@@ -15,6 +15,15 @@ Review the specified code for quality, security, and maintainability using **par
 ### Step 1 — Detect scope
 Determine which files/directories to review from `$ARGUMENTS` (default: recent changes via `git diff --name-only HEAD`).
 
+**Optional history** (skip when `$ARGUMENTS` contains `--no-history`): inspect git log/blame for bug-prone lines. Same evaluator as the findings ledger — not a new reviewer.
+
+```bash
+python3 .claude/scripts/review_state.py history --uncommitted > /tmp/review-history.json 2>/tmp/review-history.err
+echo "HISTORY EXIT:$?"
+```
+
+Exit 0 with `"skipped": true` or an empty `files` list is not a finding — attach whatever JSON you got. When `bug_signals` is non-empty, existing reviewers MAY cite the commit subject as evidence. The line format is unchanged: `FINDING: SEVERITY | path:line | summary`. Do not dispatch a history-only agent. History never changes verdict rules, dispatcher tables, or evidence requirements.
+
 ### Step 2 — Identify active stacks
 Scan the file list for tech signals and build a dispatch list:
 
@@ -47,7 +56,7 @@ Scan the file list for tech signals and build a dispatch list:
 First run `/verify quick` for the diff's stacks and fix what it reports: reviewers spend their budget on judgement, not on compile and lint errors a tool finds in seconds. A quick-verify FAIL left unfixed is listed in the report, and the verdict cannot be APPROVE.
 
 Launch all identified agents simultaneously with the Agent tool (`run_in_background: true`).
-Give each reviewer its own slice of the file list from Step 2 (a stack reviewer gets that stack's files; `security-reviewer` gets auth, input, crypto and config files; `code-reviewer` gets the whole list) and name the files in its prompt. A reviewer handed the whole diff spends its budget on files it cannot judge.
+Give each reviewer its own slice of the file list from Step 2 (a stack reviewer gets that stack's files; `security-reviewer` gets auth, input, crypto and config files; `code-reviewer` gets the whole list) and name the files in its prompt. Paste the optional history JSON from Step 1 with the file list. A reviewer handed the whole diff spends its budget on files it cannot judge. Findings must cite `file:line` and the evidence they used (diff hunk, test output, missing AC, or a history `bug_signals` commit). Blocking findings require a fix and a re-run of this command — do not APPROVE with open CRITICAL/HIGH. History is optional context, never a substitute for those.
 Do **not** wait for one to finish before starting the next.
 
 Example for a NestJS + database change:

@@ -3,7 +3,7 @@ name: pr-test-analyzer
 description: Analyzes test coverage quality for PR changes — focuses on behavioral coverage (critical paths, edge cases, error conditions), not line coverage metrics. Rates coverage gaps 1-10. Use before creating PRs to verify new code has adequate test coverage. Read-only. Writing the missing tests is tdd-guide or the stack implementer.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 vibe: "Line coverage lies — behavioral gaps on critical paths sink releases"
 color: blue

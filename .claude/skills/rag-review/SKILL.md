@@ -1,5 +1,6 @@
 ---
 name: rag-review
+model: opus
 description: "End-to-end RAG pipeline audit across 8 stages (ingestion, versioning, embedding/indexing, routing, retrieval/reranking, generation/abstention, security, eval/observability). Use for \"review/audit RAG\" or a pre-merge RAG check. Not for diagnosing one failure (rag-debugger)."
 allowed-tools: Read, Glob, Grep
 metadata:

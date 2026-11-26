@@ -1,5 +1,6 @@
 ---
 name: claude-actions-auditor
+model: opus
 description: Audits GitHub Actions workflows for security vulnerabilities in Claude Code Action integrations. Detects 9 attack vectors where attacker-controlled GitHub event data reaches Claude running in CI/CD — including env var intermediaries, direct expression injection, PR target misuse, dangerous sandbox configs, and wildcard allowlists. Use when reviewing .github/workflows/ files that invoke anthropics/claude-code-action, before adding Claude Code Action to a repo, or after a security review request on CI/CD pipelines.
 allowed-tools: Read, Glob, Bash
 last-reviewed: "2026-11-23"

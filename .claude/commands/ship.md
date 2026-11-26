@@ -8,21 +8,24 @@ allowed-tools: Bash, Read, Glob, Grep
 
 Run before every production or staging deployment to verify the branch is safe to ship.
 
+This command is a **readiness** report. It does not merge. It does not create a PR. Freeze the source tree, then run `python3 .claude/scripts/check-verify-impact.py --stage frozen` and `/verify pre-pr` for the reached stacks (unknown impact → all present stacks). Open the PR with `/create-pr` (prints `gh pr create`; the human runs it). Merge is a human action after READY TO SHIP and an explicit keyword.
+
 ## Step 1 — Detect Stack
 
 Check which stacks are present in the repo root (web apps are also found in nested folders by the web block in Step 2):
 
 ```bash
+python3 .claude/scripts/check-verify-impact.py --stage frozen
 [ -f "pom.xml" ]        && echo "STACK:java"
 find . -maxdepth 4 \( -name node_modules -o -name dist \) -prune -o -name package.json -print | xargs grep -lE '"@nestjs/core"|"@modelcontextprotocol/(sdk|server)"' 2>/dev/null | sed 's/^/STACK:node /'
 find . -maxdepth 4 -name node_modules -prune -o \( -name angular.json -o -name 'vite.config.*' -o -name 'next.config.*' \) -print | sed 's/^/STACK:web /'
 [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] && echo "STACK:python"
-[ -f "pubspec.yaml" ]   && echo "STACK:flutter"
+find . \( -path '*/.dart_tool/*' -o -path '*/build/*' \) -prune -o -name pubspec.yaml -print | sed 's/^/STACK:flutter /'
 git log --oneline -3
 git status --short
 ```
 
-Run all applicable checks below for each detected stack.
+Run `/verify pre-pr` for stacks the impact JSON lists (FULL / unknown → every present stack). Nested Flutter packages are first-class: do not stop at a root `pubspec.yaml`.
 
 ## Step 1b — Security Lock Document Check
 
@@ -211,7 +214,7 @@ Action Items (if NOT READY):
 
 - Run before opening a PR, not just before merging
 - After the PR opens, watch its CI: `gh pr checks <PR> --watch --fail-fast --interval 30; echo "CHECKS EXIT:$?"` (gh 2.87: 0 = every check passed, 1 = a check failed or none were reported (read the message), 8 = still pending because the watch was interrupted). Report that exit code; a failure goes to the `iterate-pr` skill. CI that was not watched is reported as NOT RUN, never as green. No hook polls CI for you.
-- `--quick` runs Step 2 only — fastest signal when iterating
+- `--quick` runs Step 2 only — fastest signal when iterating. Step 2 is still `/verify pre-pr` on the frozen reached set; `--quick` does not mean `/verify quick`.
 - A clean `/ship` does not replace `/audit-security` for major releases
 
 ## Related Commands

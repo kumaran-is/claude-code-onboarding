@@ -583,10 +583,14 @@ def scan_skill(skill_dir: Path) -> list[str]:
             if needle not in loop_body:
                 findings.append(f"loop-and-qualify.md missing {needle}")
     handoff = skill_dir / "references" / "plan-and-handoff.md"
-    if "optional worktree" not in handoff.read_text(encoding="utf-8").lower():
+    handoff_body = handoff.read_text(encoding="utf-8")
+    if "optional worktree" not in handoff_body.lower():
         findings.append("plan-and-handoff.md missing optional worktree")
-    if "--fix-loop" not in handoff.read_text(encoding="utf-8"):
+    if "--fix-loop" not in handoff_body:
         findings.append("plan-and-handoff.md missing --fix-loop")
+    for needle in ("check-verify-impact.py", "/create-pr", "does not merge", "--stage iteration", "--stage frozen"):
+        if needle not in handoff_body:
+            findings.append(f"plan-and-handoff.md missing {needle}")
     if "/brainstorm" not in skill_md.read_text(encoding="utf-8") and "brainstorm is never required" not in skill_md.read_text(encoding="utf-8").lower():
         findings.append("SKILL.md must state brainstorm is never required")
     claude_dir = skill_dir.parent.parent

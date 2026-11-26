@@ -223,6 +223,7 @@ Agent tool:
 ```
 Agent tool:
   subagent_type: general-purpose
+  model: opus
   prompt: [spec-reviewer-prompt.md content] + [task spec] + [implementer output]
 ```
 
@@ -253,8 +254,8 @@ Use when 6+ tasks or when a tech-specific implementer agent provides meaningful 
 2. Spawn agents:
    - implementer: subagent_type = tech-specific developer agent
      (java-spring-api | nestjs-api | python-dev | agentic-ai-dev | angular-spa | flutter-mobile)
-   - spec-reviewer: subagent_type = general-purpose
-   - quality-reviewer: subagent_type = from routing table above
+   - spec-reviewer: subagent_type = general-purpose (model: opus)
+   - quality-reviewer: subagent_type = from routing table above (agent `model: opus`)
 3. Assign tasks via TaskUpdate (owner field) + SendMessage with full task context
 ```
 

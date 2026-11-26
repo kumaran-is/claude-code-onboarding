@@ -104,10 +104,10 @@ The Agent tool accepts a `model` parameter. Use it:
 | Model | When to Use | Examples |
 |-------|-------------|---------|
 | **haiku** | Quick, straightforward tasks with clear instructions | File search, simple grep, formatting, linting check |
-| **sonnet** | Default — most implementation and review tasks | Code generation, code review, test writing |
-| **opus** | Deep reasoning, complex architecture, ambiguous requirements | Architecture design, multi-system debugging, nuanced trade-off analysis |
+| **sonnet** | Default — implementation, orchestration, `/next`, `/ralph-loop`, `/verify` | Code generation, test writing, defect remediation |
+| **opus** | Independent LLM review and quality assessment | Spec review, quality/stack reviewers, security review, architecture review |
 
-**Default:** Inherit parent model (omit param). Only override when the task is clearly simpler or harder than the current model warrants.
+**Default:** Inherit parent model (omit param) for implementers. Named reviewer agents declare `model: opus` in `.claude/agents/*.md`; SDD spec review (general-purpose) must pass `model: opus`. Do not override implementers onto opus.
 
 ### Foreground vs Background Agents
 

@@ -1,5 +1,6 @@
 ---
 name: plan-mode-review
+model: opus
 description: Structured plan review with Phase 0 self-review, 5-phase code review (Architecture, Code Quality, Tests, Performance, Production Readiness), optional Phase 6 Debate-Based Verification for architecture decisions, approval scope triage, decision logging, and blast radius assessment. Use when reviewing plans, PRs, or preparing non-trivial changes for implementation.
 allowed-tools: Read, Glob, Grep
 metadata:

@@ -7,14 +7,14 @@ This page decides **when** work is verified, never **whether**. Every gate, revi
 ## 1. Order
 
 ```
-implement → narrow verify (the test file, then the package)
+implement → narrow verify (`python3 .claude/scripts/check-verify-impact.py --stage iteration`, then the test file, then the package)
 → review round (all reviewers on a complete implementation)
 → batch the fixes, each with its own positive control
-→ scoped re-review (each reviewer re-checks only its own findings)
+→ scoped re-review (each reviewer re-checks only its own findings; newly appearing stacks + security when still applicable)
 → every finding CLOSED
 → FREEZE the tree (code, version bump, CHANGELOG, PR body all done)
-→ run each expensive gate the diff can reach, once, serially
-→ open the PR
+→ `python3 .claude/scripts/check-verify-impact.py --stage frozen`, then each expensive gate the diff can reach, once, serially (`/verify pre-pr`; `/verify quick` is never this evidence)
+→ `/ship` readiness (does not merge) → `/create-pr` (prints `gh pr create`; does not run it)
 ```
 
 - **Cheap tier** (formatter check, linter, analyzer, grep gates, unit tests of the touched package) runs after every edit batch, unscoped.
@@ -63,7 +63,7 @@ A close that does not survive re-verification is recorded as a failed attempt. A
 
 ### Bounded re-review
 
-The review round is the most reports any one reviewer has made on the branch. Rounds 1–2 block on every open finding; from **round 3 only CRITICAL and HIGH block**. MEDIUM and LOW stay open, are still fixed where cheap, and go into the PR body as advisories. Re-dispatch only the reviewers that own open findings or findings closed since their last report, never the whole panel; run `/verify quick` on the diff's stacks before dispatching any reviewer.
+The review round is the most reports any one reviewer has made on the branch. Rounds 1–2 block on every open finding; from **round 3 only CRITICAL and HIGH block**. MEDIUM and LOW stay open, are still fixed where cheap, and go into the PR body as advisories. Re-dispatch only the reviewers that own open findings or findings closed since their last report, plus newly appearing stacks, plus `security-reviewer` when auth/crypto/input is still in the diff or that reviewer reported findings — never the whole unchanged panel. Run `check-verify-impact.py --stage iteration` then `/verify quick` on the reached stacks before dispatching any reviewer. `/verify quick` is never frozen/pre-pr evidence.
 
 ### Enforcement kit (opt-in, per branch)
 

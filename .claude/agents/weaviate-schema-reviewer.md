@@ -3,7 +3,7 @@ name: weaviate-schema-reviewer
 description: Weaviate collection definition reviewer. Use when any Python code creates or modifies a Weaviate collection schema. Checks vectorizer validity, multi-tenancy flag, distance metric, no hardcoded API keys, named vector consistency, and client v4 API correctness.
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 skills:
   - vector-database

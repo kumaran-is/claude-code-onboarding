@@ -1,5 +1,6 @@
 ---
 name: architect-review
+model: opus
 description: "Deep architectural review specialist — assesses system design changes, identifies anti-patterns, evaluates distributed systems compliance, and produces improvement recommendations. Use when reviewing architecture before implementation, assessing microservice boundaries, or evaluating event-driven system design. Not for producing a new design (architecture-design / architect agent), adversarial attack on an implementation plan (plan-challenger), or recording the decision (architecture-decision-records)."
 argument-hint: "[system, feature, or design doc to review]"
 allowed-tools: Read, Grep, Glob

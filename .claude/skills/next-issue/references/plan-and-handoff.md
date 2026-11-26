@@ -3,7 +3,7 @@
 ## Human gates (mandatory)
 
 1. **Plan approval** — `--plan` stops after the plan is saved. Wait for `approve` / `looks good`.
-2. **Merge approval** — after CI is green, stop. The human says `merge` / `ship it`. Auto-merge is forbidden. Execute merge through `/ship`, never `gh pr merge` from this skill.
+2. **Merge approval** — after CI is green, stop. The human says `merge` / `ship it`. Auto-merge is forbidden. `/ship` is readiness (does not merge). Open the PR with `/create-pr` (prints `gh pr create`; does not run it). Never `gh pr merge` from this skill.
 
 One stop per `--plan` run. Batch clarifying questions once before drafting. Do not serial-ask.
 
@@ -76,10 +76,10 @@ See `references/implementation-notes.md`. Seed `docs/plans/<N>-implementation-no
 ## After implementation
 
 1. Plan → diff checklist (`file:line` or NOT IMPLEMENTED). Reverse: every changed file must be in the plan's file list or be surfaced as scope creep.
-2. `/verify` for the stacks touched (quick or full as the issue requires). On FAIL, **stop** unless `--fix-loop` was requested. `--fix-loop` follows `references/loop-and-qualify.md`: GO/NO-GO, `--snapshot-contract`, then `/ralph-loop` with the **same shell command** you ran (never `/verify`), `--max-iterations 5`, `REQUIRE_VERIFY=true`. After 5 iterations or 3 identical failures the hook writes **ESCALATED**. `WEAKENED` contracts (skipped tests, dropped coverage, swapped verifier) do not complete. Do not commit, push, merge, or start the next issue.
-3. Reviewers from SKILLS_GUIDE (code-reviewer plus the domain reviewer). Prefer `/review-code`, which builds a BASE/HEAD or uncommitted package — do not commit merely to obtain a SHA. Independent review is required before `/ship`.
-4. Open the PR via `/ship`. Stop at the merge gate.
-5. `--finish` / explicit merge keyword → `/ship` merge path, board → Done, then unblock dependents (remove this id from their `blocked_by_open` / comment). Do not invoke `/next` again on your own.
+2. `python3 .claude/scripts/check-verify-impact.py --stage iteration`, then `/verify` for the reached stacks (quick or full as the issue requires). Unknown impact → all present stacks. On FAIL, **stop** unless `--fix-loop` was requested. `--fix-loop` follows `references/loop-and-qualify.md`: GO/NO-GO, `--snapshot-contract`, then `/ralph-loop` with the **same shell command** you ran (never `/verify`), `--max-iterations 5`, `REQUIRE_VERIFY=true`. After 5 iterations or 3 identical failures the hook writes **ESCALATED**. `WEAKENED` contracts (skipped tests, dropped coverage, swapped verifier) do not complete. Do not commit, push, merge, or start the next issue.
+3. Reviewers from SKILLS_GUIDE (code-reviewer plus the domain reviewer). Prefer `/review-code`, which builds a BASE/HEAD or uncommitted package — do not commit merely to obtain a SHA. Independent review is required before `/ship`. Re-review is scoped (open/closed finding owners + newly appearing stacks + security when still applicable).
+4. Freeze the tree. `python3 .claude/scripts/check-verify-impact.py --stage frozen`, then `/verify pre-pr`. `/verify quick` is never pre-pr evidence. `/ship` for readiness (does not merge). `/create-pr` to print `gh pr create` (does not run it). Stop at the merge gate.
+5. `--finish` / explicit merge keyword → confirm `/ship` READY TO SHIP, then the **human** merges. After merge: board → Done, then unblock dependents (remove this id from their `blocked_by_open` / comment). Do not invoke `/next` again on your own. Do not run `gh pr merge`.
 
 Do not re-implement CI wait loops, reviewer prompts, or merge bash in this skill.
 
@@ -88,8 +88,8 @@ Do not re-implement CI wait loops, reviewer prompts, or merge bash in this skill
 | Mode | Enters | Stops |
 |---|---|---|
 | `/next --plan` | discovery → plan saved | plan gate |
-| `/next --build #N` | load saved plan → branch → implement → `/verify` → PR | merge gate (does not merge) |
-| `/next --finish #N` | `/ship` merge + board Done + unblock | issue done |
+| `/next --build #N` | load saved plan → branch → implement → impact `/verify` → `/create-pr` | merge gate (does not merge) |
+| `/next --finish #N` | `/ship` readiness (does not merge); after the human merges: board Done + unblock | issue done |
 | `/next --fix-loop` | after failing `/verify` only if qualify is GO | merge gate (does not merge; does not pick the next issue) |
 
 `--build` without a saved plan → STOP.

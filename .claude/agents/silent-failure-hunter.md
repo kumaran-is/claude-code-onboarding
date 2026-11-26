@@ -1,7 +1,7 @@
 ---
 name: silent-failure-hunter
 description: Use when reviewing code that contains error handling, catch blocks, fallback logic, or any code that could suppress errors. Proactively invoke after implementing features with API calls, database operations, external service integrations, or any I/O that can fail. Enforces code-standards.md "No Silent Failures" rule across all stack layers. Not for investigating runtime logs or stack traces after a failure (error-detective).
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 permissionMode: default

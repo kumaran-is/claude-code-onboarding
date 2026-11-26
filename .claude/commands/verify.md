@@ -6,16 +6,36 @@ allowed-tools: Bash, Read, Glob, Grep
 
 # /verify — Binary Build + Test Verification
 
-Runs the fastest possible verification for changed stacks. Returns binary PASS/FAIL with counts.
+Runs the fastest **safe** verification for stacks the diff can reach. Returns binary PASS/FAIL with counts. Unknown impact → broader (all present stacks). `/verify quick` is never evidence for `/create-pr` or `/ship`.
+
+## Impact selection (run first)
+
+Never skip a gate the diff can reach. Print each skip with its reason.
+
+```bash
+# implement / review-fix loops — cheapest safe set for the current diff
+python3 .claude/scripts/check-verify-impact.py --stage iteration
+# source tree frozen (version, changelog, PR body done) before /ship or /create-pr
+python3 .claude/scripts/check-verify-impact.py --stage frozen
+```
+
+Read the JSON. `/verify quick` runs `cheap_gates` only. `/verify full` and `/verify pre-pr` run `gates` (cheap + tests + Maestro/security of the stage). Never execute a generic `flutter test` at repo root when `flutter_packages` is non-empty — run per package. `selection=FULL` (unclassified files) → every **present** stack, same commands as today (`gates` is populated). `selection=DOCS` → app suites NOT APPLICABLE. Shared `path:` / OpenAPI consumers are already fanned out. Preserve a VALID `review_state.py` stamp only when `stamp check` still prints VALID (fingerprint unchanged); otherwise re-run. `python3 .claude/scripts/check-verify-impact.py --selftest` is the positive/negative/mutation control.
+
+| Caller | Stage | What runs |
+|---|---|---|
+| `/verify` / `/verify quick` | `iteration` | Compile + lint of **reached** stacks. No tests. Not PR evidence. |
+| `/verify full` during implement or review-fix | `iteration` | Compile + lint + tests of reached stacks (and path-dep consumers). |
+| `/verify pre-commit` | `iteration` | Quick of reached stacks + staged TODO/FIXME scan. Not PR evidence. |
+| `/verify pre-pr`, `/ship`, `/create-pr` | `frozen` | Mandatory full + security of reached stacks on a **frozen** tree. Unknown → all present stacks. |
 
 ## Modes
 
 | Mode | Runs |
 |---|---|
-| `/verify` (default: quick) | Compile + lint only. No test execution. Fastest feedback. |
-| `/verify full` | Compile + lint + all tests + parity checks (env, l10n, deprecations, Alembic). Full confidence. |
+| `/verify` (default: quick) | Compile + lint of reached stacks. No test execution. Fastest feedback. Never substitutes for full/pre-pr. |
+| `/verify full` | Compile + lint + tests of reached stacks + parity checks (env, l10n, deprecations, Alembic). On a frozen tree, use `pre-pr` instead. |
 | `/verify pre-commit` | Quick verify + check for TODO/FIXME/console.log in staged files. |
-| `/verify pre-pr` | Full verify + security scan + coverage check. |
+| `/verify pre-pr` | Frozen-tree full verify + security scan + coverage check. Required before `/create-pr` / `/ship`. |
 
 ## Test-log summary
 
@@ -28,7 +48,9 @@ python3 .claude/scripts/summarize-test-log.py --log /tmp/test.log --exit-code "$
 
 The script prints one `TEST SUMMARY | framework=… | status=PASS|FAIL|UNKNOWN | passed=… failed=… errors=… skipped=… executed=… | exit=… | log=… | reason=…` line, then named failures (capped) or an unparsed tail. **UNKNOWN, never PASS** — unparseable, truncated, or malformed output cannot fill the Tests column as PASS even when `TEST EXIT` is 0 (the stack is FAIL: executed count was not proven). Pass `--junit` / `--json` when the runner wrote a report; those artifacts win over stdout regex. The summarizer always exits 0 on a written report (including FAIL/UNKNOWN) and 2 on usage errors; it is not the gate. `python3 .claude/scripts/summarize-test-log.py --selftest` is the positive/negative control.
 
-## Stack Detection + Commands (detected by file presence in the current directory tree)
+## Stack Detection + Commands
+
+**Iteration:** run the stacks `check-verify-impact.py` listed (file presence is the FULL fallback when impact is unknown). **Frozen / pre-pr:** reached stacks, or all present stacks when `selection=FULL`. Commands below are the per-stack recipes — do not run a recipe for a stack the selector skipped unless selection is FULL.
 
 ### Spring Boot (`pom.xml` with spring-boot)
 ```bash
@@ -475,21 +497,37 @@ echo "WEB VERDICT: $v; $WEB_NOTRUN check(s) NOT RUN (not passes: report each wit
 
 Proven on 2026-11-23, `MODE=full`, Node 26.13.1, against an Angular 22.3.0 workspace (`ng new` 22.3 output: zoneless, `@angular/build:unit-test`, TypeScript 6.0.3, Vitest 5.1.1, jsdom 31.0.1, angular-eslint 22.8.0) and a create-vite 9.3.4 React SPA (React 19.3.1, Vite 8.3.8, TypeScript 6.0.3, Vitest 5.1.1, ESLint 10.15.0, Playwright 1.65.1): clean apps → PASS (e2e ran 8 Playwright tests in Chromium); planted `const n: number = "x"` → typecheck + build FAIL in both (plus `ng test`, which compiles the app, and the React Playwright run, whose `webServer` builds it); an unknown template binding (NG8002) passes `tsc` and FAILs `ng test` and `ng build`; one changed assertion → unit FAIL only (Angular 1 of 2, React 4 of 4 failed); no lint setup → NOT RUN with verdict PASS (Angular: no `lint` target in `angular.json` → NOT RUN even with an `eslint.config.js` and a `lint` script present, because Angular lint runs only as `ng lint`); a planted `any` → `ng lint` FAIL; an `eslint.config.js.bak` alone is not a config (it used to make ESLint exit 2); no `node_modules` → BLOCKED. The previous line `npm run build -- --configuration=production --silent 2>&1 | tail -5; echo "EXIT:$?"` printed `EXIT:0` on a broken build (`--silent` is also rejected by `ng build`). In a multi-project Angular workspace, run `ng test <project>` / `ng build <project>` per project (UNVERIFIED — check `ng test --help` before relying on the no-argument form). Web UI tool choice: `.claude/rules/testing-tool-selection.md`.
 
-### Flutter (`pubspec.yaml` with flutter:)
+### Flutter (`pubspec.yaml` with flutter: — nested packages included)
 
-Capture each command's OWN exit code (a pipe into `tail` reports `tail`'s status, not the tool's):
+Capture each command's OWN exit code (a pipe into `tail` reports `tail`'s status, not the tool's). Do **not** run only at the repo root: `check-verify-impact.py` lists every reached package (path-dep consumers included). Mixing package roots in one `flutter test` fabricates failures.
 
 ```bash
-# codegen first when pubspec lists build_runner (generated files are usually gitignored)
-grep -q 'build_runner:' pubspec.yaml && { dart run build_runner build > /tmp/codegen.log 2>&1; echo "CODEGEN EXIT:$?"; tail -5 /tmp/codegen.log; }
+# packages from impact JSON (flutter_packages); fall back to every pubspec.yaml with a flutter: key
+for pkg in $FLUTTER_PACKAGES; do
+  (
+    cd "$pkg" || exit 1
+    grep -q 'build_runner:' pubspec.yaml && { dart run build_runner build > /tmp/codegen-$pkg.log 2>&1; echo "CODEGEN EXIT ($pkg):$?"; tail -5 /tmp/codegen-$pkg.log; }
+    dart format --output=none --set-exit-if-changed . > /tmp/fmt-$pkg.log 2>&1; echo "FORMAT EXIT ($pkg):$?"; tail -5 /tmp/fmt-$pkg.log
+    flutter analyze --no-pub > /tmp/analyze-$pkg.log 2>&1; echo "ANALYZE EXIT ($pkg):$?"; tail -5 /tmp/analyze-$pkg.log
+    [ "$MODE" = quick ] && exit 0
+    flutter test > /tmp/test-$pkg.log 2>&1; rc=$?; echo "TEST EXIT ($pkg):$rc"
+    python3 .claude/scripts/summarize-test-log.py --log /tmp/test-$pkg.log --exit-code "$rc" --framework flutter
+  )
+done
 
-# quick — static checks (every Dart change)
-dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?"; tail -5 /tmp/fmt.log
-flutter analyze --no-pub > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -5 /tmp/analyze.log
-
-# full — tests (per package root in a multi-package repo; mixing roots fabricates failures)
-flutter test > /tmp/test.log 2>&1; rc=$?; echo "TEST EXIT:$rc"
-python3 .claude/scripts/summarize-test-log.py --log /tmp/test.log --exit-code "$rc" --framework flutter
+# Maestro — explicit executable step when configured (frozen, or iteration when flows exist).
+# Playwright is never a Flutter Android/iOS substitute.
+if [ "$MAESTRO_REQUIRED" = 1 ]; then
+  if command -v maestro >/dev/null 2>&1; then
+    for flow in $MAESTRO_FLOWS; do
+      maestro test "$flow" > /tmp/maestro.log 2>&1; rc=$?; echo "MAESTRO EXIT ($flow):$rc"
+    done
+  else
+    echo "MAESTRO: BLOCKED — maestro CLI not on PATH (device/emulator also required)"
+  fi
+else
+  echo "MAESTRO: NOT RUN — no flows configured or not a Flutter UI change (not a pass)"
+fi
 ```
 
 Count `error`, `warning` AND `info` findings from `flutter analyze`: on Flutter 3.50.1 it exits 1 on a single info, e.g. the
@@ -623,7 +661,7 @@ Pattern matches are not blocking (human decides) but must be acknowledged. `LINT
 
 ## Rules
 
-- Run ALL detected stacks — never skip a stack silently
+- Run ALL **reached** stacks from `check-verify-impact.py` — never skip a gate the diff can reach. Unknown/unclassified files → FULL (all present stacks). Presence-only “run everything” is the FULL fallback, not the iteration default. `/verify quick` never substitutes for required full/pre-pr evidence.
 - Report exact exit codes — not "it looks like it passed"; use the command's own exit code, never a pipe's
 - A scan that reports ZERO findings needs a positive control: a known-bad input the same scan must flag
 - A test run that EXECUTED zero tests is not a PASS (all-skipped exits 0): report collected / skipped / executed

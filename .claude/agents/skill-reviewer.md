@@ -3,7 +3,7 @@ name: skill-reviewer
 description: Reviews a newly created or modified Claude Code skill against the writing-skills spec. Checks Iron Law presence, description quality (CSO trigger words), allowed-tools declaration, body line count (≤500), progressive disclosure structure, forbidden files, and cross-reference patterns. Use after creating or modifying any skill in .claude/skills/.
 tools: Read, Glob, Grep
 disallowedTools: Write, Edit
-model: haiku
+model: opus
 permissionMode: default
 skills:
   - writing-skills

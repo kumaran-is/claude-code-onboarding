@@ -3,7 +3,7 @@ name: type-design-analyzer
 description: Reviews type design quality across TypeScript interfaces/types, Java records and sealed classes, Dart Freezed models, and Python Pydantic schemas. Rates each type on 4 dimensions (1-10) for encapsulation, invariant expression, usefulness, and enforcement. Flags types that allow invalid states. Use when adding new types, changing data models, or before PRs with type changes.
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 vibe: "If the type allows invalid states, the type is wrong"
 color: blue

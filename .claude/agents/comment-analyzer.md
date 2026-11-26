@@ -3,7 +3,7 @@ name: comment-analyzer
 description: Reviews code comments for accuracy against actual implementation, detects comment rot, outdated documentation, and misleading inline comments. Use proactively after writing code with docstrings, JSDoc, JavaDoc, or inline comments. Use before creating PRs to ensure documentation matches code.
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
-model: sonnet
+model: haiku
 permissionMode: default
 vibe: "If the comment contradicts the code, the comment is wrong"
 color: blue

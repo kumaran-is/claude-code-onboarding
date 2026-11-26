@@ -106,7 +106,7 @@ Reviewer agents dispatched: [agent → verdict, open MEDIUM/LOW advisories] or "
 
 ## Step 5 — Output gh command
 
-Write the body from Step 4 to a file with the Write tool (for example `$TMPDIR/pr-body.md`), then print the complete command. Do NOT run it — let the user run it after review. Never inline the body in double quotes: the shell runs `` `code` `` spans as commands and deletes them (`core-behaviors.md` §5).
+Write the body from Step 4 to a file with the Write tool (for example `$TMPDIR/pr-body.md`), then print the complete command. This command does not run `gh pr create`. Do NOT run it — let the user run it after review. Never inline the body in double quotes: the shell runs `` `code` `` spans as commands and deletes them (`core-behaviors.md` §5). `/verify quick` is never a substitute for the `/verify pre-pr` stamp in Step 2.
 
 ```bash
 gh pr create \

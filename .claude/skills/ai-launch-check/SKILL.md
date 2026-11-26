@@ -1,5 +1,6 @@
 ---
 name: ai-launch-check
+model: opus
 description: Run the unified pre-production launch checklist for an AI feature before shipping it. Use when the user explicitly runs /ai-launch-check or asks to "review my AI feature for launch", "is this ready to ship", "pre-production review", or similar ritual phrasing.
 disable-model-invocation: true
 allowed-tools: Read, Write

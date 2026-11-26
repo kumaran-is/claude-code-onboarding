@@ -1,5 +1,6 @@
 ---
 name: ai-audit
+model: opus
 description: "Audit an existing AI feature or agentic app: engineering audit against the AI Playbook (decision record, security review, eval audit, launch check, remediation plan) or governance mode (risk assessment, governance audit, production readiness review against the ai-governance skill, with validated JSON records). Use for /ai-audit, \"audit my AI app / agent\", \"assess AI risk\", \"governance audit\" or \"AI production readiness\" on existing code, not for building new."
 disable-model-invocation: true
 allowed-tools: Read, Write, Glob, Grep, Bash

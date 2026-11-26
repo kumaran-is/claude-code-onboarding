@@ -191,9 +191,10 @@ Step 6 — IMPLEMENT:
 
 Re-run the gates the fixes touched, each with its own exit code:
 
-- The stack's test suite (`/verify` detects the stacks)
+- `python3 .claude/scripts/check-verify-impact.py --stage iteration`, then the stack's test suite (`/verify` on reached / touched stacks; unknown → all present)
 - `/lint-design-system` when any UI file changed
 - `/audit-security` when a fix touched auth, crypto, input handling or file uploads
+- Do not treat `/verify quick` as frozen/pre-pr evidence; freeze and `--stage frozen` before `/create-pr` / `/ship`
 
 Then add a summary to the PR description:
 

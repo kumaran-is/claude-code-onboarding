@@ -1,5 +1,6 @@
 ---
 name: threat-modeling
+model: opus
 description: "Threat modeling skill for STRIDE analysis, attack tree construction, and security requirement extraction. Use when designing new features, reviewing architecture, conducting threat modeling sessions, creating security documentation, or training teams on security thinking. Triggers: threat model, STRIDE, attack tree, DFD, security design, threat analysis, security architecture review."
 allowed-tools: Read, Grep, Glob, Bash
 agent: threat-modeling-expert

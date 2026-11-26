@@ -3,7 +3,7 @@ name: code-reviewer
 description: Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code. MUST BE USED for all code changes. Not for simplicity-only review (code-simplifier), deep security audits (security-reviewer), stack-specific depth (spring-boot-reviewer, nestjs-reviewer, python-reviewer, riverpod-reviewer) or the evidence-based merge gate (reality-checker).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 vibe: "Finds real bugs, not style preferences — ≥80% confidence before raising an issue"
 last-reviewed: "2026-03-29"

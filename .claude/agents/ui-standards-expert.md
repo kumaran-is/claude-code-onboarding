@@ -3,7 +3,7 @@ name: ui-standards-expert
 description: Read-only reviewer for design tokens, theming (light/dark), visual consistency, async-state coverage, responsive layout and motion in Flutter and web (Angular, React). Gives no accessibility verdicts; accessibility goes to accessibility-auditor (WCAG 2.2 AA). Shared-component tier and slot rules go to design-system-reviewer.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 skills:
   - design-system

@@ -1,7 +1,7 @@
 ---
 name: python-reviewer
 description: General Python 3.14 / FastAPI 0.165+ code reviewer (read-only; checks verified on FastAPI 0.165, Starlette 1.10, Pydantic 2.14). Use when reviewing Python services, FastAPI endpoints, Pydantic v2 schemas, async SQLAlchemy, auth/authorization, or pytest test coverage. Distinct from agentic-ai-reviewer (which covers LangChain/LangGraph only). Not for background workers (python-worker-reviewer) or Google ADK agents (adk-reviewer).
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 vibe: "Reads the diff like an attacker and a pager-holder: who is the caller, what can fail, who finds out"

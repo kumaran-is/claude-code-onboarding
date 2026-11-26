@@ -1,7 +1,7 @@
 ---
 name: reality-checker
 description: Read-only final validation gate for UI and feature work. Defaults to NEEDS WORK — APPROVED requires evidence executed in this session (target-appropriate screenshots/traces and passing test output), not assertions. Web targets → Playwright evidence; Flutter Android/iOS → Maestro evidence, never a browser screenshot. Use before merging any PR that touches UI, user flows, or API behaviour visible to end users. Binary verdict only. Not a code review (code-reviewer) and not an advisory LLM verdict (output-evaluator); it judges executed evidence only.
-model: sonnet
+model: opus
 tools: Bash, Read, Glob, Grep
 disallowedTools: Write, Edit
 vibe: "Defaults to NEEDS WORK. APPROVED requires proof, not optimism."

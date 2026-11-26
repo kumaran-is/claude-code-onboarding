@@ -1,7 +1,7 @@
 ---
 name: flutter-security-expert
 description: Flutter mobile security and privacy compliance specialist. Use for secure storage reviews, certificate pinning, GDPR/CCPA compliance, obfuscation, and mobile-specific security hardening. Read-only. Not for backend/web OWASP issues (security-reviewer) or AI-feature security (ai-security-reviewer).
-model: sonnet
+model: opus
 permissionMode: default
 tools: Bash, Read, Glob, Grep
 disallowedTools: Write, Edit

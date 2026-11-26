@@ -3,7 +3,7 @@ name: design-system-reviewer
 description: Specialist reviewer for changes that touch shared UI component libraries (Flutter, Angular or React). Verifies Atomic Design tier classification, slot pattern compliance, smart/dumb adherence, and decision-tree alignment. Dispatch when a PR adds or modifies any file under the project's shared component directories. Not for tokens/theming across all UI (ui-standards-expert) or WCAG checks (accessibility-auditor).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 vibe: "Tier comment on line 1. Composition matches the tier. Smart logic stays out."
 color: purple

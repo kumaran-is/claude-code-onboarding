@@ -65,6 +65,8 @@ session id). Empty session ids are fail-closed when `require_verify` is set.
 Promise-only completion is disabled. After 5 iterations or 3 identical
 failures, the hook writes **ESCALATED** — do not emit a false promise.
 
-Then `/review-code` (required independent review) → `/ship` → **stop**. Merge still
-needs an explicit human keyword. Do not start the next issue. Do not invoke `/next`
-again on your own.
+Then `/review-code` (required independent review; scoped re-review) → freeze →
+`check-verify-impact.py --stage frozen` → `/verify pre-pr` → `/ship` (readiness;
+does not merge) → `/create-pr` (prints `gh pr create`; does not run it) → **stop**.
+Merge still needs an explicit human keyword. Do not start the next issue. Do not
+invoke `/next` again on your own.

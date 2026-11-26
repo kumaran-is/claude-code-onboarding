@@ -3,7 +3,7 @@ name: rag-implementation-reviewer
 description: Canonical RAG code reviewer. Use proactively to review RAG implementation code — document ingestion, embedding generation, chunking strategies, retrieval pipelines, semantic/hybrid search, filtering, reranking, two-stage (pgvector + Weaviate) retrieval, generation prompts, abstention and security controls — against the production RAG playbook. Checks embedding model pinning and dimension checks, chunking justification, hybrid vs pure-vector choice, reranking, null guards, embedding API error handling, permission-aware filtering, citations and evals. Best invoked when the user asks to "review this RAG code", "review the retrieval/embedding pipeline", or after substantial RAG-related changes. Returns structured findings with severity, file:line evidence, playbook references and a verdict. Not for eval code (eval-reviewer), running the eval suite (rag-eval-runner) or AI-security depth (ai-security-reviewer).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 skills:
   - rag-review

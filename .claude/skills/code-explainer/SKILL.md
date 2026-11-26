@@ -1,5 +1,6 @@
 ---
 name: code-explainer
+model: haiku
 description: "Explain a piece of code for handoff or onboarding: user-facing and modifier-facing views, the fragile part and the key assumption. Use for \"explain this code\", \"what does this do\", code walkthroughs. Not for whole-repo onboarding (codebase-onboarding)."
 allowed-tools: Read, Grep, Glob, Bash
 metadata:

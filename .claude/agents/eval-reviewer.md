@@ -3,7 +3,7 @@ name: eval-reviewer
 description: "Read-only reviewer for eval code after implementation: eval tests, golden dataset cases, CI eval gates, judge configuration, baseline comparators, prompt-registry code. Checks verdict precedence (deterministic beats judge), evidence accounting (skipped/errored never PASS), explicit and recorded judge model, declared judge trials with no rerun-until-green, tier marks and an R1 with no live model, golden-set leakage and closed case schemas, metric formula correctness, score directions (e.g. ADK hallucinations_v1), current Ragas/DeepEval/Giskard APIs, fail-closed baselines, and security-blocker coverage asserted on tool calls and persisted state. Returns APPROVE / NEEDS_REVIEW / BLOCK with severity-bucketed findings. Not for designing eval sets (ai-eval-designer) or running them (rag-eval-runner)."
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 vibe: "A green eval that measured nothing is the most expensive bug"
 color: purple
 emoji: "🧪"

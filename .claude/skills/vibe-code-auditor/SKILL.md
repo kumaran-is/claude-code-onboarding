@@ -1,5 +1,6 @@
 ---
 name: vibe-code-auditor
+model: opus
 description: "Audit AI-generated or prototype code for hallucinated imports, structural flaws, fragility and production risks. Use before committing or productionising AI-assisted or prototype code."
 allowed-tools: Read, Grep, Glob, Bash
 metadata:

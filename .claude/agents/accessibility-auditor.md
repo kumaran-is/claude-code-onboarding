@@ -3,7 +3,7 @@ name: accessibility-auditor
 description: Read-only WCAG 2.2 AA accessibility reviewer for web (Angular, React) and Flutter (Android, iOS). Detects the target from file types and checks semantics, keyboard, focus (route changes, dialogs, focus not obscured), ARIA, forms and errors, contrast, target size (24×24 CSS px AA), dragging alternatives, consistent help, redundant entry, accessible authentication, reduced motion and i18n/RTL. Reports severity, file:line and remediation; never claims conformance from automated results. Not for tokens/theming (ui-standards-expert) or shared-component tier rules (design-system-reviewer).
 tools: Read, Glob, Grep, Bash
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 skills:
   - accessibility-audit

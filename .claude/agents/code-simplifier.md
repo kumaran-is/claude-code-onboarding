@@ -3,7 +3,7 @@ name: code-simplifier
 description: Reviews code for unnecessary complexity, excessive nesting, redundant abstractions, over-engineering, and opportunities to reduce cognitive load without changing behavior. Complements code-reviewer (which checks correctness) by focusing purely on simplicity and readability. Use before PRs or after implementations. Not for codebase-wide duplication or dead code (dedup-code-agent).
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit
-model: sonnet
+model: opus
 permissionMode: default
 vibe: "Simpler is not optional — if it can be 50 lines, it should be 50 lines"
 color: blue

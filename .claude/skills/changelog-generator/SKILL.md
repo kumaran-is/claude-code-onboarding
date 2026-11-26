@@ -1,5 +1,6 @@
 ---
 name: changelog-generator
+model: haiku
 description: "Generate release notes and CHANGELOG.md entries from conventional commits, including store \"What's New\" text. Use when preparing a release or updating a changelog."
 allowed-tools: Bash, Read, Write, Edit
 metadata:

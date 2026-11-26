@@ -79,6 +79,17 @@ last-reviewed: "2026-03-14"
 - Used by `/audit-skills` to flag skills not reviewed in 90+ days
 - Do NOT update just for typo fixes — only when content correctness was verified
 
+### `model` (Optional — official Claude Code field)
+
+```yaml
+model: opus
+```
+
+- Official field ([Extend Claude with skills](https://code.claude.com/docs/en/skills)): alias values from `/model` (`opus`, `sonnet`, `haiku`, `inherit`).
+- Takes effect on **`/name` invocation** for that turn. When Claude auto-loads the skill, the session keeps its model — unless `context: fork`, in which case `model` is the forked subagent's per-invocation model.
+- Use `opus` only on independent LLM review / spec / architecture / security / quality-assessment skills. Implementation and orchestration stay on session `sonnet`.
+- If the skill forks to a named `agent:`, set `model:` on **`.claude/agents/<agent>.md`** (that is what `/review-code` and SDD quality review dispatch). Do not duplicate `model:` on the skill unless the skill is invoked as `/name` without going through that agent.
+
 ### `metadata` (Optional)
 
 ```yaml

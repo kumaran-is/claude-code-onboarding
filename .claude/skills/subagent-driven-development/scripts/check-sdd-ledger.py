@@ -17,6 +17,8 @@ Usage:
   check-sdd-ledger.py --next [--plan PLAN.md] [--root DIR]
   check-sdd-ledger.py --mark ID --status STATUS [--verify-exit N]
       [--verify-cmd CMD] [--files a,b] [--findings TEXT] [--root DIR]
+  check-sdd-ledger.py --mark ID --review-round spec|quality
+      --verdict PASS|FAIL|BLOCK [--signature TEXT] [--root DIR]
   check-sdd-ledger.py --reconcile [--plan PLAN.md] [--root DIR]
   check-sdd-ledger.py --scan-plan PLAN.md
   check-sdd-ledger.py --review-package [--base SHA] [--head SHA]
@@ -66,7 +68,19 @@ SKILL_MARKERS = (
     "never treat a ledger",
     "review-package",
     "task brief",
+    "--review-round",
+    "3-attempt",
 )
+MAX_REVIEW_ATTEMPTS = 3
+PASS_VERDICTS = {"pass", "approve", "approved"}
+FAIL_VERDICTS = {
+    "fail",
+    "block",
+    "conditional pass",
+    "needs review",
+    "needs_review",
+    "needs-review",
+}
 
 
 def utc_now() -> str:
@@ -189,7 +203,15 @@ def empty_task(parsed: dict[str, str], brief_rel: str) -> dict[str, Any]:
         "depends_on": depends,
         "brief_path": brief_rel,
         "files_claimed": files,
-        "review": {"spec": "pending", "quality": "pending", "findings": []},
+        "review": {
+            "spec": "pending",
+            "quality": "pending",
+            "spec_attempts": 0,
+            "quality_attempts": 0,
+            "spec_signature": None,
+            "quality_signature": None,
+            "findings": [],
+        },
         "verify": {
             "command": verify_cmd.strip("`"),
             "exit_code": None,
@@ -299,7 +321,12 @@ def reconcile_task(task: dict[str, Any], dirty: set[str], ranged: set[str]) -> d
         if verify.get("exit_code") != 0 or not verify.get("claimed_pass"):
             task["stale"] = True
             task["stale_reason"] = "complete without passing verify evidence"
-        elif claimed:
+        else:
+            rev = task.get("review") or {}
+            if (rev.get("spec") or "").lower() != "pass" or (rev.get("quality") or "").lower() != "pass":
+                task["stale"] = True
+                task["stale_reason"] = "complete without independent spec+quality PASS"
+        if claimed and not task.get("stale"):
             present = set(claimed) & (dirty | ranged)
             missing_on_disk = [f for f in claimed if not Path(f).exists()]
             if not present and missing_on_disk:
@@ -387,6 +414,9 @@ def mark(
             die("refusing complete without --verify-exit (ledger is not proof)", 1)
         if verify_exit != 0:
             die("refusing complete: --verify-exit is not 0", 1)
+        rev = found.get("review") or {}
+        if (rev.get("spec") or "").lower() != "pass" or (rev.get("quality") or "").lower() != "pass":
+            die("refusing complete without independent spec+quality PASS (--review-round)", 1)
         found["verify"]["exit_code"] = verify_exit
         found["verify"]["claimed_pass"] = True
         found["verify"]["recorded_at"] = utc_now()
@@ -407,6 +437,70 @@ def mark(
         found["files_claimed"] = files
     if findings:
         found["review"]["findings"].append(findings)
+    data["updated_at"] = utc_now()
+    return data
+
+
+def _norm_verdict(verdict: str) -> str:
+    s = (verdict or "").strip().lower().replace("_", " ").replace("-", " ")
+    if s in PASS_VERDICTS:
+        return "pass"
+    if s in FAIL_VERDICTS:
+        return "fail"
+    die(f"unknown verdict {verdict!r}; use PASS, FAIL, or BLOCK", 2)
+    raise SystemExit(2)
+
+
+def review_round(
+    data: dict[str, Any],
+    task_id: str,
+    round_name: str,
+    verdict: str,
+    signature: str | None,
+) -> dict[str, Any]:
+    if round_name not in {"spec", "quality"}:
+        die("--review-round must be spec or quality", 2)
+    found = next((t for t in data["tasks"] if t["id"] == task_id), None)
+    if found is None:
+        die(f"unknown task {task_id}", 1)
+    rev = found.setdefault("review", {"spec": "pending", "quality": "pending", "findings": []})
+    attempts_key = f"{round_name}_attempts"
+    sig_key = f"{round_name}_signature"
+    norm = _norm_verdict(verdict)
+    sig = (signature or "").strip()
+    if norm != "pass" and not sig:
+        die("--review-round FAIL/BLOCK requires --signature so stagnation is detectable", 2)
+    attempts = int(rev.get(attempts_key) or 0) + 1
+    prev_sig = rev.get(sig_key) or ""
+
+    if attempts > MAX_REVIEW_ATTEMPTS:
+        found["status"] = "blocked"
+        die(
+            f"refusing {round_name} review round {attempts}: cap is {MAX_REVIEW_ATTEMPTS} (3-attempt hard stop); escalate",
+            1,
+        )
+
+    stagnated = bool(sig and prev_sig and sig == prev_sig and norm != "pass" and attempts >= 2)
+    rev[attempts_key] = attempts
+    if sig:
+        rev[sig_key] = sig
+    if stagnated:
+        rev[round_name] = "fail"
+        found["status"] = "blocked"
+        die(
+            f"{round_name} review stagnated (same signature {sig!r} on attempt {attempts}); escalate",
+            1,
+        )
+    if norm == "pass":
+        rev[round_name] = "pass"
+    else:
+        rev[round_name] = "fail"
+        if attempts >= MAX_REVIEW_ATTEMPTS:
+            found["status"] = "blocked"
+            die(
+                f"{round_name} review failed {attempts} times without PASS; escalate (3-attempt hard stop)",
+                1,
+            )
     data["updated_at"] = utc_now()
     return data
 
@@ -480,9 +574,18 @@ def scan_skill() -> list[str]:
         findings.append("missing reference/execution-ledger.md")
     else:
         body = ref.read_text(encoding="utf-8")
-        for needle in ("never verification proof", ".claude/temp/sdd", "NEXUS", "AI-DLC"):
+        for needle in (
+            "never verification proof",
+            ".claude/temp/sdd",
+            "NEXUS",
+            "AI-DLC",
+            "--review-round",
+            "3-attempt",
+        ):
             if needle.lower() not in body.lower():
                 findings.append(f"execution-ledger.md missing {needle}")
+    if "no cap on iterations" in text.lower():
+        findings.append("SKILL.md still says spec review has no cap on iterations")
     return findings
 
 
@@ -589,6 +692,52 @@ Do stuff.
             rc = int(e.code)
         check("complete without verify refused", rc == 1)
 
+        rc = 0
+        try:
+            mark(data, "1", "complete", 0, "pytest tests/test_foo.py", ["src/foo.py"], None, tmp)
+        except SystemExit as e:
+            rc = int(e.code)
+        check("complete without independent review refused", rc == 1)
+
+        rc = 0
+        try:
+            data = review_round(data, "1", "spec", "FAIL", "missing-ac-1")
+            data = review_round(data, "1", "spec", "FAIL", "missing-ac-2")
+            data = review_round(data, "1", "spec", "FAIL", "missing-ac-3")
+        except SystemExit as e:
+            rc = int(e.code)
+        check("spec review 3 fails escalates", rc == 1)
+        check("spec review 3 fails blocks task", data["tasks"][0]["status"] == "blocked")
+
+        data["tasks"][0]["status"] = "in_progress"
+        data["tasks"][0]["review"]["spec"] = "pending"
+        data["tasks"][0]["review"]["spec_attempts"] = 0
+        data["tasks"][0]["review"]["spec_signature"] = None
+        rc = 0
+        try:
+            data = review_round(data, "1", "spec", "FAIL", "dup-sig")
+            data = review_round(data, "1", "spec", "FAIL", "dup-sig")
+        except SystemExit as e:
+            rc = int(e.code)
+        check("spec review stagnation (same signature) escalates", rc == 1)
+
+        rc = 0
+        try:
+            review_round(data, "1", "quality", "FAIL", None)
+        except SystemExit as e:
+            rc = int(e.code)
+        check("FAIL review without signature refused", rc == 2)
+
+        data["tasks"][0]["status"] = "in_progress"
+        data["tasks"][0]["review"]["spec"] = "pending"
+        data["tasks"][0]["review"]["spec_attempts"] = 0
+        data["tasks"][0]["review"]["spec_signature"] = None
+        data["tasks"][0]["review"]["quality"] = "pending"
+        data["tasks"][0]["review"]["quality_attempts"] = 0
+        data = review_round(data, "1", "spec", "PASS", "spec-ok")
+        data = review_round(data, "1", "quality", "PASS", "qual-ok")
+        check("review rounds record PASS", data["tasks"][0]["review"]["spec"] == "pass")
+
         data = mark(data, "1", "complete", 0, "pytest tests/test_foo.py", ["src/foo.py"], None, tmp)
         dump_json(ledger_path(tmp, plan), data)
         data = reconcile(data, tmp)
@@ -678,6 +827,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", default=None)
     p.add_argument("--scan-skill", action="store_true")
     p.add_argument("--selftest", action="store_true")
+    p.add_argument("--review-round", choices=("spec", "quality"), default=None)
+    p.add_argument("--verdict", default=None)
+    p.add_argument("--signature", default=None)
     # --status is used both as a verb and as mark's status; accept --state for mark.
     p.add_argument("--state", dest="mark_status_alt", default=None, help="alias of --status-value for --mark")
     return p
@@ -729,7 +881,16 @@ def main(argv: list[str] | None = None) -> int:
         review_package(root, args.base, args.head, args.uncommitted, None, None)
         return 0
 
-    if not any([args.status, args.next_task, args.mark, args.reconcile, args.review_package]):
+    if not any(
+        [
+            args.status,
+            args.next_task,
+            args.mark,
+            args.reconcile,
+            args.review_package,
+            args.review_round,
+        ]
+    ):
         die("specify an action or --selftest", 2)
 
     plan = resolve_plan(root, args.plan)
@@ -741,6 +902,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.reconcile or args.status or args.next_task or args.review_package:
         data = reconcile(data, root)
         dump_json(lpath, data)
+
+    if args.review_round:
+        if not args.mark:
+            die("--review-round requires --mark TASK_ID", 2)
+        if not args.verdict:
+            die("--review-round requires --verdict PASS|FAIL|BLOCK", 2)
+        data = review_round(data, args.mark, args.review_round, args.verdict, args.signature)
+        dump_json(lpath, data)
+        if not (args.mark_status or args.mark_status_alt):
+            print_status(data)
+            return 0
 
     if args.mark:
         status = args.mark_status or args.mark_status_alt

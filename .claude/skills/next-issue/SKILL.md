@@ -2,13 +2,13 @@
 name: next-issue
 description: "Use when the user says /next, next issue, start next issue, pick up next task, what should I work on, or /next-issue --wave N / --plan. Picks the next actionable work item from GitHub Project/issues, local plans, session tasks, and in-flight branches, honouring blockers, assignees, waves, layer order, and failed verification. Not /status-check (binary feature health), /project-status (inventory), or /checkpoint (session snapshots)."
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
-argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [#N]"
+argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [--fix-loop] [#N]"
 metadata:
   domain: workflow
   role: orchestrator
   scope: session
   triggers: /next, next issue, next-issue, what should I work on, pick up next task, start next issue
-  related-skills: plan-mode-review, verification-before-completion, systematic-debugging
+  related-skills: plan-mode-review, verification-before-completion, systematic-debugging, subagent-driven-development
 last-reviewed: "2026-11-26"
 ---
 
@@ -26,6 +26,7 @@ This SKILL.md is the spine. Detailed discovery and the implement/ship handoff li
 |---|---|
 | `references/discovery.md` | Adapters: resume current work, GitHub Project, GitHub Issues, local plans. Candidate JSON. Blocker collection. |
 | `references/plan-and-handoff.md` | `--plan` gates, reuse-first, AC-to-live-code, stack dispatch, `/verify` + `/ship` (no duplicated merge pipeline). |
+| `references/loop-and-qualify.md` | Opt-in `--fix-loop`: GO/NO-GO, real `--verify-cmd`, Ralph max 5, no next-issue chaining. |
 | `references/implementation-notes.md` | Sub-ADR decision log (`docs/plans/<N>-implementation-notes.md`). The `needs human review` flag is the product. |
 
 Mechanical ranking is `scripts/check-next-issue.py` — do not re-implement the sort in prose.
@@ -40,6 +41,7 @@ Mechanical ranking is `scripts/check-next-issue.py` — do not re-implement the 
 | `/next #N` / `--plan #N` | Skip discovery; plan or take over that item |
 | `/next --build #N` | Load saved plan → implement → PR → **stop at merge** |
 | `/next --finish #N` | After merge approval: `/ship` merge, board Done, unblock dependents |
+| `/next --fix-loop` | After a failing `/verify`: qualify (GO/NO-GO), then bounded Ralph fix/retest (max 5, required shell `--verify-cmd`). Still stops at merge. Never starts the next issue. |
 
 Natural language ("what should I work on", "start next issue from Wave 3 with a plan") maps to the same flags.
 
@@ -111,8 +113,8 @@ See `references/plan-and-handoff.md`. Short form:
 5. Branch + board In Progress (GitHub) or local branch (no GitHub). Slice PRs must **not** use `gh issue develop`. Optional worktree isolation (`/worktree-sync --new`) is not a gate — `python3 .claude/scripts/check-worktree-isolation.py --detect` first. `/brainstorm` is never required on an approved issue.
 5b. Seed `docs/plans/<N>-implementation-notes.md` if missing (`references/implementation-notes.md`). Append-only after that. Never `Write` over an existing log. Each entry has **Files** scope; this is not a second plan.
 6. Implement via the stack skill. Reuse-first. No silent scope creep. Log sub-ADR decisions as they happen; auto-flag `needs human review: yes` on every `deviation`.
-6b. Plan ↔ diff evidence, then `/verify` on touched stacks.
-7. Domain reviewers from SKILLS_GUIDE.
+6b. Plan ↔ diff evidence, then `/verify` on touched stacks. On FAIL, default **stop**. `--fix-loop` only after GO from `references/loop-and-qualify.md` (real shell `--verify-cmd`, max 5, `require_verify=true`). NO-GO → human. Do not pass `/verify` to Ralph. Do not start the next issue.
+7. Domain reviewers from SKILLS_GUIDE (`/review-code`). Independent review is required before `/ship`; SDD tasks also need ledger spec+quality PASS (`check-sdd-ledger.py --review-round`).
 8. `/ship` for the PR. **Stop.** Merge only after an explicit keyword, via `/ship` / `--finish`.
 
 ## Not this skill
@@ -140,4 +142,5 @@ A pick is valid only when:
 - [ ] The full issue or plan was read before any write
 - [ ] `--plan` stopped at `PLAN READY` until approval
 - [ ] Merge waited for an explicit human keyword and went through `/ship`
+- [ ] `--fix-loop` ran only after GO, with a shell `--verify-cmd` (not `/verify`) and max 5 iterations
 - [ ] Implementation notes exist for the issue (or an explicit “no sub-ADR decisions”) and every `deviation` is flagged `needs human review: yes`

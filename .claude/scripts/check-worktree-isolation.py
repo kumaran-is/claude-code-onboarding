@@ -10,6 +10,7 @@ commit 22f0b463e7a5e579904dd6211a520321035526f7). Original implementation.
 Usage:
   check-worktree-isolation.py --detect [--root DIR]
   check-worktree-isolation.py --propose-branch NAME [--propose-path PATH] [--files a,b] [--root DIR]
+  check-worktree-isolation.py --guard-rollback [--files a,b] [--root DIR]
   check-worktree-isolation.py --scan-docs
   check-worktree-isolation.py --selftest
 
@@ -38,6 +39,11 @@ DOC_MARKERS = {
     KIT / "skills" / "next-issue" / "references" / "plan-and-handoff.md": (
         "optional worktree",
         "not mandatory",
+    ),
+    KIT / "commands" / "autoresearch.md": (
+        "--guard-rollback",
+        "git restore",
+        "never git reset --hard",
     ),
 }
 
@@ -168,6 +174,38 @@ def propose(
     return info, code
 
 
+def guard_rollback(root: Path, files: list[str]) -> tuple[dict[str, Any], int]:
+    """Refuse destructive rollback that would discard unrelated dirty or shared work.
+
+    Allowed action is always path-scoped `git restore -- <files>`, never
+    `git reset --hard`, unless the human authorized a full reset (not this script).
+    """
+    info = detect(root)
+    touched = {f.strip() for f in files if f.strip()}
+    dirty = set(info["dirty_files"])
+    extra = sorted(dirty - touched)
+    blocked: list[str] = []
+    if extra:
+        blocked.append(
+            "uncommitted files not in the rollback set would be discarded: " + ", ".join(extra)
+        )
+    if len(info["worktrees"]) > 1:
+        blocked.append(
+            "shared worktree: refuse git reset --hard; restore only listed paths after authorization"
+        )
+    allowed = "restore-listed-paths"
+    if extra or (len(info["worktrees"]) > 1 and not touched):
+        allowed = "ask"
+    result = {
+        **info,
+        "rollback_files": sorted(touched),
+        "blocked": blocked,
+        "allowed": allowed,
+        "note": "Never git reset --hard on a dirty or shared worktree without explicit human authorization.",
+    }
+    return result, (1 if blocked else 0)
+
+
 def scan_docs() -> list[str]:
     findings: list[str] = []
     for path, markers in DOC_MARKERS.items():
@@ -246,6 +284,44 @@ def selftest() -> int:
             (tmp / "keep.txt").read_text(encoding="utf-8") == before,
         )
 
+        info, code = guard_rollback(tmp, ["README"])
+        check(
+            "guard-rollback blocks unrelated dirty file",
+            code == 1 and any("keep.txt" in b for b in info["blocked"]),
+            str(info["blocked"]),
+        )
+        check(
+            "guard-rollback does not mutate the tree",
+            (tmp / "keep.txt").read_text(encoding="utf-8") == before,
+        )
+        info, code = guard_rollback(tmp, ["keep.txt"])
+        # shared worktrees (primary + linked) still block reset --hard even when files match
+        check(
+            "guard-rollback flags shared worktrees",
+            code == 1 and any("shared worktree" in b for b in info["blocked"]),
+            str(info["blocked"]),
+        )
+        check("guard-rollback never authorizes reset --hard", info["allowed"] in {"restore-listed-paths", "ask"})
+
+        solo = tmp / "solo"
+        solo.mkdir()
+        git(["init"], solo)
+        git(["config", "user.email", "wt@example.test"], solo)
+        git(["config", "user.name", "wt"], solo)
+        (solo / "a.txt").write_text("1\n", encoding="utf-8")
+        git(["add", "a.txt"], solo)
+        git(["commit", "-m", "init"], solo)
+        (solo / "a.txt").write_text("2\n", encoding="utf-8")
+        info, code = guard_rollback(solo, ["a.txt"])
+        check("guard-rollback allows restore of the only dirty file", code == 0, str(info["blocked"]))
+        (solo / "b.txt").write_text("other\n", encoding="utf-8")
+        info, code = guard_rollback(solo, ["a.txt"])
+        check(
+            "guard-rollback refuses discarding a second dirty file",
+            code == 1 and any("b.txt" in b for b in info["blocked"]),
+            str(info["blocked"]),
+        )
+
     docs = scan_docs()
     check("scan-docs clean", docs == [], str(docs))
     print("PASS" if fail == 0 else f"FAIL {fail}")
@@ -259,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--propose-branch", default=None)
     p.add_argument("--propose-path", default=None)
     p.add_argument("--files", default=None)
+    p.add_argument("--guard-rollback", action="store_true")
     p.add_argument("--scan-docs", action="store_true")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args(argv)
@@ -272,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if not findings else 1
 
     root = repo_root(args.root or Path.cwd())
+    if args.guard_rollback:
+        files = [x.strip() for x in (args.files or "").split(",") if x.strip()]
+        info, code = guard_rollback(root, files)
+        print(json.dumps(info, indent=2, sort_keys=True))
+        return code
     if args.propose_branch:
         files = [x.strip() for x in args.files.split(",")] if args.files else []
         info, code = propose(root, args.propose_branch, args.propose_path, files)

@@ -151,8 +151,15 @@ Dispatch the spec reviewer with:
 - The spec-reviewer-prompt.md template content
 
 Spec reviewer flow:
-- Issues found → implementer fixes → spec review re-runs (no cap on iterations)
-- No issues → advance to Step 3
+- Issues found → implementer fixes → spec review re-runs (**max 3 attempts**, then STOPPED — same 3-attempt hard stop as `first-principles.md`). Record each round:
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py \
+  --mark N --review-round spec --verdict FAIL --signature '<normalized finding>'
+```
+
+Identical signatures on consecutive FAILs are stagnation and escalate immediately. Do not start a 4th spec-review dispatch.
+- No issues → record `--review-round spec --verdict PASS --signature spec-ok`, then advance to Step 3
 - Spec reviewer writes the **spec-reviewer handoff tag** at the end of its response — format in [reference/handoff-tags.md](reference/handoff-tags.md)
 - `CONDITIONAL PASS` = implementer must fix open issues before Step 3 starts
 
@@ -175,8 +182,8 @@ Dispatch the quality reviewer (routed by tech stack — see routing table below)
 Blocking findings require a fix, re-verify, and re-review before `--mark N --status complete --verify-exit 0`.
 
 Quality reviewer flow:
-- Issues found → implementer fixes → quality review re-runs (not spec review — only quality)
-- No issues → mark `TaskUpdate: completed` → advance to next task
+- Issues found → implementer fixes → quality review re-runs (not spec review — only quality), **max 3 attempts** then STOPPED. Record `--review-round quality --verdict FAIL|PASS --signature …`. Identical FAIL signatures escalate as stagnation.
+- No issues → record `--review-round quality --verdict PASS`, then `--mark N --status complete --verify-exit 0`. Complete is refused without spec+quality PASS **and** verify exit 0.
 - Quality reviewer writes the **quality-reviewer handoff tag** at the end of its response — format in [reference/handoff-tags.md](reference/handoff-tags.md)
 - After all tasks: collect all `DEFERRED:` entries from implementer tags → add to PR body as **Known Gaps / Deferred**
 
@@ -332,7 +339,7 @@ Each phase receives exactly what it needs — no more:
 - **Never skip a review loop** — reviewer found issues = implementer fixes = re-review required. Re-dispatch only the reviewers that own open or newly closed findings; from round 3 only CRITICAL/HIGH block, and MEDIUM/LOW go into the PR body (`verification-before-completion/reference/verification-loop.md` §4, bounded re-review)
 - **Never let implementer self-review replace spec/quality review** — both are required
 - **Never tell implementer or reviewer to read the whole plan file** — provide the task brief inline
-- **Never treat a ledger row as verification proof** — `--mark complete` requires `--verify-exit 0` from a command you ran
+- **Never treat a ledger row as verification proof** — `--mark complete` requires `--verify-exit 0` from a command you ran **and** `--review-round spec` + `--review-round quality` PASS
 - **Never skip `--review-package`** — reviewers need BASE/HEAD or the uncommitted diff, not a file-name list alone
 - **Never declare a task complete while a reviewer has open issues**
 - **Never skip the post-completion conflict check** after parallel agent dispatch

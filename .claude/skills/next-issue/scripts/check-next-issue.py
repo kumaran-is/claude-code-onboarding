@@ -7,6 +7,11 @@ Usage:
       [--wave N] [--include-assigned-to-others]
   check-next-issue.py --scan-skill
   check-next-issue.py --check-notes docs/plans/<file>.md
+  check-next-issue.py --qualify PAYLOAD.json
+  check-next-issue.py --validate-verify-cmd CMD
+  check-next-issue.py --verify-cmd-for STACK
+  check-next-issue.py --snapshot-contract PAYLOAD.json [--root DIR]
+  check-next-issue.py --check-contract SNAPSHOT.json [--root DIR]
 
 Exit: 0 ok, 1 no pick / scan finding, 2 usage or broken selftest.
 Stdlib only. Never hardcodes a product, owner, repo, or absolute path.
@@ -15,6 +20,7 @@ Stdlib only. Never hardcodes a product, owner, repo, or absolute path.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -92,6 +98,58 @@ REQUIRED_SKILL_MARKERS = (
     "/ship",
     "--plan",
     "implementation-notes",
+    "--fix-loop",
+    "NO-GO",
+)
+
+FIX_LOOP_MAX_ITERATIONS = 5
+
+# Templates from verify.md — not slash commands. Used as --verify-cmd examples.
+STACK_VERIFY_CMDS = {
+    "flutter": "flutter analyze --no-pub",
+    "angular": "npm exec --no -- ng test --watch=false",
+    "react": "npm exec --no -- vitest run",
+    "python": "uv run --no-sync pytest -q",
+    "java": "./mvnw test -q",
+    "spring": "./mvnw test -q",
+    "nestjs": "npx vitest run",
+}
+
+NOOP_VERIFY_FIRST = {
+    "true",
+    ":",
+    "echo",
+    "/bin/true",
+    "/usr/bin/true",
+}
+
+SENSITIVE_RE = re.compile(
+    r"\b(auth|oauth|jwt|password|secret|encrypt|payment|stripe|pci|pii|"
+    r"billing|invoice|bank account|firestore rules|row.level|drop table|"
+    r"force.?push|production migrate)\b",
+    re.I,
+)
+SKIP_TEST_RE = re.compile(
+    r"xit\(|xdescribe\(|it\.skip|test\.skip|pytest\.mark\.skip|"
+    r"@unittest\.skip|\.skip\(|describe\.skip|skip:\s*true",
+    re.I,
+)
+ASSERT_TEST_RE = re.compile(r"\bassert\b|expect\(|XCTAssert|fail\(|verifyThat", re.I)
+COV_FLOOR_RE = re.compile(
+    r"(?i)(?:fail[_-]?under|cov-fail-under|--cov-fail-under|"
+    r"branches|functions|lines|statements|coverageThreshold)"
+    r"[\"']?\s*[:=]\s*[\"']?(\d+)"
+)
+AMBIGUOUS_RE = re.compile(r"\b(TBD|TODO|FIXME|maybe|somehow|tbd)\b", re.I)
+DESTRUCTIVE_RE = re.compile(
+    r"\b(git\s+(reset\s+--hard|push\s+--force|push\s+-f|commit|merge|checkout\s+--|clean\s+-)|"
+    r"gh\s+pr\s+merge|rm\s+-rf)\b",
+    re.I,
+)
+SLASH_CMD_RE = re.compile(r"^/[A-Za-z][A-Za-z0-9_-]*$")
+WRAPPED_NOOP_RE = re.compile(
+    r"(?:^|[\s;|&])(?:bash|zsh|sh)\s+-c\s+['\"]?(?:true|:|exit\s+0)\b",
+    re.I,
 )
 
 NOTES_REQUIRED_FIELDS = (
@@ -238,6 +296,210 @@ def pick_next(
     return {**winner, "pick_reason": f"todo-layer-{winner['layer']}", "active_wave": resolved_wave}
 
 
+def first_token(cmd: str) -> str:
+    parts = cmd.strip().split()
+    return parts[0] if parts else ""
+
+
+def validate_verify_cmd(cmd: str) -> list[str]:
+    """Return reasons the command cannot be a Ralph --verify-cmd. Empty = usable."""
+    reasons: list[str] = []
+    text = (cmd or "").strip()
+    if not text or text == "null":
+        return ["verify_cmd is empty — /verify is a Claude command, not a shell binary"]
+    first = first_token(text)
+    if SLASH_CMD_RE.match(first):
+        reasons.append(
+            f"{first} is a slash command, not a shell binary; pass the stack command from verify.md"
+        )
+    if first in NOOP_VERIFY_FIRST or text == "exit 0" or WRAPPED_NOOP_RE.search(text):
+        reasons.append(f"{text!r} is a no-op, not a deterministic gate")
+    if DESTRUCTIVE_RE.search(text):
+        reasons.append("verify_cmd must not commit, push, merge, reset, or force-push")
+    return reasons
+
+
+def stack_verify_cmd(stack: str) -> str | None:
+    key = (stack or "").strip().lower()
+    return STACK_VERIFY_CMDS.get(key)
+
+
+def _ac_text(payload: dict[str, Any]) -> str:
+    ac = payload.get("acceptance_criteria")
+    if isinstance(ac, list):
+        return "\n".join(str(x) for x in ac)
+    if ac:
+        return str(ac)
+    return str(payload.get("body") or "")
+
+
+def qualify(payload: dict[str, Any]) -> dict[str, Any]:
+    """GO/NO-GO before unattended /next --fix-loop. Never starts the next issue."""
+    reasons: list[str] = []
+    title = str(payload.get("title") or "")
+    body = str(payload.get("body") or "")
+    ac = _ac_text(payload)
+    verify_cmd = str(payload.get("verify_cmd") or "")
+    unattended = bool(payload.get("unattended", True))
+    max_iter = payload.get("max_iterations", FIX_LOOP_MAX_ITERATIONS)
+    try:
+        max_n = int(max_iter)
+    except (TypeError, ValueError):
+        max_n = -1
+        reasons.append("max_iterations must be a whole number")
+
+    if not ac.strip() and "acceptance" not in body.lower() and "ac:" not in body.lower():
+        reasons.append("no immutable acceptance criteria")
+    if AMBIGUOUS_RE.search(ac) or AMBIGUOUS_RE.search(title):
+        reasons.append("acceptance criteria are ambiguous (TBD/TODO/maybe)")
+    reasons.extend(validate_verify_cmd(verify_cmd))
+    blob = " ".join([title, body, ac])
+    if SENSITIVE_RE.search(blob):
+        reasons.append("sensitive scope (auth, payments, secrets, production data) needs a human")
+    if payload.get("destructive") is True or DESTRUCTIVE_RE.search(blob):
+        reasons.append("destructive git/merge/reset operations are never unattended")
+    if payload.get("permissions") in {"bypass", "skip", "dangerously-skip-permissions"}:
+        reasons.append("permission bypass is forbidden")
+    if unattended and max_n > FIX_LOOP_MAX_ITERATIONS:
+        reasons.append(f"unattended max_iterations cap is {FIX_LOOP_MAX_ITERATIONS}")
+    if unattended and max_n < 1:
+        reasons.append("unattended max_iterations must be 1–5")
+    if not payload.get("testable", True):
+        reasons.append("task is not machine-testable")
+    if unattended and not (payload.get("test_files") or payload.get("acceptance_criteria") or ac.strip()):
+        reasons.append("unattended loop needs acceptance criteria or listed test files")
+
+    go = not reasons
+    return {
+        "verdict": "GO" if go else "NO-GO",
+        "reasons": reasons,
+        "max_iterations": FIX_LOOP_MAX_ITERATIONS if unattended else max_n,
+        "verify_cmd": verify_cmd,
+        "human_required": not go,
+    }
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _count_in_files(root: Path, rels: list[str], pattern: re.Pattern[str]) -> int:
+    n = 0
+    for rel in rels:
+        path = root / rel
+        if not path.is_file():
+            continue
+        try:
+            n += len(pattern.findall(path.read_text(encoding="utf-8", errors="replace")))
+        except OSError:
+            continue
+    return n
+
+
+def _min_cov_floor(root: Path, rels: list[str]) -> int | None:
+    floors: list[int] = []
+    for rel in rels:
+        path = root / rel
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        floors.extend(int(m.group(1)) for m in COV_FLOOR_RE.finditer(text))
+    return min(floors) if floors else None
+
+
+def snapshot_contract(payload: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Hash approved AC + verifier + test files. Stored in existing Ralph state, not a new store."""
+    ac = _ac_text(payload)
+    cmd = str(payload.get("verify_cmd") or "")
+    files = [str(x) for x in (payload.get("test_files") or []) if str(x).strip()]
+    quality = [str(x) for x in (payload.get("quality_files") or []) if str(x).strip()]
+    file_sha: dict[str, str] = {}
+    for rel in files:
+        path = root / rel
+        if path.is_file():
+            file_sha[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            file_sha[rel] = "missing"
+    quality_sha: dict[str, str] = {}
+    for rel in quality:
+        path = root / rel
+        if path.is_file():
+            quality_sha[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            quality_sha[rel] = "missing"
+    return {
+        "ac_sha256": _sha256_text(ac.strip()),
+        "verify_cmd": cmd,
+        "verify_cmd_sha256": _sha256_text(cmd.strip()),
+        "test_files": files,
+        "test_sha256": file_sha,
+        "quality_files": quality,
+        "quality_sha256": quality_sha,
+        "assert_count": _count_in_files(root, files, ASSERT_TEST_RE),
+        "skip_count": _count_in_files(root, files, SKIP_TEST_RE),
+        "cov_floor": _min_cov_floor(root, quality or files),
+        "root": str(root),
+    }
+
+
+def check_contract(snapshot: dict[str, Any], root: Path, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Compare live AC/tests to the snapshot. Weakening is not a PASS. TDD additions are OK."""
+    findings: list[str] = []
+    if payload is None:
+        live_ac_sha = snapshot.get("ac_sha256")
+        live_cmd_sha = _sha256_text(str(snapshot.get("verify_cmd") or "").strip())
+    else:
+        live_ac_sha = _sha256_text(_ac_text(payload).strip())
+        live_cmd_sha = _sha256_text(str(payload.get("verify_cmd") or "").strip())
+    if live_ac_sha != snapshot.get("ac_sha256"):
+        findings.append("acceptance criteria hash changed — completion criteria were altered")
+    if live_cmd_sha != snapshot.get("verify_cmd_sha256"):
+        findings.append("verify_cmd hash changed — verifier was swapped")
+    files = [str(x) for x in (snapshot.get("test_files") or [])]
+    skip_now = _count_in_files(root, files, SKIP_TEST_RE)
+    assert_now = _count_in_files(root, files, ASSERT_TEST_RE)
+    skip_was = int(snapshot.get("skip_count") or 0)
+    assert_was = int(snapshot.get("assert_count") or 0)
+    if skip_now > skip_was:
+        findings.append(f"skip/xit count rose {skip_was} → {skip_now} (test weakening)")
+    if assert_now < assert_was:
+        findings.append(f"assertion count fell {assert_was} → {assert_now} (deleted assertions)")
+    missing = [rel for rel in files if not (root / rel).is_file() and (snapshot.get("test_sha256") or {}).get(rel) not in {None, "missing"}]
+    if missing:
+        findings.append(f"test files disappeared: {', '.join(missing)}")
+    quality = [str(x) for x in (snapshot.get("quality_files") or [])]
+    floor_now = _min_cov_floor(root, quality or files)
+    floor_was = snapshot.get("cov_floor")
+    if floor_was is not None and floor_now is not None and int(floor_now) < int(floor_was):
+        findings.append(f"coverage floor dropped {floor_was} → {floor_now}")
+    quality_changed = False
+    for rel in quality:
+        path = root / rel
+        was = (snapshot.get("quality_sha256") or {}).get(rel)
+        if not was or was == "missing":
+            continue
+        if not path.is_file():
+            findings.append(f"quality config disappeared: {rel}")
+            continue
+        now = hashlib.sha256(path.read_bytes()).hexdigest()
+        if now != was:
+            quality_changed = True
+    verdict = "WEAKENED" if findings else "OK"
+    tdd_added = assert_now > assert_was and skip_now <= skip_was and not findings
+    return {
+        "verdict": verdict,
+        "findings": findings,
+        "assert_count": assert_now,
+        "skip_count": skip_now,
+        "tdd_added": tdd_added,
+        "quality_changed": quality_changed,
+        "human_required": bool(findings) or tdd_added or quality_changed,
+    }
+
+
 def load_candidates(path: Path) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(data, list):
@@ -303,8 +565,28 @@ def scan_skill(skill_dir: Path) -> list[str]:
         for bad in BLOCKING_BRAINSTORM:
             if bad in lower:
                 findings.append(f"{path.name} makes brainstorm a gate: {bad}")
-    if "optional worktree" not in (skill_dir / "references" / "plan-and-handoff.md").read_text(encoding="utf-8").lower():
+    loop_ref = skill_dir / "references" / "loop-and-qualify.md"
+    if not loop_ref.is_file():
+        findings.append("missing references/loop-and-qualify.md")
+    else:
+        loop_body = loop_ref.read_text(encoding="utf-8")
+        for needle in (
+            "--fix-loop",
+            "NO-GO",
+            "--verify-cmd",
+            "require_verify",
+            "Do not start the next issue",
+            "--snapshot-contract",
+            "WEAKENED",
+            "ESCALATED",
+        ):
+            if needle not in loop_body:
+                findings.append(f"loop-and-qualify.md missing {needle}")
+    handoff = skill_dir / "references" / "plan-and-handoff.md"
+    if "optional worktree" not in handoff.read_text(encoding="utf-8").lower():
         findings.append("plan-and-handoff.md missing optional worktree")
+    if "--fix-loop" not in handoff.read_text(encoding="utf-8"):
+        findings.append("plan-and-handoff.md missing --fix-loop")
     if "/brainstorm" not in skill_md.read_text(encoding="utf-8") and "brainstorm is never required" not in skill_md.read_text(encoding="utf-8").lower():
         findings.append("SKILL.md must state brainstorm is never required")
     claude_dir = skill_dir.parent.parent
@@ -492,6 +774,163 @@ def selftest() -> int:
         True,
     )
 
+    q_go = qualify(
+        {
+            "title": "Add widget test",
+            "body": "Acceptance criteria: the widget renders empty and error states.",
+            "acceptance_criteria": ["empty state widget test exits 0"],
+            "verify_cmd": STACK_VERIFY_CMDS["flutter"],
+            "unattended": True,
+            "max_iterations": 5,
+        }
+    )
+    check("positive-qualify-flutter-go", q_go["verdict"], "GO")
+    q_angular = qualify(
+        {
+            "title": "Fix login form validation",
+            "acceptance_criteria": ["invalid email shows the error id"],
+            "verify_cmd": STACK_VERIFY_CMDS["angular"],
+            "unattended": True,
+        }
+    )
+    check("positive-qualify-angular-go", q_angular["verdict"], "GO")
+    q_react = qualify(
+        {
+            "title": "Query cache invalidation",
+            "acceptance_criteria": ["vitest covers stale-while-revalidate"],
+            "verify_cmd": STACK_VERIFY_CMDS["react"],
+            "unattended": True,
+        }
+    )
+    check("positive-qualify-react-go", q_react["verdict"], "GO")
+    q_py = qualify(
+        {
+            "title": "Health endpoint",
+            "acceptance_criteria": ["pytest covers 200 and 503"],
+            "verify_cmd": STACK_VERIFY_CMDS["python"],
+            "unattended": True,
+        }
+    )
+    check("positive-qualify-python-go", q_py["verdict"], "GO")
+    q_java = qualify(
+        {
+            "title": "Add ProblemDetail handler",
+            "acceptance_criteria": ["mvn test covers 404 mapping"],
+            "verify_cmd": STACK_VERIFY_CMDS["java"],
+            "unattended": True,
+        }
+    )
+    check("positive-qualify-java-go", q_java["verdict"], "GO")
+
+    q_slash = qualify(
+        {
+            "title": "Fix tests",
+            "acceptance_criteria": ["all tests pass"],
+            "verify_cmd": "/verify full",
+            "unattended": True,
+        }
+    )
+    check("negative-qualify-slash-verify", q_slash["verdict"], "NO-GO")
+    q_auth = qualify(
+        {
+            "title": "Rotate JWT secret",
+            "acceptance_criteria": ["auth still works"],
+            "verify_cmd": STACK_VERIFY_CMDS["python"],
+            "unattended": True,
+        }
+    )
+    check("negative-qualify-auth-nogo", q_auth["verdict"], "NO-GO")
+    q_ac = qualify({"title": "Do stuff", "verify_cmd": "flutter test", "unattended": True})
+    check("negative-qualify-no-ac", q_ac["verdict"], "NO-GO")
+    q_iter = qualify(
+        {
+            "title": "Tiny fix",
+            "acceptance_criteria": ["unit test exits 0"],
+            "verify_cmd": "flutter test",
+            "unattended": True,
+            "max_iterations": 12,
+        }
+    )
+    check("negative-qualify-over-max-iter", q_iter["verdict"], "NO-GO")
+    q_destr = qualify(
+        {
+            "title": "Clean tree",
+            "acceptance_criteria": ["tests pass"],
+            "verify_cmd": "flutter test",
+            "destructive": True,
+            "unattended": True,
+        }
+    )
+    check("negative-qualify-destructive", q_destr["verdict"], "NO-GO")
+    q_bill = qualify(
+        {
+            "title": "Change billing invoice totals",
+            "acceptance_criteria": ["invoice PDF matches"],
+            "verify_cmd": STACK_VERIFY_CMDS["python"],
+            "unattended": True,
+        }
+    )
+    check("negative-qualify-billing-nogo", q_bill["verdict"], "NO-GO")
+
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td)
+        testf = tdir / "t_widget_test.dart"
+        testf.write_text("void main() { test('empty', () { expect(1, 1); }); }\n", encoding="utf-8")
+        snap_payload = {
+            "title": "Widget empty state",
+            "acceptance_criteria": ["empty state widget test exits 0"],
+            "verify_cmd": STACK_VERIFY_CMDS["flutter"],
+            "test_files": ["t_widget_test.dart"],
+        }
+        snap = snapshot_contract(snap_payload, tdir)
+        chk = check_contract(snap, tdir, snap_payload)
+        check("positive-contract-unchanged", chk["verdict"], "OK")
+        testf.write_text(
+            "void main() { test('empty', () { expect(1, 1); expect(2, 2); }); }\n",
+            encoding="utf-8",
+        )
+        chk = check_contract(snap, tdir, snap_payload)
+        check("positive-tdd-added-assertions", chk["tdd_added"] and chk["verdict"] == "OK", True)
+        testf.write_text("void main() { test('empty', () {}, skip: true); }\n", encoding="utf-8")
+        chk = check_contract(snap, tdir, snap_payload)
+        check("negative-skip-is-weakening", chk["verdict"], "WEAKENED")
+        testf.write_text("void main() {}\n", encoding="utf-8")
+        chk = check_contract(snap, tdir, snap_payload)
+        check("negative-deleted-assertions", chk["verdict"], "WEAKENED")
+        testf.write_text("void main() { test('empty', () { expect(1, 1); }); }\n", encoding="utf-8")
+        tampered = dict(snap_payload)
+        tampered["acceptance_criteria"] = ["ship it without tests"]
+        chk = check_contract(snap, tdir, tampered)
+        check("negative-ac-hash-changed", chk["verdict"], "WEAKENED")
+        swapped = dict(snap_payload)
+        swapped["verify_cmd"] = "true"
+        chk = check_contract(snap, tdir, swapped)
+        check("negative-verify-cmd-swapped", chk["verdict"], "WEAKENED")
+        cov = tdir / "coverage.config.json"
+        cov.write_text('{"coverageThreshold": 80}\n', encoding="utf-8")
+        cov_payload = dict(snap_payload)
+        cov_payload["quality_files"] = ["coverage.config.json"]
+        cov_snap = snapshot_contract(cov_payload, tdir)
+        chk = check_contract(cov_snap, tdir, cov_payload)
+        check("positive-coverage-unchanged", chk["verdict"], "OK")
+        cov.write_text('{"coverageThreshold": 90}\n', encoding="utf-8")
+        chk = check_contract(cov_snap, tdir, cov_payload)
+        check("positive-coverage-raised", chk["verdict"] == "OK" and chk["quality_changed"] and chk["human_required"], True)
+        cov.write_text('{"coverageThreshold": 10}\n', encoding="utf-8")
+        chk = check_contract(cov_snap, tdir, cov_payload)
+        check("negative-coverage-floor-dropped", chk["verdict"], "WEAKENED")
+
+    check("negative-validate-slash", bool(validate_verify_cmd("/verify")), True)
+    check("negative-validate-true", bool(validate_verify_cmd("true")), True)
+    check("negative-validate-wrapped-noop", bool(validate_verify_cmd("bash -c true")), True)
+    check("negative-validate-merge", bool(validate_verify_cmd("gh pr merge 1")), True)
+    check("positive-validate-flutter", validate_verify_cmd(STACK_VERIFY_CMDS["flutter"]), [])
+    check("positive-validate-angular", validate_verify_cmd(STACK_VERIFY_CMDS["angular"]), [])
+    check("positive-validate-react", validate_verify_cmd(STACK_VERIFY_CMDS["react"]), [])
+    check("positive-validate-python", validate_verify_cmd(STACK_VERIFY_CMDS["python"]), [])
+    check("positive-verify-cmd-for-nestjs", stack_verify_cmd("nestjs"), STACK_VERIFY_CMDS["nestjs"])
+    check("negative-verify-cmd-for-unknown", stack_verify_cmd("cobol"), None)
+
     findings = scan_skill(SKILL_DIR)
     if findings:
         print("  FAIL skill scan:")
@@ -514,10 +953,49 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--include-assigned-to-others", action="store_true")
     parser.add_argument("--scan-skill", action="store_true")
     parser.add_argument("--check-notes", type=Path)
+    parser.add_argument("--qualify", type=Path)
+    parser.add_argument("--validate-verify-cmd", dest="validate_cmd", default=None)
+    parser.add_argument("--verify-cmd-for", dest="verify_for", default=None)
+    parser.add_argument("--snapshot-contract", type=Path)
+    parser.add_argument("--check-contract", type=Path)
+    parser.add_argument("--root", type=Path, default=None)
+    parser.add_argument("--payload", type=Path, default=None)
     args = parser.parse_args(argv)
 
     if args.selftest:
         return selftest()
+    if args.validate_cmd is not None:
+        reasons = validate_verify_cmd(args.validate_cmd)
+        if reasons:
+            for r in reasons:
+                print(r)
+            return 1
+        print("VERIFY_CMD OK")
+        return 0
+    if args.verify_for is not None:
+        cmd = stack_verify_cmd(args.verify_for)
+        if not cmd:
+            print(f"unknown stack {args.verify_for!r}; known: {', '.join(sorted(STACK_VERIFY_CMDS))}", file=sys.stderr)
+            return 2
+        print(cmd)
+        return 0
+    if args.qualify:
+        payload = json.loads(args.qualify.read_text(encoding="utf-8"))
+        result = qualify(payload)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["verdict"] == "GO" else 1
+    if args.snapshot_contract:
+        payload = json.loads(args.snapshot_contract.read_text(encoding="utf-8"))
+        root = (args.root or Path.cwd()).resolve()
+        print(json.dumps(snapshot_contract(payload, root), indent=2, sort_keys=True))
+        return 0
+    if args.check_contract:
+        snapshot = json.loads(args.check_contract.read_text(encoding="utf-8"))
+        root = (args.root or Path.cwd()).resolve()
+        payload = json.loads(args.payload.read_text(encoding="utf-8")) if args.payload else None
+        result = check_contract(snapshot, root, payload)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["verdict"] == "OK" else 1
     if args.check_notes:
         findings = check_notes(args.check_notes)
         if findings:

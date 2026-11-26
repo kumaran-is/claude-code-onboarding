@@ -88,6 +88,21 @@ snapshot() {
     [ -n "$sdd_out" ] || sdd_out="SDD ledger: none"
   fi
 
+  loop_file="$root/.claude/ralph-loop.local.md"
+  state_file="$root/.claude/ralph-state.local.md"
+  ralph_fm=""
+  contract_block=""
+  if [ -f "$loop_file" ]; then
+    ralph_fm=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$loop_file" 2>/dev/null | grep -E '^(ac_sha256|verify_cmd|verify_cmd_sha256|session_id|require_verify|worktree|completion_promise|max_iterations|iteration):' || true)
+  fi
+  if [ -f "$state_file" ]; then
+    contract_block=$(awk '
+      /^## Contract snapshot/ {p=1}
+      /^## / && p && !/^## Contract snapshot/ {exit}
+      p {print}
+    ' "$state_file" 2>/dev/null || true)
+  fi
+
   dest=""
   if [ -d "$root/.claude/temp/precompact" ]; then
     dest="$root/.claude/temp/precompact/latest.md"
@@ -109,9 +124,14 @@ snapshot() {
       printf '%s\n' "## SDD ledger"
       printf '%s\n' "$sdd_out"
       printf '%s\n' ""
+      printf '%s\n' "## Ralph loop contract (restore unchanged)"
+      if [ -n "$ralph_fm" ]; then printf '%s\n' "$ralph_fm"; else printf '%s\n' "(no active ralph-loop.local.md)"; fi
+      if [ -n "$contract_block" ]; then printf '%s\n' "$contract_block"; fi
+      printf '%s\n' ""
       printf '%s\n' "## Resume"
       printf '%s\n' "This file is the secret-free PreCompact snapshot. The matching /checkpoint log line is in .claude/checkpoints.log."
       printf '%s\n' "A ledger row is never verification proof. Do not redispatch a complete SDD task whose verify exit is 0."
+      printf '%s\n' "If ralph-loop.local.md still exists after compact, copy ac_sha256, verify_cmd, and verify_cmd_sha256 from this snapshot back into its frontmatter if they differ — approved acceptance criteria and the exact verifier must survive PreCompact, resume, and context reset unchanged."
     } > "$dest" 2>/dev/null || dest=""
   fi
 
@@ -194,6 +214,23 @@ selftest() {
   if grep -q 'transcript.jsonl' "$dest" 2>/dev/null; then
     echo "  FAIL transcript_path persisted"; fail=1
   else echo "  ok   negative: transcript path is not persisted"; fi
+
+  # Compaction recovery: approved AC hash + exact verifier survive in the snapshot.
+  mkdir -p "$tmp/.claude"
+  printf '%s\n' '---' 'iteration: 2' 'max_iterations: 5' 'verify_cmd: "flutter test"' 'ac_sha256: "abc123ac"' 'verify_cmd_sha256: "def456cmd"' 'session_id: "sess-precompact"' 'require_verify: true' '---' 'keep going' > "$tmp/.claude/ralph-loop.local.md"
+  printf '%s\n' '# Ralph loop state' '' '## Contract snapshot' '```json' '{"ac_sha256":"abc123ac","verify_cmd":"flutter test"}' '```' > "$tmp/.claude/ralph-state.local.md"
+  out=$(printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self"); rc=$?
+  dest="$tmp/.claude/temp/precompact/latest.md"
+  if [ "$rc" -eq 0 ] && grep -q 'ac_sha256: "abc123ac"' "$dest" && grep -q 'verify_cmd: "flutter test"' "$dest" && grep -q 'verify_cmd_sha256: "def456cmd"' "$dest" && grep -q 'survive PreCompact' "$dest"; then
+    echo "  ok   positive: AC hash and exact verifier persist across PreCompact"
+  else echo "  FAIL PreCompact dropped AC/verifier hashes"; fail=1; fi
+  if grep -q 'session_id: "sess-precompact"' "$dest" && grep -q 'require_verify: true' "$dest"; then
+    echo "  ok   positive: session bind and require_verify persist"
+  else echo "  FAIL session/require_verify missing from snapshot"; fail=1; fi
+  # Resume must not rewrite hashes: snapshot is the source of truth, live loop file still has them.
+  if grep -q 'ac_sha256: "abc123ac"' "$tmp/.claude/ralph-loop.local.md" && grep -q 'verify_cmd: "flutter test"' "$tmp/.claude/ralph-loop.local.md"; then
+    echo "  ok   regression: PreCompact does not mutate live loop frontmatter"
+  else echo "  FAIL PreCompact mutated ralph-loop.local.md"; fail=1; fi
 
   # fail-open: broken git / missing jq still exit 0
   out=$(printf '%s' "$payload" | CLAUDE_PROJECT_DIR="/no/such/precompact-root-$$" "$BASH" "$self"); rc=$?

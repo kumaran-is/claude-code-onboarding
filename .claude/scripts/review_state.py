@@ -12,8 +12,10 @@ opt-in marker `enabled`. Hooks import this file; humans and Claude use the CLI.
   review_state.py findings fail ID --note TEXT       (a close did not survive re-verification)
   review_state.py findings blocking                  (exit 1 when any finding blocks)
   review_state.py findings rereview                  (reviewers whose findings were closed since their last report)
-  review_state.py stamp write NAME [--note TEXT] [--mode MODE]   (after the check PASSED on the current tree;
-                                                     /verify records its mode: quick | pre-commit | full | pre-pr)
+  review_state.py stamp write NAME [--note TEXT] [--mode MODE] [--exit-code N]
+                                                     (after the check PASSED on the current tree;
+                                                     /verify records its mode: quick | pre-commit | full | pre-pr;
+                                                     the Stop hook records ralph. Non-zero --exit-code is refused.)
   review_state.py stamp check NAME [--mode M1,M2]    (VALID | INSUFFICIENT | CHANGED | EXPIRED | MISSING | UNKNOWN;
                                                      exit 0 only on VALID; --mode requires one of those modes)
   review_state.py history [--files a,b] [--uncommitted]   (optional git log/blame for /review-code)
@@ -278,13 +280,26 @@ def review_check(root: Path) -> tuple[str, str]:
     return "VALID", f"{len(latest)} reviewer(s) reviewed the current tree; no blocking findings"
 
 
-def stamp_write(root: Path, name: str, note: str = "", mode: str = "") -> dict:
+def stamp_write(root: Path, name: str, note: str = "", mode: str = "", exit_code: int = 0) -> dict:
     if name == "review":
         raise ValueError("'review' evidence comes only from recorded reviewer reports; " + REVIEW_FIX)
+    if int(exit_code) != 0:
+        raise ValueError(
+            "stamp write refuses non-zero --exit-code; a FAIL is not PASS evidence "
+            "(model-written PASS claims are not a substitute for the runner)"
+        )
     d = state_dir(root) / "stamps"
     d.mkdir(parents=True, exist_ok=True)
     scope = SCOPES.get(name)
-    rec = {"name": name, "tree": fingerprint(root, scope), "scope": scope, "at": time.time(), "note": note, "mode": mode}
+    rec = {
+        "name": name,
+        "tree": fingerprint(root, scope),
+        "scope": scope,
+        "at": time.time(),
+        "note": note,
+        "mode": mode,
+        "exit_code": 0,
+    }
     fd, tmp = tempfile.mkstemp(dir=d)
     with os.fdopen(fd, "w") as fh:
         json.dump(rec, fh, indent=2)
@@ -410,7 +425,8 @@ def cli(argv: list[str]) -> int:
     fp.add_parser("blocking"); fp.add_parser("rereview")
     sp = sub.add_parser("stamp").add_subparsers(dest="op", required=True)
     sw = sp.add_parser("write"); sw.add_argument("name"); sw.add_argument("--note", default="")
-    sw.add_argument("--mode", default="", choices=["", "quick", "pre-commit", "full", "pre-pr"])
+    sw.add_argument("--mode", default="", choices=["", "quick", "pre-commit", "full", "pre-pr", "ralph"])
+    sw.add_argument("--exit-code", type=int, default=0)
     sc = sp.add_parser("check"); sc.add_argument("name"); sc.add_argument("--mode", default="")
     hy = sub.add_parser("history")
     hy.add_argument("--files", default="")
@@ -436,7 +452,7 @@ def cli(argv: list[str]) -> int:
             status, why = review_check(root); print(f"{status}: {why}"); return 0 if status == "VALID" else 1
         if args.op == "write":
             try:
-                rec = stamp_write(root, args.name, args.note, args.mode)
+                rec = stamp_write(root, args.name, args.note, args.mode, args.exit_code)
             except ValueError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr); return 2
             print(f"stamp {args.name} = {rec['tree'][:12]}" + (f" ({args.mode})" if args.mode else "")); return 0
@@ -554,6 +570,13 @@ def selftest() -> int:
             # reviewer-approval evidence (G2): only hook-recorded reports on the current tree count
             ok(review_check(root)[0] == "MISSING", "review: MISSING before any reviewer report")
             raises(lambda: stamp_write(root, "review", "trust me"), "positive: a hand-written 'review' stamp is refused")
+            raises(
+                lambda: stamp_write(root, "verify", "model PASS", mode="ralph", exit_code=1),
+                "positive: non-zero --exit-code cannot stamp a PASS",
+            )
+            stamp_write(root, "verify", "hook exit=0 cmd=flutter test", mode="ralph", exit_code=0)
+            ok(stamp_check(root, "verify", ("ralph",))[0] == "VALID", "negative: ralph-mode stamp on current tree is VALID")
+            ok(stamp_check(root, "verify", ("full", "pre-pr"))[0] == "INSUFFICIENT", "positive: ralph stamp does not satisfy a full/pre-pr gate")
             d = state_dir(root) / "stamps"; d.mkdir(parents=True, exist_ok=True)
             (d / "review.json").write_text(json.dumps({"name": "review", "tree": fingerprint(root), "at": time.time()}))
             ok(review_check(root)[0] == "MISSING", "positive: a forged review.json file is not evidence")

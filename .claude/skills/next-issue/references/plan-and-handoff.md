@@ -76,10 +76,10 @@ See `references/implementation-notes.md`. Seed `docs/plans/<N>-implementation-no
 ## After implementation
 
 1. Plan → diff checklist (`file:line` or NOT IMPLEMENTED). Reverse: every changed file must be in the plan's file list or be surfaced as scope creep.
-2. `/verify` for the stacks touched (quick or full as the issue requires).
-3. Reviewers from SKILLS_GUIDE (code-reviewer plus the domain reviewer). Prefer `/review-code`, which builds a BASE/HEAD or uncommitted package — do not commit merely to obtain a SHA.
+2. `/verify` for the stacks touched (quick or full as the issue requires). On FAIL, **stop** unless `--fix-loop` was requested. `--fix-loop` follows `references/loop-and-qualify.md`: GO/NO-GO, `--snapshot-contract`, then `/ralph-loop` with the **same shell command** you ran (never `/verify`), `--max-iterations 5`, `REQUIRE_VERIFY=true`. After 5 iterations or 3 identical failures the hook writes **ESCALATED**. `WEAKENED` contracts (skipped tests, dropped coverage, swapped verifier) do not complete. Do not commit, push, merge, or start the next issue.
+3. Reviewers from SKILLS_GUIDE (code-reviewer plus the domain reviewer). Prefer `/review-code`, which builds a BASE/HEAD or uncommitted package — do not commit merely to obtain a SHA. Independent review is required before `/ship`.
 4. Open the PR via `/ship`. Stop at the merge gate.
-5. `--finish` / explicit merge keyword → `/ship` merge path, board → Done, then unblock dependents (remove this id from their `blocked_by_open` / comment).
+5. `--finish` / explicit merge keyword → `/ship` merge path, board → Done, then unblock dependents (remove this id from their `blocked_by_open` / comment). Do not invoke `/next` again on your own.
 
 Do not re-implement CI wait loops, reviewer prompts, or merge bash in this skill.
 
@@ -90,5 +90,6 @@ Do not re-implement CI wait loops, reviewer prompts, or merge bash in this skill
 | `/next --plan` | discovery → plan saved | plan gate |
 | `/next --build #N` | load saved plan → branch → implement → `/verify` → PR | merge gate (does not merge) |
 | `/next --finish #N` | `/ship` merge + board Done + unblock | issue done |
+| `/next --fix-loop` | after failing `/verify` only if qualify is GO | merge gate (does not merge; does not pick the next issue) |
 
 `--build` without a saved plan → STOP.

@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 
 Measure → Improve → Verify → Keep or Rollback → Repeat.
 
-Unlike `/ralph-loop` (which runs blind), this loop is **metric-gated**: changes are committed only when the score improves. Regressions are automatically rolled back with `git reset --hard`.
+Unlike `/ralph-loop` (which runs blind), this loop is **metric-gated**: changes are committed only when the score improves. Regressions restore **only the files this iteration touched**, after `--guard-rollback` allows it. Never `git reset --hard` on a dirty or shared worktree without explicit human authorization.
 
 ## Step 1 — Parse arguments and set defaults
 
@@ -108,6 +108,12 @@ Pick **one category** per iteration. Fix the 3–5 easiest instances. Do not att
 
 Make the changes now. Do not ask for confirmation — just fix.
 
+Record every path you edited this iteration:
+
+```bash
+TOUCHED=$(git -C "$CLAUDE_PROJECT_DIR" diff --name-only; git -C "$CLAUDE_PROJECT_DIR" ls-files --others --exclude-standard)
+```
+
 ## Step 4 — Re-measure and decide
 
 After making changes, re-run the same measurement commands from Step 2.
@@ -129,9 +135,29 @@ if [[ $NEW_SCORE -lt $BASELINE_SCORE ]]; then
   Loop: autoresearch iteration $ITERATION of $MAX_ITERATIONS"
   echo "✅ Iteration $ITERATION complete. Score: $BASELINE_SCORE → $NEW_SCORE (improved by $DELTA)"
 else
-  # ❌ NO IMPROVEMENT — rollback
-  git reset --hard HEAD
-  echo "❌ Iteration $ITERATION: no improvement (score unchanged or worse). Changes rolled back."
+  # ❌ NO IMPROVEMENT — restore only files this iteration touched. Never git reset --hard.
+  FILES_CSV=$(printf '%s' "$TOUCHED" | tr '\n' ',' | sed 's/,$//')
+  python3 "$CLAUDE_PROJECT_DIR/.claude/scripts/check-worktree-isolation.py" \
+    --guard-rollback --files "$FILES_CSV" --root "$CLAUDE_PROJECT_DIR"
+  guard_rc=$?
+  if [[ $guard_rc -ne 0 ]]; then
+    echo "❌ Iteration $ITERATION: rollback blocked (dirty/shared worktree)."
+    echo "   Uncommitted files outside this iteration would be discarded."
+    echo "   STOP. Ask the human before restoring anything. Do not git reset --hard."
+    exit 1
+  fi
+  # Path-scoped restore of touched files only (leaves unrelated dirty files intact).
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if git -C "$CLAUDE_PROJECT_DIR" ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+      git -C "$CLAUDE_PROJECT_DIR" restore --staged --worktree -- "$f"
+    else
+      rm -f -- "$CLAUDE_PROJECT_DIR/$f"
+    fi
+  done <<EOF
+$TOUCHED
+EOF
+  echo "❌ Iteration $ITERATION: no improvement (score unchanged or worse). Touched paths restored."
   echo "   Next iteration will attempt a different category."
 fi
 ```
@@ -167,7 +193,7 @@ If `$NEXT_ITERATION > MAX_ITERATIONS` or the score has reached 0, clean up the s
 ## Rules
 
 1. **One category per iteration** — fixing one type of issue reliably beats attempting everything poorly
-2. **Never commit regressions** — `git reset --hard` is not failure, it's discipline
+2. **Never commit regressions** — restore touched paths only after `--guard-rollback` exits 0. Never git reset --hard (or `git checkout HEAD -- .` / `git restore --source=HEAD .`) on a dirty or shared worktree without explicit human authorization.
 3. **Skip files you don't understand** — if fixing a `console.log` requires understanding complex business logic, move to the next instance
 4. **No new functionality** — refactor only, no feature additions
 5. **Run tests after each change** — if tests break, that counts as a regression, rollback

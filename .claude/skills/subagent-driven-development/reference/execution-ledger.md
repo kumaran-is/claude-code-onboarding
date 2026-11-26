@@ -43,6 +43,15 @@ Skip any task whose status is `complete`, `--verify-exit` is `0`, and reconcile
 did not mark it `STALE` or `INCONSISTENT`. Pass the **brief body inline** plus the
 brief path. Never tell the implementer to read the whole plan.
 
+Record each independent review round (3-attempt cap; identical FAIL signatures escalate):
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py \
+  --mark N --review-round spec --verdict PASS --signature spec-ok
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py \
+  --mark N --review-round quality --verdict PASS --signature quality-ok
+```
+
 After the quality reviewer passes and `/verify` (or the task's verification
 command) actually exited 0:
 
@@ -52,7 +61,9 @@ python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py \
   --verify-cmd '<stack command>' --files 'a.ts,b.ts'
 ```
 
-`--mark complete` without `--verify-exit 0` is refused.
+`--mark complete` without `--verify-exit 0` is refused. `--mark complete` without
+independent spec+quality PASS is refused. A complete row without those reviews is
+`STALE` on reconcile. Do not start the next GitHub issue from SDD.
 
 ## Compaction / session resume
 

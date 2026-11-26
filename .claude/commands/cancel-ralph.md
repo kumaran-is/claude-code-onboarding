@@ -13,6 +13,7 @@ if [[ -f "$RALPH_STATE_FILE" ]]; then
   rm "$RALPH_STATE_FILE"
   echo "🛑 Ralph loop cancelled after iteration ${ITERATION:-?}."
   echo "   The loop will exit cleanly on the next turn."
+  echo "   Human cancel is allowed from any session; Stop-hook isolation does not block /cancel-ralph."
 else
   echo "ℹ️  No active Ralph loop found."
 fi

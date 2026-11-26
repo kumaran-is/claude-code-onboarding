@@ -199,6 +199,24 @@ Never ship two implementations of one control. Do not wrap daisyUI CSS classes i
 to have a component (a `btn` is a class, not a component); create a shared component only when it adds
 behaviour or a slot contract (`smart-dumb-components.md`).
 
+Cold load of a known layout (dashboard list/cards) is a layout-matched skeleton, not a page spinner
+(`interaction-contracts.md` §6b). Spartan:
+
+```html
+<div role="status" aria-busy="true">
+  <span class="sr-only">Loading dashboard</span>
+  <div class="flex flex-col gap-3" aria-hidden="true">
+    <hlm-skeleton class="h-12 w-full" />
+    <hlm-skeleton class="h-12 w-full" />
+    <hlm-skeleton class="h-12 w-3/4" />
+  </div>
+</div>
+```
+
+Hybrid uses daisyUI `skeleton` (hybrid owner for loading/skeleton). Reduced motion: keep geometry, drop
+shimmer (daisyUI `.skeleton` already stops under `prefers-reduced-motion`; Helm skeleton must use token
+motion, not a custom animation). Inline `loading-spinner` stays on mutation controls only.
+
 ## 5. Enforcement
 
 - Edit-time advisory: `post-edit-angular-ui-mode-advisory.sh` runs `angular-ui-mode.sh check-file` on every

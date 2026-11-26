@@ -91,7 +91,8 @@ Before completing any UI component:
 This skill provides the doctrine; the markup comes from the workspace UI mode (`ui-mode-selection.md` §4). In
 `daisyui` and `hybrid` (where daisyUI owns loading, alerts and toasts) use these daisyUI classes; in `spartan` use
 the Helm equivalents (`hlmSpinner`/`hlmSkeleton`, `hlmAlert`, `hlm-toaster`):
-- Loading: `<span class="loading loading-spinner loading-lg" aria-hidden="true"></span>` inside a `role="status"` container with visible or `sr-only` text
+- Cold load of a known layout: layout-matched `skeleton` (Spartan: `hlmSkeleton`) inside `role="status"` `aria-busy="true"` with one `sr-only` label; skeleton bars `aria-hidden`
+- Short unknown-layout wait or mutation on a control: `<span class="loading loading-spinner loading-lg" aria-hidden="true"></span>` inside a `role="status"` container with visible or `sr-only` text
 - Alert: `class="alert alert-error"` / `class="alert alert-success"`
 - Button loading: `<span class="loading loading-spinner loading-sm">` inside a disabled `btn`
 - Skeleton: `class="skeleton h-4 w-full"`

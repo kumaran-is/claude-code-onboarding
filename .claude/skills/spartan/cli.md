@@ -20,9 +20,11 @@ npx nx g @spartan-ng/cli:init
 ng g @spartan-ng/cli:init
 ```
 
-`components.json` is not written by `init`; it is created on the first `ui` run, which prompts for
+`components.json` is not written by `init`; it is created on the first interactive `ui` run, which prompts for
 the components path (e.g. `libs/ui`), the import alias (default `@spartan-ng/helm`), and on Nx
-whether libraries are buildable and the `generateAs` strategy.
+whether libraries are buildable and the `generateAs` strategy. Non-interactive scaffolds (agents, CI) must
+write `components.json` **before** the first `ui` run (`angular-spa/reference/ui-mode-selection.md` §3);
+without it `ui` exits 0 and writes nothing.
 
 ### `ui`
 

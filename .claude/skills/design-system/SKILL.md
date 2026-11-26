@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: design
   output-format: document
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-26"
 ---
 
 ## Iron Law
@@ -28,6 +28,9 @@ Determine the stack from file context, then load the correct references:
 
 ```
 What are you working on?
+    |
+    +-- Startup idea → Stitch screens → DESIGN.md → prototype → production
+    |   → Load: startup-design-to-code skill; command `/startup-design` (do not skip to /scaffold-*)
     |
     +-- ANY UI task: find and read the project's DESIGN.md first (precedence, gaps, missing file)
     |   → Read: .claude/skills/design-system/reference/design-md-governance.md
@@ -84,7 +87,10 @@ What are you working on?
         |   → Load the accessibility-audit skill (reference/wcag22-checklist.md)
         |
         +-- Visual design direction (anti-patterns, typography philosophy)
-            → Read: .claude/skills/frontend-design/reference/frontend-design-principles.md
+        |   → Read: .claude/skills/frontend-design/reference/frontend-design-principles.md
+        |
+        +-- Mobile UX principles (55 generic rules; brand-free)
+            → Read: .claude/skills/design-system/reference/mobile-ux-principles.md
 ```
 
 ## Before Writing UI — Pre-Flight
@@ -101,6 +107,7 @@ Answer before writing; a "no" means fix the plan first.
 7. Any added chrome, duplicate CTA for a destination already in persistent navigation, or a card nested in a card?
 8. Does motion earn its place? See the "Before you animate" gates in `.claude/skills/flutter-animations/SKILL.md`.
 9. Would this only create churn? If the screen already meets the standard, say so; do not redesign for its own sake.
+10. Does the surface follow the mobile UX checklist ([mobile-ux-principles.md](reference/mobile-ux-principles.md))?
 
 ## Design Rules — Hard Policy (Both Stacks)
 

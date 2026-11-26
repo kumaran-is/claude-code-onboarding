@@ -71,10 +71,10 @@ For every screen/section in the diff, list which of these states can occur and w
 - Exceptions: `ignore-design: <reason>` counts only on the same line or the line above and only with a reason.
 
 ### Refresh, icons and motion (review items)
-- Each remote-read screen in the diff records its refresh strategy (`interaction-contracts.md` §6c). VIOLATION: pull-to-refresh on a form, chat, map, wizard, confirmation/payment screen or desktop web; a gesture as the only refresh path; refresh that skeletons, blanks or resets scroll.
-- Icons: one family per app, imported only by the wrapper (gate `DS-ICON-*`); outline default, filled only for selected; directional glyphs mirror in RTL.
-- Motion: durations/curves from motion tokens; Lottie only decorative and Rive only interactive, each through one wrapper with a static fallback (gate `DS-ANIM`); reduced motion collapses durations and stops loops (`token-governance.md` §3).
-- UX quality (advisory unless it breaks a contract): one dominant primary action per view; no control that does nothing; human copy (no raw enums/IDs); in-progress input survives navigation; one destructive-confirm pattern; status/amount/action text never truncated.
+- Each remote-read screen in the diff records its refresh strategy (`interaction-contracts.md` §6c). Gate `DS-REFRESH` flags `RefreshIndicator` / PTR packages without `refresh-strategy:`. VIOLATION: pull-to-refresh on a form, chat, map, wizard, confirmation/payment screen or desktop web; a gesture as the only refresh path; refresh that skeletons, blanks or resets scroll.
+- Icons: one family per app, imported only by the wrapper; Flutter feature UI uses `AppIcons.*`, not `Icons.*` (gate `DS-ICON-*`); outline default, filled only for selected; directional glyphs mirror in RTL.
+- Motion: durations/curves from motion tokens; Lottie only decorative and Rive only interactive, each through one shared-library wrapper with a static fallback (gate `DS-ANIM`); adding either runtime requires DESIGN.md Motion to name it (`DS-ANIM-DECISION`); reduced motion collapses durations and stops loops (`token-governance.md` §3).
+- UX quality (advisory unless it breaks a contract): one dominant primary action per view; no control that does nothing; human copy (no raw enums/IDs); in-progress input survives navigation; one destructive-confirm pattern; status/amount/action text never truncated. Checklist: `design-system/reference/mobile-ux-principles.md`.
 
 ### Theme Compliance
 - Validate ColorScheme usage

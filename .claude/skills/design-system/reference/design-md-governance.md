@@ -63,7 +63,7 @@ Follow the async-state contract (loading, skeleton, refresh, empty, error, offli
 ## Refresh
 | Screen | Source | Strategy | Accessible equivalent |
 ## Motion
-Native/CSS for everyday motion; Lottie decorative only; Rive interactive only; reduced motion collapses durations.
+Native/CSS for everyday motion (default). Name Lottie and/or Rive here before adding the package; Lottie decorative only; Rive interactive only; reduced motion collapses durations. Gate: `DS-ANIM-DECISION`.
 ## Accessibility
 Contrast ≥ 4.5:1 text / 3:1 large text and UI; targets ≥ 44 px web / 48 dp Flutter; 200% text.
 ## Gap policy

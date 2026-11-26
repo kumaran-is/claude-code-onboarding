@@ -166,7 +166,7 @@ export class [Name]Component {
 | Dropdown | `<div class="dropdown">` |
 | Avatar | `<div class="avatar"><div class="w-12 rounded-full">` |
 | Divider | `<div class="divider">` OR `divide-y divide-base-300` |
-| Loading | `<span class="loading loading-spinner">` |
+| Loading | known layout: `skeleton` / `hlmSkeleton` in `role="status"`; mutation: `<span class="loading loading-spinner">` |
 
 ### Interaction Rules
 ```html

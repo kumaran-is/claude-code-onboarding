@@ -156,6 +156,7 @@ The single source of truth for WHICH servers are approved is `.claude/mcp-allowl
 | `voicemode` (uvx voice-mode) | ⚠️ Elevated | Uses OpenAI STT/TTS — sends audio to external API |
 | `weaviate-docs` (mcp-remote) | ✅ Trusted | Read-only doc fetcher |
 | `stripe` (`.mcp.json`: npx @stripe/mcp) | ⚠️ Deprecated | Local package deprecated by Stripe (no security fixes); hosted mcp.stripe.com (OAuth) is the supported server. Key must come from `env`, not `--api-key` |
+| `stitch` (stitch.googleapis.com/mcp) | ⚠️ Elevated | Official Google Stitch HTTP MCP. API key via `X-Goog-Api-Key: ${STITCH_API_KEY}` (never a literal). Can create/edit designs in the Stitch account that key belongs to. Setup: https://stitch.google.com/docs/mcp/setup |
 | `revenuecat` (mcp.revenuecat.ai) | ✅ Trusted | Official RevenueCat HTTP MCP, OAuth-authenticated, subscription management |
 | `gcp-*`, `firestore`, `cloud-sql-*`, `cloud-storage` (*.googleapis.com/mcp) | ⚠️ Elevated | Google-managed HTTP MCP servers; act with your Google Cloud credentials on any project they reach. Use a non-production project; `cloud-sql-postgres` is the read-only endpoint |
 | `firebase-emulator` (npx firebase-tools@15.37.0 mcp) | ✅ Trusted | Same package as `firebase`, pointed at local emulators (127.0.0.1); use a `demo-*` project id |

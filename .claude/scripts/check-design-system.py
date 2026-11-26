@@ -18,6 +18,8 @@ Checks (rule IDs in the output; the canonical rules live in
   DS-ICON-ISOLATION icon package imported outside the icon wrapper / shared UI library
   DS-ICON-FAMILY    more than one icon family in one app
   DS-ANIM           Lottie/Rive runtime imported outside a shared animation wrapper
+  DS-ANIM-DECISION  Lottie/Rive listed as a dependency but DESIGN.md Motion does not name that engine
+  DS-REFRESH        RefreshIndicator / pull-to-refresh used without a `refresh-strategy:` record
   DS-AUTHORITY      Dart colour literals defined in more than one token root (workspace-wide)
   DS-REDUCED-MOTION daisyUI loading-* indicator in an app whose global stylesheet lacks the reduced-motion override
   DS-SCALE          more than one scale class for the same token family (spacing, radius, motion)
@@ -87,8 +89,6 @@ NG_LIB_EXCLUDE = re.compile(r"(^|/)index\.ts$|\.(model|models|types|tokens|const
 RX_LIB = re.compile(r"(^|/)src/shared/ui/.+\.tsx$")
 RX_LIB_EXCLUDE = re.compile(r"(^|/)index\.tsx$|(^|/)[^/]*(provider|context)[^/]*\.tsx$")
 WRAPPER_NAME = re.compile(r"(^|/)([^/]*[_.-])?(icons?|Icons?)([_.-][^/]*)?\.[a-z]+$")  # whole word: not lexicon_screen
-ANIM_WRAPPER_NAME = re.compile(
-    r"(^|/)([^/]*[_.-])?(anim|animations?|animated|motion|lottie|rive)([_.-][^/]*)?\.[a-z]+$", re.IGNORECASE)  # not driver_screen
 
 # Detectors: (rule, severity, stacks, regex). Stacks: d=dart, w=web markup/style/script.
 NAMED_PALETTE = (
@@ -117,10 +117,10 @@ LINE_RULES: list[tuple[str, str, str, re.Pattern[str], str]] = [
         # a literal passed to a colour-named input/prop: color="#E53935", [color]="'#…'", color={"#…"}
         r"""|\[?\b(colou?r|tone|tint|bg|background|fill|stroke|accent)\w*\]?\s*=\s*[\"'{]\s*[\"'`]?\s*#[0-9a-fA-F]{3,8}\b"""),
      "raw colour or named palette: use a semantic token (bg-primary, text-base-content, var(--color-...))"),
-    # Any quoted string that is exactly a hex colour (status maps, constants, ternaries, camelCase props), except anchors:
-    # '#add' is valid hex, so lines carrying href/fragment/routerLink/id are skipped.
+    # Any quoted string that is exactly a hex colour (status maps, constants, ternaries, camelCase props).
+    # Anchor attribute values (href="#add") are filtered in scan_file; a neighbouring `id` key is not a skip.
     ("DS-COLOR", "error", "w", re.compile(
-        r"""^(?!.*\b(href|fragment|routerLink|xlink:href|id|anchor)\b).*(?<![\w#])[\"'`]#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})[\"'`]"""),
+        r"""(?<![\w#])[\"'`]#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})[\"'`]"""),
      "raw hex colour literal: pass a semantic tone/variant and map it to a token in the shared component"),
     ("DS-SPACING", "error", "w", re.compile(
         r"(^|[\s\"'`:])-?([mp][xytrblse]?|gap(-[xy])?|space-[xy]|inset(-[xy])?)-\[[^\]v][^\]]*\]"
@@ -169,7 +169,9 @@ PRESENTATIONAL = {
         + "|".join(UI_INJECTABLES) + r")\b)[A-Z]\w*\s*[,)]"),
     "react": re.compile(
         r"from\s+['\"](@tanstack/react-query|zustand|@reduxjs/toolkit|react-redux|jotai|swr|axios)['\"/]"
-        r"|from\s+['\"][^'\"]*/(features|store|stores|api)(/|['\"])|\bfetch\(|\buse(Query|Mutation|SuspenseQuery|InfiniteQuery|Store|Selector|Dispatch|Navigate|Params)\("),
+        r"|from\s+['\"][^'\"]*/(features|store|stores|api)(/|['\"])|\bfetch\("
+        r"|\buse(Query|Mutation|SuspenseQuery|InfiniteQuery|Store|Selector|Dispatch|Navigate|Params)\("
+        r"|useContext\(\s*\w*(Store|Auth|Session|Cart|User)Context"),
 }
 
 ICON_PKG = {
@@ -192,6 +194,47 @@ RM_LOADING_OVERRIDE = re.compile(r"prefers-reduced-motion\s*:\s*reduce[^{]*\{[^@
 SCALE_CLASS = re.compile(
     r"^\s*(?:abstract\s+|final\s+|sealed\s+|base\s+)*class\s+(\w*(Spacing|Spacings|Gaps?|Radius|Radii|Motion|Durations)(Tokens)?)\b"
     r"(?!\s+extends\s+ThemeExtension)")
+DART_ICON_LITERAL = re.compile(r"(?<![\w.])(?:Cupertino)?Icons\.\w")
+PTR_USAGE = re.compile(
+    r"\bRefreshIndicator\b|\bCupertinoSliverRefreshControl\b"
+    r"|package:(pull_to_refresh|liquid_pull_to_refresh)/"
+    r"|from\s+['\"](?:react-simple-pull-to-refresh|ngx-pull-to-refresh)['\"]"
+)
+REFRESH_RECORD = re.compile(
+    r"refresh-strategy:\s*(background|automatic|realtime|pull-to-refresh|explicit|none)\b", re.I)
+QUOTED_HEX = re.compile(
+    r"""(?<![\w#])[\"'`]#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})[\"'`]""")
+ANCHOR_ATTR_HEX = re.compile(
+    r"""\b(?:href|fragment|routerLink|xlink:href|id|anchor)\s*=\s*[\"'`]#[0-9a-fA-F]{3,8}[\"'`]""")
+PUBSPEC_ANIM_DEP = re.compile(r"^\s+(lottie|rive)\s*:", re.M)
+NPM_LOTTIE = re.compile(r"^(lottie-web|lottie-react|ngx-lottie|@lottiefiles/.+)$")
+NPM_RIVE = re.compile(r"^(rive-react|@rive-app/.+)$")
+
+
+def quoted_hex_is_only_anchor(line: str) -> bool:
+    """True when every quoted hex on the line is an href/fragment/id/anchor attribute value."""
+    if not QUOTED_HEX.search(line):
+        return False
+    return not QUOTED_HEX.search(ANCHOR_ATTR_HEX.sub("", line))
+
+
+def anim_deps_from_pubspec(text: str) -> set[str]:
+    return {m.group(1).lower() for m in PUBSPEC_ANIM_DEP.finditer(text)}
+
+
+def anim_deps_from_package_json(text: str) -> set[str]:
+    try:
+        pkg = json.loads(text)
+    except ValueError:
+        return set()
+    deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+    found: set[str] = set()
+    for name in deps:
+        if NPM_LOTTIE.match(name):
+            found.add("lottie")
+        if NPM_RIVE.match(name):
+            found.add("rive")
+    return found
 
 
 @dataclass(frozen=True)
@@ -325,6 +368,9 @@ def scan_file(path: Path, rel: str, rel_in_app: str, kind: str) -> tuple[list[Fi
                 if is_css and GLOBAL_STYLESHEET.search(rel_in_app):  # theme variables are token definitions
                     subject = CSS_CUSTOM_PROP_DECL.sub("", line)
             if rx.search(subject) and not exempt(lines, idx):
+                if rule == "DS-COLOR" and not is_dart and "raw hex colour literal" in message \
+                        and quoted_hex_is_only_anchor(line):
+                    continue
                 findings.append(Finding(rel, lineno, rule, severity, message, line))
         if governed and PRESENTATIONAL[("dart" if is_dart else kind)].search(line) and not exempt(lines, idx):
             findings.append(Finding(rel, lineno, "DS-PRESENTATIONAL", "error",
@@ -337,15 +383,25 @@ def scan_file(path: Path, rel: str, rel_in_app: str, kind: str) -> tuple[list[Fi
                 findings.append(Finding(rel, lineno, "DS-ICON-ISOLATION", "error",
                                         "icon package imported in feature code: use the project icon wrapper/registry",
                                         line))
-        if is_dart and re.search(r"(?<![\w.])Icons\.\w", line):
-            families.add("material")
-        if is_dart and re.search(r"\bCupertinoIcons\.\w", line):
-            families.add("cupertino")
+        icon_lit = DART_ICON_LITERAL.search(line) if is_dart else None
+        if icon_lit:
+            families.add("cupertino" if "CupertinoIcons" in icon_lit.group(0) else "material")
+            if not (lib_or_wrapper or WRAPPER_NAME.search(rel) or token_file) and not exempt(lines, idx):
+                findings.append(Finding(rel, lineno, "DS-ICON-ISOLATION", "error",
+                                        "direct Icons.*/CupertinoIcons.* in feature UI: use the project icon wrapper "
+                                        "(ignore-design: for documented framework/system chrome)", line))
         anim = ANIM_PKG[stack].search(line)
-        if anim and not (lib_or_wrapper or ANIM_WRAPPER_NAME.search(rel)) and not exempt(lines, idx):
+        if anim and not lib_or_wrapper and not exempt(lines, idx):
             findings.append(Finding(rel, lineno, "DS-ANIM", "error",
                                     "animation runtime used directly: go through the shared animation wrapper "
                                     "(reduced-motion fallback, lifecycle)", line))
+    if PTR_USAGE.search(text) and not REFRESH_RECORD.search(text):
+        lineno = next((i + 1 for i, l in enumerate(lines) if PTR_USAGE.search(l)), 1)
+        if not exempt(lines, lineno - 1):
+            findings.append(Finding(rel, lineno, "DS-REFRESH", "error",
+                                    "pull-to-refresh used without a refresh-strategy record "
+                                    "(refresh-strategy: background|automatic|realtime|pull-to-refresh|explicit|none)",
+                                    lines[lineno - 1] if lines else ""))
     return findings, families, scales, signals
 
 
@@ -435,6 +491,32 @@ def scan(root: Path, only: list[Path] | None = None) -> tuple[list[Finding], int
                                         f"daisyUI loading indicator ({where}) keeps animating under reduced motion (SMIL "
                                         "in mask-image): add the `.loading` reduced-motion override to the global "
                                         "stylesheet or `motion-reduce:hidden` on the element"))
+        canonical, _ = discover_design_md(root)
+        design_text = ""
+        if canonical is not None:
+            try:
+                design_text = canonical.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                design_text = ""
+        for app_root, kind in roots.items():
+            deps: set[str] = set()
+            try:
+                if kind == "flutter":
+                    pub = app_root / "pubspec.yaml"
+                    if pub.is_file():
+                        deps |= anim_deps_from_pubspec(pub.read_text(encoding="utf-8"))
+                else:
+                    pkg = app_root / "package.json"
+                    if pkg.is_file():
+                        deps |= anim_deps_from_package_json(pkg.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            for engine in sorted(deps):
+                if not re.search(rf"\b{engine}\b", design_text, re.I):
+                    rel_root = app_root.relative_to(root).as_posix() if app_root != root else "."
+                    findings.append(Finding(rel_root, 0, "DS-ANIM-DECISION", "error",
+                                            f"{engine} is a dependency; record it in DESIGN.md Motion "
+                                            "(native/CSS is the default; do not add a runtime as a side effect)"))
     return findings, sum(counts.values()), counts
 
 
@@ -483,6 +565,19 @@ FIXTURES: dict[str, tuple[str, set[str]]] = {
     "app/lib/features/home/lexicon_screen.dart": ("import 'package:phosphor_flutter/phosphor_flutter.dart';\n",
                                                 {"DS-ICON-ISOLATION"}),
     "app/lib/features/home/app_icons_registry.dart": ("import 'package:phosphor_flutter/phosphor_flutter.dart';\n", set()),
+    "app/lib/features/home/delete_screen.dart": ("Widget build(c) => Icon(Icons.delete);\n", {"DS-ICON-ISOLATION"}),
+    "app/lib/features/home/date_chrome.dart": (
+        "Icon(Icons.calendar_today); // ignore-design: Material date-picker chrome uses Icons\n", set()),
+    "app/lib/features/home/celebration_animation.dart": ("import 'package:lottie/lottie.dart';\n", {"DS-ANIM"}),
+    "app/lib/features/feed/feed_screen.dart": (
+        "Widget build(c) => RefreshIndicator(onRefresh: r, child: list);\n", {"DS-REFRESH"}),
+    "app/lib/features/feed/news_screen.dart": (
+        "// refresh-strategy: pull-to-refresh\nWidget build(c) => RefreshIndicator(onRefresh: r, child: list);\n",
+        set()),
+    "app/lib/features/feed/static_screen.dart": (
+        "// refresh-strategy: background\nWidget build(c) => ListView();\n", set()),
+    "rive_app/pubspec.yaml": ("name: rive_app\ndependencies:\n  rive: 0.13.0\n", set()),
+    "rive_app/lib/main.dart": ("void main() {}\n", set()),
     # a second colour authority next to design_system/ (project-level DS-AUTHORITY; the file itself is a token file)
     "app/lib/theme/brand_colors.dart": ("const brand = Color(0xFF0A0B0C);\n", set()),
     "app/lib/features/promo/theme/promo_colors.dart": ("const c = Color(0xFF112233);\n", {"DS-COLOR"}),
@@ -572,6 +667,16 @@ FIXTURES: dict[str, tuple[str, set[str]]] = {
         "export const A = () => <a href=\"#add\">Add</a>;\n", {"DS-COLOR"}),
     "site/src/features/orders/anchors.tsx": (
         "export const A = () => <><a href=\"#add\">Add</a><Link fragment=\"#bad\" /></>;\n", set()),
+    "site/src/features/orders/id-hex.ts": ("export const late = { id: 1, hex: '#E53935' };\n", {"DS-COLOR"}),
+    "site/src/features/orders/anchor-id.tsx": ("export const A = () => <a href=\"#add\" id=\"feed\">Add</a>;\n", set()),
+    "site/src/shared/ui/cart-icon.tsx": (
+        "// Tier: Atom\nexport const C = () => { const cart = useContext(CartContext); };\n", {"DS-PRESENTATIONAL"}),
+    "site/src/shared/ui/mode-toggle.tsx": (
+        "// Tier: Atom\nexport const T = () => { const t = useContext(ThemeContext); };\n", set()),
+    "site/src/features/orders/ptr.tsx": (
+        "import PullToRefresh from 'react-simple-pull-to-refresh';\nexport const P = () => null;\n", {"DS-REFRESH"}),
+    "site/src/features/orders/ptr-ok.tsx": (
+        "// refresh-strategy: pull-to-refresh\nimport PullToRefresh from 'react-simple-pull-to-refresh';\n", set()),
     "web/src/app/features/orders/card-radius.css": (".card { border-radius: 13px; }\n", {"DS-SHAPE"}),
     "site/src/index.css": (":root {\n  --background: oklch(1 0 0);\n}\n.dark { --background: oklch(0.145 0 0); }\n"
                            "@media (prefers-reduced-motion: reduce) {\n  .loading { mask-image: none; }\n}\n", set()),
@@ -579,7 +684,8 @@ FIXTURES: dict[str, tuple[str, set[str]]] = {
         'export const B = () => <><StatusBadge color={"#E53935"} /><span className="loading loading-dots" />'
         '<div className="rounded-[13px]" /></>;\n', {"DS-COLOR", "DS-SHAPE"}),
 }
-PROJECT_EXPECTED = {("app", "DS-ICON-FAMILY"), (".", "DS-SCALE"), (".", "DS-AUTHORITY"), ("web", "DS-REDUCED-MOTION")}
+PROJECT_EXPECTED = {("app", "DS-ICON-FAMILY"), (".", "DS-SCALE"), (".", "DS-AUTHORITY"), ("web", "DS-REDUCED-MOTION"),
+                    ("rive_app", "DS-ANIM-DECISION")}
 
 
 def selftest(verbose: bool) -> int:
@@ -617,11 +723,22 @@ def selftest(verbose: bool) -> int:
         canonical, _ = discover_design_md(tmp)
         if canonical is not None:
             failures.append(f"DESIGN.md discovery: expected none, got {canonical}")
-        (tmp / "DESIGN.md").write_text("# Design\n", encoding="utf-8")
+        (tmp / "DESIGN.md").write_text("# Design\n## Motion\nNative/CSS; Lottie decorative only.\n", encoding="utf-8")
         (tmp / "app" / "DESIGN.md").write_text("# Copy\n", encoding="utf-8")
         canonical, others = discover_design_md(tmp)
         if canonical != tmp / "DESIGN.md" or others != [tmp / "app" / "DESIGN.md"]:
             failures.append(f"DESIGN.md discovery: got canonical={canonical} others={others}")
+        (tmp / "lottie_app" / "pubspec.yaml").parent.mkdir(parents=True, exist_ok=True)
+        (tmp / "lottie_app" / "pubspec.yaml").write_text("name: lottie_app\ndependencies:\n  lottie: 3.0.0\n",
+                                                         encoding="utf-8")
+        (tmp / "lottie_app" / "lib").mkdir(parents=True, exist_ok=True)
+        (tmp / "lottie_app" / "lib" / "main.dart").write_text("void main() {}\n", encoding="utf-8")
+        named, _, _ = scan(tmp)
+        anim_dec = {(f.path, f.rule) for f in named if f.rule == "DS-ANIM-DECISION"}
+        if ("lottie_app", "DS-ANIM-DECISION") in anim_dec:
+            failures.append("lottie named in DESIGN.md Motion must not raise DS-ANIM-DECISION")
+        if ("rive_app", "DS-ANIM-DECISION") not in anim_dec:
+            failures.append("rive dependency without a DESIGN.md Motion mention must raise DS-ANIM-DECISION")
         if verbose:
             print(f"  scanned {scanned} of {expected_files} fixture files, {len(findings)} findings")
     finally:

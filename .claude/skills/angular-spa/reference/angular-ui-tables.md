@@ -183,8 +183,13 @@ export class OrdersApi {
         <button type="button" class="btn btn-sm" (click)="orders.reload()">Try again</button>
       </div>
     } @else if (!orders.hasValue()) {
-      <div class="flex justify-center p-8" role="status" aria-label="Loading orders">
-        <span class="loading loading-spinner loading-lg"></span>
+      <div role="status" aria-busy="true">
+        <span class="sr-only">Loading orders</span>
+        <div class="flex flex-col gap-3 p-4" aria-hidden="true">
+          <div class="skeleton h-10 w-full"></div>
+          <div class="skeleton h-10 w-full"></div>
+          <div class="skeleton h-10 w-2/3"></div>
+        </div>
       </div>
     } @else {
       <div class="overflow-x-auto rounded-box border border-base-300">

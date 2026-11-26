@@ -220,7 +220,7 @@ The smart container (screen, route component, feature hook) owns the fetch, the 
 
 ## 6c. Refresh Strategy Decision Record
 
-Every screen that reads remote data records its refresh strategy (in the screen's doc comment, the feature README or the project's DESIGN.md screen table). No strategy is added "by default"; pull-to-refresh is never a default wrapper.
+Every screen that reads remote data records its refresh strategy (in the screen's doc comment, the feature README or the project's DESIGN.md screen table). No strategy is added "by default"; pull-to-refresh is never a default wrapper. Gate rule `DS-REFRESH`: a file that uses `RefreshIndicator`, `CupertinoSliverRefreshControl` or a pull-to-refresh package must contain `refresh-strategy:` plus one of the six names below. A screen with no pull-to-refresh control is not a finding.
 
 | Strategy | Use when | Not when |
 |---|---|---|

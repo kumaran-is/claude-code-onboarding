@@ -122,7 +122,7 @@ A non-zero exit is a failed step: report it, fix the cause, never continue as if
    npm exec --no -- ng generate guard core/auth/signed-in --implements CanActivate   # functional CanActivateFn (default)
    npm exec --no -- ng generate service features/dashboard/dashboard-api
    npm exec --no -- ng generate component features/dashboard/dashboard-page
-   npm exec --no -- ng generate component features/auth/sign-in-page
+   npm exec --no -- ng generate component features/auth/login   # class Login, route /login (web-security.md); not *-page
    npm exec --no -- ng generate component features/not-found/not-found-page
    ```
    Generated conventions (22.3): `dashboard-page.ts/.html/.css/.spec.ts` in its own folder, class `DashboardPage`;
@@ -152,14 +152,16 @@ interface. Replace every placeholder before step 12 — never ship them.
    receive credentials. No zone provider.
 6. **Auth** — fill the generated `authInterceptor` (allow-listed origins only, single-flight refresh, one retry,
    no refresh on 403), `AuthSession` (in-memory token, HttpOnly refresh cookie), `signedInGuard`
-   (waits for session restore, returns a `UrlTree` to sign-in with a safe `returnUrl`) from
+   (waits for session restore, returns a `UrlTree` to `/login` with a safe `returnUrl`) from
    `reference/web-security.md`. No tokens in `localStorage`. Comment that guards are UX and the API authorizes.
 7. **Typed error model + logger** — fill `core/http/api-error.ts` (`ApiError`, `toApiError`) and
    `core/logging/logger.ts` from `angular-ui-patterns/reference/error-handling.md`. No `console.*` elsewhere.
 8. **Dashboard feature** — components from the mode's owner (`ui-mode-selection.md` §4). Fill `DashboardApi` (typed, errors propagate) and `DashboardPage`, which reads it
    with `rxResource` or `httpResource` (stable in v22; read `value()` only after `hasValue()`) and renders **four states**:
-   loading (`role="status"`), empty, error (`role="alert"`, message from `ApiError.kind`, retry except for
-   401/403) and success. When the backend is absent the page shows the **error state with retry** —
+   cold loading (layout-matched skeleton, `role="status"` `aria-busy="true"`, one visually hidden label, skeleton
+   bars `aria-hidden`; Spartan: `hlmSkeleton` rows; daisyUI/hybrid: `skeleton` classes — not a page spinner), empty,
+   error (`role="alert"`, message from `ApiError.kind`, retry except for
+   401/403) and success. Inline spinners stay on mutation controls only. When the backend is absent the page shows the **error state with retry** —
    never fallback, static or mock data. Under `ng serve` an absent `/api/*` answers `GET` with
    `index.html` (200, `text/html`), so the UI error is a JSON parse failure (`HttpErrorResponse` status 200), not
    a 404: unit tests drive 403/5xx/status 0 with `HttpTestingController`, and an E2E check against the real dev

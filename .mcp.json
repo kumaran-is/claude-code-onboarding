@@ -339,6 +339,16 @@
       "description": "Google Play Developer API MCP (tracks, releases, reviews). Uses a service-account credential configured outside this file; grant it the least Play Console permissions needed.",
       "disabled": false,
       "timeout": 60000
+    },
+    "stitch": {
+      "type": "http",
+      "disabled": false,
+      "url": "https://stitch.googleapis.com/mcp",
+      "headers": {
+        "X-Goog-Api-Key": "${STITCH_API_KEY}"
+      },
+      "timeout": 60000,
+      "description": "Google Stitch remote MCP (https://stitch.google.com/docs/mcp/setup). Create an API key in Stitch Settings and export STITCH_API_KEY; if the variable is unset the header is empty and the server rejects it. Never commit the key."
     }
   }
 }

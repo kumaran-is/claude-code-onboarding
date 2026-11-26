@@ -127,6 +127,8 @@ CASES = {
         (True, "/w/web/src/app/shared/components/fetcher/fetcher.component.ts", "import { HttpClient } from '@angular/common/http';\n"),
         # React shared badge importing a global store / fetching
         (True, f"{RX}/shared/ui/cart-badge.tsx", "import { useCartStore } from '@/features/cart/store';\n"),
+        (True, f"{RX}/shared/ui/cart-icon.tsx", "const cart = useContext(CartContext);\n"),
+        (False, f"{RX}/shared/ui/mode-toggle.tsx", "const theme = useContext(ThemeContext);\n"),
         (True, f"{RX}/shared/ui/user-chip.tsx", "const q = useQuery({ queryKey: ['u'] });\n"),
         # Dumb button with isBusy/tone/onPressed, and smart containers outside the library
         (False, "/w/packages/shared_ui/lib/components/primary_button.dart", "// Tier: Atom\nfinal bool isBusy;\nfinal ButtonTone tone;\nfinal VoidCallback? onPressed;\n"),

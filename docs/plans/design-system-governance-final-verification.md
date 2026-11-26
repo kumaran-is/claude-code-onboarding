@@ -396,3 +396,41 @@ I applied the same rules: my only repo write is this report, and every probe ran
      - mobile UX principles (F13);
      - hook/gate drift (F11).
   3. Further P2 follow-ups: F1r, F2r, F3r, F6, F7. Plus the P3s.
+
+---
+
+## 8. P2 close-gaps round (2026-11-26)
+
+Implementer notes (independent review follows). Durable matrix: [`design-system-requirements-matrix.md`](design-system-requirements-matrix.md). No commit/push this round. Property Harbor untouched. Always-loaded budget unchanged at 60,342 / 62,000.
+
+### Commands
+| Command | Exit | Result |
+|---|---|---|
+| `check-design-system.py --selftest` | 0 | 66/70 fixtures, 66 findings |
+| `hookify/tests/test_rules.py` | 0 | 11 rules; presentational 10 positive / 8 negative (adds `useContext(CartContext)` / `ThemeContext`) |
+| `check-context-budget.sh --strict` | 0 | 60342 ≤ 62000, 22/22 canaries |
+| `lint-skills.sh` | 0 | 167 passed |
+| `check-doc-refs.sh` | 0 | 0 violations |
+| mutation: quoted-hex / Icons.* / useContext / DS-REFRESH / DS-ANIM path / DS-ANIM-DECISION / anchor skip | 2 each | selftest fails when the detector is removed |
+| Flutter 3.50 scaffold | — | local SDK 3.44.2 | BLOCKED |
+| Maestro | — | 2.11.0 installed; 0 booted simulators | BLOCKED |
+| Spartan/hybrid Playwright | — | prior disposable apps gone; not re-scaffolded this round | NOT RUN |
+
+### P2 outcomes
+| ID | Outcome | Evidence |
+|---|---|---|
+| F12 Spartan/hybrid skeletons | **FIXED in templates** | `scaffold-angular-app.md` step 8; `angular-templates.md`; `ui-mode-selection.md` hlmSkeleton; `smart-dumb-components.md`; `angular-ui-tables.md`. Runtime re-scaffold NOT RUN |
+| F8 refresh record | **FIXED** | `DS-REFRESH`; fixtures `feed_screen.dart` / `ptr.tsx` fail, `news_screen.dart` / `static_screen.dart` / `ptr-ok.tsx` clean |
+| F9 animation decision | **FIXED** | `DS-ANIM-DECISION`; `celebration_animation.dart` now `DS-ANIM`; lottie named in DESIGN.md is clean |
+| F5 Flutter `Icons.*` | **FIXED** | `delete_screen.dart` → `DS-ICON-ISOLATION`; `date_chrome.dart` ignore-design clean; `AppIcons` snippet in `flutter-templates.md` |
+| F6 React `useContext` | **FIXED** (targeted) | `cart-icon.tsx` `useContext(CartContext)` → `DS-PRESENTATIONAL`; `mode-toggle.tsx` `ThemeContext` clean. Residual: custom data hooks, Flutter repo outside `features/` |
+| F2r hex `id` skip | **FIXED** | `id-hex.ts` `{ id: 1, hex: '#E53935' }` → `DS-COLOR`; `href="#add"` / `id="feed"` clean |
+| F13 55 UX principles | **FIXED** | `mobile-ux-principles.md`; 13 missing stated; SKILL pre-flight item 10 |
+| Angular scaffold #3/#4 | **partial fix** | `sign-in-page` generate path aligned to `features/auth/login` matching `web-security.md` `/login`. `users` vs `dashboard` sample routes documented as two examples. `components.json` non-interactive wording fixed in `spartan/cli.md`. Hybrid ownership table left as the contract |
+
+### Independent audit (this round)
+A fresh `design-system-reviewer` re-read the files and re-ran selftest, hookify tests, the context budget, `flutter --version`, and `xcrun simctl list devices booted`. After unused `ANIM_WRAPPER_NAME` was removed, selftest stayed PASS (66/70 fixtures, 66 findings). Mutations of the six new/changed detectors each made `--selftest` exit 2. Auditor statuses: F2r, F5, F6 (targeted), F8, F9, F12 templates, F13 **PASS**; Angular login vs `*-page` **PARTIAL** (documented as matching `web-security.md` `/login`); Flutter 3.50 **BLOCKED** (3.44.2); Maestro **BLOCKED** (0 booted simulators). No P0/P1 opened. Matrix DS-R1/DS-R16 source cells were rewritten so this round’s docs do not introduce product names.
+
+### Verdict
+- **Toolkit:** READY for the P2 items that the in-repo gate and templates can enforce. P0/P1 remain closed.
+- **Merge:** NEEDS_REVIEW. Flutter 3.50 BLOCKED, Maestro BLOCKED, Spartan/hybrid device/runtime re-proof NOT RUN.

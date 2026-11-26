@@ -36,7 +36,23 @@ color_tokens.dart  →  app_color_scheme.dart  →  app_theme_extension.dart  �
 - Widget code: `Theme.of(context).colorScheme.*` for M3 semantic colors
 - Widget code: `AppSpacing.lg` for spacing, `AppRadius.md` for corners — never raw `16.0`. One scale per token family: a second spacing/radius/motion class is a blocking finding (`check-design-system.py` DS-SCALE)
 - Widget code: `Theme.of(context).textTheme.*` for typography
+- Feature UI: `AppIcons.delete`, never `Icon(Icons.delete)` (`DS-ICON-ISOLATION`). The registry is the only file that mentions `Icons.*` / `CupertinoIcons.*`
 - Never add `examples/` or `demo/` files under `lib/` — they ship in the production build
+
+`lib/design_system/components/icons/app_icons.dart` (the wrapper; line-1 tier; this file may call `Icons.*`):
+
+```dart
+// Tier: Atom
+import 'package:material_ui/material_ui.dart';
+
+abstract final class AppIcons {
+  static const IconData add = Icons.add;
+  static const IconData delete = Icons.delete;
+  static const IconData back = Icons.arrow_back;
+}
+```
+
+Feature code: `Icon(AppIcons.add, semanticLabel: l10n.addUser)`. Framework/system chrome that must call `Icons.*` outside the wrapper: `ignore-design: Material date-picker chrome uses Icons`.
 
 ## pubspec.yaml Essentials
 
@@ -441,7 +457,7 @@ class UserListScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.go('/users/new'),
-        child: const Icon(Icons.add),
+        child: const Icon(AppIcons.add),
       ),
     );
   }

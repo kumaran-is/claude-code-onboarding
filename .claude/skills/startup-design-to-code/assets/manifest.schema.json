@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "startup-design-manifest.schema.json",
+  "title": "Startup design-to-code workflow manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "idea", "product_slug", "current_stage", "stages", "artifacts", "decisions", "stitch", "mcp_evidence"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "idea": { "type": "string", "minLength": 8 },
+    "product_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}$" },
+    "current_stage": {
+      "type": "string",
+      "enum": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"]
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["G0", "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"],
+      "properties": {
+        "G0": { "$ref": "#/$defs/stage" },
+        "G1": { "$ref": "#/$defs/stage" },
+        "G2": { "$ref": "#/$defs/stage" },
+        "G3": { "$ref": "#/$defs/stage" },
+        "G4": { "$ref": "#/$defs/stage" },
+        "G5": { "$ref": "#/$defs/stage" },
+        "G6": { "$ref": "#/$defs/stage" },
+        "G7": { "$ref": "#/$defs/stage" },
+        "G8": { "$ref": "#/$defs/stage" },
+        "G9": { "$ref": "#/$defs/stage" },
+        "G10": { "$ref": "#/$defs/stage" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "decisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["g5", "platform", "angular_ui_mode", "production_approved"],
+      "properties": {
+        "g5": { "type": ["string", "null"], "enum": ["PROCEED", "ITERATE", "STOP", null] },
+        "platform": { "type": ["string", "null"], "enum": ["flutter", "angular", "react", null] },
+        "angular_ui_mode": { "type": ["string", "null"], "enum": ["daisyui", "spartan", "hybrid", null] },
+        "production_approved": { "type": "boolean" },
+        "production_approved_by": { "type": ["string", "null"] },
+        "production_approved_at": { "type": ["string", "null"] }
+      }
+    },
+    "stitch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["server_name", "tools_discovered", "project_id", "screens"],
+      "properties": {
+        "server_name": { "type": ["string", "null"] },
+        "tools_discovered": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "project_id": { "type": ["string", "null"] },
+        "screens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "status"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "status": { "type": "string", "enum": ["draft", "variant", "approved", "discarded"] },
+              "device": { "type": ["string", "null"] },
+              "journey": { "type": ["string", "null"] },
+              "version": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "mcp_evidence": { "type": "string", "enum": ["none", "discovered", "mocked"] }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["NOT_RUN", "IN_PROGRESS", "PASS", "FAIL", "BLOCKED"] },
+        "updated": { "type": ["string", "null"] },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

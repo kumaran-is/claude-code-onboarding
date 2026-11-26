@@ -40,7 +40,7 @@ Enforced by: hookify `design-tier-comment-{dart,angular,react}` (on full-file wr
 | Talks via | passes values and semantic enums down, handles callbacks | inputs/props in, callbacks/outputs out |
 | Flutter | `ConsumerWidget`, `ref.watch` | `StatelessWidget` (or `StatefulWidget` for local UI state); no `ref`, repositories, `features/` imports |
 | Angular | route component, `inject(SomeService)`, `resource()` | signal `input()` / `output()` / `model()`; may inject DOM-level tokens (`ElementRef`, `DestroyRef`), never services, stores, `HttpClient`, `Router` |
-| React | route component or feature hook, TanStack Query, stores | props and callbacks only; no query hooks, global stores, `fetch`, `features/` imports |
+| React | route component or feature hook, TanStack Query, stores | props and callbacks only; no query hooks, global stores, `useContext(CartContext)` / `AuthContext` / `*StoreContext`, `fetch`, `features/` imports. `useContext(ThemeContext)` and a context defined next to the component (or in a `*provider*`/`*context*` file) are allowed |
 
 Semantics flow down as **tone/variant enums**, never colours: the dumb component maps `tone → colour token` in ONE exhaustive switch. A presentational component that needs an ambient value (connectivity, freshness) gets it as an input from a smart host that ships in the same change. Above ~6 content parameters use slots (`child`/`ng-content`/`children`) and move advanced options into a config object.
 
@@ -53,7 +53,8 @@ Enforced by: hookify `design-presentational-imports` (write-time advisory) and `
 | Dumb button with `isBusy` / `tone` / `onPressed` and token spacing | PASS |
 | Dumb component doing HTTP (`HttpClient`, `fetch`, `dio`) | FAIL `DS-PRESENTATIONAL` |
 | Angular presentational component with `inject(OrderService)` | FAIL `DS-PRESENTATIONAL` |
-| React shared badge importing a global store (`@/features/cart/store`, `zustand`) | FAIL `DS-PRESENTATIONAL` |
+| React shared badge importing a global store (`@/features/cart/store`, `zustand`) or `useContext(CartContext)` | FAIL `DS-PRESENTATIONAL` |
+| React shared toggle using `useContext(ThemeContext)` | PASS |
 | Flutter shared atom importing a feature repository | FAIL `DS-PRESENTATIONAL` |
 | Smart container passing a semantic status (`StatusBadge(tone: StatusTone.warning, …)`) | PASS |
 | Raw hex passed for a business status (`StatusBadge(color: Color(0xFFE53935))`) | FLAG `DS-COLOR` |

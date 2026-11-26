@@ -71,7 +71,14 @@ import { UserQuery, UsersApi } from './users-api';
         <button type="button" class="btn btn-sm" (click)="users.reload()">Try again</button>
       </div>
     } @else if (!users.hasValue()) {
-      <p role="status"><span class="loading loading-spinner" aria-hidden="true"></span> Loading users…</p>
+      <div role="status" aria-busy="true">
+        <span class="sr-only">Loading users</span>
+        <div class="flex flex-col gap-3" aria-hidden="true">
+          <div class="skeleton h-12 w-full"></div>
+          <div class="skeleton h-12 w-full"></div>
+          <div class="skeleton h-12 w-3/4"></div>
+        </div>
+      </div>
     } @else {
       <ul class="list">
         @for (user of users.value().items; track user.id) {

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "idea": "",
+  "product_slug": "untitled",
+  "current_stage": "G0",
+  "stages": {
+    "G0": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G1": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G2": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G3": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G4": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G5": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G6": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G7": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G8": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G9": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null },
+    "G10": { "status": "NOT_RUN", "updated": null, "evidence": [], "reason": null }
+  },
+  "artifacts": {
+    "product_brief": "PRODUCT_BRIEF.md",
+    "journeys": "USER_JOURNEYS.md",
+    "validation_plan": "VALIDATION_PLAN.md",
+    "design_md": "DESIGN.md",
+    "screen_inventory": "docs/screen-inventory.md",
+    "prototype": "design/prototype/index.html",
+    "manifest": ".startup-design/manifest.json"
+  },
+  "decisions": {
+    "g5": null,
+    "platform": null,
+    "angular_ui_mode": null,
+    "production_approved": false,
+    "production_approved_by": null,
+    "production_approved_at": null
+  },
+  "stitch": {
+    "server_name": null,
+    "tools_discovered": [],
+    "project_id": null,
+    "screens": []
+  },
+  "mcp_evidence": "none"
+}

@@ -63,14 +63,13 @@ Is this component reused in 2+ places OR is it a leaf UI element?
 import { Component, inject } from '@angular/core';
 import { resource } from '@angular/core';
 import { ItemCardComponent } from '../../shared/components/item-card/item-card.component';
-import { LoadingSpinnerComponent } from '../../shared/components/loading-spinner/loading-spinner.component';
 import { ErrorStateComponent } from '../../shared/components/error-state/error-state.component';
 import { ItemService } from '../../core/services/item.service';
 import { Item } from '../../shared/models/item.model';
 
 @Component({
   selector: 'app-items-page',
-  imports: [ItemCardComponent, LoadingSpinnerComponent, ErrorStateComponent],
+  imports: [ItemCardComponent, ErrorStateComponent],
   template: `
     <!-- error → hasValue → loading: a reload after an error keeps showing the error, not a bare spinner -->
     @if (itemsResource.error(); as err) {
@@ -85,7 +84,14 @@ import { Item } from '../../shared/models/item.model';
         }
       </div>
     } @else {
-      <app-loading-spinner />
+      <div role="status" aria-busy="true">
+        <span class="sr-only">Loading items</span>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-hidden="true">
+          <div class="skeleton h-32 w-full"></div>
+          <div class="skeleton h-32 w-full"></div>
+          <div class="skeleton h-32 w-full"></div>
+        </div>
+      </div>
     }
   `,
 })

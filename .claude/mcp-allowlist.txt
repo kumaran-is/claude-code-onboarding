@@ -26,6 +26,7 @@ mobile-mcp
 postgres
 revenuecat
 spartan-ui
+stitch
 stripe
 terraform
 voicemode

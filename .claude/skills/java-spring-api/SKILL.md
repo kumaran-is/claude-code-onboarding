@@ -153,6 +153,7 @@ If Context7 is unavailable, say so and use the sources above; never fill gaps fr
 - MVC: no remote calls inside a `@Transactional` method (holds a DB connection during network I/O); `spring.jpa.open-in-view=false`
 - WebFlux: no `.block()` / `.toFuture().get()` / blocking I/O on event-loop threads; no JPA; isolate unavoidable blocking calls on `Schedulers.boundedElastic()` and prove the rest with BlockHound
 - No unbounded retries; retry only idempotent operations and only on 5xx / I/O errors
+- User-facing notifications: every writer of the field stages the event; never resend when provider acceptance is unknown (`python-dev/reference/notification-producer-and-channel.md`)
 - No secrets in `application.properties`: environment variables, no defaults for keys and passwords
 
 ## Post-Code Review

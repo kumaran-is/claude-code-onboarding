@@ -18,11 +18,13 @@ Invokes the `tdd-guide` agent to enforce Red-Green-Refactor methodology on the c
 
 When `/tdd` is invoked, the `tdd-guide` agent:
 
-1. **Identifies the feature/behavior** to be tested
-2. **Writes the failing test (RED)** — the test must fail before any implementation
-3. **Writes minimum implementation (GREEN)** — just enough to pass
-4. **Refactors (REFACTOR)** — clean up without changing behavior
+1. **Identifies the feature/behavior** to be tested (skip TDD for config/rename/docs/generated — `first-principles.md` Layer 2)
+2. **Writes the failing test (RED)** — run the **stack** command; classify with `python3 .claude/skills/test-driven-development/scripts/check-tdd-evidence.py --classify <log>`. RED counts only for the **expected behavioral reason**. Compile, configuration, and environment failures are not RED.
+3. **Writes minimum implementation (GREEN)** — just enough to pass; re-run the same command
+4. **Refactors (REFACTOR)** — clean up without changing approved behavior; run relevant regression (`/verify`, `/test-partner` when user-visible)
 5. **Verifies coverage** — runs coverage report, flags gaps
+
+Flutter Android/iOS UI/E2E is **Maestro**, never Playwright. Web E2E is Playwright. Do not delete a working diff to restart the cycle.
 
 ## DO / DON'T
 
@@ -46,6 +48,7 @@ When `/tdd` is invoked, the `tdd-guide` agent:
 |-----------|----------|
 | Test runner binary not found (`mvnw`, `flutter`, `pytest`, `npm`) | Report "BUILD TOOL NOT FOUND — install [tool] or run from project root" |
 | Test passes immediately without implementation (RED phase fails) | "⚠️ Test did not fail first — diagnose before proceeding. The behavior may already exist or the test assertion is wrong." |
+| RED log classifies as compile / configuration / environment | Not a behavioral failure. Fix the toolchain or the test discovery, then re-run RED. |
 | Refactor-only task (no new behavior) | Skip RED phase — run existing tests before and after. No new tests required. |
 | Config/rename change | Run existing tests only — no new tests required per first-principles.md |
 

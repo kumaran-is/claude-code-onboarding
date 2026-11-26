@@ -20,7 +20,7 @@ Never claim a web UI flow works without running it in a real browser and showing
 
 # Browser Testing (web targets)
 
-> **Scope:** web targets only — Angular, React, marketing sites, any served site, or a Flutter **web** build (which says nothing about the Android/iOS app). Flutter Android/iOS UI/E2E uses Maestro CLI/MCP (`.claude/rules/testing-tool-selection.md`); never route a Flutter mobile app here, and never substitute a browser when Maestro or a device is unavailable (report BLOCKED / NOT RUN).
+> **Scope:** web targets only — Angular, React, marketing sites, any served site, or a Flutter **web** build (which says nothing about the Android/iOS app). Flutter Android/iOS UI/E2E uses Maestro CLI/MCP (`.claude/rules/testing-tool-selection.md`); never route a Flutter mobile app here, and never substitute a browser when Maestro or a device is unavailable (report BLOCKED / NOT RUN). Paired manual QA with a human on a device or browser is `/test-partner` (this skill stays scripted Playwright / Chrome DevTools MCP).
 
 ## Which tool
 

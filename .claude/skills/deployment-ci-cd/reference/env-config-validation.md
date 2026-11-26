@@ -251,7 +251,7 @@ non-production project available to the test environment).
 
 ## .env.example Template
 
-Keep it in parity with what the code reads, presence only (it never opens `.env`): `python3 .claude/scripts/check_env_parity.py <service root>` fails on a key read via `os.environ[...]`, `process.env.X`, a required `BaseSettings` field or a compose `${VAR}` that `.env.example` lacks, and warns on example keys nothing reads. Exit 2 (no `.env.example`) is BLOCKED, not clean.
+Keep it in parity with what the code reads, presence only (it never opens `.env`). Per-service: `python3 .claude/scripts/check_env_parity.py <service root>`. **Aggregate** (compose defaults, Terraform / dart-define keys, local/staging/production *example* key-set identity, plus that presence check): `python3 .claude/scripts/check-infra-env-ssot.py --root .` — call this from `/verify` and CI; do not inline the sub-scripts in a new Makefile target. Exit 2 = nothing to compare (NOT APPLICABLE), never PASS. Missing Docker or Terraform is not a FAIL.
 
 ```bash
 # Required — app will not start without these

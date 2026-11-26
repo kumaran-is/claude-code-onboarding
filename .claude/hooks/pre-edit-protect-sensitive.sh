@@ -41,6 +41,57 @@ selftest() {
 /repo/src/environment.ts|0|
 /repo/docs/keys.md|0|
 EOF_CASES
+  # Quality-config weakening: semantic (not a blanket ban). Uses a real temp tree so
+  # Write/Edit reconstruction can diff against disk.
+  local tmp qout qrc script
+  script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/check-quality-config-weakening.py"
+  if ! command -v python3 >/dev/null 2>&1; then echo "  FAIL python3 required for quality-config selftest"; return 1; fi
+  python3 "$script" --selftest >/dev/null || { echo "  FAIL check-quality-config-weakening.py --selftest"; fail=1; }
+  tmp=$(mktemp -d) || return 1
+  mkdir -p "$tmp/src" "$tmp/.github/workflows"
+  printf '%s\n' "rules: { 'no-unused-vars': 'error' }" > "$tmp/eslint.config.js"
+  printf '%s\n' '{ "compilerOptions": { "strict": true, "skipLibCheck": false } }' > "$tmp/tsconfig.json"
+  printf '%s\n' "run: npm test" > "$tmp/.github/workflows/ci.yml"
+  printf '%s\n' "export const x = 1;" > "$tmp/src/app.ts"
+
+  qout=$(jq -n --arg f "$tmp/eslint.config.js" --arg c "rules: { 'no-unused-vars': 'off' }" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 2 ] && printf '%s' "$qout" | grep -q 'quality-config weakening'; then
+    echo "  ok   positive: eslint severity drop is blocked"
+  else echo "  FAIL eslint weaken: exit $qrc $qout"; fail=1; fi
+
+  qout=$(jq -n --arg f "$tmp/eslint.config.js" --arg c "rules: { 'no-unused-vars': 'error', 'eqeqeq': 'error' }" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 0 ] && [ -z "$qout" ]; then
+    echo "  ok   negative: eslint strengthening is allowed"
+  else echo "  FAIL eslint strengthen: exit $qrc $qout"; fail=1; fi
+
+  qout=$(jq -n --arg f "$tmp/eslint.config.js" --arg c "rules: { 'no-unused-vars': 'off' }
+// quality-config-exception: temporary waiver while the unused-vars baseline is rebuilt for the parser" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 0 ]; then
+    echo "  ok   positive: auditable quality-config-exception allows the weaken"
+  else echo "  FAIL exception: exit $qrc $qout"; fail=1; fi
+
+  qout=$(jq -n --arg f "$tmp/tsconfig.json" --arg old '"strict": true' --arg new '"strict": false' '{tool_name:"Edit",tool_input:{file_path:$f,old_string:$old,new_string:$new}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 2 ] && printf '%s' "$qout" | grep -q 'strict flag off'; then
+    echo "  ok   positive: Edit tsconfig strict:false is blocked"
+  else echo "  FAIL tsconfig edit: exit $qrc $qout"; fail=1; fi
+
+  qout=$(jq -n --arg f "$tmp/.github/workflows/ci.yml" --arg c "run: npm test || true" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 2 ] && printf '%s' "$qout" | grep -q '|| true'; then
+    echo "  ok   positive: CI quality || true is blocked"
+  else echo "  FAIL ci pipe: exit $qrc $qout"; fail=1; fi
+
+  qout=$(jq -n --arg f "$tmp/src/app.ts" --arg c "export const x = 1; // skipLibCheck: true" '{tool_name:"Write",tool_input:{file_path:$f,content:$c}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 0 ] && [ -z "$qout" ]; then
+    echo "  ok   negative: non-quality source file is not gated"
+  else echo "  FAIL source file gated: exit $qrc $qout"; fail=1; fi
+
+  # regression: .env still blocked after the quality-config branch
+  qout=$(jq -n --arg f "$tmp/.env" '{tool_name:"Write",tool_input:{file_path:$f,content:"x"}}' | CLAUDE_PROJECT_DIR="$tmp" "$BASH" "$self" 2>&1); qrc=$?
+  if [ "$qrc" -eq 2 ] && printf '%s' "$qout" | grep -q '.env files'; then
+    echo "  ok   regression: .env still blocked"
+  else echo "  FAIL .env regression: exit $qrc $qout"; fail=1; fi
+
+  rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
 }
@@ -101,6 +152,49 @@ fi
 # correctly updates lock files without triggering this guard.
 if echo "$file" | grep -qE '(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|pubspec\.lock|poetry\.lock|uv\.lock)$'; then
   echo "BLOCKED: Cannot directly edit lock files via Write/Edit. Use the package manager through Bash instead (e.g., npm install, flutter pub get, pip install, uv sync)." >&2
+  exit 2
+fi
+
+# --- Quality-config weakening (semantic; not a ban on all config edits) ---
+# Detector: .claude/scripts/check-quality-config-weakening.py. Fail-open if python3
+# is missing (say so once). Exit 2 only on a real finding without an auditable
+# quality-config-exception. Secret/lock blocks above still apply first.
+quality_config_check() {
+  local payload out rc marker key script root
+  case "$file" in
+    *eslint.config.*|*/.eslintrc*|*/ruff.toml|*/.ruff.toml|*/pyproject.toml|*/analysis_options.y*ml|*/tsconfig*.json|*jest.config.*|*vitest.config.*|*karma.config*|*/.nycrc*|*/codecov.y*ml|*/.coveragerc|*/package.json|*/.github/workflows/*.yml|*/.github/workflows/*.yaml) ;;
+    *) return 0 ;;
+  esac
+  script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/check-quality-config-weakening.py"
+  root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+  if ! command -v python3 >/dev/null 2>&1; then
+    key=$(printf '%s' "$root" | cksum | awk '{print $1}')
+    marker="${TMPDIR:-/tmp}/claude-quality-config-python-missing-$key"
+    if [ ! -e "$marker" ]; then
+      : > "$marker" 2>/dev/null || true
+      echo "quality-config: python3 missing; weakening detection skipped this session" >&2
+    fi
+    return 0
+  fi
+  [ -f "$script" ] || return 0
+  payload=$(mktemp) || return 0
+  printf '%s' "$input" > "$payload"
+  out=$(python3 "$script" --payload "$payload" --root "$root" 2>/dev/null)
+  rc=$?
+  rm -f "$payload"
+  case "$rc" in
+    1)
+      printf '%s' "$out" >&2
+      return 1
+      ;;
+    0) return 0 ;;
+    *) return 0 ;;  # detector broken or crash: fail-open
+  esac
+}
+
+if quality_config_check; then
+  :
+else
   exit 2
 fi
 

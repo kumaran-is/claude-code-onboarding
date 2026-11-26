@@ -9,7 +9,7 @@ metadata:
   role: architect
   scope: design
   output-format: document
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-26"
 ---
 
 ## Iron Law
@@ -103,6 +103,8 @@ Task N: "[task title]" is missing rollback_strategy.
 
 Skip validation only for plans with a single task (≤1 task = trivial, no gate needed).
 
+**Task contract:** New plans must also include Interfaces consumed/produced, Review focus, Completion evidence, and Out of scope (`docs/plans/TEMPLATE.md`). An already-APPROVED plan is not rewritten; `--init` records gaps as advisory and fills briefs from the existing Context Brief.
+
 ### Step 0 — Parse the Plan Once
 
 Read the full plan file once. Extract every task as a structured object:
@@ -117,10 +119,19 @@ Task N:
 
 Create a `TaskCreate` entry for each task before starting any implementation.
 
+**Execution ledger** (compaction recovery — not a lifecycle engine, not NEXUS, not AWS AI-DLC). Protocol: [reference/execution-ledger.md](reference/execution-ledger.md).
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --init --plan <plan>
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --next
+```
+
+After `/clear` or compaction: `--status` then `--next`. Do not redispatch a complete task whose `--verify-exit` is 0 and reconcile is clean. **Never treat a ledger row as verification proof.**
+
 ### Step 1 — Per-Task Implementer
 
 Dispatch the implementer with:
-- Full task text (do NOT tell implementer to read the plan — provide it inline)
+- The task brief body **inline** plus its `briefs/task-N.md` path (do NOT tell the implementer to read the whole plan)
 - Tech-stack skill reference (e.g., "consult `.claude/skills/java-spring-api/`")
 - The implementer-prompt.md template content
 
@@ -147,11 +158,21 @@ Spec reviewer flow:
 
 ### Step 3 — Quality Review
 
-Dispatch the quality reviewer (routed by tech stack — see routing table below) with:
-- The files changed by the implementer (from implementer tag `FILES_CHANGED`)
+Build an independent review package (do not commit to obtain a SHA; uncommitted diffs are valid):
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py \
+  --review-package --uncommitted --task N --plan <plan>
+```
+
+Dispatch the quality reviewer (routed by tech stack — see routing table below) in a **fresh** agent with:
+- The review-package JSON (`base`, `head` or uncommitted, `files`, `review_focus`, `verify`)
+- The task contract / brief — not the implementer's self-assessment as proof
 - The implementer handoff tag block verbatim
 - The spec-reviewer handoff tag block verbatim
 - Tech-stack reviewer instructions
+
+Blocking findings require a fix, re-verify, and re-review before `--mark N --status complete --verify-exit 0`.
 
 Quality reviewer flow:
 - Issues found → implementer fixes → quality review re-runs (not spec review — only quality)
@@ -173,7 +194,7 @@ After all tasks complete:
 |------------|-------|
 | Java / Spring Boot | `spring-boot-reviewer` |
 | NestJS | `nestjs-reviewer` |
-| Python / FastAPI | `code-reviewer` |
+| Python / FastAPI | `python-reviewer` |
 | Flutter | `riverpod-reviewer` |
 | Agentic AI | `agentic-ai-reviewer` |
 | Angular / General | `code-reviewer` |
@@ -202,9 +223,11 @@ Agent tool:
 ```
 Agent tool:
   subagent_type: [from routing table above]
-  prompt: "Review the following files for [tech stack] quality, patterns, and standards.
-           Files changed: [list]. Focus on: correctness, error handling, test coverage,
-           naming, and adherence to project conventions in .claude/rules/."
+  prompt: "Independent review. Do not trust the implementer report.
+           Review package JSON: [base, head or uncommitted, files, verify, review_focus].
+           Task contract: [brief body]. Spec-reviewer tag: [verbatim].
+           Focus on: spec compliance leftovers, correctness, error handling, tests,
+           naming, and .claude/rules/. Cite file:line + evidence."
 ```
 
 Do NOT dispatch implementer and spec reviewer in parallel — spec review depends on implementer output.
@@ -308,7 +331,9 @@ Each phase receives exactly what it needs — no more:
 - **Never reverse pipeline order** — spec compliance before quality review, always
 - **Never skip a review loop** — reviewer found issues = implementer fixes = re-review required. Re-dispatch only the reviewers that own open or newly closed findings; from round 3 only CRITICAL/HIGH block, and MEDIUM/LOW go into the PR body (`verification-before-completion/reference/verification-loop.md` §4, bounded re-review)
 - **Never let implementer self-review replace spec/quality review** — both are required
-- **Never tell implementer or reviewer to read the plan file** — provide full task text inline
+- **Never tell implementer or reviewer to read the whole plan file** — provide the task brief inline
+- **Never treat a ledger row as verification proof** — `--mark complete` requires `--verify-exit 0` from a command you ran
+- **Never skip `--review-package`** — reviewers need BASE/HEAD or the uncommitted diff, not a file-name list alone
 - **Never declare a task complete while a reviewer has open issues**
 - **Never skip the post-completion conflict check** after parallel agent dispatch
 
@@ -322,7 +347,8 @@ Each phase receives exactly what it needs — no more:
 | Before marking any task complete | `verification-before-completion` skill |
 | Creating the PR | CLAUDE.md git workflow (conventional commits, feature branch, squash merge) |
 | Plan file must exist | `docs/plans/` convention — `/plan-review` creates it |
-| Writing a new plan | `docs/plans/TEMPLATE.md` — required format for context briefs, rollback, and mutations |
+| Writing a new plan | `docs/plans/TEMPLATE.md` — required format for context briefs, task contracts, rollback, and mutations |
+| Compaction / resume / review package | [reference/execution-ledger.md](reference/execution-ledger.md) — ledger, briefs, `--review-package` |
 | Security findings during review | `security-reviewer` agent |
 | Passing context between pipeline stages | [reference/handoff-tags.md](reference/handoff-tags.md) — structured tag format |
 | Feature with 10+ tasks across several domains and sessions | [reference/nexus-state-template.md](reference/nexus-state-template.md) — NEXUS phases, go/no-go gates, PR slicing, session resume, state file |
@@ -351,3 +377,10 @@ C) Redesign — scrap this task's implementation and start fresh
 
 **Team mode: teammate goes unresponsive:**
 Check `TaskList` for stuck in_progress tasks. Send a follow-up `SendMessage`. If still unresponsive after one retry, stop and notify the developer.
+
+## Verify
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --selftest
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --scan-skill
+```

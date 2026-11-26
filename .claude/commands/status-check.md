@@ -32,7 +32,7 @@ Give me an honest status report. Follow these rules STRICTLY:
 
 A feature is WORKS only with evidence executed in THIS session: the test or flow that exercises it, its command and its own exit code (unit/integration runner, Playwright for web, Maestro for Flutter Android/iOS — `.claude/rules/testing-tool-selection.md`). Reading the code is not evidence. A feature you could not exercise goes under a fourth heading, `## NOT VERIFIED`, with what blocked it.
 
-Use instead when: `/verify` — build/test exit codes per stack; `/project-status` — repo inventory with no verdict; `/checkpoint verify` — what changed since a snapshot.
+Use instead when: `/next` — pick the next actionable work item; `/end-session` — wrap the session; `/verify` — build/test exit codes per stack; `/project-status` — repo inventory with no verdict; `/checkpoint verify` — what changed since a snapshot; `/test-partner` — paired manual QA. Plan-vs-source (this command's plan mode) is the `/verify-plan` equivalent — do not add a second auditor.
 
 ## Plan conformance mode (when `$ARGUMENTS` names a plan)
 

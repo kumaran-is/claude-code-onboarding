@@ -166,6 +166,7 @@ Executed through `httpx.MockTransport`: 404 -> 1 call, raised; `503,503,200` GET
 |------|-----|
 | Never retry 4xx (except 429) | The request is wrong; repeating it repeats the failure |
 | Never retry a non-idempotent POST without an idempotency key | A timeout does not mean it did not happen |
+| Never retry `ACCEPTANCE_UNCERTAIN` (timeout / 5xx with no body after the write) | Unknown is not "didn't send"; claim, alarm, reconcile. Channel rules: `notification-producer-and-channel.md` |
 | Jitter + attempt cap + total window | Synchronised retries are a self-inflicted outage; combine `stop_after_attempt` and `stop_after_delay` with the union operator (as above) and keep the window below the caller's own deadline |
 | One retry layer | An SDK that retries plus an outer retry multiplies attempts; disable one |
 | Do not wrap every `httpx.HTTPError` in one retried exception | A 4xx would then be retried (the earlier example did exactly that) |

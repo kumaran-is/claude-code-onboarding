@@ -85,6 +85,15 @@ Read `assets/docker-review-checklist.md` before committing any Dockerfile or com
 | `reference/advanced-patterns.md` | Build cache mounts (all stacks), multi-arch buildx, distroless images, build secrets, diagnostics | Optimizing builds or debugging container issues |
 | `assets/docker-review-checklist.md` | 30-item Docker review checklist (6 categories) with stack-specific items | Before committing Dockerfile or compose changes |
 
+**Env/infra SSOT:** before shipping compose, Terraform or `.env.example` changes, run the aggregate gate (do not inline `check_env_parity.py` in a new Makefile target when this exists):
+
+```bash
+python3 .claude/scripts/check-infra-env-ssot.py --selftest
+python3 .claude/scripts/check-infra-env-ssot.py --root .
+```
+
+It wraps `check_env_parity.py` and FAILs `${VAR:-default}` in compose for keys the code requires, dart-define / Terraform keys missing from `.env.example`, and local/staging/production *example* key-set drift. Never opens a real `.env`. Missing Docker or Terraform is not a FAIL.
+
 ## Error Handling
 
 **Build fails with "not found" or permission error**: Check .dockerignore is not excluding required files. Verify COPY paths match actual project structure.

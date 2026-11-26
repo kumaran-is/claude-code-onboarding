@@ -231,8 +231,9 @@ Rules:
   - iOS: the APNs token must exist before any FCM API request (iOS SDK 10.4.0+) and is not guaranteed at launch. Await `getAPNSToken()` with a bounded retry (a few seconds), proceed only on non-null, otherwise report push as not registered; never block startup on it
   - Send the ID to the backend after sign-in with a timestamp, again on every `onRegistered` and on app resume (an idempotent upsert keyed by user and ID)
   - Sign-out coordinator: `unregister()` and delete the server row while the session can still authenticate, then clear auth state
-  - Server: delete a registration when a send returns `UNREGISTERED` (404), or `INVALID_ARGUMENT` (400) for a payload known to be valid
-  - Tap routing: the payload names the recipient user; a tap for a different user than the signed-in one (shared device, account switch) opens nothing
+- Server: delete a registration when a send returns `UNREGISTERED` (404), or `INVALID_ARGUMENT` (400) for a payload known to be valid
+- Tap routing: the payload names the recipient user; a tap for a different user than the signed-in one (shared device, account switch) opens nothing
+- **Channel retry (server):** never resend a push whose provider acceptance is unknown (`ACCEPTANCE_UNCERTAIN`). Re-derive the recipient before any retry. One pipeline per product event. Producer coverage: `python-dev/reference/notification-producer-and-channel.md`. `xcrun simctl push` never proves FCM/APNs transport (`flutter-e2e-maestro.md` §8).
 
 ---
 

@@ -2,6 +2,10 @@
 
 > Three canonical patterns. No ad-hoc alternatives.
 > Apply the decision tree below before choosing any pattern.
+>
+> If the event **notifies a person** (push, email, SMS, in-app card), also load
+> [notification-producer-and-channel.md](notification-producer-and-channel.md):
+> every writer of the field must stage it; never resend `ACCEPTANCE_UNCERTAIN`.
 
 ---
 

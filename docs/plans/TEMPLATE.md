@@ -31,10 +31,15 @@ Created by `/plan-review`. Validated by `subagent-driven-development` Step 0-PRE
 
 | Field | Value |
 |-------|-------|
-| **Affected files** | `src/path/to/file.ts`, `src/path/to/other.ts` |
+| **Affected files** | `src/path/to/file.ts`, `src/path/to/other.ts` (create or modify) |
 | **Preconditions** | What must be true before this task starts (e.g. "Task 0 complete — users table exists") |
 | **Invariants** | What must remain true throughout (e.g. "existing /api/users endpoint must continue to respond 200") |
-| **Verification command** | `npm test -- --testPathPattern=auth` or `flutter test test/feature_test.dart` |
+| **Verification command** | Stack-specific, exact: `npm test -- --testPathPattern=auth` or `flutter test test/feature_test.dart` — never a generic placeholder |
+| **Interfaces consumed** | Existing functions/types/routes this task calls (`none` if none) |
+| **Interfaces produced** | New functions/types/routes this task adds (`none` if none) |
+| **Review focus** | What a fresh reviewer should inspect (risks, error paths, authz) |
+| **Completion evidence** | Command + expected observable (e.g. `pytest tests/test_foo.py` exit 0, 2 passed) |
+| **Out of scope** | Explicit non-goals for this task |
 
 #### Rollback Strategy
 
@@ -51,15 +56,15 @@ Created by `/plan-review`. Validated by `subagent-driven-development` Step 0-PRE
 - [ ] [Specific, testable criterion 1]
 - [ ] [Specific, testable criterion 2]
 
-#### Implementation Notes
+#### Architecture and engineering constraints
 
-[Optional: constraints, tech decisions, patterns to follow — e.g. "use Riverpod AsyncNotifier not StateProvider"]
+[Patterns to follow or forbidden shortcuts — e.g. "use Riverpod AsyncNotifier not StateProvider". Omit on Complexity S when the Context Brief already states them.]
+
+Complexity S (one file, no new public contract) may set Interfaces consumed/produced to `none`. Do not omit Review focus, Completion evidence, or Out of scope. Do not write a second plan when an approved plan already exists — enrich this file instead.
 
 ---
 
-### Task 2: [Title]
-
-[Repeat Task structure above]
+<!-- Copy the Task 1 block for Task 2+. Each copy must include the Context Brief contract rows. -->
 
 ---
 

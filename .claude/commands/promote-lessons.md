@@ -16,8 +16,20 @@ Collect candidates from every source, not only corrections:
 | Corrections | `lessons.md` entries (the CLAUDE.md Self-Improvement Loop writes them) |
 | Reviewer findings | Closed and dismissed findings in `.git/claude-state/review/*/ledger.json` (enforcement kit). The same root-cause class closed on 2 or more branches is a recurrence |
 | Successes | An approach that worked first time on something that usually fails (a debugging route, a test seam, a release step), noted by the user or in the PR's lessons step |
-| Post-ship | Since the last run: reverted PRs (`git log --oneline --grep='^Revert' --since=<date>`), fix commits that touch code merged in the window, incidents or bug reports the user names. For each: what escaped, which gate should have caught it, and why it did not |
+| Post-ship | Since the last run: reverted PRs (`git log --oneline --grep='^Revert' --since=<date>`), fix commits that touch code merged in the window, incidents or bug reports the user names. Each one **must** run Step 0b. |
 | Agent memory | `.claude/agent-memory/**` (Step 2) |
+
+## Step 0b: Escaped defect (mandatory when post-ship intake is non-empty)
+
+Do **not** add a second command. This is the post-ship path. A prose lesson with no gate change is an incomplete review.
+
+1. **Evidence or stop.** Reproduce, or cite a concrete artifact (log excerpt, metric, monitor, failing command, user-report link). No evidence → record `unverified` in the Step 4 report and **STOP**. Never invent a root cause.
+2. **Name the miss.** Which existing test, `/verify` arm, check script, Hookify rule or CI job should have caught it? If none exists, say `no gate` (that is still a named miss).
+3. **Why it missed.** One of: check absent · assertion too weak · not in CI · skipped / exit 2 treated as PASS · wrong target (browser for Flutter, unit for E2E) · flaky and ignored.
+4. **Strengthen now** with evidence: add or tighten a regression test **or** a `check-*` / Hookify guardrail. Prove it with a positive control (known-bad input is flagged) and a negative control (clean input is silent). Cite the command output. If you cannot change the gate this session, log that gap in the report — do not silently skip.
+5. **Never weaken** a test, golden, or assertion to make the incident “pass”.
+
+`worked-as-designed` is valid: write the evidence line, skip 4–5, do not pad `lessons.md`.
 
 ## Step 1: Classify, then route
 
@@ -86,6 +98,9 @@ If `.claude/agent-memory/` exists, read each agent's `MEMORY.md` (agents with `m
 ### Routed (intake → destination)
 - [source: correction | finding | success | post-ship | memory] [avoid X, do Y, because Z] → [destination]
 
+### Escaped defects (post-ship)
+- [incident] | gate that missed: <name or no gate> | why: <reason> | evidence: <artifact> | strengthened: <test/script + selftest result> | unverified: <yes — stopped | no>
+
 ### Deterministic controls proposed or added
 - [recurrence] → [hookify rule | check script] (selftest: [result])
 
@@ -97,6 +112,6 @@ If `.claude/agent-memory/` exists, read each agent's `MEMORY.md` (agents with `m
 - agent-memory/: [exists/cleaned up]
 ```
 
-Use instead when: `/rules-distill` — the source is repeated patterns across skills, not corrections logged in `lessons.md`. Rule-file edits that change shared rules are proposals for human approval, not silent writes.
+Use instead when: `/end-session` — wrap the session (this classifier + `/checkpoint` snapshot + git dirty/unpushed + resume prompt); `/rules-distill` — the source is repeated patterns across skills, not corrections logged in `lessons.md`. Rule-file edits that change shared rules are proposals for human approval, not silent writes. Do not add `/post-ship-review` — escaped defects are Step 0b here.
 
 $ARGUMENTS

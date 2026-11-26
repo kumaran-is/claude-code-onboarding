@@ -1,9 +1,9 @@
 ---
 name: python-dev
-description: This skill provides patterns and templates for Python 3.14 development with FastAPI and modern tooling. It should be activated when creating Python APIs, scripts, data processing pipelines, or pytest tests.
+description: This skill provides patterns and templates for Python 3.14 development with FastAPI and modern tooling. It should be activated when creating Python APIs, scripts, data processing pipelines, or pytest tests; also when adding a notification producer (push, email, SMS, in-app) or outbox staging for a user-facing send.
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  triggers: Python, FastAPI, Pydantic, Python API, async Python, Python backend, uv, ruff, Python 3.14
+  triggers: Python, FastAPI, Pydantic, Python API, async Python, Python backend, uv, ruff, Python 3.14, notification, outbox, push notification, transactional email
   related-skills: openapi-spec-generation, database-schema-designer, agentic-ai-dev
   domain: backend
   role: specialist
@@ -74,6 +74,8 @@ reproducible install.
 **Live E2E integration testing**: Read `reference/backend-live-e2e-standard.md` for why unit tests (ASGITransport + mocks) miss real integration bugs, the per-service test pattern (health, auth gate, fake JWT rejection, internal secret gate, input validation), auth ordering rules (FastAPI validates auth before Pydantic), HTTP method verification from OpenAPI spec, and the feedback loop for fixing live failures.
 
 **Pub/Sub and Firestore messaging patterns**: Read `reference/pubsub-firestore-patterns.md` for the three canonical messaging patterns: Pattern A (fire-and-forget `asyncio.create_task` for informational events), Pattern B (transactional outbox with `SELECT FOR UPDATE SKIP LOCKED` for load-bearing events), Pattern C (Firestore status bus for real-time mobile UI). Includes decision tree, full implementation templates, subscriber patterns, and hard rules for each.
+
+**Notification producers and channel retry**: Read `reference/notification-producer-and-channel.md` when a write should notify (push, email, SMS, in-app). Every writer of the field must stage the event; never resend when provider acceptance is unknown; a `202` is not delivery.
 
 **Service wiring (settings, app factory, DI chain)**: Read `reference/fastapi-architecture-and-config.md` when wiring a service: fail-fast `Settings`, `create_app` + `lifespan`, session → repository → service chain, commit ownership, route order, atomic idempotent writes, ruff baseline.
 

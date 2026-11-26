@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # Debug
 
-Loads the `systematic-debugging` skill and enforces the 4-phase root-cause-first process.
+Loads the `systematic-debugging` skill and enforces the 4-phase root-cause-first process. Use `/test-partner` when walking a flow with a human (pass / fail / shot); use this command when a known defect needs root cause.
 
 **Iron Law: NO fixes without root cause investigation first.**
 

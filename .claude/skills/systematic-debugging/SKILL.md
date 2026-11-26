@@ -52,6 +52,8 @@ Use for ANY technical issue:
 - You're in a hurry (rushing guarantees rework)
 - Manager wants it fixed NOW (systematic is faster than thrashing)
 
+Paired manual walkthroughs (developer taps, you watch logs) are `/test-partner`; this skill is the Phase 5 root-cause step once a finding exists. Picking the next implementation task is `/next`.
+
 ## The Four Phases
 
 You MUST complete each phase before proceeding to the next.

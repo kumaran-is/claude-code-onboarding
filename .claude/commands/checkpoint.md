@@ -75,6 +75,8 @@ One entry per line, pipe-separated:
 2026-03-29T15:45:00Z|post-auth|def5678abc|3 files changed
 ```
 
+Names starting with `precompact-` are reserved for the PreCompact hook (`.claude/hooks/pre-compact-checkpoint.sh`). That hook appends the same pipe format and writes a secret-free snapshot to `.claude/temp/precompact/latest.md` (gitignored). Do not invent a second log format. Do not persist file contents, `.env`, transcripts, or `custom_instructions`.
+
 ## When to Use
 
 - Before a large refactor: `/checkpoint create pre-refactor`
@@ -91,4 +93,4 @@ One entry per line, pipe-separated:
 
 ## Boundaries
 
-`/checkpoint verify` compares git state; it runs no tests and is not evidence that anything works. Use instead when: `/verify` — build/test exit codes; `/status-check` — feature-level status; a git commit — anything you need to roll back to.
+`/checkpoint verify` compares git state; it runs no tests and is not evidence that anything works. `/end-session` **reuses** `create session-wrap-<date>` then `/promote-lessons` — do not treat checkpoint as the wrap. A PreCompact snapshot is also not verification evidence. Use instead when: `/verify` — build/test exit codes; `/status-check` — feature-level status; a git commit — anything you need to roll back to.

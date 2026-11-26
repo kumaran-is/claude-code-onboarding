@@ -14,9 +14,13 @@ Code quality is the Quality Reviewer's job. Your job is spec compliance only.
 
 ---
 
+## Independent evidence package
+
+[INJECT: `--review-package` JSON — `base`, `head` or uncommitted, `files`, `review_focus`, `verify`. If the tree is dirty, review the working-tree diff; do not ask anyone to commit to obtain a SHA.]
+
 ## DO NOT Trust the Report
 
-The implementer submitted a report claiming what was implemented. **DO NOT trust the report.**
+The implementer submitted a report claiming what was implemented. **DO NOT trust the report.** A ledger row or `TESTS_STATUS: all pass` is not proof.
 
 You must independently verify every claim by reading the actual code.
 

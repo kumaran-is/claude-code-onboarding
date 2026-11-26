@@ -26,6 +26,16 @@ Before any implementation begins, Phase 0 must complete all of:
 
 If ANY gate item is incomplete, do NOT proceed. Ask for what's missing.
 
+When the artifact is an implementation plan (not a design sketch), each task must be an executable contract at `docs/plans/TEMPLATE.md` density: objective/scope, requirement traceability (AC mapping), files, interfaces consumed/produced, dependencies, constraints, acceptance criteria, exact stack verification command, review focus, completion evidence, out of scope. Proportional: Complexity S may set interfaces to `none`. Do not invent a second plan or a Superpowers planning directory. Do not add an extra approval gate — the existing human `approve` on `/next --plan` / `/plan-review` is the gate.
+
+```bash
+python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --scan-plan docs/plans/<plan>.md
+```
+
+## Implementation notes (during and after the plan)
+
+Sub-ADR decisions that appear while implementing belong in `docs/plans/<issue-N>-implementation-notes.md`, not in this review transcript and not in `lessons.md`. Schema, append-only rule, and the `needs human review` flag: `next-issue/references/implementation-notes.md`. Load-bearing architectural choices still go through `architecture-decision-records` first.
+
 ## Multi-Turn Continuity
 
 When the review spans multiple messages:

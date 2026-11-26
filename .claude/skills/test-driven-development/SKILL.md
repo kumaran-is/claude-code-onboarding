@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: testing
   output-format: code
-last-reviewed: "2026-03-14"
+last-reviewed: "2026-11-26"
 ---
 
 # Test-Driven Development
@@ -34,16 +34,23 @@ Write the test. Run it. See it fail (RED). Then implement until it passes (GREEN
 
 ## Red-Green-Refactor Cycle
 
-```
-RED   -> Write a test that FAILS for the right reason
-         Run it. Confirm it fails. If it passes without code -> test is wrong.
+Evidence protocol: [reference/red-green-evidence.md](reference/red-green-evidence.md). Classifier: `python3 .claude/skills/test-driven-development/scripts/check-tdd-evidence.py --classify /tmp/tdd-red.log`.
 
-GREEN -> Write the MINIMUM code to make the test pass
-         No extras. No "while I'm here" additions.
-
-REFACTOR -> Clean up code without changing behavior
-            Run tests again. Must still pass.
 ```
+RED   -> Write a test that FAILS for the expected behavioral reason.
+         Run the stack command. Classify the log (behavioral | compile |
+         configuration | environment). Only behavioral RED counts.
+         Compile/config/environment failures are not a failing test.
+
+GREEN -> Write the MINIMUM code to make that assertion pass.
+         Re-run the same command. Exit 0. Zero executed is not GREEN.
+
+REFACTOR -> Clean up without changing approved behavior.
+            Re-run task tests and the relevant regression set (`/verify`,
+            `/test-partner` when user-visible). Record the command output.
+```
+
+Do not delete a working diff and restart because tests were written after the fact. Do not substitute Playwright for Flutter Android/iOS (Maestro) or a generic `npm test` for the stack command.
 
 > For verifying regression tests are genuine (not vacuous): see `verification-before-completion` Red-Green protocol.
 > For TDD during bug investigation: see `systematic-debugging` Phase 4 — Create Failing Test Case.
@@ -81,8 +88,9 @@ test('createUser throws ConflictException when email is duplicate', ...)
 ## Quick Checklist
 
 Before claiming a test is real:
-- [ ] Test FAILED before implementation (you saw the red output)
-- [ ] Test PASSES after implementation (you saw the green output)
+- [ ] Test FAILED before implementation for the expected behavioral reason (classifier: `behavioral`, not compile/configuration/environment)
+- [ ] Test PASSES after implementation (you saw the green output and a non-zero executed count)
 - [ ] Test name describes behavior, not implementation
 - [ ] One assertion per logical outcome (not 10 assertions in one test)
 - [ ] Mocks are used for external dependencies only (not to avoid writing logic)
+- [ ] You did not delete the diff to "start over" — Superpowers-style delete-and-restart is forbidden here

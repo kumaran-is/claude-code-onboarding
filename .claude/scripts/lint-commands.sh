@@ -18,6 +18,7 @@ QUIET=0
 # explanatory (a line saying the shape is wrong: not / never / no / reports / instead is skipped).
 #   ${ARGUMENTS:-x}             Claude Code substitutes $ARGUMENTS textually and never applies the default
 #   gate | tail ...; echo $?    $? is tail's/head's status, so a failing gate reads as 0
+#   gate | summarize-test-log   $? is the summarizer's status (0 even on FAIL/UNKNOWN), not the runner's
 #   flutter pub audit           not a pub subcommand (3.44: help + exit 0; 3.50.1: exit 64)
 #   semgrep scan/--config without --error   exits 0 even with findings
 # ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ broken_shapes() {
       if (cand == "") next
       if (cand ~ /\$\{ARGUMENTS:-/) printf "%d\t${ARGUMENTS:-...} default is never applied by Claude Code; use \"$ARGUMENTS\" and test it\n", NR
       if (cand ~ /[|][[:space:]]*(tail|head)[^;&|]*;[[:space:]]*echo[^;]*[$][?]/) printf "%d\tgate piped into tail/head before echo $? (reads the pager status, not the gate); write to a log, read $?, then tail the log\n", NR
+      if (cand ~ /[|][[:space:]]*[^;\n]*summarize-test-log/) printf "%d\tgate piped into summarize-test-log.py (reads the summarizer status, not the runner); write to a log, capture rc, echo EXIT:$rc, then summarize --exit-code\n", NR
       if (cand ~ /flutter[[:space:]]+pub[[:space:]]+audit/) printf "%d\tflutter pub audit is not a command (no advisory scan runs)\n", NR
       if (cand ~ /(^|[^[:alnum:]_-])semgrep[[:space:]]+(scan|--config)/ && cand !~ /--error/) printf "%d\tsemgrep without --error exits 0 on findings\n", NR
     }' "$1"
@@ -54,9 +56,10 @@ selftest() {
   }
   run_case "positive: \${ARGUMENTS:-} in a code block" $'```bash\nTARGET="${ARGUMENTS:-.}"\n```' 1 'default is never applied'
   run_case "positive: gate | tail; echo \$?" $'```bash\nnpm test 2>&1 | tail -20; echo "EXIT:$?"\n```' 1 'piped into tail/head'
+  run_case "positive: gate | summarize-test-log" $'```bash\nnpm test 2>&1 | python3 .claude/scripts/summarize-test-log.py --log /dev/stdin; echo "EXIT:$?"\n```' 1 'piped into summarize-test-log.py'
   run_case "positive: flutter pub audit" $'Run `flutter pub audit` for CVEs.' 1 'flutter pub audit is not a command'
   run_case "positive: semgrep without --error" $'```bash\nsemgrep scan --config auto --json -o semgrep.json .\n```' 1 'semgrep without --error'
-  run_case "negative: correct forms and explanatory mentions pass" $'```bash\nTARGET="$ARGUMENTS"; [ -n "$TARGET" ] || TARGET="."   # `${ARGUMENTS:-.}` is never substituted\nnpm test > test.log 2>&1; echo "EXIT:$?"; tail -20 test.log\nsemgrep scan --config auto --error .\n# flutter pub audit is not a command\n```\n`cmd | tail; echo $?` reports the status of `tail`.\nThere is no `flutter pub audit` subcommand.' 0 ""
+  run_case "negative: correct forms and explanatory mentions pass" $'```bash\nTARGET="$ARGUMENTS"; [ -n "$TARGET" ] || TARGET="."   # `${ARGUMENTS:-.}` is never substituted\nnpm test > test.log 2>&1; echo "EXIT:$?"; tail -20 test.log\nnpm test > test.log 2>&1; rc=$?; echo "EXIT:$rc"\npython3 .claude/scripts/summarize-test-log.py --log test.log --exit-code "$rc"\nsemgrep scan --config auto --error .\n# flutter pub audit is not a command\n```\n`cmd | tail; echo $?` reports the status of `tail`.\nThere is no `flutter pub audit` subcommand.' 0 ""
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"

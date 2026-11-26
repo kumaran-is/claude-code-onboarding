@@ -17,6 +17,17 @@ Runs the fastest possible verification for changed stacks. Returns binary PASS/F
 | `/verify pre-commit` | Quick verify + check for TODO/FIXME/console.log in staged files. |
 | `/verify pre-pr` | Full verify + security scan + coverage check. |
 
+## Test-log summary
+
+After every **test** command (not compile/lint), keep the full log and the runner's own exit code, then print a compact summary. Do not pipe the runner into the summarizer (`cmd | summarize-test-log.py` makes `$?` the summarizer's status). Do not delete the log.
+
+```bash
+cmd > /tmp/test.log 2>&1; rc=$?; echo "TEST EXIT:$rc"
+python3 .claude/scripts/summarize-test-log.py --log /tmp/test.log --exit-code "$rc" --framework <pytest|surefire|flutter|vitest|jest|playwright>
+```
+
+The script prints one `TEST SUMMARY | framework=… | status=PASS|FAIL|UNKNOWN | passed=… failed=… errors=… skipped=… executed=… | exit=… | log=… | reason=…` line, then named failures (capped) or an unparsed tail. **UNKNOWN, never PASS** — unparseable, truncated, or malformed output cannot fill the Tests column as PASS even when `TEST EXIT` is 0 (the stack is FAIL: executed count was not proven). Pass `--junit` / `--json` when the runner wrote a report; those artifacts win over stdout regex. The summarizer always exits 0 on a written report (including FAIL/UNKNOWN) and 2 on usage errors; it is not the gate. `python3 .claude/scripts/summarize-test-log.py --selftest` is the positive/negative control.
+
 ## Stack Detection + Commands (detected by file presence in the current directory tree)
 
 ### Spring Boot (`pom.xml` with spring-boot)
@@ -25,7 +36,8 @@ Runs the fastest possible verification for changed stacks. Returns binary PASS/F
 ./mvnw compile -q > /tmp/mvn-compile.log 2>&1; echo "COMPILE EXIT:$?"; tail -10 /tmp/mvn-compile.log
 
 # full
-./mvnw test -q > /tmp/mvn-test.log 2>&1; echo "TEST EXIT:$?"; tail -10 /tmp/mvn-test.log
+./mvnw test -q > /tmp/mvn-test.log 2>&1; rc=$?; echo "TEST EXIT:$rc"
+python3 .claude/scripts/summarize-test-log.py --log /tmp/mvn-test.log --exit-code "$rc" --framework surefire --junit target/surefire-reports
 
 # pre-pr additions (needs the OWASP dependency-check plugin configured in pom.xml; otherwise BLOCKED)
 ./mvnw dependency-check:check -q > /tmp/mvn-dc.log 2>&1; echo "DEPCHECK EXIT:$?"; grep -E "(CRITICAL|HIGH)" /tmp/mvn-dc.log
@@ -49,7 +61,8 @@ uv run --no-sync ruff format --check . > /tmp/fmt.log 2>&1; echo "FORMAT EXIT:$?
 uv run --no-sync mypy > /tmp/mypy.log 2>&1; echo "MYPY EXIT:$?"; tail -10 /tmp/mypy.log   # targets from [tool.mypy] files; exit 2 "Missing target" = BLOCKED (configure it)
 
 # full
-uv run --no-sync pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; echo "PYTEST EXIT:$?"; tail -5 /tmp/pytest.log   # exit 5 (no tests collected) = FAIL
+uv run --no-sync pytest -q --junitxml=/tmp/junit.xml > /tmp/pytest.log 2>&1; rc=$?; echo "PYTEST EXIT:$rc"   # exit 5 (no tests collected) = FAIL
+python3 .claude/scripts/summarize-test-log.py --log /tmp/pytest.log --exit-code "$rc" --framework pytest --junit /tmp/junit.xml
 uv run --no-sync python -c "import sys, xml.etree.ElementTree as E; s=[x for x in E.parse(sys.argv[1]).iter('testsuite')]; n=sum(int(x.get('tests',0))-int(x.get('skipped',0)) for x in s); print('EXECUTED', n); sys.exit(0 if n else 1)" /tmp/junit.xml; echo "EXECUTED EXIT:$?"   # all-skipped exits 0 in pytest
 
 # pre-pr additions
@@ -81,6 +94,15 @@ MODE="${MODE:-quick}" bash <<'NODE_GATE'
 # Node gate: NestJS, plain TypeScript Node services and MCP servers; nested roots included. MODE=quick|full|pre-pr.
 set -u
 MODE="${MODE:-quick}"; NF=0; NB=0; NN=0; NRAN=0; ROOTS=""; GATE_DIR=$(mktemp -d) # left for the OS temp cleaner
+SUMMARIZE="$(pwd)/.claude/scripts/summarize-test-log.py"
+summarize_log() { # log rc [framework] [json] — display only; the runner's $rc is the gate
+  if [ -f "$SUMMARIZE" ]; then
+    python3 "$SUMMARIZE" --log "$1" --exit-code "$2" ${3:+--framework "$3"} ${4:+--json "$4"}
+  else
+    echo "TEST SUMMARY | framework=unknown | status=UNKNOWN | reason=summarizer_missing | log=$1 | exit=$2"
+    tail -15 "$1"
+  fi
+}
 cat > "$GATE_DIR/mcp-gate.mjs" <<'MCP_GATE'
 // MCP server gate: node mcp-gate.mjs <server-root>. Real SDK client, read-only (never calls tools).
 // Server: MCP_SERVER_URL (Streamable HTTP) | MCP_SERVER_CMD (stdio, whitespace-split) | package.json bin/main via node.
@@ -243,23 +265,27 @@ check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code; log
 }
 not_run() { say "$1" "$2" "NOT RUN ($3)"; NN=$((NN + 1)); }
 tests() { # root -> vitest/jest with a JSON report: PASS only when executed (passed + failed) > 0
-  local root="$1" json="$GATE_DIR/tests.json" bin rc ran label
+  local root="$1" json="$GATE_DIR/tests.json" unitlog="$GATE_DIR/unit.log" bin rc ran label fw
   : > "$json"
-  if bin=$(bin_up "$root" vitest); then label="unit (vitest)"
-    (cd "$root" && CI=true "$bin" run --reporter=default --reporter=json --outputFile="$json") > "$GATE_DIR/log" 2>&1; rc=$?
-  elif bin=$(bin_up "$root" jest); then label="unit (jest)"
-    (cd "$root" && CI=true "$bin" --ci --json --outputFile="$json") > "$GATE_DIR/log" 2>&1; rc=$?
+  if bin=$(bin_up "$root" vitest); then label="unit (vitest)"; fw=vitest
+    (cd "$root" && CI=true "$bin" run --reporter=default --reporter=json --outputFile="$json") > "$unitlog" 2>&1; rc=$?
+  elif bin=$(bin_up "$root" jest); then label="unit (jest)"; fw=jest
+    (cd "$root" && CI=true "$bin" --ci --json --outputFile="$json") > "$unitlog" 2>&1; rc=$?
   elif has_script "$root" test; then
-    (cd "$root" && CI=true npm test) > "$GATE_DIR/log" 2>&1; rc=$?
-    if [ "$rc" -ne 0 ]; then say "$root" "unit (npm test)" "FAIL (exit $rc)"; tail -15 "$GATE_DIR/log"; NF=1; NRAN=$((NRAN + 1))
+    (cd "$root" && CI=true npm test) > "$unitlog" 2>&1; rc=$?
+    echo "TEST EXIT:$rc"
+    summarize_log "$unitlog" "$rc" auto
+    if [ "$rc" -ne 0 ]; then say "$root" "unit (npm test)" "FAIL (exit $rc)"; NF=1; NRAN=$((NRAN + 1))
     else say "$root" "unit (npm test)" "BLOCKED (exit 0 but the executed count is not measurable: use vitest/jest, or count by hand)"; NB=1; fi
     return
   else not_run "$root" unit "no vitest, jest or test script"; return; fi
+  echo "TEST EXIT:$rc"
+  summarize_log "$unitlog" "$rc" "$fw" "$json"
   ran=$(node -e 'const r=require(process.argv[1]);console.log((r.numPassedTests||0)+(r.numFailedTests||0), r.numTotalTests||0, r.numPendingTests||0)' "$json" 2>/dev/null)
   set -- $ran
   if [ "$rc" -eq 0 ] && [ "${1:-0}" -gt 0 ]; then say "$root" "$label" "PASS (exit 0, executed $1 of $2, skipped ${3:-0})"; NRAN=$((NRAN + 1))
   elif [ "$rc" -eq 0 ]; then say "$root" "$label" "FAIL (exit 0 but executed ${1:-0} of ${2:-0}: all skipped or no report)"; NF=1; NRAN=$((NRAN + 1))
-  else say "$root" "$label" "FAIL (exit $rc, executed ${1:-?} of ${2:-?})"; tail -15 "$GATE_DIR/log"; NF=1; NRAN=$((NRAN + 1)); fi
+  else say "$root" "$label" "FAIL (exit $rc, executed ${1:-?} of ${2:-?})"; NF=1; NRAN=$((NRAN + 1)); fi
 }
 FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git \) -prune -o -name package.json -print)
 while IFS= read -r f; do
@@ -335,6 +361,15 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 ```bash
 # Web gate: Angular + React (Vite / CRA / Next) apps, nested roots included. MODE=quick|full|pre-pr.
 MODE="${MODE:-quick}"; WEB_FAIL=0; WEB_BLOCKED=0; WEB_NOTRUN=0; WEB_RAN=0; WEB_ROOTS=""; TOP=$(pwd)
+SUMMARIZE="$TOP/.claude/scripts/summarize-test-log.py"
+summarize_log() { # log rc [framework] [json] — display only; the runner's $rc is the gate
+  if [ -f "$SUMMARIZE" ]; then
+    python3 "$SUMMARIZE" --log "$1" --exit-code "$2" ${3:+--framework "$3"} ${4:+--json "$4"}
+  else
+    echo "TEST SUMMARY | framework=unknown | status=UNKNOWN | reason=summarizer_missing | log=$1 | exit=$2"
+    tail -15 "$1"
+  fi
+}
 pkg_has() { node -e 'const p=require(process.argv[1]);const s={...p.dependencies,...p.devDependencies};process.exit(process.argv.slice(2).some(n=>n in s)?0:1)' "$1/package.json" "${@:2}" 2>/dev/null; }
 has_script() { node -e 'const p=require(process.argv[1]);process.exit(p.scripts&&p.scripts[process.argv[2]]?0:1)' "$1/package.json" "$2" 2>/dev/null; }
 web_check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code; log tail only on failure
@@ -345,15 +380,31 @@ web_check() { # root label cmd... -> PASS/FAIL from the command's OWN exit code;
   rm -f "$log"
 }
 not_run() { echo "WEB $1 | $2: NOT RUN ($3)"; WEB_NOTRUN=$((WEB_NOTRUN + 1)); }
+web_unit() { # root label framework cmd... -> test run; keep log; UNKNOWN summary never PASS
+  local root="$1" label="$2" fw="$3" log rc report status; shift 3
+  log=$(mktemp /tmp/verify-web-unit.XXXXXX)
+  (cd "$root" && CI=true NO_COLOR=1 FORCE_COLOR=0 "$@") > "$log" 2>&1; rc=$?
+  echo "TEST EXIT:$rc"
+  report=$(summarize_log "$log" "$rc" "$fw")
+  printf '%s\n' "$report"
+  status=$(printf '%s\n' "$report" | sed -n 's/.*status=\([A-Z][A-Z]*\).*/\1/p' | head -1)
+  if [ "$status" = PASS ] && [ "$rc" -eq 0 ]; then echo "WEB $root | $label: PASS (exit 0)"; WEB_RAN=$((WEB_RAN + 1))
+  elif [ "$status" = UNKNOWN ]; then echo "WEB $root | $label: FAIL (TEST SUMMARY status=UNKNOWN, never PASS; log=$log)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1))
+  else echo "WEB $root | $label: FAIL (exit $rc)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1)); fi
+}
 web_e2e() { # root -> Playwright Test; PASS = exit 0 AND executed > 0; flaky fails; missing browser/server = BLOCKED
-  local root="$1" log json rc ran; log=$(mktemp); json=$(mktemp)
+  local root="$1" log json rc ran report status; log=$(mktemp /tmp/verify-web-e2e.XXXXXX); json=$(mktemp /tmp/verify-web-e2e.XXXXXX.json)
   (cd "$root" && CI=true NO_COLOR=1 FORCE_COLOR=0 PLAYWRIGHT_JSON_OUTPUT_FILE="$json" npm exec --no -- playwright test --reporter=line,json --fail-on-flaky-tests) > "$log" 2>&1; rc=$?
+  echo "TEST EXIT:$rc"
+  report=$(summarize_log "$log" "$rc" playwright "$json")
+  printf '%s\n' "$report"
   ran=$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).stats;console.log(s.expected+s.unexpected+s.flaky)' "$json" 2>/dev/null)
-  if [ "$rc" -eq 0 ] && [ "${ran:-0}" -gt 0 ]; then echo "WEB $root | e2e: PASS (exit 0, executed $ran)"; WEB_RAN=$((WEB_RAN + 1))
+  status=$(printf '%s\n' "$report" | sed -n 's/.*status=\([A-Z][A-Z]*\).*/\1/p' | head -1)
+  if grep -qE "Executable doesn't exist|browserType\.launch|ECONNREFUSED" "$log"; then echo "WEB $root | e2e: BLOCKED (exit $rc: browser or server missing)"; WEB_BLOCKED=1
+  elif [ "$status" = UNKNOWN ]; then echo "WEB $root | e2e: FAIL (TEST SUMMARY status=UNKNOWN, never PASS; log=$log)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1))
+  elif [ "$rc" -eq 0 ] && [ "${ran:-0}" -gt 0 ] && [ "$status" = PASS ]; then echo "WEB $root | e2e: PASS (exit 0, executed $ran)"; WEB_RAN=$((WEB_RAN + 1))
   elif [ "$rc" -eq 0 ]; then echo "WEB $root | e2e: FAIL (exit 0 but executed ${ran:-0}: all skipped or filtered out)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1))
-  elif grep -qE "Executable doesn't exist|browserType\.launch|ECONNREFUSED" "$log"; then echo "WEB $root | e2e: BLOCKED (exit $rc: browser or server missing)"; tail -5 "$log"; WEB_BLOCKED=1
-  else echo "WEB $root | e2e: FAIL (exit $rc, executed ${ran:-?}; flaky counts as failure)"; tail -15 "$log"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1)); fi
-  rm -f "$log" "$json"
+  else echo "WEB $root | e2e: FAIL (exit $rc, executed ${ran:-?}; flaky counts as failure)"; WEB_FAIL=1; WEB_RAN=$((WEB_RAN + 1)); fi
 }
 has_cfg() { local e; for e in js mjs cjs ts mts cts; do [ -f "$1/$2.$e" ] && return 0; done; return 1; } # real config names only: eslint.config.js.bak must not count
 FOUND=$(find . -maxdepth 4 \( -name node_modules -o -name dist -o -name .git -o -name .angular \) -prune -o \( -name angular.json -o -name package.json \) -print)
@@ -400,11 +451,11 @@ while IFS= read -r entry <&3; do
   [ "$MODE" = quick ] && continue
   # 3. unit tests
   if [ "$kind" = angular ]; then
-    if grep -q '"@angular/build:unit-test"' "$root/angular.json"; then web_check "$root" "unit (ng test, Vitest)" npm exec --no -- ng test --watch=false
-    elif grep -q '"test"' "$root/angular.json"; then web_check "$root" "unit (ng test, configured builder)" npm exec --no -- ng test --watch=false
+    if grep -q '"@angular/build:unit-test"' "$root/angular.json"; then web_unit "$root" "unit (ng test, Vitest)" vitest npm exec --no -- ng test --watch=false
+    elif grep -q '"test"' "$root/angular.json"; then web_unit "$root" "unit (ng test, configured builder)" auto npm exec --no -- ng test --watch=false
     else not_run "$root" unit "no test target in angular.json"; fi
-  elif [ -x "$root/node_modules/.bin/vitest" ]; then web_check "$root" "unit (vitest)" npm exec --no -- vitest run
-  elif has_script "$root" test; then web_check "$root" "unit (npm test)" npm test
+  elif [ -x "$root/node_modules/.bin/vitest" ]; then web_unit "$root" "unit (vitest)" vitest npm exec --no -- vitest run
+  elif has_script "$root" test; then web_unit "$root" "unit (npm test)" auto npm test
   else not_run "$root" unit "no vitest and no test script"; fi
   # 4. production build (Angular: also the only template type-check)
   if [ "$kind" = angular ]; then web_check "$root" build npm exec --no -- ng build
@@ -437,7 +488,8 @@ dart format --output=none --set-exit-if-changed . > /tmp/fmt.log 2>&1; echo "FOR
 flutter analyze --no-pub > /tmp/analyze.log 2>&1; echo "ANALYZE EXIT:$?"; tail -5 /tmp/analyze.log
 
 # full — tests (per package root in a multi-package repo; mixing roots fabricates failures)
-flutter test > /tmp/test.log 2>&1; echo "TEST EXIT:$?"; tail -5 /tmp/test.log
+flutter test > /tmp/test.log 2>&1; rc=$?; echo "TEST EXIT:$rc"
+python3 .claude/scripts/summarize-test-log.py --log /tmp/test.log --exit-code "$rc" --framework flutter
 ```
 
 Count `error`, `warning` AND `info` findings from `flutter analyze`: on Flutter 3.50.1 it exits 1 on a single info, e.g. the
@@ -473,14 +525,15 @@ Exit 0 = PASS (or `NOT APPLICABLE` when no UI source exists) · 1 = FAIL (litera
 ```bash
 python3 .claude/scripts/check-ai-assets.py --root . --json ai-assets.json > ai-assets.log 2>&1; echo "AI ASSETS EXIT:$?"; tail -20 ai-assets.log
 # full+ (Python AI services): the deterministic R1 tier only, scripted fake model, never a live provider
-uv run --no-sync pytest -m r1 -q --junit-xml=reports/pytest-r1.xml > r1.log 2>&1; echo "R1 EXIT:$?"; tail -5 r1.log
+uv run --no-sync pytest -m r1 -q --junit-xml=reports/pytest-r1.xml > r1.log 2>&1; rc=$?; echo "R1 EXIT:$rc"
+python3 .claude/scripts/summarize-test-log.py --log r1.log --exit-code "$rc" --framework pytest --junit reports/pytest-r1.xml
 ```
 
 `check-ai-assets.py`: exit 0 = PASS, REVIEW (list each item for the human) or NOT_APPLICABLE · 1 = a BLOCK finding (missing dataset manifest, invalid manifest, prompt card or governance record, secret in a prompt, golden, notebook or eval-report file, prompt label `latest`) → FAIL; REVIEW includes unpinned model ids and LiteLLM fallback defaults · 3 = BLOCKED (a delegate validator is missing or crashed). ADVISORY lines are pattern-only and never count as pass or fail. R1: no `r1` marker → NOT RUN; executed count 0 → FAIL. Judged (R2), red-team and live-provider suites are NOT RUN here (`eval-guide/reference/ci-tiers.md`).
 
 ### Parity checks (`full` and `pre-pr`; any stack)
 
-Four stdlib checkers (Python 3.10+) catch drift that compiles and tests clean: a config key read in code or compose but missing from `.env.example` (`check_env_parity.py`), an ARB locale missing template keys or placeholders (`check_l10n_parity.py`), a `REMOVE-BY: YYYY-MM-DD` deprecation past its date (`check_deprecations.py`), a model table no Alembic revision creates (`check_alembic_models.py`). Each runs per root it finds (`.env.example`, `l10n.yaml`, `alembic.ini`, up to 4 levels deep); exit 2 means no inputs and is NOT APPLICABLE, never PASS.
+Stdlib checkers (Python 3.10+) catch drift that compiles and tests clean: a config key read in code or compose but missing from `.env.example` (`check_env_parity.py`), the **aggregate** env/infra SSOT (`check-infra-env-ssot.py` — wraps that presence check plus compose `${VAR:-default}` for required keys, Terraform and dart-define keys, and local/staging/prod *example* key drift; Docker/Terraform optional; do not inline the sub-scripts), an ARB locale missing template keys (`check_l10n_parity.py`), Flutter `Text('…')` literals that never entered ARB (`check_l10n_hardcoded.py`), screen/route drift vs DESIGN.md / inventory (`check-design-route-parity.py`; exit 2 = no design-side routes), a `REMOVE-BY: YYYY-MM-DD` deprecation past its date (`check_deprecations.py`), a model table no Alembic revision creates (`check_alembic_models.py`). Exit 2 means no inputs and is NOT APPLICABLE, never PASS.
 
 ```bash
 # Parity gate: env/config, l10n, deprecations, Alembic. MODE=full|pre-pr. Stdlib checkers; exit 2 = no inputs.
@@ -507,13 +560,15 @@ else
     [ -n "$f" ] || continue; d=$(dirname "$f")
     case "$f" in
       */.env.example) parity "env $d" python3 "$PCK/check_env_parity.py" "$d" ;;
-      */l10n.yaml) dir=$(sed -n 's/^arb-dir:[[:space:]]*//p' "$f" | tr -d "\"'"); parity "l10n $d" python3 "$PCK/check_l10n_parity.py" "$d/${dir:-lib/l10n}" ;;
+      */l10n.yaml) dir=$(sed -n 's/^arb-dir:[[:space:]]*//p' "$f" | tr -d "\"'"); parity "l10n $d" python3 "$PCK/check_l10n_parity.py" "$d/${dir:-lib/l10n}"; [ -d "$d/lib" ] && parity "l10n-coverage $d" python3 "$PCK/check_l10n_hardcoded.py" "$d/lib" ;;
       */alembic.ini) parity "alembic $d" python3 "$PCK/check_alembic_models.py" "$d" ;;
     esac
   done <<EOF_PARITY
 $ROOTS
 EOF_PARITY
   parity "deprecations" python3 "$PCK/check_deprecations.py" .
+  parity "env-ssot" python3 "$PCK/check-infra-env-ssot.py" --root .
+  parity "route-map" python3 "$PCK/check-design-route-parity.py" --root .
 fi
 if [ "$P_FAIL" -ne 0 ]; then v=FAIL; elif [ "$P_BLOCKED" -ne 0 ]; then v=BLOCKED; elif [ "$P_RAN" -eq 0 ]; then v="NOT APPLICABLE"; else v=PASS; fi
 echo "PARITY VERDICT: $v"
@@ -540,9 +595,10 @@ Proven 2026-11-24 on fixtures: a clean API + Flutter tree → 4 PASS; an `os.env
 | AI assets | ✅ EXIT 0 (2 REVIEW listed) | ✅ R1 24 passed | PASS |
 
 ### FAIL Details
-Python — 2 failures:
-- test_create_user_duplicate: AssertionError at tests/test_user.py:45
-- test_payment_timeout: TimeoutError at tests/test_payment.py:78
+From `TEST SUMMARY` (raw log preserved; do not diagnose beyond the listed names):
+Python — 2 failures (log=/tmp/pytest.log):
+- tests/test_user.py::test_create_user_duplicate: AssertionError
+- tests/test_payment.py::test_payment_timeout: TimeoutError
 
 ## Final Verdict: ❌ FAIL (2 of 6 stacks failing)
 ```
@@ -574,7 +630,9 @@ Pattern matches are not blocking (human decides) but must be acknowledged. `LINT
 - A diff-aware check that is green on UNCOMMITTED work is vacuous (it sees no changed files) — commit first or say "vacuous"
 - If a stack build tool is missing (`mvnw`, `flutter`, `node_modules`, etc.) → report BLOCKED with "install X" — never PASS
 - A check with nothing configured (no lint script, no E2E config) is NOT RUN with its reason, never PASS
-- Do NOT interpret test failure messages — show raw output, human diagnoses
+- After each test command: keep the log, echo the runner's own `TEST EXIT:$rc`, then run `summarize-test-log.py --exit-code "$rc"`. A pipe into the summarizer or into `tail` before `echo $?` is not the gate (reports the pager or summarizer status).
+- `TEST SUMMARY status=UNKNOWN` (unparseable, truncated, or malformed logs) is not a pass: Tests column UNKNOWN, stack FAIL. UNKNOWN, never PASS
+- Do NOT interpret test failure messages — copy names/locations from `TEST SUMMARY`; the raw log is the diagnostic record, human diagnoses
 
 ## Related
 

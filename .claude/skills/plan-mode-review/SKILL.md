@@ -36,7 +36,7 @@ Load references as needed per phase:
 
 | Phase | Reference File | Contents |
 |-------|---------------|----------|
-| Core | [reference/plan-mode-protocol.md](reference/plan-mode-protocol.md) | Approval scope triage, severity classification, Phase 0 gate requirements, multi-turn continuity, token limit triage |
+| Core | [reference/plan-mode-protocol.md](reference/plan-mode-protocol.md) | Approval scope triage, severity classification, Phase 0 gate requirements, task-contract scan (`check-sdd-ledger.py --scan-plan`), multi-turn continuity, token limit triage |
 | Phase 0 | [reference/phase0-self-review.md](reference/phase0-self-review.md) | Outcome spec, 3 approaches, self-critique, deletion pass, gate check |
 | Phase 0.5 | [reference/confidence-gate.md](reference/confidence-gate.md) | 4-dimension confidence scoring rubric, thresholds, gap recovery | Big Change mode only |
 | Phase 5 | [reference/production-readiness-gate.md](reference/production-readiness-gate.md) | Blast radius, rollback strategy, dependency health, cost/infra impact, data migration, second-order effects |

@@ -17,4 +17,4 @@ Analyze the current project and provide a concise status report:
 
 Output as a clean markdown summary.
 
-This is an inventory: it runs no builds or tests and gives no PASS/FAIL verdict. Use instead when: `/verify` — build/test status with exit codes; `/status-check` — what works or is broken, feature by feature.
+This is an inventory: it runs no builds or tests and gives no PASS/FAIL verdict. Use instead when: `/next` — pick the next actionable work item; `/verify` — build/test status with exit codes; `/status-check` — what works or is broken, feature by feature; `/test-partner` — paired manual QA.

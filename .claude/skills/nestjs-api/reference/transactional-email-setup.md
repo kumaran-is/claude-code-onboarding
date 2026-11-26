@@ -81,6 +81,14 @@ export class EmailService {
 - Complaints: immediately unsubscribe, investigate template/frequency
 - Monitor bounce rate — stay below 2% to maintain deliverability
 
+## Channel rules (producer + retry)
+
+Load `.claude/skills/python-dev/reference/notification-producer-and-channel.md` (stack-neutral) when this service **sends** mail, not only when it configures DNS:
+
+- Every writer of the notifiable field stages the send (outbox), including the second code path.
+- Never resend when provider acceptance is unknown. A `202` is not delivery.
+- QA tiers: Q1 CI (no network) → Q2 sandbox → Q3 one staging send per role → Q4 provider preview tools. Unsupported checks are `NOT EXECUTED`, never `PASS`.
+
 ## Checklist
 
 - [ ] SPF record configured and verified
@@ -89,3 +97,5 @@ export class EmailService {
 - [ ] Bounce webhook endpoint implemented
 - [ ] Complaint webhook endpoint implemented
 - [ ] Email templates tested with mail-tester.com (score >= 8/10)
+- [ ] Uncertain acceptance is not retried; recipient is re-derived on any retry
+- [ ] Every writer of the mail-triggering field has a producer or absence test

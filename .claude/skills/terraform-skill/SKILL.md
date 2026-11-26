@@ -384,3 +384,4 @@ Key jobs: `validate` (fmt + tflint + tfsec), `test` (native terraform test with 
 - **Terraform CI/CD (plan on PR, apply on merge)**: `reference/cicd-github-actions.md`
 - **Security scanning post-apply**: Dispatch `security-reviewer` agent
 - **CI/CD application pipeline**: `deployment-ci-cd` skill (`.claude/skills/deployment-ci-cd/SKILL.md`)
+- **Env/infra SSOT** (`.env.example` vs compose vs Terraform vs dart-define, plus local/staging/prod *example* key drift): `python3 .claude/scripts/check-infra-env-ssot.py --root .` — do not inline `check_env_parity.py` in a new Makefile target when the aggregate exists. No Terraform in the repo → that arm is skipped, not FAIL.

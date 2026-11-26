@@ -11,6 +11,8 @@ Run the project's design-system gate. One detector serves this command, `/verify
 
 ```bash
 python3 .claude/scripts/check-design-system.py --root . > /tmp/ds-gate.log 2>&1; echo "DESIGN GATE EXIT:$?"; cat /tmp/ds-gate.log
+python3 .claude/scripts/check-design-route-parity.py --selftest; echo "ROUTE MAP SELFTEST:$?"
+python3 .claude/scripts/check-design-route-parity.py --root . ; echo "ROUTE MAP EXIT:$?"
 # changed files only (no project-level checks such as icon family or parallel scales):
 python3 .claude/scripts/check-design-system.py --root . --files $(git diff --name-only --diff-filter=AM HEAD) ; echo "EXIT:$?"
 # a project that has adopted DESIGN.md can make its absence an error:
@@ -40,6 +42,7 @@ Exit codes: `0` PASS (warnings may print), `1` FAIL (errors), `2` BROKEN (detect
 | `DS-AUTHORITY` | Flutter | colour literals in more than one token root (`lib/theme/` beside `design_system/`) | one token root |
 | `DS-REDUCED-MOTION` | web | a daisyUI `loading-*` indicator in an app whose global stylesheet lacks the `.loading` reduced-motion override (SMIL ignores the media query) | the override in `src/styles.css` (`daisyui-v5-components.md`) or `motion-reduce:hidden` |
 | `DS-MUTED-TEXT` | web (warning) | `text-base-content/10`…`/50` on text | `/60` on `base-100`, `/70` on `base-200`/`base-300` |
+| Screen/route map | all | GoRoute / Angular `path` / React Router `path` missing from DESIGN.md `## Screens` / screen-inventory Route column (legacy: `app-screen-map.json`). Exit 2 = no design-side routes (NOT APPLICABLE) | update DESIGN.md or the inventory in the same PR; `design-system/reference/screen-route-parity.md` |
 
 Out of scope by design: token-definition files and CSS custom-property declarations (that is where literals belong), generated files, tests, and CLI-owned UI-kit folders (`src/components/ui/`, Spartan `libs/ui/`). Literal `Duration(...)` values are not flagged (timeouts and debounces are legitimate): motion durations are a review item (`AppMotion`). Touch-target size, contrast in context and label association are runtime/accessibility checks and the `accessibility-auditor` agent's job.
 - Flutter targets: widget tests with `androidTapTargetGuideline` / `textContrastGuideline`; device flows with Maestro.

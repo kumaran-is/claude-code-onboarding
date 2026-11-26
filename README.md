@@ -912,7 +912,7 @@ To add your own project-specific permissions, modify `.claude/settings.json` or 
 
 > **Note:** `SessionStart`, `SessionEnd`, `SubagentStop`, `PreCompact`, and `PermissionRequest` hooks were added in recent Claude Code releases. If a hook event doesn't fire, verify your Claude Code version with `claude --version` and update if needed. The core events (`PreToolUse`, `PostToolUse`, `Stop`) are available in all versions.
 
-This repo registers 45 hooks in `.claude/settings.json`. The ones most people interact with:
+This repo registers 45 unique hook scripts in `.claude/settings.json`. The ones most people interact with:
 
 | Hook | Script | Event | What It Does |
 |------|--------|-------|-------------|
@@ -920,7 +920,8 @@ This repo registers 45 hooks in `.claude/settings.json`. The ones most people in
 | **Restore Guard** | `pre-bash-destructive-restore-guard.sh` | `PreToolUse` → Bash | Asks for confirmation before `git checkout --`, `git restore`, `git reset --hard`, `git clean -f` when they would discard uncommitted work |
 | **zsh Split Guard** | `pre-bash-zsh-split-guard.sh` | `PreToolUse` → Bash | Blocks an unquoted `--include=`/`--exclude=` glob (zsh aborts the command, so the sweep never runs) and an unquoted `$VAR` docker compose service list; warns on `for x in $VAR` and bare `$VAR` path lists, which zsh does not word-split. `--selftest` |
 | **Raw Scaffold Block** | `block-raw-scaffold.sh` | `PreToolUse` → Bash | Blocks `flutter create` / `ng new` / `nest new` etc. unless the call carries the owning scaffold command's `CC_SCAFFOLD=<command>` marker (logged to `.git/claude-state/scaffold-audit.log`) |
-| **Protect Sensitive Files** | `pre-edit-protect-sensitive.sh` | `PreToolUse` → Write/Edit | Blocks edits to `.git/` internals, `.env`, credentials, private keys, lock files |
+| **Protect Sensitive Files** | `pre-edit-protect-sensitive.sh` | `PreToolUse` → Write/Edit | Blocks edits to `.git/` internals, `.env`, credentials, private keys, lock files; blocks unauthorized weakening of ESLint/Ruff/Flutter analysis/TypeScript/coverage/CI quality configs unless a `quality-config-exception` is present |
+| **PreCompact checkpoint** | `pre-compact-checkpoint.sh` | `PreCompact` | Secret-free snapshot + `/checkpoint` log line + SDD `--status` before compaction; fail-open; stdout is compaction-summary instructions |
 | **Auto-Format** | `post-edit-format.sh` | `PostToolUse` → Write/Edit | Runs Prettier (TS/JS/HTML/CSS), `dart format`, ruff/black (Python) |
 | **Flutter advisories** | `post-edit-flutter-ui-network-advisory.sh`, `post-edit-flutter-catch-wipe-advisory.sh` | `PostToolUse` → Write/Edit | Tell Claude when UI code imports an HTTP/cloud client directly, or a `catch` block clears a cache/queue (exempt with `// online-only:` / `// wipe-ok:` + reason) |
 | **Browser Tool Advisory** | `pre-browser-tool-advisory.sh` | `PreToolUse` → browser MCP tools / Bash | In a workspace containing a Flutter Android/iOS app, reminds Claude that mobile UI/E2E uses Maestro only and browser automation is for web targets (rule: `.claude/rules/testing-tool-selection.md`; checked statically by `.claude/scripts/lint-testing-tools.sh`) |
@@ -3027,7 +3028,8 @@ This repo includes Claude Code hooks (`.claude/hooks/`) and a git pre-commit hoo
 | Hook | Event | What It Prevents |
 |------|-------|-----------------|
 | `pre-bash-guard.sh` | PreToolUse | `rm -rf /`, force-push to main, `DROP DATABASE`, piping curl to shell |
-| `pre-edit-protect-sensitive.sh` | PreToolUse | Direct edits to `.env`, private keys, credentials, lock files |
+| `pre-edit-protect-sensitive.sh` | PreToolUse | Direct edits to `.env`, private keys, credentials, lock files; unauthorized weakening of ESLint/Ruff/analysis_options/tsconfig/coverage/CI quality gates |
+| `pre-compact-checkpoint.sh` | PreCompact | Compaction with no on-disk snapshot (fail-open; does not block `/compact`) |
 | `pre-prompt-injection.sh` | PreToolUse | Blocks terminal escape sequences and NUL bytes; role-override phrases and chat-template delimiters in Bash/WebFetch input are reported as an advisory, never blocked |
 | `pre-unicode-injection.sh` | PreToolUse | Zero-width characters, bidi overrides and isolates, tag characters, ANSI escapes, null bytes hidden in file edits (CVE-2025-53109/53110) |
 | `session-claudemd-scan.sh` | SessionStart | Injection patterns in `CLAUDE.md` / `.claude/*.md` files loaded at session start |

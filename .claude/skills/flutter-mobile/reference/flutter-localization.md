@@ -118,7 +118,14 @@ Related rules:
 
 - `gen-l10n` does not fail the build when a locale file lacks a key; it reports untranslated messages (printed, or written to `untranslated-messages-file`). In practice the missing key resolves to the template language at runtime — verify this once in your project by deleting a key and running the app. A green build therefore does not prove the second language is complete.
 - **Parity:** every ARB file has the same key set and the same `{placeholder}` set as the template. Enforce with a unit test and/or CI step, and a write-time warning when the template ARB changes while sibling ARB files do not.
-- **Coverage:** no literal user-facing strings remain in widget code (section 3). Parity can be green while coverage is red, because a string that never entered any catalogue is invisible to a parity check. Run a hardcoded-string check as a separate gate.
+- **Coverage:** no literal user-facing strings remain in widget code (section 3). Parity can be green while coverage is red, because a string that never entered any catalogue is invisible to a parity check. Gate:
+
+```bash
+python3 .claude/scripts/check_l10n_hardcoded.py --selftest
+python3 .claude/scripts/check_l10n_hardcoded.py lib   # exit 0 clean, 1 Text('…') literals, 2 no Dart UI
+```
+
+Exempt a line with `ignore-l10n: <reason of 8+ chars>` (brand marks, debug URLs). `/verify` full/pre-pr runs this next to `check_l10n_parity.py`.
 - Add every new key to **all** locale files in the same change. If the real translation is pending, add the template text and note it in the `@key` description so the gap stays visible.
 
 Minimal parity test:

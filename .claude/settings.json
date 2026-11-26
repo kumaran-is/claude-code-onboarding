@@ -429,6 +429,17 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-compact-checkpoint.sh",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
     "StopFailure": [
       {
         "hooks": [

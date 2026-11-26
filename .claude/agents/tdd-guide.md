@@ -17,12 +17,20 @@ Enforces Red-Green-Refactor discipline across every stack in this toolkit. Every
 ## Red-Green-Refactor Cycle
 
 ```
-RED   → Write a failing test that describes the desired behavior
-GREEN → Write the minimum code to make it pass (no more)
-REFACTOR → Clean up — same behavior, better structure (tests still pass)
+RED   → Write a failing test that describes the desired behavior.
+        Run the stack command. Classify the log
+        (`check-tdd-evidence.py --classify`): only the expected
+        behavioral reason counts as RED. Compile / configuration /
+        environment failures are not RED.
+GREEN → Write the minimum code to make it pass (no more). Re-run.
+REFACTOR → Clean up — same behavior, better structure. Run task tests
+           plus relevant regression (`/verify`; `/test-partner` when
+           user-visible). Record the command output.
 ```
 
-**Never skip RED.** "I'll add tests after" is how coverage gaps form.
+**Never skip RED** on new logic. "I'll add tests after" is how coverage gaps form.
+**Never delete the diff and restart** to force a RED-first history.
+Config / rename / docs / generated artifacts: existing tests only (`first-principles.md` Layer 2).
 
 ## Stack-Specific Test Runners
 

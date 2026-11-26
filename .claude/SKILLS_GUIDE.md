@@ -42,12 +42,16 @@
 | Architecture | `.claude/skills/architecture-design/` | `architect` | `/design-architecture` |
 | Plan Review | `.claude/skills/plan-mode-review/` | — | `/plan-review` |
 | Browser Testing | `.claude/skills/browser-testing/` | `browser-testing` | — |
+| Next work item (`/next`, GitHub issues/project, local plans, blockers, verification, implementation notes) | `.claude/skills/next-issue/` (`references/implementation-notes.md`) | — | `/next` |
+| Partner testing (paired manual QA, findings ledger, fix/retest) | `.claude/skills/test-partner/` | — | `/test-partner` |
+| Session wrap (checkpoint snapshot + lessons + failed approaches + dirty/unpushed + resume prompt) | `/checkpoint` then `/promote-lessons` then handoff | — | `/end-session` |
 | Debugging | `.claude/skills/systematic-debugging/` | — | `/debug` |
 | Verification | `.claude/skills/verification-before-completion/` | — | — |
-| SDD Pipeline | `.claude/skills/subagent-driven-development/` | — | — |
+| SDD Pipeline (execution ledger + task briefs + independent review package; not AWS AI-DLC) | `.claude/skills/subagent-driven-development/` (`reference/execution-ledger.md`) | stack reviewers in the skill | — |
 | Critical Reasoning | `.claude/skills/the-fool/` | — | — |
 | Requirements / Feature Spec | `.claude/skills/feature-forge/` | — | — |
-| Brainstorm / Explore Options | — | — | `/brainstorm` |
+| Brainstorm / Explore Options (optional; never a gate on `/next` or an approved plan) | — | — | `/brainstorm` |
+| Git worktree isolation (optional; collision detect; do not stash) | `.claude/scripts/check-worktree-isolation.py` | — | `/worktree-sync` |
 | Stripe Payments | `.claude/skills/stripe/` | — | — |
 | RevenueCat Subscriptions | `.claude/skills/revenuecat/` | — | — |
 | AI Feature Design | `.claude/skills/ai-decision-record/` | — | `/ai-decision-record` |

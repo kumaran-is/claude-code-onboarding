@@ -80,8 +80,13 @@ What are you working on?
         +-- Refresh strategy per screen (background, automatic, realtime, pull-to-refresh, explicit, none)
         |   → Read: interaction-contracts.md §6c
         |
+        +-- Screen / route ↔ DESIGN.md map (same-PR parity)
+        |   → Read: .claude/skills/design-system/reference/screen-route-parity.md
+        |   → Gate: python3 .claude/scripts/check-design-route-parity.py --root .
+        |
         +-- i18n, l10n, RTL, Intl formatting
         |   → Read: .claude/skills/design-system/reference/i18n-rtl-intl.md
+        |   → Flutter coverage gate: python3 .claude/scripts/check_l10n_hardcoded.py lib
         |
         +-- Accessibility (WCAG 2.2 AA, all stacks)
         |   → Load the accessibility-audit skill (reference/wcag22-checklist.md)
@@ -181,6 +186,7 @@ Before declaring any UI work done, these must pass (from `verification-and-repor
 - [ ] Touch targets ≥ 24×24 CSS px everywhere (WCAG 2.5.8); house standard ≥ 48 dp Flutter / 44 px web
 - [ ] Every async region implements the §6b state matrix (cold loading, cached refresh, empty, error with and without data, offline)
 - [ ] `/lint-design-system` run with zero violations
+- [ ] Screen/route map updated in the same PR when a named screen was added, removed or renamed (`check-design-route-parity.py`; N/A if the repo has no map yet)
 - [ ] Exception markers (`// ignore-design: [reason]`) reviewed and justified
 - [ ] Shared-library components carry a line-1 tier and are presentational; each data screen records its refresh strategy (§6c)
 

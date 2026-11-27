@@ -31,7 +31,7 @@ Keep G0/G2 files. Mark G3–G5 `NOT_RUN` or `BLOCKED` with the same reason. If t
 
 ## Mapping jobs to *discovered* tools
 
-Once schemas are in hand, bind jobs by **capability**, not by a remembered name:
+The Stitch SDK README currently documents example tool names (`create_project`, `list_projects`, `generate_screen_from_text`, `get_screen`, `edit_screens`, `generate_variants`). Treat those as **hints**, not a guarantee — bind jobs by **capability** from this session's `tools/list`:
 
 | Job | Bind a discovered tool that |
 |---|---|

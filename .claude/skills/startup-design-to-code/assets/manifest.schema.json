@@ -7,6 +7,7 @@
   "required": ["version", "idea", "product_slug", "current_stage", "stages", "artifacts", "decisions", "stitch", "mcp_evidence"],
   "properties": {
     "version": { "type": "integer", "const": 1 },
+    "mode": { "type": "string", "enum": ["standalone", "aidlc"] },
     "idea": { "type": "string", "minLength": 8 },
     "product_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}$" },
     "current_stage": {
@@ -77,7 +78,17 @@
         }
       }
     },
-    "mcp_evidence": { "type": "string", "enum": ["none", "discovered", "mocked"] }
+    "mcp_evidence": { "type": "string", "enum": ["none", "discovered", "mocked"] },
+    "aidlc": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "intent_dir": { "type": ["string", "null"] },
+        "phase_checks": { "type": "array", "items": { "type": "string" } },
+        "consumed": { "type": "array", "items": { "type": "string" } },
+        "handoff": { "type": ["string", "null"] }
+      }
+    }
   },
   "$defs": {
     "stage": {

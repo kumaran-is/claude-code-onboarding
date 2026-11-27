@@ -8,12 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Dual-mode `/startup-design`** — standalone G0–G10 from a product brief, or `--mode aidlc --bind-aidlc` to consume official AWS AI-DLC Ideation/Inception files (`aidlc/spaces/<space>/intents/<id>/`), run Stitch → `DESIGN.md` → prototype (G1–G5), and write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. `--approve-production` is refused in AI-DLC mode. AI-DLC remains optional and is never started from this command.
 - **MONO-ARCH-001 polyglot architecture** — four explicit modes (native-only, Melos-only, Nx-only, Nx + Melos) with a copied spec at `docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md`. Discover recommends a mode and stops for human approval before `nx init`.
 - **Graph audit** — `audit_monorepo_graph.py` fail-closes on missing projects/edges, empty graphs, empty expect files, cached `deploy`/`migrate`/`release`/`docker-push`, cached generated OpenAPI, missing Flutter-bridge inputs, and Python projects listed without explicit edges (plugin name is not proof).
 - **Isolated fixture matrix** — `run_fixture_matrix.py` runs real Melos 8.10.1 and Nx 24.1.0 in `$TMPDIR` (never this kit or product repos): Melos `--diff` + dependents, one Flutter Nx bridge, lockfile/toolchain cache invalidation (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock`), Python/uv and `@nx/gradle` inferred-vs-explicit edges, and native uv/Gradle builds after Nx rollback.
 
 ### Changed
 
+- **`startup-design-to-code`** — optional manifest `mode` / `aidlc` bind fields; gate `--bind-aidlc`, `--handoff-aidlc`, `--intent`; skill-spec activation case `startup-aidlc-positive`. Standalone production approval is unchanged.
 - **Polyglot skill** — Melos kit pin **8.10.1** (`dart run melos`, no `melos.yaml`); Nx **24.1.0** task-based affected (`inputs` / `^default`, not project edges alone). Python and Java are not inferred from JS; they need explicit `implicitDependencies` (and a Gradle companion plugin for `@nx/gradle` inference). Git `base` comes from the repo (`origin/HEAD`, then the existing local default), never an assumed `main`.
 - **Scaffolds and `/new-project`** — Flutter, Angular, Python, Spring, and MCP still join an existing language workspace; there is still no `/scaffold-monorepo`. `/design-architecture` and `/new-project` route monorepo questions through `polyglot-monorepo`.
 

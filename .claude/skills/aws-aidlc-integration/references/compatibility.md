@@ -18,6 +18,7 @@ for Claude Code; it does not replace `/next`.
 | Command `/aidlc` | — | upstream after `aidlc config` | OK; not a toolkit command |
 | `.mcp.json` | existing servers stay | `--mcp none` by default | `--mcp defaults` needs extra approval |
 | `aidlc/` workspace, `.aidlc-version` | — | upstream | Do not reimplement |
+| Stitch → DESIGN.md → prototype | `/startup-design` (`startup-design-to-code`, `--mode aidlc --bind-aidlc`) | Ideation / Inception / Construction | Consume approved Ideation/Inception; do not start `/aidlc`; do not write `aidlc/`; Construction stays `/aidlc` |
 
 ## Stop and offer alternatives
 

@@ -1,6 +1,6 @@
 # Production translation (G6–G10)
 
-G6 records the platform. G7–G10 write application code. The gate refuses G7+ until `decisions.production_approved` is true **and** the user said so in this session.
+G6 records the platform. G7–G10 write application code **in standalone mode only**. The gate refuses G7+ until `decisions.production_approved` is true **and** the user said so in this session. In **aidlc** mode, G7–G10 are forbidden; `--approve-production` is refused; use `--handoff-aidlc` and continue Construction with `/aidlc`.
 
 ## G6 — architecture only
 

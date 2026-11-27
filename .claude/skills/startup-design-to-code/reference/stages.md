@@ -4,21 +4,23 @@ Load this file when running a stage. Dispatch existing skills; do not re-impleme
 
 | Gate | Outcome | Load | Command / gate |
 |---|---|---|---|
-| G0 Idea / brief | `PRODUCT_BRIEF.md`, `USER_JOURNEYS.md`, `VALIDATION_PLAN.md` | this skill; optional `feature-forge` for a later backlog | manifest `--set-stage G0` |
+| G0 Idea / brief | Standalone: `PRODUCT_BRIEF.md`. AI-DLC: **consume** intent-statement / requirements (see [aidlc-and-standalone.md](aidlc-and-standalone.md)) | this skill; optional `feature-forge` for a later backlog | `--bind-aidlc` in aidlc mode |
 | G1 Stitch preflight | MCP connected, tools listed | [stitch-preflight.md](stitch-preflight.md) | G1 BLOCKED if no server |
 | G2 Screen briefs | 3–6 briefs, inventory rows `draft` | this skill; `mobile-ux-principles.md` | |
 | G3 Screens + variants | Approved Stitch IDs | discovered Stitch tools only | never fake IDs |
 | G4 DESIGN.md | Google Labs format + toolkit sections | `design-system/reference/design-md-governance.md` | `npx @google/design.md lint` when installed; `/lint-design-system` |
 | G5 Prototype + users | Clickable pilot, `g5` decision | [prototype.md](prototype.md) | human PROCEED / ITERATE / STOP |
 | G6 Architecture | Platform + token ownership | `architecture-design`; Angular `ui-mode-selection.md` | no scaffold yet |
-| G7 Translate screens | Idiomatic Flutter / Angular / React | [production-handoff.md](production-handoff.md) | existing `/scaffold-*` after approval |
+| G7 Translate screens | Idiomatic Flutter / Angular / React | [production-handoff.md](production-handoff.md) | existing `/scaffold-*` after approval; **forbidden in aidlc mode** |
 | G8 Behaviour | Async/refresh/offline truth | `interaction-contracts.md` §6b–6c | |
 | G9 Verify | a11y, visual, E2E | `accessibility-auditor`, `browser-testing`, Maestro for Flutter devices | `/lint-design-system`, `/verify` |
 | G10 Evolve | Traceability, DESIGN.md diffs | `design-system` | `npx @google/design.md diff` when installed |
 
 ## G0
 
-Fill the product-brief template. A reviewer can state user, problem, one task, success criterion and test plan without guessing. Do not generate UI.
+**Standalone:** fill the product-brief template. A reviewer can state user, problem, one task, success criterion and test plan without guessing. Do not generate UI.
+
+**AI-DLC:** do not write a competing brief. `--bind-aidlc` points `artifacts.product_brief` at official Ideation/Inception files. G0 `PASS` means those files were found, not that this skill approved the phase.
 
 ## G2
 
@@ -38,4 +40,4 @@ See [prototype.md](prototype.md). The human records PROCEED / ITERATE / STOP. IT
 
 ## G6–G10
 
-See [production-handoff.md](production-handoff.md). Production code requires `decisions.production_approved`.
+See [production-handoff.md](production-handoff.md). Standalone production code requires `decisions.production_approved`. In **aidlc** mode G6 may record a platform recommendation; G7–G10 stay `NOT_RUN` and `--handoff-aidlc` returns evidence to `/aidlc` Construction.

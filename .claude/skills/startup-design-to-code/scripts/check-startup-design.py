@@ -8,7 +8,9 @@ Usage:
   check-startup-design.py --selftest
   check-startup-design.py --root DIR
   check-startup-design.py --root DIR --status
-  check-startup-design.py --root DIR --init --slug SLUG --idea TEXT
+  check-startup-design.py --root DIR --init --slug SLUG --idea TEXT [--mode standalone|aidlc]
+  check-startup-design.py --root DIR --bind-aidlc [--intent PATH]
+  check-startup-design.py --root DIR --handoff-aidlc
   check-startup-design.py --root DIR --set-stage G0 --status PASS [--reason TEXT] [--evidence PATH]
   check-startup-design.py --root DIR --approve-production --approved-by NAME
   check-startup-design.py --root DIR --record-mcp --evidence none|discovered|mocked [--tools t1,t2]
@@ -45,6 +47,22 @@ PLATFORMS = {"flutter", "angular", "react", None}
 UI_MODES = {"daisyui", "spartan", "hybrid", None}
 MCP_EVIDENCE = {"none", "discovered", "mocked"}
 SCREEN_STATUSES = {"draft", "variant", "approved", "discarded"}
+MODES = {"standalone", "aidlc"}
+AIDLC_BRIEF_CANDIDATES = (
+    "ideation/intent-capture/intent-statement.md",
+    "ideation/approval-handoff/initiative-brief.md",
+    "inception/requirements-analysis/requirements.md",
+)
+AIDLC_JOURNEY_CANDIDATES = (
+    "inception/user-stories/stories.md",
+    "inception/user-stories/personas.md",
+    "ideation/rough-mockups/user-flow.md",
+    "ideation/scope-definition/scope-document.md",
+)
+AIDLC_PHASE_CHECKS = (
+    "verification/phase-check-ideation.md",
+    "verification/phase-check-inception.md",
+)
 
 SECRET_KEYS = re.compile(
     r"(?i)(api[_-]?key|secret|password|access_token|id_token|refresh_token|"
@@ -119,11 +137,26 @@ def empty_stage() -> dict:
     return {"status": "NOT_RUN", "updated": None, "evidence": [], "reason": None}
 
 
-def default_manifest(slug: str, idea: str) -> dict:
+def default_manifest(slug: str, idea: str, mode: str = "standalone") -> dict:
     data = load_json(TEMPLATE_MANIFEST)
     data["product_slug"] = slug
     data["idea"] = idea
+    data["mode"] = mode if mode in MODES else "standalone"
+    if data["mode"] == "aidlc":
+        data["aidlc"] = {
+            "intent_dir": None,
+            "phase_checks": [],
+            "consumed": [],
+            "handoff": None,
+        }
+    else:
+        data["aidlc"] = None
     return data
+
+
+def manifest_mode(data: dict) -> str:
+    mode = data.get("mode") or "standalone"
+    return mode if mode in MODES else "standalone"
 
 
 def validate_schema(data: dict) -> list[str]:
@@ -148,6 +181,22 @@ def validate_schema(data: dict) -> list[str]:
         errors.append(f"current_stage {data.get('current_stage')!r} is not a gate")
     if data.get("mcp_evidence") not in MCP_EVIDENCE:
         errors.append("mcp_evidence must be none|discovered|mocked")
+    mode = data.get("mode", "standalone")
+    if mode not in MODES:
+        errors.append("mode must be standalone|aidlc")
+    aidlc = data.get("aidlc")
+    if aidlc is not None and not isinstance(aidlc, dict):
+        errors.append("aidlc must be an object or null")
+    elif isinstance(aidlc, dict):
+        for key in ("intent_dir", "handoff"):
+            if key in aidlc and aidlc[key] is not None and not isinstance(aidlc[key], str):
+                errors.append(f"aidlc.{key} must be a string or null")
+        for key in ("phase_checks", "consumed"):
+            if key in aidlc and not isinstance(aidlc[key], list):
+                errors.append(f"aidlc.{key} must be an array")
+        extra_aidlc = set(aidlc) - {"intent_dir", "phase_checks", "consumed", "handoff"}
+        if extra_aidlc:
+            errors.append(f"unknown aidlc keys: {sorted(extra_aidlc)}")
     stages = data.get("stages")
     if not isinstance(stages, dict):
         errors.append("stages must be an object")
@@ -195,8 +244,8 @@ def validate_schema(data: dict) -> list[str]:
     elif isinstance(artifacts, dict) and any(not isinstance(v, str) for v in artifacts.values()):
         errors.append("artifact paths must be strings")
     extra = set(data) - {
-        "version", "idea", "product_slug", "current_stage", "stages",
-        "artifacts", "decisions", "stitch", "mcp_evidence",
+        "version", "mode", "idea", "product_slug", "current_stage", "stages",
+        "artifacts", "decisions", "stitch", "mcp_evidence", "aidlc",
     }
     if extra:
         errors.append(f"unknown keys: {sorted(extra)}")
@@ -259,12 +308,31 @@ def workflow_errors(root: Path, data: dict, *, allow_mock: bool) -> list[str]:
         errors.append("G5 PASS requires decisions.g5")
     if st["G6"] in {"PASS", "IN_PROGRESS"} and not (st["G5"] == "PASS" and g5 == "PROCEED"):
         errors.append("G6 requires G5 PASS and decisions.g5=PROCEED")
+    mode = manifest_mode(data)
     for later in ["G7", "G8", "G9", "G10"]:
         if st[later] != "NOT_RUN":
-            if not approved:
-                errors.append(f"{later} requires decisions.production_approved")
-            if st["G6"] != "PASS":
-                errors.append(f"{later} requires G6 PASS")
+            if mode == "aidlc":
+                errors.append(
+                    f"{later} is Construction; in aidlc mode it stays with /aidlc "
+                    "(use --handoff-aidlc, do not run G7–G10 here)"
+                )
+            else:
+                if not approved:
+                    errors.append(f"{later} requires decisions.production_approved")
+                if st["G6"] != "PASS":
+                    errors.append(f"{later} requires G6 PASS")
+    if mode == "aidlc":
+        if approved:
+            errors.append("aidlc mode refuses production_approved; Construction stays with /aidlc")
+        intent = ((data.get("aidlc") or {}) if isinstance(data.get("aidlc"), dict) else {}).get("intent_dir")
+        consumed = ((data.get("aidlc") or {}) if isinstance(data.get("aidlc"), dict) else {}).get("consumed") or []
+        if st["G0"] == "PASS" and not consumed:
+            errors.append("G0 PASS in aidlc mode requires --bind-aidlc consumed files")
+        if intent and not (root / intent).is_dir():
+            errors.append(f"aidlc.intent_dir missing on disk: {intent}")
+        for rel in consumed:
+            if not (root / rel).is_file():
+                errors.append(f"bound AI-DLC artifact missing: {rel}")
     if st["G1"] == "PASS" and evidence == "none":
         errors.append("G1 PASS requires mcp_evidence discovered or mocked")
     if st["G1"] == "PASS" and evidence == "mocked" and not allow_mock:
@@ -303,25 +371,138 @@ def print_status(data: dict) -> None:
         for g in STAGES if data["stages"][g]["status"] == "BLOCKED"
     ]
     print("## Startup design")
+    print(f"Mode: {manifest_mode(data)}")
     print(f"Stage: {current} {st}")
     print(f"Next: {nxt or 'complete'}")
     print(f"Blocked: {'; '.join(blocked) if blocked else 'none'}")
     arts = data.get("artifacts") or {}
     print("Artifacts: " + ", ".join(f"{k}={v}" for k, v in arts.items()))
     print(f"MCP: {data.get('mcp_evidence')}")
-    print("Production approved: " + ("yes" if data["decisions"]["production_approved"] else "no"))
+    if manifest_mode(data) == "aidlc":
+        print("Production approved: no (Construction stays with /aidlc)")
+    else:
+        print("Production approved: " + ("yes" if data["decisions"]["production_approved"] else "no"))
 
 
-def copy_templates(root: Path) -> None:
+def copy_templates(root: Path, *, skip_brief: bool = False) -> None:
     mapping = {
-        TEMPLATE_BRIEF: root / "PRODUCT_BRIEF.md",
         TEMPLATE_INVENTORY: root / "docs" / "screen-inventory.md",
         TEMPLATE_DESIGN: root / "DESIGN.md",
     }
+    if not skip_brief:
+        mapping[TEMPLATE_BRIEF] = root / "PRODUCT_BRIEF.md"
     for src, dest in mapping.items():
         dest.parent.mkdir(parents=True, exist_ok=True)
         if not dest.exists():
             shutil.copyfile(src, dest)
+
+
+def find_intent_dirs(root: Path) -> list[Path]:
+    spaces = root / "aidlc" / "spaces"
+    if not spaces.is_dir():
+        return []
+    found: list[Path] = []
+    for space in sorted(spaces.iterdir()):
+        intents = space / "intents"
+        if not intents.is_dir():
+            continue
+        for intent in sorted(intents.iterdir(), reverse=True):
+            if intent.is_dir() and (intent / "aidlc-state.md").is_file():
+                found.append(intent)
+    return found
+
+
+def rel_to_root(root: Path, path: Path) -> str:
+    return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
+
+
+def first_existing(intent: Path, rels: tuple[str, ...]) -> Path | None:
+    for rel in rels:
+        candidate = intent / rel
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
+def resolve_intent(root: Path, intent_arg: str | None) -> tuple[Path | None, str | None]:
+    if intent_arg:
+        path = (root / intent_arg).resolve() if not Path(intent_arg).is_absolute() else Path(intent_arg)
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            return None, f"intent path is outside --root: {intent_arg}"
+        if not path.is_dir() or not (path / "aidlc-state.md").is_file():
+            return None, f"not an AI-DLC intent dir (missing aidlc-state.md): {intent_arg}"
+        return path, None
+    found = find_intent_dirs(root)
+    if not found:
+        return None, "no aidlc/spaces/*/intents/*/aidlc-state.md found"
+    if len(found) > 1:
+        listed = ", ".join(rel_to_root(root, p) for p in found)
+        return None, f"multiple intents; pass --intent. found: {listed}"
+    return found[0], None
+
+
+def bind_aidlc(root: Path, data: dict, intent_arg: str | None) -> list[str]:
+    if not (root / "aidlc").is_dir():
+        return ["aidlc/ workspace missing; use --mode standalone or /setup-aidlc"]
+    intent, err = resolve_intent(root, intent_arg)
+    if err or intent is None:
+        return [err or "intent not found"]
+    brief = first_existing(intent, AIDLC_BRIEF_CANDIDATES)
+    if brief is None:
+        return [
+            "no approved Ideation/Inception brief found "
+            f"(looked for {', '.join(AIDLC_BRIEF_CANDIDATES)} under {rel_to_root(root, intent)})"
+        ]
+    journeys = first_existing(intent, AIDLC_JOURNEY_CANDIDATES)
+    checks = [rel_to_root(root, intent / rel) for rel in AIDLC_PHASE_CHECKS if (intent / rel).is_file()]
+    consumed = [rel_to_root(root, brief)]
+    artifacts = data.setdefault("artifacts", {})
+    artifacts["product_brief"] = rel_to_root(root, brief)
+    if journeys is not None:
+        artifacts["journeys"] = rel_to_root(root, journeys)
+        consumed.append(rel_to_root(root, journeys))
+    if checks:
+        artifacts["validation_plan"] = checks[0]
+        consumed.extend(checks)
+    data["mode"] = "aidlc"
+    data["aidlc"] = {
+        "intent_dir": rel_to_root(root, intent),
+        "phase_checks": checks,
+        "consumed": list(dict.fromkeys(consumed)),
+        "handoff": (data.get("aidlc") or {}).get("handoff") if isinstance(data.get("aidlc"), dict) else None,
+    }
+    return []
+
+
+def write_aidlc_handoff(root: Path, data: dict) -> str:
+    dest = root / "design" / "AIDLC_HANDOFF.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    aidlc = data.get("aidlc") if isinstance(data.get("aidlc"), dict) else {}
+    arts = data.get("artifacts") or {}
+    lines = [
+        "# AI-DLC design handoff",
+        "",
+        "This file is **not** an AI-DLC phase approval and is not written under `aidlc/`.",
+        "Construction and lifecycle stay with `/aidlc`. `/startup-design` will not run G7–G10.",
+        "",
+        f"- Mode: {manifest_mode(data)}",
+        f"- Intent: {aidlc.get('intent_dir') or 'none'}",
+        f"- Product brief (consumed): {arts.get('product_brief', '')}",
+        f"- Journeys (consumed): {arts.get('journeys', '')}",
+        f"- DESIGN.md: {arts.get('design_md', 'DESIGN.md')}",
+        f"- Screen inventory: {arts.get('screen_inventory', '')}",
+        f"- Prototype: {arts.get('prototype', '')}",
+        f"- G5: {(data.get('decisions') or {}).get('g5')}",
+        f"- Platform recommendation: {(data.get('decisions') or {}).get('platform') or 'unset'}",
+        f"- MCP evidence: {data.get('mcp_evidence')}",
+        "",
+        "Continue Construction with `/aidlc`. Do not treat this prototype as production.",
+        "",
+    ]
+    dest.write_text("\n".join(lines), encoding="utf-8")
+    return rel_to_root(root, dest)
 
 
 def set_stage(data: dict, stage: str, status: str, reason: str | None, evidence: list[str]) -> None:
@@ -346,14 +527,23 @@ def judge(root: Path, data: dict, *, allow_mock: bool, prototype: bool) -> list[
     return errors
 
 
-def cmd_init(root: Path, slug: str, idea: str) -> int:
+def cmd_init(root: Path, slug: str, idea: str, mode: str = "standalone") -> int:
     path = manifest_path(root)
     if path.exists():
         print(f"manifest exists: {path}", file=sys.stderr, flush=True)
         return 1
-    data = default_manifest(slug, idea)
+    if mode not in MODES:
+        print("ERROR: --mode must be standalone|aidlc", file=sys.stderr)
+        return 2
+    if mode == "aidlc" and not (root / "aidlc").is_dir():
+        print(
+            "ERROR: --mode aidlc requires an aidlc/ workspace (or use --mode standalone)",
+            file=sys.stderr,
+        )
+        return 1
+    data = default_manifest(slug, idea, mode=mode)
     dump_json(path, data)
-    copy_templates(root)
+    copy_templates(root, skip_brief=(mode == "aidlc"))
     print(f"wrote {path}", flush=True)
     return 0
 
@@ -470,6 +660,55 @@ def selftest() -> int:
         if cmd_init(root, "leaflog", idea) == 0:
             failures.append("second init should fail")
 
+        aidlc_root = root / "aidlc-product"
+        if cmd_init(aidlc_root, "bound", idea, mode="aidlc") == 0:
+            failures.append("aidlc init without workspace should fail")
+        intent = (
+            aidlc_root / "aidlc" / "spaces" / "default" / "intents" / "261127-leaflog"
+        )
+        (intent / "ideation" / "intent-capture").mkdir(parents=True)
+        (intent / "inception" / "user-stories").mkdir(parents=True)
+        (intent / "verification").mkdir(parents=True)
+        (intent / "aidlc-state.md").write_text("# state\n", encoding="utf-8")
+        statement = intent / "ideation" / "intent-capture" / "intent-statement.md"
+        statement.write_text("# Intent\nWater plants on time.\n", encoding="utf-8")
+        stories = intent / "inception" / "user-stories" / "stories.md"
+        stories.write_text("# Stories\nAs a dweller I water plants.\n", encoding="utf-8")
+        (intent / "verification" / "phase-check-ideation.md").write_text(
+            "# phase-check-ideation\napproved\n", encoding="utf-8"
+        )
+        if cmd_init(aidlc_root, "bound", idea, mode="aidlc") != 0:
+            failures.append("aidlc init with workspace should succeed")
+        bound = load_or_die(aidlc_root)
+        bind_errs = bind_aidlc(aidlc_root, bound, None)
+        if bind_errs:
+            failures.append(f"bind should succeed: {bind_errs}")
+        else:
+            dump_json(manifest_path(aidlc_root), bound)
+            bound["stages"]["G0"]["status"] = "PASS"
+            bound["stages"]["G0"]["evidence"] = list(bound["aidlc"]["consumed"])
+            expect("aidlc G0 after bind", workflow_errors(aidlc_root, bound, allow_mock=False), False)
+            if (aidlc_root / "PRODUCT_BRIEF.md").exists():
+                failures.append("aidlc init must not write a competing PRODUCT_BRIEF.md")
+            g7 = json.loads(json.dumps(bound))
+            g7["stages"]["G5"]["status"] = "PASS"
+            g7["decisions"]["g5"] = "PROCEED"
+            g7["stages"]["G6"]["status"] = "PASS"
+            g7["stages"]["G7"]["status"] = "IN_PROGRESS"
+            expect("aidlc G7 forbidden", workflow_errors(aidlc_root, g7, allow_mock=False), True)
+            g7["decisions"]["production_approved"] = True
+            g7["stages"]["G7"]["status"] = "NOT_RUN"
+            expect("aidlc production_approved forbidden", workflow_errors(aidlc_root, g7, allow_mock=False), True)
+            g5ok = json.loads(json.dumps(bound))
+            g5ok["stages"]["G5"]["status"] = "PASS"
+            g5ok["decisions"]["g5"] = "PROCEED"
+            rel = write_aidlc_handoff(aidlc_root, g5ok)
+            handoff_path = aidlc_root / rel
+            if not handoff_path.is_file() or "Construction" not in handoff_path.read_text(encoding="utf-8"):
+                failures.append("handoff file missing Construction notice")
+            if any(p.parts[-1] == "AIDLC_HANDOFF.md" for p in intent.rglob("AIDLC_HANDOFF.md")):
+                failures.append("handoff must not be written under aidlc/")
+
         if not SCHEMA_PATH.is_file() or not TEMPLATE_MANIFEST.is_file():
             failures.append("schema or template missing")
 
@@ -490,6 +729,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--init", action="store_true")
     p.add_argument("--slug", default=None)
     p.add_argument("--idea", default=None)
+    p.add_argument("--mode", choices=sorted(MODES), default="standalone")
+    p.add_argument("--bind-aidlc", action="store_true")
+    p.add_argument("--intent", default=None, help="aidlc/spaces/<space>/intents/<id> when several exist")
+    p.add_argument("--handoff-aidlc", action="store_true")
     p.add_argument("--set-stage", dest="set_stage", default=None)
     p.add_argument("--stage-status", dest="stage_status", default=None, choices=sorted(STAGE_STATUSES))
     p.add_argument("--reason", default=None)
@@ -515,7 +758,16 @@ def main(argv: list[str] | None = None) -> int:
         if not args.slug or not args.idea:
             print("ERROR: --init requires --slug and --idea", file=sys.stderr)
             return 2
-        return cmd_init(root, args.slug, args.idea)
+        rc = cmd_init(root, args.slug, args.idea, mode=args.mode)
+        if rc != 0 or not args.bind_aidlc:
+            return rc
+        data = load_or_die(root)
+        bind_errs = bind_aidlc(root, data, args.intent)
+        if bind_errs:
+            return report(bind_errs)
+        dump_json(manifest_path(root), data)
+        print(f"bound {data['aidlc']['intent_dir']}", flush=True)
+        return 0
 
     try:
         data = load_or_die(root)
@@ -536,7 +788,33 @@ def main(argv: list[str] | None = None) -> int:
         if args.tools:
             data["stitch"]["tools_discovered"] = [t for t in args.tools.split(",") if t]
         changed = True
+    if args.bind_aidlc:
+        bind_errs = bind_aidlc(root, data, args.intent)
+        if bind_errs:
+            return report(bind_errs)
+        changed = True
+    if args.handoff_aidlc:
+        if manifest_mode(data) != "aidlc":
+            print("ERROR: --handoff-aidlc requires mode=aidlc", file=sys.stderr)
+            return 1
+        if data["stages"]["G5"]["status"] != "PASS" or data["decisions"].get("g5") != "PROCEED":
+            print("ERROR: handoff requires G5 PASS and decisions.g5=PROCEED", file=sys.stderr)
+            return 1
+        rel = write_aidlc_handoff(root, data)
+        data.setdefault("aidlc", {})
+        if not isinstance(data["aidlc"], dict):
+            data["aidlc"] = {}
+        data["aidlc"]["handoff"] = rel
+        data.setdefault("artifacts", {})["aidlc_handoff"] = rel
+        changed = True
     if args.approve_production:
+        if manifest_mode(data) == "aidlc":
+            print(
+                "ERROR: aidlc mode refuses --approve-production; Construction stays with /aidlc "
+                "(use --handoff-aidlc)",
+                file=sys.stderr,
+            )
+            return 1
         if data["stages"]["G5"]["status"] != "PASS" or data["decisions"].get("g5") != "PROCEED":
             print("ERROR: production approval requires G5 PASS and decisions.g5=PROCEED", file=sys.stderr)
             return 1

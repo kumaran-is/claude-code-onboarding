@@ -8,6 +8,8 @@ Never store secrets, API keys, `Authorization` headers, or personal data. Stitch
 
 | Field | Role |
 |---|---|
+| `mode` | `standalone` (default) or `aidlc` — see [aidlc-and-standalone.md](aidlc-and-standalone.md) |
+| `aidlc` | Bound intent dir, consumed files, handoff path (null in standalone) |
 | `current_stage` | Highest gate the operator should resume |
 | `stages.G*.status` | `NOT_RUN` · `IN_PROGRESS` · `PASS` · `FAIL` · `BLOCKED` |
 | `artifacts` | Relative paths to brief, inventory, DESIGN.md, prototype |
@@ -26,7 +28,8 @@ G0 (brief) ──► G1 (Stitch preflight) ──► G3 (screens)
            └─► G2 (screen briefs)   ──┘
 G3 PASS ──► G4 DESIGN.md ──► G5 prototype + g5 decision
 G5 PROCEED ──► G6 architecture
-G6 PASS AND production_approved ──► G7…G10
+G6 PASS AND production_approved ──► G7…G10   (standalone only)
+G5 PROCEED ──► --handoff-aidlc               (aidlc mode; G7–G10 stay NOT_RUN)
 ```
 
 - G1 may be `BLOCKED` after G0 `PASS`. Leave G0 artifacts in place.
@@ -44,4 +47,6 @@ python3 .claude/skills/startup-design-to-code/scripts/check-startup-design.py \
   --root <product> --init --slug <slug> --idea "<one paragraph>"
 python3 .claude/skills/startup-design-to-code/scripts/check-startup-design.py \
   --root <product> --set-stage G0 --stage-status PASS --evidence PRODUCT_BRIEF.md
+python3 .claude/skills/startup-design-to-code/scripts/check-startup-design.py \
+  --root <product> --init --slug <slug> --idea "<one paragraph>" --mode aidlc --bind-aidlc
 ```

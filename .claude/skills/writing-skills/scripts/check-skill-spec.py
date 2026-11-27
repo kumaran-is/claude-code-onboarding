@@ -93,6 +93,12 @@ CASES: tuple[dict[str, object], ...] = (
         "must_not": ("java-spring-api", "mcp-builder", "python-dev"),
     },
     {
+        "id": "startup-aidlc-positive",
+        "prompt": "Generate Stitch screens from our approved AI-DLC inception requirements",
+        "must": ("startup-design-to-code",),
+        "must_not": ("java-spring-api", "mcp-builder"),
+    },
+    {
         "id": "monorepo-positive",
         "prompt": "Should this polyglot monorepo use Melos, uv workspaces, npm workspaces, or Nx for affected builds?",
         "must": ("polyglot-monorepo",),

@@ -1,20 +1,20 @@
 ---
 name: startup-design-to-code
-description: "Use when turning a startup idea into a product brief, Google Stitch screens, DESIGN.md, a clickable prototype, then Flutter, Angular or React production UI. Triggers: design my startup app, help me design my startup, startup idea, idea to production, Stitch MCP, Google Stitch, /startup-design, DESIGN.md from Stitch, interactive prototype, product brief then screens. Not for linting an existing app (design-system), not for screenshot translation of one screen (screenshot-to-flutter / screenshot-to-angular), not for lo-fi wireframes (/sketch-wireframe)."
+description: "Use when turning a startup idea or approved AWS AI-DLC Ideation/Inception artifacts into Google Stitch screens, DESIGN.md, and a clickable prototype; Flutter/Angular/React only after explicit production approval in standalone mode. Triggers: design my startup app, help me design my startup, startup idea, idea to production, Stitch MCP, Google Stitch, /startup-design, DESIGN.md from Stitch, interactive prototype, product brief then screens, Stitch after AI-DLC inception, bind AI-DLC intent. Not /setup-aidlc, not Construction, not linting an existing app (design-system), not screenshot translation (screenshot-to-flutter / screenshot-to-angular), not lo-fi wireframes (/sketch-wireframe)."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, Agent
 metadata:
-  triggers: design my startup app, startup idea, idea to production, Google Stitch, Stitch MCP, DESIGN.md, interactive prototype, /startup-design, product brief
-  related-skills: design-system, flutter-mobile, angular-spa, react-spa, screenshot-to-flutter, screenshot-to-angular, accessibility-audit, architecture-design, feature-forge, mobile-design, frontend-design
+  triggers: design my startup app, startup idea, idea to production, Google Stitch, Stitch MCP, DESIGN.md, interactive prototype, /startup-design, product brief, AI-DLC inception, Stitch after ideation
+  related-skills: design-system, flutter-mobile, angular-spa, react-spa, screenshot-to-flutter, screenshot-to-angular, accessibility-audit, architecture-design, feature-forge, mobile-design, frontend-design, aws-aidlc-integration
   domain: frontend
   role: specialist
   scope: design
   output-format: document
-last-reviewed: "2026-11-26"
+last-reviewed: "2026-11-27"
 ---
 
 ## Iron Law
 
-**NO PRODUCTION APP AND NO FAKE STITCH SCREENS.** Progress G0→G10 through the manifest. If Stitch MCP is missing, G1 is BLOCKED and artifacts stay. Production translation starts only after G5 `PROCEED` and an explicit human "approve production" in this session.
+**NO PRODUCTION APP AND NO FAKE STITCH SCREENS.** Standalone: G0→G10. AI-DLC mode: consume approved Ideation/Inception, run G1–G5, optional G6 recommendation, then hand back — never start `/aidlc`, never write Construction, never `--approve-production`. If Stitch MCP is missing, G1 is BLOCKED and artifacts stay.
 
 # Startup design to code
 
@@ -24,27 +24,28 @@ One orchestration skill. Command: `/startup-design`. Existing scaffolds, design-
 
 | Say this | This skill | Not this |
 |---|---|---|
-| "Help me design my startup app" | Start G0 | `/new-project` (skips validation) |
+| "Help me design my startup app" | Start G0 (standalone) | `/new-project` (skips validation) |
+| Approved AI-DLC Inception → Stitch | `--mode aidlc --bind-aidlc`, G1–G5 | `/aidlc` (lifecycle), `/setup-aidlc` (install) |
 | Stitch → DESIGN.md → prototype | G1–G5 | `/wireframe` (different fidelity) |
-| "Build the Flutter/Angular/React app" after a prototype | G6–G7 after approval | scaffolding with no DESIGN.md |
+| "Build the Flutter/Angular/React app" after a prototype | Standalone G6–G7 after approval | scaffolding with no DESIGN.md; in AI-DLC mode use `/aidlc` Construction |
 | Lint tokens on an existing app | — | `/lint-design-system` |
 | One screenshot → one screen | — | `screenshot-to-*` |
 
 ## Reuse vs new
 
-**New here:** manifest, G0–G10 stage machine, Stitch preflight that discovers tools at runtime, prototype contract, production approval gate.
+**New here:** manifest, G0–G10 stage machine (book workflow, not a second AI-DLC lifecycle), Stitch preflight that discovers tools at runtime, prototype contract, standalone production gate, AI-DLC bind/handoff.
 
 **Already in the toolkit — call, do not copy:** `design-system` (DESIGN.md, tokens, atomic, smart/dumb, async/refresh), `/scaffold-flutter-app`, `/scaffold-angular-app`, `/scaffold-react-app`, `screenshot-to-flutter` / `screenshot-to-angular`, `ui-standards-expert`, `design-system-reviewer`, `accessibility-auditor`, `architect`, `code-reviewer`, `security-reviewer`, Playwright vs Maestro per `testing-tool-selection.md`. Official Stitch skills (`stitch::generate-design`, `stitch::design-md`, …) if the human already installed them.
 
 ## Process
 
-1. Load [reference/manifest.md](reference/manifest.md). `--init` if `.startup-design/manifest.json` is missing; otherwise `--status` and resume `current_stage`.
+1. Load [reference/manifest.md](reference/manifest.md). Detect mode: `aidlc/` present and the user is in `/aidlc` → `--mode aidlc --bind-aidlc`; otherwise standalone. `--init` if `.startup-design/manifest.json` is missing; otherwise `--status` and resume `current_stage`.
 2. Run one gate from [reference/stages.md](reference/stages.md). Idempotent: a `PASS` gate is not regenerated unless the human asks.
 3. Stitch: [reference/stitch-preflight.md](reference/stitch-preflight.md). Discover tools and schemas this session. No hardcoded MCP names or URLs.
 4. DESIGN.md: Google Labs ten sections + toolkit addenda (`design-md-governance.md` §5). Tokens from approved screens. `npx @google/design.md lint DESIGN.md` when that CLI exists; otherwise G4 CLI evidence is `NOT RUN`.
 5. Prototype: [reference/prototype.md](reference/prototype.md). Simulated banner required.
 6. Enterprise bar: [reference/enterprise-mapping.md](reference/enterprise-mapping.md) (routes to files; does not vendor the 30-section standard).
-7. Production: [reference/production-handoff.md](reference/production-handoff.md) only after approval.
+7. Dual mode: [reference/aidlc-and-standalone.md](reference/aidlc-and-standalone.md). Standalone production: [reference/production-handoff.md](reference/production-handoff.md) only after approval. AI-DLC: `--handoff-aidlc` after G5 `PROCEED`.
 
 ### Screen brief formula (G2)
 
@@ -58,8 +59,9 @@ Stage: G<n> <status>
 Next: <action>
 Blocked: <reason or none>
 Artifacts: <paths>
+Mode: standalone | aidlc
 MCP: discovered <n tools> | none | mocked (tests only)
-Production approved: yes|no
+Production approved: yes|no (always no in aidlc mode)
 ```
 
 ## Anti-patterns
@@ -71,6 +73,8 @@ Production approved: yes|no
 - Inventing a second palette beside DESIGN.md.
 - Putting API keys in the manifest or `.mcp.json` from this skill.
 - Adding always-loaded rules or a second design gate.
+- Starting `/aidlc` from `/startup-design`, or writing under `aidlc/`.
+- Treating a finished prototype as production or Construction approval.
 
 ## Error handling
 
@@ -82,6 +86,9 @@ Production approved: yes|no
 | G5 ITERATE | Return to G2/G3; do not touch production |
 | G5 STOP | Leave the manifest; stop |
 | User asks for production too early | Refuse; show which gate is missing |
+| `--mode aidlc` but no `aidlc/` | BLOCKED; use standalone or `/setup-aidlc` |
+| Several AI-DLC intents | Require `--intent`; do not guess |
+| Production asked in aidlc mode | Refuse; `--handoff-aidlc` then `/aidlc` |
 
 ## Verify
 
@@ -100,4 +107,5 @@ Exit 0 = manifest legal and secret-free. Exit 1 = workflow/secret/prototype fail
 - [reference/prototype.md](reference/prototype.md)
 - [reference/production-handoff.md](reference/production-handoff.md)
 - [reference/enterprise-mapping.md](reference/enterprise-mapping.md)
-- Official: https://stitch.google.com/docs/mcp/setup/ · https://github.com/google-labs-code/design.md · https://github.com/google-labs-code/stitch-skills
+- [reference/aidlc-and-standalone.md](reference/aidlc-and-standalone.md)
+- Official: https://stitch.google.com/docs/mcp/setup/ · https://github.com/google-labs-code/design.md · https://github.com/google-labs-code/stitch-skills · https://awslabs.github.io/aidlc-workflows/guide/14-artifacts-reference/

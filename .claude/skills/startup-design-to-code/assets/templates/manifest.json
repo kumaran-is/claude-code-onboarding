@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "mode": "standalone",
   "idea": "",
   "product_slug": "untitled",
   "current_stage": "G0",
@@ -39,5 +40,6 @@
     "project_id": null,
     "screens": []
   },
-  "mcp_evidence": "none"
+  "mcp_evidence": "none",
+  "aidlc": null
 }

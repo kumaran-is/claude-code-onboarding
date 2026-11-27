@@ -54,6 +54,7 @@ Clone it, install Claude Code, run `/next`.
   - [First five minutes](#first-five-minutes)
 - [Engineering workflow](#engineering-workflow)
 - [Key commands](#key-commands)
+- [Startup design](#startup-design)
 - [Polyglot monorepo (native-only, Melos-only, Nx-only, Nx + Melos)](#polyglot-monorepo-native-only-melos-only-nx-only-nx--melos)
 - [What's included](#whats-included)
 - [Security and quality](#security-and-quality)
@@ -214,9 +215,27 @@ Default `/next` is human-in-the-loop. **`/next --auto` is experimental** — opt
 | `/review-code` | Independent multi-agent review |
 | `/ship` | Pre-deploy readiness. Does not merge |
 | `/new-project` | Route a description to the right scaffold |
+| `/startup-design` | Stitch → `DESIGN.md` → prototype (standalone or after AI-DLC Inception) |
 | `/setup-aidlc` | Plan and (after approval) install official AWS AI-DLC |
 
 Catalog and stack routing: [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md). Practice prompts: [hands-on exercises](docs/examples/hands-on-exercises.md).
+
+## Startup design
+
+`/startup-design` turns a product brief into Google Stitch screens, a project `DESIGN.md`, and a clickable prototype. Flutter, Angular, or React production UI is a later, **explicit** step — a finished prototype is not production approval.
+
+| Mode | When | What it does |
+|---|---|---|
+| **standalone** (default) | No `aidlc/` workspace, or the team is not using `/aidlc` | G0–G10 from the idea. Scaffold only after you approve production. |
+| **aidlc** | Approved Ideation/Inception already exists | Consume official intent files, run design G1–G5, write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. |
+
+AWS AI-DLC is optional. This command does not install it, does not start `/aidlc`, and does not write under `aidlc/`. Missing Stitch MCP (`STITCH_API_KEY`) blocks screen generation and keeps earlier artifacts.
+
+```bash
+python3 .claude/skills/startup-design-to-code/scripts/check-startup-design.py --selftest
+```
+
+Skill: [`startup-design-to-code`](.claude/skills/startup-design-to-code/SKILL.md). Dual-mode rules: [aidlc-and-standalone.md](.claude/skills/startup-design-to-code/reference/aidlc-and-standalone.md).
 
 ## Polyglot monorepo (native-only, Melos-only, Nx-only, Nx + Melos)
 
@@ -305,9 +324,10 @@ Details and checklist: [docs/security.md](docs/security.md).
 | Command | Owner |
 |---|---|
 | `/next`, `/verify`, `/ship`, Ralph, SDD | this toolkit |
+| `/startup-design` | this toolkit (design slice; `--mode aidlc` consumes Inception, Construction stays `/aidlc`) |
 | `/aidlc` after setup | AWS AI-DLC |
 
-They coexist. Neither starts the other. If official config would overwrite toolkit files, setup stops. Pin, upgrade, and doctor flags: `/setup-aidlc --pin X.Y.Z`, `--upgrade`, `--doctor`.
+They coexist. Neither `/next` nor `/startup-design` starts `/aidlc`, and `/aidlc` does not start them. If official config would overwrite toolkit files, setup stops. Pin, upgrade, and doctor flags: `/setup-aidlc --pin X.Y.Z`, `--upgrade`, `--doctor`.
 
 ## Customize, docs, and contributing
 

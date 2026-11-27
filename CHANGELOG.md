@@ -6,24 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- **Dual-mode `/startup-design`** — standalone G0–G10 from a product brief, or `--mode aidlc --bind-aidlc` to consume official AWS AI-DLC Ideation/Inception files (`aidlc/spaces/<space>/intents/<id>/`), run Stitch → `DESIGN.md` → prototype (G1–G5), and write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. `--approve-production` is refused in AI-DLC mode. AI-DLC remains optional and is never started from this command.
-- **MONO-ARCH-001 polyglot architecture** — four explicit modes (native-only, Melos-only, Nx-only, Nx + Melos) with a copied spec at `docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md`. Discover recommends a mode and stops for human approval before `nx init`.
-- **Graph audit** — `audit_monorepo_graph.py` fail-closes on missing projects/edges, empty graphs, empty expect files, cached `deploy`/`migrate`/`release`/`docker-push`, cached generated OpenAPI, missing Flutter-bridge inputs, and Python projects listed without explicit edges (plugin name is not proof).
-- **Isolated fixture matrix** — `run_fixture_matrix.py` runs real Melos 8.10.1 and Nx 24.1.0 in `$TMPDIR` (never this kit or product repos): Melos `--diff` + dependents, one Flutter Nx bridge, lockfile/toolchain cache invalidation (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock`), Python/uv and `@nx/gradle` inferred-vs-explicit edges, and native uv/Gradle builds after Nx rollback.
-
-### Changed
-
-- **`startup-design-to-code`** — optional manifest `mode` / `aidlc` bind fields; gate `--bind-aidlc`, `--handoff-aidlc`, `--intent`; skill-spec activation case `startup-aidlc-positive`. Standalone production approval is unchanged.
-- **Polyglot skill** — Melos kit pin **8.10.1** (`dart run melos`, no `melos.yaml`); Nx **24.1.0** task-based affected (`inputs` / `^default`, not project edges alone). Python and Java are not inferred from JS; they need explicit `implicitDependencies` (and a Gradle companion plugin for `@nx/gradle` inference). Git `base` comes from the repo (`origin/HEAD`, then the existing local default), never an assumed `main`.
-- **Scaffolds and `/new-project`** — Flutter, Angular, Python, Spring, and MCP still join an existing language workspace; there is still no `/scaffold-monorepo`. `/design-architecture` and `/new-project` route monorepo questions through `polyglot-monorepo`.
-
-### Security
-
-- Raw `nx init` / `create-nx-workspace` still require `CC_NX_INIT=1`. `nx configure-ai-agents` is blocked on this kit even with that marker (it would rewrite `CLAUDE.md` / MCP). Fixture Nx installs are local `nx@24.1.0` with `npx --no-install`, not `npx --yes`.
-
-## [1.0.0] - 2026-11-26
+## [1.0.0] - 2026-11-27
 
 Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop`.
 
@@ -31,9 +14,12 @@ Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop
 
 - **`/next` engineering loop** — pick the next GitHub issue or local plan, implement, verify, and stop at a human merge gate. Optional experimental `/next --auto` coordination, a stricter `--fix-loop`, `/test-partner`, and verify summaries.
 - **`/setup-aidlc`** — plan and, after approval, install official AWS AI-DLC (replaces the old `/aidlc` command).
+- **Dual-mode `/startup-design`** — standalone G0–G10 from a product brief, or `--mode aidlc --bind-aidlc` to consume official AWS AI-DLC Ideation/Inception files (`aidlc/spaces/<space>/intents/<id>/`), run Stitch → `DESIGN.md` → prototype (G1–G5), and write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. `--approve-production` is refused in AI-DLC mode. AI-DLC remains optional and is never started from this command.
 - **React 19.3 SPA path** — `react-spa` skill, builder agent, and `/scaffold-react-app` with Vite 8, Tailwind CSS 4.3, shadcn/ui (CLI 4.23.0, Base UI), React Router 8, TanStack Query 5, plus optional Next.js 16.4 App Router and React Router framework mode.
 - **TypeScript MCP servers** — `/scaffold-mcp-server` for MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4.0, protocol 2026-07-28) with Streamable HTTP, auth, and observability references.
-- **Polyglot monorepos** — decision skill for Dart pub workspaces + Melos 7+, uv workspaces, and npm workspaces. Nx stays opt-in (human approval + `CC_NX_INIT=1`). Flutter, Angular, Python, and MCP scaffolds can join an existing workspace host without nested lockfiles. This kit does not register Nx MCP; enable it only in a product repo that already has `nx.json`.
+- **MONO-ARCH-001 polyglot architecture** — four explicit modes (native-only, Melos-only, Nx-only, Nx + Melos) with a copied spec at `docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md`. Discover recommends a mode and stops for human approval before `nx init`. Flutter, Angular, Python, Spring, and MCP scaffolds can join an existing language workspace. This kit does not register Nx MCP; enable it only in a product repo that already has `nx.json`.
+- **Graph audit** — `audit_monorepo_graph.py` fail-closes on missing projects/edges, empty graphs, empty expect files, cached `deploy`/`migrate`/`release`/`docker-push`, cached generated OpenAPI, missing Flutter-bridge inputs, and Python projects listed without explicit edges (plugin name is not proof).
+- **Isolated fixture matrix** — `run_fixture_matrix.py` runs real Melos 8.10.1 and Nx 24.1.0 in `$TMPDIR` (never this kit or product repos): Melos `--diff` + dependents, one Flutter Nx bridge, lockfile/toolchain cache invalidation (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock`), Python/uv and `@nx/gradle` inferred-vs-explicit edges, and native uv/Gradle builds after Nx rollback.
 - **Flutter engineering pack** — path-scoped engineering and verification rules; Maestro-only Android/iOS UI/E2E routing; offline reliability, localization, build, and mobile security references; Riverpod and silent-failure advisories.
 - **Angular UI modes** — daisyUI 5.8.2 (default), Spartan UI 1.10.1, or hybrid, with CLI-first scaffolding and a UI-mode detector.
 - **Official UI skills** — vendored daisyUI, Spartan UI, shadcn/ui, and Angular developer skills (MIT).
@@ -46,7 +32,6 @@ Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop
 - **AI lifecycle** — playbook router (guardrails G1–G24), threat-model attack classes AC-01–AC-18, eval-program validators, RAG response contract, PromptOps / PromptRegistry, and governance records.
 - **Path-scoped rules** — Flutter, Python, web frontend, Node/MCP, AI engineering, GenUI, and hook/gate authoring load only when matching files are in play.
 - **MCP servers** — Google Cloud (Run, IAM, logging, monitoring, Pub/Sub, Cloud SQL, Storage), Firebase emulator/Firestore, App Store Connect, Google Play, Stitch, Terraform, Spartan UI, mobile-mcp, and Weaviate local.
-- **`/startup-design`** — Stitch-backed design-to-code path (`startup-design-to-code` skill) for generating UI from a product brief.
 - **Toolkit CI** — `toolkit-lint` workflow, actionlint, SHA-pinned GitHub Actions, Dependabot, and Agent Skills spec activation checks.
 
 ### Changed
@@ -58,15 +43,20 @@ Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop
   - Angular 21.2.x → **22.3.x**; Tailwind CSS **4.3.5**
   - Flutter 3.41.x / Dart 3.10.9 → **Flutter 3.50.x / Dart 3.14.0** (`material_ui` instead of deprecated `package:flutter/material.dart`)
   - PostgreSQL **18** + pgvector **0.8**; A2UI v0.8 → **1.0**
+- **`startup-design-to-code`** — optional manifest `mode` / `aidlc` bind fields; gate `--bind-aidlc`, `--handoff-aidlc`, `--intent`, `--rebind-aidlc`, `--g5`; skill-spec activation case `startup-aidlc-positive`. Aidlc mode is opt-in (user asked, or already in `/aidlc`) plus a real intent dir — an `aidlc/` folder alone stays standalone. Standalone production approval is unchanged.
+- **Polyglot skill** — Melos kit pin **8.10.1** (`dart run melos`, no `melos.yaml`); Nx **24.1.0** task-based affected (`inputs` / `^default`, not project edges alone). Python and Java are not inferred from JS; they need explicit `implicitDependencies` (and a Gradle companion plugin for `@nx/gradle` inference). Git `base` comes from the repo (`origin/HEAD`, then the existing local default), never an assumed `main`.
+- **Scaffolds and `/new-project`** — Flutter, Angular, Python, Spring, and MCP still join an existing language workspace; there is still no `/scaffold-monorepo`. `/design-architecture` and `/new-project` route monorepo questions through `polyglot-monorepo`.
 - **`/verify` and `/ship`** — impact-aware (run gates for stacks the diff can reach); `/verify` no longer authorizes a PR; merge still needs independent review.
 - **Browser testing** — Playwright CLI for interactive web work, `@playwright/test` for regression, Chrome DevTools MCP for performance; Flutter device E2E stays on Maestro.
-- **README** — rewritten as a landing page with current stack badges and a short `/next` path.
+- **README** — rewritten as a landing page with current stack badges, a short `/next` path, and `/startup-design` dual-mode (standalone vs AI-DLC).
 - **Procedures** — former `docs/workflows/` guides live in the matching skills so agents load one source of truth.
 - **Always-loaded context** — core rules shortened and canaried so every session stays under a documented budget; stack details load on demand.
 - **Reviewers** — stack reviewers are read-only; `spring-boot-reviewer` replaces `spring-reactive-reviewer`; RAG review is a single `rag-implementation-reviewer`.
+- **Command and agent frontmatter** — slash-command YAML matches official Claude Code format (`name:` and `paths:` stripped; invalid descriptions quoted).
 
 ### Fixed
 
+- **`/startup-design` dual-mode** — one mode decision tree; tell the human to open `/aidlc` instead of invoking it; `--record-mcp` requires `--evidence-kind` (or `--evidence none|discovered|mocked`) and no longer defaults a mock to `discovered`; bind runs before init writes; a bound `aidlc` object locks production even if `mode` was edited. Writes refuse `--root` or destinations under `aidlc/`. Re-bind after G2+ `PASS` needs `--rebind-aidlc`. Product brief prefers `requirements.md`. G4 requires headings and token data. Handoff and G5 saves run the prototype contract first.
 - Angular scaffolding is CLI-first (`ng new` / `ng generate`); exact version pins; async errors surface instead of failing silent.
 - React reference sources and UI skill templates pass the design gate; route chunk load failures show an error page instead of a blank screen.
 - TypeScript skill examples compile on TypeScript 6.0.3.
@@ -85,6 +75,7 @@ Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop
 - Attack-class negative controls and AI asset gates fail closed (skipped/errored never counts as PASS).
 - PII-in-logs advisories for Python and TypeScript; Python settings hide secrets in validation errors.
 - MCP OAuth resource-server guidance; web XSS/model-output sanitization advisory; Flutter storage/privacy skill retained as the mobile reviewer.
+- Raw `nx init` / `create-nx-workspace` still require `CC_NX_INIT=1`. `nx configure-ai-agents` is blocked on this kit even with that marker (it would rewrite `CLAUDE.md` / MCP). Fixture Nx installs are local `nx@24.1.0` with `npx --no-install`, not `npx --yes`.
 
 ### Removed
 

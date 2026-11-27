@@ -32,7 +32,7 @@ Three to six screens. At most two or three variants of the highest-impact screen
 
 ## G4
 
-Ten Google Labs sections in order: Overview; Colors; Typography; Layout; Elevation & Depth; Shapes; Motion & Micro-interaction; Voice & Content Strategy; Components; Do's and Don'ts. Then toolkit addenda (Icons, States, Refresh, Accessibility, Gap policy, Approved screens) from `design-md-governance.md` §5. Semantic tokens, `{path.to.token}` references. CLI lint is structural; it is not WCAG certification.
+Ten Google Labs sections in order: Overview; Colors; Typography; Layout; Elevation & Depth; Shapes; Motion & Micro-interaction; Voice & Content Strategy; Components; Do's and Don'ts. Then toolkit addenda (Icons, States, Refresh, Accessibility, Gap policy, Approved screens) from `design-md-governance.md` §5. Semantic tokens, `{path.to.token}` references. G4 `PASS` requires those headings and token-family data, not merely an empty `omitted:` list. CLI lint is structural; it is not WCAG certification.
 
 ## G5
 
@@ -40,4 +40,4 @@ See [prototype.md](prototype.md). The human records PROCEED / ITERATE / STOP. IT
 
 ## G6–G10
 
-See [production-handoff.md](production-handoff.md). Standalone production code requires `decisions.production_approved`. In **aidlc** mode G6 may record a platform recommendation; G7–G10 stay `NOT_RUN` and `--handoff-aidlc` returns evidence to `/aidlc` Construction.
+See [production-handoff.md](production-handoff.md). Standalone production code requires `decisions.production_approved`. In **aidlc** mode G6 may record a platform recommendation only; G7–G10 stay `NOT_RUN`. `--handoff-aidlc` writes `design/AIDLC_HANDOFF.md`; tell the human to open `/aidlc` for Construction. Do not invoke `/aidlc`.

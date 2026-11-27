@@ -4,7 +4,7 @@
   "title": "Startup design-to-code workflow manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "idea", "product_slug", "current_stage", "stages", "artifacts", "decisions", "stitch", "mcp_evidence"],
+  "required": ["version", "mode", "idea", "product_slug", "current_stage", "stages", "artifacts", "decisions", "stitch", "mcp_evidence"],
   "properties": {
     "version": { "type": "integer", "const": 1 },
     "mode": { "type": "string", "enum": ["standalone", "aidlc"] },

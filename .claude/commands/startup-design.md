@@ -1,5 +1,5 @@
 ---
-description: "Run the startup idea → Stitch → DESIGN.md → interactive prototype workflow (standalone or from approved AWS AI-DLC Ideation/Inception). Flutter/Angular/React only after explicit production approval in standalone mode; AI-DLC mode hands Construction back to /aidlc. Use for 'design my startup app', resume an interrupted stage, or check workflow status."
+description: "Run the startup idea → Stitch → DESIGN.md → interactive prototype workflow (standalone or from present AWS AI-DLC Ideation/Inception files). Flutter/Angular/React only after explicit production approval in standalone mode; AI-DLC mode hands Construction back to /aidlc. Use for 'design my startup app', resume an interrupted stage, or check workflow status."
 argument-hint: "[idea | resume | status | G0-G10 | --mode standalone|aidlc]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, Agent
 ---
@@ -23,7 +23,7 @@ Selftest must exit 0 before judging a product. Then:
 
 - `status` or empty after an existing manifest → `$GATE --root <product> --status`
 - `resume` → same, then continue `current_stage`
-- an idea sentence → `$GATE --root <product> --init --slug <slug> --idea "..."` if the manifest is missing (add `--mode aidlc --bind-aidlc` when `aidlc/` has an approved intent)
+- an idea sentence → `$GATE --root <product> --init --slug <slug> --idea "..."` if the manifest is missing. Add `--mode aidlc --bind-aidlc` only when the user asked for the AI-DLC slice (or is already in `/aidlc`) **and** `aidlc/spaces/*/intents/*/aidlc-state.md` exists. An `aidlc/` folder alone stays standalone.
 - `G0`…`G10` → run only that gate (G7–G10 are refused in `--mode aidlc`)
 
 ## 2. Run the requested gate

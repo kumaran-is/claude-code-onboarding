@@ -94,9 +94,9 @@ CASES: tuple[dict[str, object], ...] = (
     },
     {
         "id": "startup-aidlc-positive",
-        "prompt": "Generate Stitch screens from our approved AI-DLC inception requirements",
+        "prompt": "Generate Stitch screens from our approved aidlc inception requirements",
         "must": ("startup-design-to-code",),
-        "must_not": ("java-spring-api", "mcp-builder"),
+        "must_not": ("java-spring-api", "mcp-builder", "aws-aidlc-integration"),
     },
     {
         "id": "monorepo-positive",

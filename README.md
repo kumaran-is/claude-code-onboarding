@@ -226,8 +226,8 @@ Catalog and stack routing: [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md).
 
 | Mode | When | What it does |
 |---|---|---|
-| **standalone** (default) | No `aidlc/` workspace, or the team is not using `/aidlc` | G0–G10 from the idea. Scaffold only after you approve production. |
-| **aidlc** | Approved Ideation/Inception already exists | Consume official intent files, run design G1–G5, write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. |
+| **standalone** (default) | User did not ask for the AI-DLC slice. An `aidlc/` folder alone is not enough. | G0–G10 from the idea. Scaffold only after you approve production. |
+| **aidlc** | User asked for the AI-DLC slice (or is already in `/aidlc`) **and** an intent with `aidlc-state.md` exists | Consume present Ideation/Inception files, run design G1–G5, write `design/AIDLC_HANDOFF.md`. Construction stays `/aidlc`. |
 
 AWS AI-DLC is optional. This command does not install it, does not start `/aidlc`, and does not write under `aidlc/`. Missing Stitch MCP (`STITCH_API_KEY`) blocks screen generation and keeps earlier artifacts.
 

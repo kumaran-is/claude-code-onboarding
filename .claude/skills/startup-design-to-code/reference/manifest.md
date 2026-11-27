@@ -35,8 +35,9 @@ G5 PROCEED ──► --handoff-aidlc               (aidlc mode; G7–G10 stay NO
 - G1 may be `BLOCKED` after G0 `PASS`. Leave G0 artifacts in place.
 - G3 cannot `PASS` while G1 is `BLOCKED` or `mcp_evidence` is `none`.
 - G4 cannot `PASS` while DESIGN.md still lists token families in `omitted:`.
-- G6 cannot `PASS` unless `decisions.g5 == PROCEED`.
-- G7–G10 cannot leave `NOT_RUN` unless `production_approved` is true.
+- G6 cannot `PASS` unless `decisions.g5 == PROCEED` and `decisions.platform` is set (Angular also needs `angular_ui_mode`).
+- Standalone only: G7–G10 cannot leave `NOT_RUN` unless `production_approved` is true.
+- Aidlc mode: G7–G10 stay `NOT_RUN` after `--handoff-aidlc`. Construction stays `/aidlc`.
 
 Resume is idempotent: re-running a `PASS` stage must not wipe later evidence. Re-running `FAIL`/`BLOCKED` keeps artifacts and overwrites only that stage's status, reason and evidence list.
 

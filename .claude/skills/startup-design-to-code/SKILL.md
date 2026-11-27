@@ -1,6 +1,6 @@
 ---
 name: startup-design-to-code
-description: "Use when turning a startup idea or approved AWS AI-DLC Ideation/Inception artifacts into Google Stitch screens, DESIGN.md, and a clickable prototype; Flutter/Angular/React only after explicit production approval in standalone mode. Triggers: design my startup app, help me design my startup, startup idea, idea to production, Stitch MCP, Google Stitch, /startup-design, DESIGN.md from Stitch, interactive prototype, product brief then screens, Stitch after AI-DLC inception, bind AI-DLC intent. Not /setup-aidlc, not Construction, not linting an existing app (design-system), not screenshot translation (screenshot-to-flutter / screenshot-to-angular), not lo-fi wireframes (/sketch-wireframe)."
+description: "Use when turning a startup idea or present AWS AI-DLC Ideation/Inception files into Google Stitch screens, DESIGN.md, and a clickable prototype; Flutter/Angular/React only after explicit production approval in standalone mode. Triggers: design my startup app, help me design my startup, startup idea, idea to production, Stitch MCP, Google Stitch, /startup-design, DESIGN.md from Stitch, interactive prototype, product brief then screens, Stitch after AI-DLC inception, bind AI-DLC intent. Not /setup-aidlc, not Construction, not linting an existing app (design-system), not screenshot translation (screenshot-to-flutter / screenshot-to-angular), not lo-fi wireframes (/sketch-wireframe)."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, Agent
 metadata:
   triggers: design my startup app, startup idea, idea to production, Google Stitch, Stitch MCP, DESIGN.md, interactive prototype, /startup-design, product brief, AI-DLC inception, Stitch after ideation
@@ -9,12 +9,13 @@ metadata:
   role: specialist
   scope: design
   output-format: document
+  last-reviewed: "2026-11-27"
 last-reviewed: "2026-11-27"
 ---
 
 ## Iron Law
 
-**NO PRODUCTION APP AND NO FAKE STITCH SCREENS.** Standalone: G0→G10. AI-DLC mode: consume approved Ideation/Inception, run G1–G5, optional G6 recommendation, then hand back — never start `/aidlc`, never write Construction, never `--approve-production`. If Stitch MCP is missing, G1 is BLOCKED and artifacts stay.
+**NO PRODUCTION APP AND NO FAKE STITCH SCREENS.** Standalone: G0→G10. AI-DLC mode: consume Ideation/Inception files `--bind-aidlc` found, run G1–G5, optional G6 recommendation, then hand back — never start `/aidlc`, never write Construction, never `--approve-production`. If Stitch MCP is missing, G1 is BLOCKED and artifacts stay.
 
 # Startup design to code
 
@@ -25,9 +26,9 @@ One orchestration skill. Command: `/startup-design`. Existing scaffolds, design-
 | Say this | This skill | Not this |
 |---|---|---|
 | "Help me design my startup app" | Start G0 (standalone) | `/new-project` (skips validation) |
-| Approved AI-DLC Inception → Stitch | `--mode aidlc --bind-aidlc`, G1–G5 | `/aidlc` (lifecycle), `/setup-aidlc` (install) |
+| AI-DLC Inception files present → Stitch | `--mode aidlc --bind-aidlc`, G1–G5 | `/aidlc` (lifecycle), `/setup-aidlc` (install) |
 | Stitch → DESIGN.md → prototype | G1–G5 | `/wireframe` (different fidelity) |
-| "Build the Flutter/Angular/React app" after a prototype | Standalone G6–G7 after approval | scaffolding with no DESIGN.md; in AI-DLC mode use `/aidlc` Construction |
+| "Build the Flutter/Angular/React app" after a prototype | Standalone G6–G7 after approval | scaffolding with no DESIGN.md; in AI-DLC mode tell the human to continue Construction in `/aidlc` |
 | Lint tokens on an existing app | — | `/lint-design-system` |
 | One screenshot → one screen | — | `screenshot-to-*` |
 
@@ -39,7 +40,7 @@ One orchestration skill. Command: `/startup-design`. Existing scaffolds, design-
 
 ## Process
 
-1. Load [reference/manifest.md](reference/manifest.md). Detect mode: `aidlc/` present and the user is in `/aidlc` → `--mode aidlc --bind-aidlc`; otherwise standalone. `--init` if `.startup-design/manifest.json` is missing; otherwise `--status` and resume `current_stage`.
+1. Load [reference/manifest.md](reference/manifest.md). Mode: `--mode aidlc`, "Stitch after AI-DLC inception", or already in `/aidlc` → aidlc **only if** `aidlc/spaces/*/intents/*/aidlc-state.md` exists; else BLOCKED. An `aidlc/` folder alone stays standalone. `--init` if `.startup-design/manifest.json` is missing; otherwise `--status` and resume `current_stage`.
 2. Run one gate from [reference/stages.md](reference/stages.md). Idempotent: a `PASS` gate is not regenerated unless the human asks.
 3. Stitch: [reference/stitch-preflight.md](reference/stitch-preflight.md). Discover tools and schemas this session. No hardcoded MCP names or URLs.
 4. DESIGN.md: Google Labs ten sections + toolkit addenda (`design-md-governance.md` §5). Tokens from approved screens. `npx @google/design.md lint DESIGN.md` when that CLI exists; otherwise G4 CLI evidence is `NOT RUN`.
@@ -86,9 +87,9 @@ Production approved: yes|no (always no in aidlc mode)
 | G5 ITERATE | Return to G2/G3; do not touch production |
 | G5 STOP | Leave the manifest; stop |
 | User asks for production too early | Refuse; show which gate is missing |
-| `--mode aidlc` but no `aidlc/` | BLOCKED; use standalone or `/setup-aidlc` |
+| `--mode aidlc` but no intent dir | BLOCKED; stay standalone, or tell the human to run `/setup-aidlc`. Do not invoke it. |
 | Several AI-DLC intents | Require `--intent`; do not guess |
-| Production asked in aidlc mode | Refuse; `--handoff-aidlc` then `/aidlc` |
+| Production asked in aidlc mode | Refuse; `--handoff-aidlc`, then tell the human to open `/aidlc` for Construction. Do not invoke `/aidlc`. |
 
 ## Verify
 

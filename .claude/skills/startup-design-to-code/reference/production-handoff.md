@@ -1,6 +1,6 @@
 # Production translation (G6–G10)
 
-G6 records the platform. G7–G10 write application code **in standalone mode only**. The gate refuses G7+ until `decisions.production_approved` is true **and** the user said so in this session. In **aidlc** mode, G7–G10 are forbidden; `--approve-production` is refused; use `--handoff-aidlc` and continue Construction with `/aidlc`.
+G6 records the platform. G7–G10 write application code **in standalone mode only**. The gate refuses G7+ until `decisions.production_approved` is true **and** the user said so in this session. In **aidlc** mode, G7–G10 are forbidden; `--approve-production` is refused; run `--handoff-aidlc`, then tell the human to open `/aidlc` for Construction. Do not invoke `/aidlc`.
 
 ## G6 — architecture only
 
@@ -16,7 +16,7 @@ One token authority. Atomic Design + smart/dumb: `atomic-decision-tree.md`. Scre
 
 Angular UI mode is chosen once. Hybrid ownership is `ui-mode-selection.md` §4.
 
-Set `decisions.platform` (and `angular_ui_mode` when Angular). Still no app.
+Set `decisions.platform` with `--g5` for the human PROCEED/ITERATE/STOP (this does not set `production_approved`). Angular also needs `angular_ui_mode`. Still no app. In **aidlc** mode G6 only records that platform note — do not run `architecture-design` into API contracts or ADRs.
 
 ## Approval line (required)
 
@@ -35,6 +35,10 @@ python3 .claude/skills/startup-design-to-code/scripts/check-startup-design.py \
 4. Map values to tokens. Run `/lint-design-system`.
 5. Implement states from the brief, not only the happy screenshot.
 6. Framework-native widgets. `screenshot-to-flutter` / `screenshot-to-angular` only as translators of *approved* references, still through tokens.
+
+When G4 already passed, do **not** let `/scaffold-*` write a new `DESIGN.md`. Map the existing file into ThemeData / Tailwind `@theme` / shadcn tokens. A second `DESIGN.md` is drift — stop.
+
+Standalone G7–G10 is **UI translation only**. Behaviour stories, the PR, and release stay on `/next` and `/ship`.
 
 Do not install a second state library. Do not mix daisyUI and Spartan outside hybrid ownership. Do not import Stitch HTML into Flutter.
 

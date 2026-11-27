@@ -48,7 +48,7 @@ Clone it, install Claude Code, run `/next`.
 - **Evidence over claims** — `/verify` and `/ship` are binary PASS/FAIL; independent reviewers do not implement the change.
 - **Guardrails that stay on** — hooks block destructive commands and secret edits; git refuses secret-bearing commits.
 
-[Notes](docs/articles.md) · [Full docs](docs/README.md) · [Official Claude Code](https://code.claude.com/docs/en/overview)
+[Changelog](CHANGELOG.md) · [Notes](docs/articles.md) · [Full docs](docs/README.md) · [Official Claude Code](https://code.claude.com/docs/en/overview)
 
 ## Getting started
 

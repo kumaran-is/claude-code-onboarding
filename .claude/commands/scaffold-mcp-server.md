@@ -29,14 +29,14 @@ Verified 2026-11-23 on Node 26.13.1 / TypeScript 6.0.3 / SDK v2 (server, client 
 
 ## Steps
 
-1. Confirm `node -v` prints `v26.x` and that the target directory does not exist (never overwrite). Create the directory and `cd` into it.
+1. Confirm `node -v` prints `v26.x` and that the target directory does not exist (never overwrite). Create the directory and `cd` into it. Resolve the host with `python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --find-host <target parent>` (exit 1 = standalone). If `--root "$HOST"` reports `join.npm`, add this server path to host `workspaces` after writing files. Do not add Nx.
 2. Write the project files from `C` §1. For `stdio`, apply the dependency note at the top of §1.
 3. Write the tool registry from `C` §2 (`src/logger.ts`, `src/notes.ts`, `src/tools.ts`). Rename the sample tool and data to the user's domain.
 4. `stdio` or `both`: write `src/stdio.ts` and `test/stdio.test.ts` from `C` §3.
 5. `http` or `both`: write `src/auth.ts` (`H` §1), `src/app.ts` and `src/http.ts` (`H` §2), `test/http.test.ts` (`H` §3) and `test/config.test.ts` (`C` §3), and the `Dockerfile` and `.dockerignore` (`H` §4).
 6. Write `scripts/check-test-count.js` and `.github/workflows/ci.yml` from `C` §4. Set the count to the project's test total (18 for `both`, 5 for `stdio`, 13 for `http`).
 7. If OpenTelemetry was requested, follow "OpenTelemetry" below.
-8. `npm install` (installs exactly the pinned versions), then run Verify.
+8. Standalone: `npm install` (exact pins), then Verify. Joining a host workspace: skip nested `npm install`; at the **host** run `npm install` then `npm ci -w <name>` (or `npm install -w <name>`) so one `package-lock.json` remains. Dockerfile context is the **host** when joined.
 
 ## OpenTelemetry (only when the user asks)
 

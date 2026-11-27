@@ -4,7 +4,7 @@ description: This skill provides patterns and templates for Flutter 3.50.x / Dar
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Flutter, Dart, Riverpod, Flutter widget, Flutter app, mobile development, iOS, Android, cross-platform mobile, Flutter screen
-  related-skills: riverpod-patterns, ui-standards-tokens
+  related-skills: riverpod-patterns, ui-standards-tokens, polyglot-monorepo
   domain: frontend
   role: specialist
   scope: implementation

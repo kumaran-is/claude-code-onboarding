@@ -16,6 +16,6 @@ Guides moved out of the public README. Start with the [README](../README.md), th
 | [Android Google Play release](mobile/android-google-play-release.md) | GPD skills and AAB upload |
 | [Notes](articles.md) | Author write-ups |
 
-Skill, agent, and command catalog: [`.claude/SKILLS_GUIDE.md`](../.claude/SKILLS_GUIDE.md).
+Skill, agent, and command catalog: [`.claude/SKILLS_GUIDE.md`](../.claude/SKILLS_GUIDE.md). Polyglot workspace choice (Melos, uv, npm, optional Nx): [README — Polyglot monorepo](../README.md#polyglot-monorepo-melos-uv-npm-optional-nx) and [`.claude/skills/polyglot-monorepo/SKILL.md`](../.claude/skills/polyglot-monorepo/SKILL.md).
 
 Existing design-system verification notes stay in [`plans/`](plans/).

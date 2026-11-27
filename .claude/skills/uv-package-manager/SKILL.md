@@ -4,7 +4,7 @@ description: uv 0.13.x workflows for Python 3.14 — lockfiles, dependency group
 allowed-tools: Read, Write, Edit, Bash
 metadata:
   triggers: uv package manager, uv lock, uv sync, uv python, uv workspace, uv Docker, uv CI, uv cache, migrate from pip to uv, migrate from poetry to uv, uv monorepo, uv lockfile, uv run, uv workspace member, dependency groups, uv_build, uv export, uv publish, uv 0.13
-  related-skills: python-dev, python-packaging, docker
+  related-skills: python-dev, python-packaging, docker, polyglot-monorepo
   domain: backend
   role: specialist
   scope: tooling

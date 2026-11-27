@@ -4,7 +4,7 @@ description: This skill provides patterns and templates for Python 3.14 developm
 allowed-tools: Bash, Read, Write, Edit
 metadata:
   triggers: Python, FastAPI, Pydantic, Python API, async Python, Python backend, uv, ruff, Python 3.14, notification, outbox, push notification, transactional email
-  related-skills: openapi-spec-generation, database-schema-designer, agentic-ai-dev
+  related-skills: openapi-spec-generation, database-schema-designer, agentic-ai-dev, uv-package-manager, polyglot-monorepo
   domain: backend
   role: specialist
   scope: implementation

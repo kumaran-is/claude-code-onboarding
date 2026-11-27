@@ -43,6 +43,7 @@ Never use `@latest`. To move versions, change this table after re-running the ve
 | **A. New workspace** (this command) | No Angular workspace at the target path | Steps 1–12 below |
 | **B. Feature in an existing workspace** | `angular.json` exists | Skip steps 1–4. Run `angular-ui-mode.sh detect <dir>` and keep its mode (no question; a missing record in a Tailwind + UI-library workspace is written with `npm pkg set config.uiMode=<detected>`). Use the workspace's own CLI (`npm exec --no -- ng …`; never a global or `npx @latest` CLI) for `ng generate`, then the custom steps. Process: `angular-spa` skill `SKILL.md` |
 | **C. Existing project on an older major** | `@angular/core` < 22 | Do not scaffold over it. Upgrade: commit or stash first, then `npm exec --no -- ng update @angular/core@22 @angular/cli@22` (one major at a time; read angular.dev/update-guide). Then the opt-in migrations, each with `--dry-run` first: `ng generate @angular/core:service-migration` (Injectable → Service; alias `@angular/core:service`), `@angular/core:inject-migration`, `@angular/core:control-flow-migration`, `@angular/core:signal-input-migration`, `@angular/core:output-migration`, `@angular/core:signal-queries-migration`, `@angular/core:common-to-standalone-migration`, `@angular/core:ngclass-to-class-migration`, `@angular/core:ngstyle-to-style-migration`. List them with `ng generate @angular/core: --help` |
+| **D. Join an existing npm workspace** | `python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --find-host <target>` prints a host and `--root` of that host has `join.npm` | Case A with `--skip-install` on `ng new`. Add the new path to host `workspaces` if missing. Depend on shared libs with `"@scope/name": "*"` (npm workspaces; not yarn `workspace:`). Then `npm install` at the **host** only (one `package-lock.json`). Do not run `npm install` inside the app. Do not add Nx. `polyglot-monorepo/reference/discover-and-migrate.md` |
 
 **Never overwrite an existing project.** Before step 1, check that the target directory does not
 exist or is empty (`ls -A <name>`). If it contains files, STOP and ask; do not pass `--force`.
@@ -85,12 +86,13 @@ A non-zero exit is a failed step: report it, fix the cause, never continue as if
 1. **Create the workspace** (the `CC_SCAFFOLD=` prefix is the per-command authorization
    `block-raw-scaffold.sh` requires):
    `CC_SCAFFOLD=scaffold-angular-app npx @angular/cli@22.3.0 new <name> --style=css --ssr=false --skip-git --defaults`
+   Case D (join): append `--skip-install`, then after adding the path to host `workspaces`, run `npm install` at the **host** (covers step 2's install). Never a nested `package-lock.json`.
    This produces a zoneless, standalone app with Vitest + jsdom, `provideBrowserGlobalErrorListeners()`,
    the 2025 file-name style (`app.ts`, no `.component` suffix) and no lint target. Other verified
    `ng new` 22.3 options: `--ssr` (only when the user asks for SSR), `--zoneless`, `--routing`,
    `--prefix`, `--package-manager`, `--file-name-style-guide 2016|2025`, `--ai-config` (for example
    `claude-code`), `--strict` (default `true`). `--test-runner` is deprecated (Vitest only in a future version).
-2. **Tighten Angular ranges** — in `package.json` change every `"@angular/…": "^22.…"` to `"~22.…"`, then `npm install`.
+2. **Tighten Angular ranges** — in `package.json` change every `"@angular/…": "^22.…"` to `"~22.…"`, then `npm install` (case D: skip this install; the host install in step 1 already locked the workspace).
    Record the mode: `npm pkg set config.uiMode=<mode>`.
 3. **Integrations with `ng add`:**
    - Lint: `npm exec --no -- ng add angular-eslint@22.8.0 --skip-confirmation` (adds the `lint` target).

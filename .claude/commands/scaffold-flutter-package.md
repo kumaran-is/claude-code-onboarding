@@ -100,7 +100,7 @@ export 'models/<model_name>/index.dart';
 
 ## Post-Scaffold Steps
 
-If the new package is a new workspace member, add its path to the root `pubspec.yaml` `workspace:` list, set `resolution: workspace` in its `pubspec.yaml`, and run `dart run melos bootstrap` from the workspace root (Melos 8.10.1 as a root dev_dependency, run with `dart run melos`; script layout in `flutter-build-and-workspace.md` §1). A member without `resolution: workspace`, a listed path with no pubspec, or two members pinning different versions of one package each fail `pub get` — fix the pubspec, never add an override to hide it.
+If the new package is a new workspace member, resolve `HOST=$(python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --find-host .)` and add its path to that host `pubspec.yaml` `workspace:` list if missing, set `resolution: workspace` in its `pubspec.yaml`, and run `dart run melos bootstrap` from `$HOST` (Melos 8.10.1 as a root dev_dependency, run with `dart run melos`; script layout in `flutter-build-and-workspace.md` §1). A member without `resolution: workspace`, a listed path with no pubspec, or two members pinning different versions of one package each fail `pub get` — fix the pubspec, never add an override to hide it.
 
 ```bash
 # Regenerate all codegen (Freezed, Riverpod, json_serializable)

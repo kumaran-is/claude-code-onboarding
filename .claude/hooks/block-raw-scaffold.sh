@@ -26,6 +26,11 @@
 # src/main.ts, src/app/app.config.ts, tsconfig.app.json or tsconfig.spec.json inside an Angular workspace, prints
 # a CLI-first reminder as additionalContext. Advisory only: exit 0, silent for existing files (overwrites/Edits).
 #
+# Nx / Melos workspace host files: creating a NEW nx.json or melos.yaml is blocked (human must
+# approve Nx with CC_NX_INIT=1 npx nx init). Edits of an existing nx.json are allowed.
+# Raw `nx init` / `create-nx-workspace` / `nx configure-ai-agents` need CC_NX_INIT=1 (there is
+# no /scaffold-monorepo on purpose).
+#
 # Test: bash .claude/hooks/block-raw-scaffold.sh --selftest
 
 state_dir_for() { # $1 project root -> runtime state dir inside its git dir (never the working tree); temp dir outside git
@@ -51,6 +56,20 @@ RULES=(
   'scaffold-react-app#((npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+(next-app|react-router)(@[^[:space:]]+)?|(npx|bunx|pnpm[[:space:]]+dlx|npm[[:space:]]+exec|yarn[[:space:]]+dlx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-(next-app|react-router)(@[^[:space:]]+)?|([^[:space:]]*/)?create-(next-app|react-router)(@[^[:space:]]+)?)#npm create next-app / create-react-router#React full-stack (Next.js, React Router framework mode)'
 )
 
+# Nx bring-up. Marker is CC_NX_INIT=1 (same class as CC_SCAFFOLD: visible in the transcript, not
+# a human-proof token). <label>#<ERE>
+NX_RULES=(
+  'create-nx-workspace#(npx|bunx|pnpm[[:space:]]+dlx|yarn[[:space:]]+dlx|npm[[:space:]]+exec)([[:space:]]+-[^[:space:]]+)*[[:space:]]+create-nx-workspace(@[^[:space:]]+)?'
+  'create-nx-workspace#(npm|pnpm|yarn|bun)[[:space:]]+(create|init)[[:space:]]+nx-workspace(@[^[:space:]]+)?'
+  'create-nx-workspace#create-nx-workspace(@[^[:space:]]+)?'
+  'nx init#(npx|bunx|pnpm[[:space:]]+dlx|yarn[[:space:]]+dlx|npm[[:space:]]+exec)([[:space:]]+-[^[:space:]]+)*[[:space:]]+nx(@[^[:space:]]+)?[[:space:]]+init'
+  'nx init#(pnpm|yarn)[[:space:]]+nx[[:space:]]+init'
+  'nx init#nx[[:space:]]+init'
+  'nx configure-ai-agents#(npx|bunx|pnpm[[:space:]]+dlx|yarn[[:space:]]+dlx|npm[[:space:]]+exec)([[:space:]]+-[^[:space:]]+)*[[:space:]]+nx(@[^[:space:]]+)?[[:space:]]+configure-ai-agents'
+  'nx configure-ai-agents#(pnpm|yarn)[[:space:]]+nx[[:space:]]+configure-ai-agents'
+  'nx configure-ai-agents#nx[[:space:]]+configure-ai-agents'
+)
+
 block() { # $1 matched label, $2 scaffold command, $3 tech
   cat >&2 <<EOF
 BLOCKED: raw project creation detected ($1, $3).
@@ -60,6 +79,18 @@ The scaffold command itself runs the raw creator with an explicit marker:
     CC_SCAFFOLD=$2 $1 ...
 Sub-agents cannot invoke slash commands: run the scaffold first, then hand them the scaffolded path.
 See .claude/skills/subagent-driven-development/reference/orchestration-and-context.md (Orchestrator Pre-Flight).
+EOF
+  exit 2
+}
+
+block_nx() { # $1 matched label
+  cat >&2 <<EOF
+BLOCKED: Nx workspace initialization detected ($1).
+Ask the human first (polyglot-monorepo). If they agreed, re-run THAT command only with:
+    CC_NX_INIT=1 $1 ...
+CC_NX_INIT is a visible transcript marker (same class as CC_SCAFFOLD), not a cryptographic human gate.
+Never run nx configure-ai-agents on the onboarding kit. Product repos need nx.json first.
+See .claude/skills/polyglot-monorepo/reference/nx-and-mcp.md.
 EOF
   exit 2
 }
@@ -92,14 +123,12 @@ sys.stdout.write("\n".join(out))
 }
 
 evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 otherwise.
-  local cmd="$1" rule name rx label tech lead remaining stripped
+  local cmd="$1" rule name rx label tech lead remaining stripped nx_redir nx_add_remaining
+  lead='(^|[;&|(`][[:space:]]*)([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
   # Inert heredoc bodies are data, not commands. Any failure keeps the original text (fail closed).
   stripped=$(printf '%s' "$cmd" | strip_inert_heredocs 2>/dev/null) && [ -n "$stripped" ] && cmd="$stripped"
   for rule in "${RULES[@]}"; do
     IFS='#' read -r name rx label tech <<<"$rule"
-    # A creator counts as a command whether or not VAR=value assignments precede it (FOO=1 flutter create ...).
-    # Command starts: line start, after ; & | or an opening ( / $( / backtick (subshells).
-    lead='(^|[;&|(`][[:space:]]*)([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
     # Replace each AUTHORIZED occurrence with a neutral token, then see whether a raw one is left.
     # '#' is the sed delimiter because the creator patterns contain '/'. If sed fails, keep the original
     # command so the raw check below still runs (fail closed, never fail open).
@@ -116,6 +145,46 @@ evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 
   if printf '%s' "$cmd" | grep -qE '(npx[[:space:]]+react-native[[:space:]]+init|npx[[:space:]]+create-expo-app|npx[[:space:]]+@react-native-community/cli[[:space:]]+init)([[:space:]]|$)'; then
     echo "WARNING: raw React Native project creation; consider the mobile-developer skill first (no scaffold command exists)." >&2
   fi
+  # Nx bring-up: same command-start rules; authorization is CC_NX_INIT=1 immediately before the creator.
+  local nx_rule nx_label nx_rx nx_remaining
+  for nx_rule in "${NX_RULES[@]}"; do
+    IFS='#' read -r nx_label nx_rx <<<"$nx_rule"
+    nx_remaining=$(printf '%s' "$cmd" | sed -E "s#(^|[;&|(\`][[:space:]]*)CC_NX_INIT=1[[:space:]]+${nx_rx}#\1AUTHORIZED_NX#g" 2>/dev/null) || nx_remaining="$cmd"
+    [ -n "$nx_remaining" ] || nx_remaining="$cmd"
+    if printf '%s' "$nx_remaining" | grep -qE "${lead}${nx_rx}([[:space:]]|\$)"; then
+      block_nx "$nx_label"
+    fi
+  done
+  # Bash redirects that create nx.json (Write tool is a separate path).
+  nx_redir=$(printf '%s' "$cmd" | sed -E 's#(^|[;&|(`][[:space:]]*)CC_NX_INIT=1[[:space:]]+#\1AUTHORIZED_NX #g' 2>/dev/null) || nx_redir="$cmd"
+  if printf '%s' "$nx_redir" | grep -qE '(>|>>|tee[[:space:]]+(-a[[:space:]]+)?)[[:space:]]*(\./)?nx\.json([[:space:]]|$)'; then
+    block_nx 'write nx.json'
+  fi
+  # nx add / nx g @nx/... installs Nx plugins. Allow when nx.json already exists; block as bring-up otherwise.
+  if [ ! -f "${CLAUDE_PROJECT_DIR:-.}/nx.json" ]; then
+    nx_add_remaining=$(printf '%s' "$cmd" | sed -E 's#(^|[;&|(`][[:space:]]*)CC_NX_INIT=1[[:space:]]+#\1AUTHORIZED_NX #g' 2>/dev/null) || nx_add_remaining="$cmd"
+    if printf '%s' "$nx_add_remaining" | grep -qE "${lead}((npx|bunx|pnpm[[:space:]]+dlx|yarn[[:space:]]+dlx|npm[[:space:]]+exec)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?(pnpm[[:space:]]+|yarn[[:space:]]+)?nx(@[^[:space:]]+)?[[:space:]]+(add|g|generate)[[:space:]]+@nx/"; then
+      block_nx 'nx add / generate @nx'
+    fi
+  fi
+  return 0
+}
+
+block_new_workspace_file() { # $1 file path. Exit 2 on a NEW nx.json or melos.yaml; existing files allowed.
+  local f="$1" base
+  [ -n "$f" ] || return 0
+  [ -e "$f" ] && return 0
+  base=$(basename "$f")
+  case "$base" in
+    nx.json)
+      echo "BLOCKED: creating nx.json requires explicit human approval (polyglot-monorepo). If they approved: CC_NX_INIT=1 npx nx init — do not Write nx.json." >&2
+      exit 2
+      ;;
+    melos.yaml)
+      echo "BLOCKED: Melos 7+ configures from the root pubspec.yaml (workspace: + melos:). Do not add melos.yaml. See flutter-mobile / polyglot-monorepo." >&2
+      exit 2
+      ;;
+  esac
   return 0
 }
 
@@ -202,6 +271,29 @@ selftest() {
   chk "negative: text that only mentions flutter create"                 0 'grep -rn "flutter create" docs'
   chk "negative: ordinary commands are untouched"                        0 'ls -la && git status'
   # inert heredoc bodies (report appends, notes) are not commands; anything executable still is
+  chk "positive: npx create-nx-workspace is blocked"                   2 'npx create-nx-workspace@latest myorg'
+  chk "positive: nx init is blocked"                                   2 'nx init'
+  chk "positive: npx nx init is blocked"                               2 'npx nx init'
+  chk "positive: nx configure-ai-agents is blocked"                    2 'npx nx configure-ai-agents'
+  chk "negative: CC_NX_INIT=1 nx init is allowed"                      0 'CC_NX_INIT=1 nx init'
+  chk "negative: CC_NX_INIT=1 npx nx init is allowed"                  0 'CC_NX_INIT=1 npx nx init'
+  chk "negative: npx nx mcp (not init) is untouched"                   0 'npx nx mcp'
+  chk "negative: text that only mentions nx init"                      0 'grep -rn "nx init" docs'
+  chk "negative: CC_SCAFFOLD does not authorize nx init"               2 'CC_SCAFFOLD=scaffold-angular-app nx init'
+  chk "positive: npm create nx-workspace is blocked"                   2 'npm create nx-workspace@latest org'
+  chk "positive: npm init nx-workspace is blocked"                     2 'npm init nx-workspace org'
+  chk "positive: yarn dlx create-nx-workspace is blocked"              2 'yarn dlx create-nx-workspace org'
+  chk "positive: pnpm nx init is blocked"                              2 'pnpm nx init'
+  chk "positive: yarn nx init is blocked"                              2 'yarn nx init'
+  chk "positive: echo redirect to nx.json is blocked"                  2 "printf '{}' > nx.json"
+  chk "positive: npx nx add @nx/angular without nx.json is blocked"    2 'npx nx add @nx/angular'
+  chk "negative: CC_NX_INIT=1 npx nx add @nx/angular is allowed"        0 'CC_NX_INIT=1 npx nx add @nx/angular'
+  chk "negative: npx nx show projects is untouched"                    0 'npx nx show projects'
+  nxexist=$(mktemp -d)
+  printf '%s\n' '{}' > "$nxexist/nx.json"
+  ( CLAUDE_PROJECT_DIR="$nxexist" evaluate 'npx nx add @nx/angular' ) >/dev/null 2>&1
+  if [ $? -eq 0 ]; then echo "  ok   negative: npx nx add with existing nx.json is allowed"; else echo "  FAIL nx add with existing nx.json (want 0)"; fail=1; fi
+  rm -rf "$nxexist"
   chk "negative: cat >> report <<'EOF' body mentioning flutter create"   0 "$(printf 'cat >> report.md <<%s\nflutter create was blocked\nEOF' "'EOF'")"
   chk "negative: cat > notes <<\"EOF\" body with npm create vite"        0 "$(printf 'cat > notes.md <<"EOF"\nnpm create vite@9.3.4 web\nEOF')"
   chk "negative: tee -a log <<'EOF' body with create-next-app"          0 "$(printf 'tee -a log.md <<%s\nnpx create-next-app@16.4.6 web\nEOF' "'EOF'")"
@@ -233,6 +325,18 @@ selftest() {
   mkdir -p "$w/vite/src"; printf '{"dependencies":{"react":"19.3.1"}}' > "$w/vite/package.json"
   wchk "silent: new tsconfig.app.json in a React (non-Angular) project"  silent Write "$w/vite/tsconfig.app.json"
   rm -rf "$w"
+  local nxw
+  nxw=$(mktemp -d)
+  ( block_new_workspace_file "$nxw/nx.json" ) >/dev/null 2>&1
+  if [ $? -eq 2 ]; then echo "  ok   positive: new nx.json is blocked"; else echo "  FAIL new nx.json (want exit 2)"; fail=1; fi
+  printf '%s\n' '{}' > "$nxw/nx.json"
+  ( block_new_workspace_file "$nxw/nx.json" ) >/dev/null 2>&1
+  if [ $? -eq 0 ]; then echo "  ok   negative: existing nx.json is allowed"; else echo "  FAIL existing nx.json (want exit 0)"; fail=1; fi
+  ( block_new_workspace_file "$nxw/melos.yaml" ) >/dev/null 2>&1
+  if [ $? -eq 2 ]; then echo "  ok   positive: new melos.yaml is blocked"; else echo "  FAIL new melos.yaml (want exit 2)"; fail=1; fi
+  ( block_new_workspace_file "$nxw/pubspec.yaml" ) >/dev/null 2>&1
+  if [ $? -eq 0 ]; then echo "  ok   negative: new pubspec.yaml is not this hook"; else echo "  FAIL pubspec.yaml wrongly blocked"; fail=1; fi
+  rm -rf "$nxw"
   # the audit trail records authorized calls
   ( evaluate 'CC_SCAFFOLD=scaffold-flutter-app flutter create audited_app' ) >/dev/null 2>&1
   if grep -q 'scaffold-flutter-app | CC_SCAFFOLD' "$t/scaffold-audit.log" 2>/dev/null; then echo "  ok   authorized call is written to the audit log"; else echo "  FAIL audit log entry missing"; fail=1; fi
@@ -261,6 +365,7 @@ try:
 except Exception:
     print('')
 " 2>/dev/null)
+  block_new_workspace_file "$FILE"
   write_advisory Write "$FILE"
   exit 0
 fi

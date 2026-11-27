@@ -1,5 +1,7 @@
 # Flutter Build, Workspace and Run-Target Traps
 
+Polyglot repos (uv/npm/Nx/Make): load `polyglot-monorepo` first — this page is Dart/Melos only.
+
 Read this when setting up or debugging a multi-package workspace, running the app against a local backend (simulator, emulator, physical device), tuning Gradle memory, handling server-signed upload URLs, moving CPU-heavy work off the UI isolate, or touching media-encoder settings. Platform-native config (cleartext overlay, DevicePreview, UIScene) lives in [flutter-platform-gotchas.md](flutter-platform-gotchas.md); security rules live in [flutter-security-hardening.md](flutter-security-hardening.md).
 
 ---

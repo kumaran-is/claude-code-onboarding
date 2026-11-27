@@ -28,6 +28,7 @@ docker --version        # Docker steps only; without it they are BLOCKED, the re
 ```bash
 uv init --package --name <name> --python 3.14.10 --no-readme --vcs git <name> && cd <name>   # newest 3.14.x patch
 ```
+- **Join an existing uv workspace** (do this instead of a nested `uv.lock` when the human is adding a service to a monorepo): `HOST=$(python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --find-host <target parent>)` (exit 1 = no host). Then `python3 …/discover_monorepo.py --root "$HOST"`. If `join.uv` is true, create the package as a **member directory** (still `uv init --package` in that path). Append the path to `[tool.uv.workspace].members` **only if it is not already listed**. Add `[tool.uv.sources]` `{ workspace = true }` for shared libs, and `uv lock` + `uv sync --locked --all-packages` at the **host**. Do not write a member `uv.lock` unless `requires-python` cannot join the host (then keep it standalone — `uv-package-manager`). Do not add Nx. Details: `polyglot-monorepo/reference/discover-and-migrate.md`.
 - `--python 3.14.10` pins the patch in `.python-version` (CI and the Docker base use the same patch) but also writes
   `requires-python = ">=3.14.10"`: relax it to `">=3.14"`. Delete the generated `[project.scripts]` entry (it points at a
   `main()` that will not exist).
@@ -87,6 +88,8 @@ uv run --no-sync alembic init -t pyproject_async migrations && rm alembic.ini   
   §8's `README.md` from the `COPY` (`uv init --no-readme` creates none). No `--forwarded-allow-ips` in the CMD: unset,
   uvicorn trusts only `127.0.0.1,::1` and ignores `X-Forwarded-For`. Set `FORWARDED_ALLOW_IPS` to your load balancer's
   address range per deployment, and check what `request.client.host` shows behind your platform before keying on it.
+  **Workspace member:** build from the **host** context (`docker build -f <member>/Dockerfile <host>`). Install with
+  `uv sync --locked --package <member>` (playbook §6); do not `COPY` a nested `uv.lock`. Standalone services keep §8 as written.
 - `.github/workflows/ci.yml` = §7 (actions pinned by commit SHA, `setup-uv` with an explicit `version`, `UV_LOCKED=1`)
   plus a digest-pinned `postgres` service, `scripts/export_openapi.py --check`, the migration gate (one head, upgrade,
   downgrade -1, upgrade, `alembic check`) as one command per step, `pip-audit` on the exported lock, `docker build`.

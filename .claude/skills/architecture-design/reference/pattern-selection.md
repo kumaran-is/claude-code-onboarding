@@ -106,3 +106,17 @@ START: What is your MAIN architectural concern?
 - Default: Riverpod providers calling repository
 - Repository pattern: always (testability is critical in mobile)
 - State: Riverpod 3 `AsyncNotifier` for server state, `Notifier` for local UI state (`StateNotifier`/`StateProvider` are legacy imports in Riverpod 3)
+
+## Monorepo tooling
+
+Not an application pattern — package managers vs task orchestration. Load `polyglot-monorepo` (do not copy Melos/uv/Nx setup here).
+
+```
+Multiple packages in one git repo?
+  Dart/Flutter     -> pub workspace + Melos 7+ for scripts (never Nx as the Dart PM)
+  Python           -> uv workspaces (incompatible requires-python stays outside)
+  Angular/Node/MCP -> npm workspaces first; Nx only if JS-heavy + measured CI + human yes
+  Cross-language   -> Makefile/Taskfile unless Nx already owns JS CI
+  nx.json present  -> keep; do not add a second Flutter affected-test owner
+  no nx.json       -> do not add Nx
+```

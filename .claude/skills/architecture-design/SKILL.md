@@ -7,7 +7,7 @@ agent: architect
 context: fork
 metadata:
   triggers: system architecture, design architecture, API contract, deployment topology, tech stack decision, C4 diagram, sequence diagram
-  related-skills: ddd-architect, architecture-decision-records, database-schema-designer, openapi-spec-generation
+  related-skills: ddd-architect, architecture-decision-records, database-schema-designer, openapi-spec-generation, polyglot-monorepo
   domain: api-architecture
   role: architect
   scope: design
@@ -78,6 +78,7 @@ Before making architecture decisions, consult these sources:
 
 **Load order for new system design:**
 1. `context-discovery.md` — classify the project (MVP / SaaS / Enterprise)
-2. `pattern-selection.md` — choose the right pattern for the complexity
-3. `architecture-templates.md` — generate diagrams and deployment topology
-4. `implementation-patterns.md` — if Clean Arch or Hexagonal is chosen
+2. `polyglot-monorepo` skill — if more than one package or an existing workspace host; run `discover_monorepo.py --root`
+3. `pattern-selection.md` — choose the right pattern for the complexity
+4. `architecture-templates.md` — generate diagrams and deployment topology
+5. `implementation-patterns.md` — if Clean Arch or Hexagonal is chosen

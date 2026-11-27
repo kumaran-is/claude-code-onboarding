@@ -19,7 +19,7 @@ Use for services triggered by Pub/Sub, Cloud Scheduler, or GCS events — not fo
 ## Steps
 
 1. **Read existing files** in the target directory before adding anything
-2. **Initialize with uv:** `uv init $ARGUMENTS --python 3.14` under the appropriate `services/` subdirectory
+2. **Initialize with uv:** `HOST=$(python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --find-host .)` then join `[tool.uv.workspace]` when `join.uv` is true (same rules as `/scaffold-python-api`: no nested `uv.lock`, no duplicate members). Otherwise `uv init $ARGUMENTS --python 3.14` under the appropriate `services/` subdirectory.
 3. **Add `[tool.uv.sources]`** with the shared service library as an editable install in `pyproject.toml`
 4. **Create directory structure:**
    - `src/config.py` — pydantic-settings config, env vars (required fields have NO defaults)

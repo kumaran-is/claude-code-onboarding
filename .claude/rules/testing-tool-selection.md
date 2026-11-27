@@ -8,6 +8,7 @@ Choose the test tool from the **application target under test**, never from the 
 |---|---|
 | Interactive browser automation by Claude (reproduce, explore, fill forms, evidence screenshots, mock a response) | **Playwright CLI** via Bash: `npx playwright cli` from the project's pinned `@playwright/test`, else pinned `@playwright/cli` |
 | Automated, repeatable web regression (PR gate, CI) | **Playwright Test** (`@playwright/test`, `npx playwright test`) |
+| Plan / generate / heal Playwright specs (product Angular/React, after `init-agents`) | Official Test Agents — `browser-testing/reference/playwright-test-agents.md`. Conditional `/next` specialists; `/verify` still runs `playwright test` |
 | Performance traces, Core Web Vitals, Lighthouse, deep network/console/JS diagnostics | **Chrome DevTools MCP** |
 | Flutter Android/iOS UI/E2E | **Maestro CLI/MCP** (table below) |
 
@@ -33,5 +34,6 @@ No Playwright MCP server and no Browser Use MCP server: neither is configured in
 5. Hybrid repos (for example a Flutter app plus an Angular or React site): route **per target**. `apps/mobile` → `flutter test` + Maestro; `web/` → `ng test` or `vitest run` + Playwright. One target's green run is never evidence for the other.
 6. Maestro's Chromium web mode may drive a **web** target; it is web evidence only, never evidence about the mobile app.
 7. jsdom-based unit/component tests cannot compute colour contrast or layout. Contrast, overflow and viewport checks run in a real browser (Playwright + `@axe-core/playwright`). Web suite guidance: `.claude/skills/browser-testing/reference/playwright-test-suite.md`.
+8. `/next` E2E contract (`plan-and-handoff.md`): plan coverage, update tests, run on a real browser/device, classify failures, never weaken assertions. Web: `playwright test` plus optional product Test Agents. Flutter: Maestro CLI/MCP via `flutter-mobile` — no Maestro Planner/Generator/Healer agents.
 
 **Enforcement:** `bash .claude/scripts/lint-testing-tools.sh` (static; run it after editing skills, agents, commands, rules or docs) and the advisory hook `pre-browser-tool-advisory.sh`, which reminds Claude of this rule when a browser tool is invoked in a workspace that contains a Flutter mobile app.

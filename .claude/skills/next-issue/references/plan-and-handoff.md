@@ -16,7 +16,7 @@ Every `--plan` output includes:
 - **Plan Verdict** — Engineering Fit (Right / Over / Under) · Effort `1/2/3/5/8` · Risk Low/Med/High
 - **Acceptance Criteria Mapping** — AC → work → how it will be verified
 - **Scope & follow-ups** — IN-SCOPE vs DEFER, with effort and routing
-- **Test Strategy** — points at `/verify` and the stack's Definition of Done; Flutter Android/iOS E2E is Maestro; web E2E is Playwright CLI/Test; Chrome DevTools MCP is diagnostics only
+- **Test Strategy** — points at `/verify` and the stack's Definition of Done; Flutter Android/iOS E2E is Maestro; web E2E is Playwright CLI/Test (`playwright test` is the gate). Official Playwright Test Agents are conditional `/next` specialists for Angular/React journeys only (`.claude/skills/browser-testing/reference/playwright-test-agents.md`); Chrome DevTools MCP is diagnostics only
 - **Final Recommendation** — Approve | Revise | Block. Only an Approve self-verdict reaches the human gate
 - **Task contracts** (each implementation task, proportional to effort): objective/scope, files to create or modify, interfaces consumed/produced (`none` if none), dependencies, architecture constraints, acceptance criteria, exact stack verification command, review focus, completion evidence, out of scope. Use `docs/plans/TEMPLATE.md`. Scan with `python3 .claude/skills/subagent-driven-development/scripts/check-sdd-ledger.py --scan-plan <plan>`. Do not write a second plan when this file is already adequate; enrich it.
 
@@ -51,7 +51,23 @@ Load the skill from `.claude/SKILLS_GUIDE.md` from the item's labels and the fil
 | MCP server | `mcp-builder` |
 | Schema / migration | `database-schema-designer` |
 
-Flutter UI work still follows `flutter-mobile` + `design-system` (DESIGN.md, tokens, Maestro). Web UI follows `angular-spa` or `react-spa` + `design-system` (Playwright).
+Flutter UI work still follows `flutter-mobile` + `design-system` (DESIGN.md, tokens, Maestro). Web UI follows `angular-spa` or `react-spa` + `design-system` (Playwright). See **E2E quality contract** below — same gates, framework-specific tools; no extra Maestro agents.
+
+## E2E quality contract (Flutter and web)
+
+Same `/next` gates on every UI journey. Tools differ; the contract does not. Do **not** add Maestro Planner / Generator / Healer agents to match Playwright Test Agents.
+
+| Gate | Flutter Android/iOS | Angular / React |
+|---|---|---|
+| Plan coverage from approved AC | `/next --plan` + MFRI + `flutter-mobile` | `/next --plan`; product `playwright-test-planner` only when a journey is new or changed |
+| Implement | `flutter-mobile` + Riverpod | `angular-spa` / `react-spa` |
+| Generate or update E2E for changed journeys | Maestro YAML via `flutter-mobile` E2E Workflow + Maestro MCP; files in `<app>/.maestro/` (`flutter-e2e-maestro.md` §4). Same-PR co-change: §6 | Product `playwright-test-generator` when coverage is missing/stale; else write the spec by hand |
+| Execute on real target | `/verify` → `maestro test` on emulator/simulator/device. Missing Maestro/device = **BLOCKED**, never a browser | `/verify` → `npx playwright test --fail-on-flaky-tests`. Missing browser/server = **BLOCKED** |
+| Classify a failure, then repair | traps §8: FAIL (app) / TEST_DEFECT (flow) / SETUP_FAIL / INFRA_FAIL. No dedicated healer agent. After a TEST_DEFECT YAML edit: `python3 .claude/skills/next-issue/scripts/check-next-issue.py --scan-skip-delta <edited flows>` (new `optional: true` = WEAKENED) | App bug → stack skill / `--fix-loop`. Test/selector/timing → product `playwright-test-healer` only after diagnosis; then `--scan-skip-delta` on edited specs |
+| Never weaken to go green | No `optional: true` on required checks; no deleted checkpoints (`flutter-e2e-maestro.md` §5) | No `test.fixme` / skip / weaker `expect()` |
+| Independent review + ship | `/review-code` (incl. Maestro co-change) → `/verify pre-pr` → `/ship` → human merge | `/review-code` (incl. healer edits) → `/verify pre-pr` → `/ship` → human merge |
+
+Cosmetic / unit-only work skips E2E generation. Unrelated stacks skip the other framework's runner.
 
 ## Branching
 
@@ -68,6 +84,10 @@ If already inside a linked worktree, stay there. If isolation is justified (para
 - No GitHub → create a local branch named from the plan slug. Do not invent a remote.
 
 If the project board exists, flipping Status to In Progress is part of picking work up — the board is what humans read.
+
+## Web E2E Test Agents (conditional, Angular/React only)
+
+Load `.claude/skills/browser-testing/reference/playwright-test-agents.md` for Planner/Generator/Healer triggers. Not a parallel E2E lifecycle. Missing product agents → write specs by hand; mark those agents **NOT RUN**. After Healer, `--scan-skip-delta` on edited specs (new `test.fixme`/`test.skip` = fail), then the same `playwright test` command. Do not invoke all three agents on every change.
 
 ## Implementation notes (Step 5b, then continuous)
 

@@ -121,7 +121,7 @@ A flow whose assertions are all `optional: true` passes whether the app works or
 - A critical scenario contains, in order: an explicit precondition, a state-changing action, an intermediate checkpoint when
   multi-phase, a final business-state assertion, an evidence screenshot. A flow that only navigates and checks titles is a smoke test: register it as one.
 - Assert strings the app actually renders: read them from the localization source, not memory or the design doc.
-- Do not weaken a failing flow to turn it green (traps §7). Classification (PASS/FAIL/SETUP_FAIL/INFRA_FAIL): traps §8.
+- Do not weaken a failing flow to turn it green (traps §7). Classification (PASS / FAIL / TEST_DEFECT / SETUP_FAIL / INFRA_FAIL): traps §8. `/next` uses that table; there is no Maestro Healer agent.
 - If you add a checker, ship it with a known-bad and known-good control and make "control failed" a distinct exit code so a broken
   detector cannot read as a clean tree. A text check cannot judge whether an assertion is meaningful; review still does.
 

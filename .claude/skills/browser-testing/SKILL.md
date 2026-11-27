@@ -1,17 +1,17 @@
 ---
 name: browser-testing
-description: Browser testing for web targets (Angular, React, marketing sites, any served site, Flutter web builds). Playwright CLI (playwright-cli / npx playwright cli) for interactive, token-efficient browser automation by Claude — snapshots, refs, forms, mocking, sessions, traces, attaching to a paused test; @playwright/test for deterministic committed E2E suites (storageState auth, mocked failure states, axe accessibility, viewports, visual regression, sharding, flaky control); Chrome DevTools MCP for performance traces, Lighthouse and deep console/network diagnostics. Use when testing web apps, automating a browser, debugging a failing Playwright test, running E2E user flows, or writing Playwright specs. Not for Flutter Android/iOS apps (Maestro).
+description: Browser testing for web targets (Angular, React, marketing sites, any served site, Flutter web builds). Playwright CLI (playwright-cli / npx playwright cli) for interactive, token-efficient browser automation by Claude — snapshots, refs, forms, mocking, sessions, traces, attaching to a paused test; @playwright/test for deterministic committed E2E suites; Chrome DevTools MCP for performance/Lighthouse diagnostics; official Playwright Test Agents (Planner/Generator/Healer) as conditional /next specialists in product Angular/React apps after init-agents — never a second E2E engine and never installed in this toolkit. Use when testing web apps, automating a browser, debugging a failing Playwright test, running E2E user flows, writing Playwright specs, or planning/generating/healing Playwright coverage. Not for Flutter Android/iOS apps (Maestro).
 allowed-tools: Bash, mcp__chrome-devtools__*
 agent: browser-testing
 context: fork
 metadata:
-  triggers: browser testing, playwright, playwright test, playwright-cli, playwright cli, E2E test, browser automation, Chrome DevTools, UI testing, end-to-end, login flow, axe, visual regression, toHaveScreenshot, flaky test, trace viewer
-  related-skills: angular-spa, react-spa, accessibility-audit, ui-visual-validator, systematic-debugging
+  triggers: browser testing, playwright, playwright test, playwright-cli, playwright cli, playwright test agents, playwright-test-planner, playwright-test-generator, playwright-test-healer, init-agents, E2E test, browser automation, Chrome DevTools, UI testing, end-to-end, login flow, axe, visual regression, toHaveScreenshot, flaky test, trace viewer
+  related-skills: angular-spa, react-spa, next-issue, accessibility-audit, ui-visual-validator, systematic-debugging
   domain: quality
   role: specialist
   scope: testing
   output-format: report
-last-reviewed: "2026-11-24"
+last-reviewed: "2026-11-27"
 ---
 
 ## Iron Law
@@ -30,10 +30,11 @@ Canonical routing: `.claude/rules/testing-tool-selection.md`. No Playwright MCP 
 |---|---|---|
 | Claude drives a browser: reproduce, explore, fill a form, capture evidence, mock a response, inspect a failing test | Playwright CLI (Bash) | [playwright-cli-tools.md](reference/playwright-cli-tools.md) |
 | Repeatable regression that gates a PR (auth, failure states, axe, viewports, visual, sharding) | `@playwright/test` (`npx playwright test`) | [playwright-test-suite.md](reference/playwright-test-suite.md) |
+| Plan / generate / heal committed specs in a **product** Angular/React app (new journey, missing coverage, diagnosed test defect) | Official Playwright Test Agents — product-repo `playwright-test-*` after `init-agents`; never all three on every change | [playwright-test-agents.md](reference/playwright-test-agents.md) |
 | Performance trace, Core Web Vitals, throttling, Lighthouse, deep console/network/JS diagnostics | Chrome DevTools MCP | [chrome-devtools-tools.md](reference/chrome-devtools-tools.md) |
 | Unit / component tests | Angular: `ng test` (Vitest); React: Vitest + React Testing Library | `.claude/rules/testing-tool-selection.md` |
 
-**CLI or Test?** A check that must run again (on every PR, after every refactor) is a `@playwright/test` spec. The CLI is for finding out: reproducing a bug, exploring a flow before writing its spec, producing evidence for a review, or attaching to a paused failing test. Record a CLI session as code (`recording-start` / `recording-stop`, or the `### Ran Playwright code` block every command prints) and turn it into a spec; never leave a CLI transcript as the only proof. Cypress is not the toolkit's web E2E tool; keep it only where a repo already runs it.
+**CLI or Test?** A check that must run again (on every PR, after every refactor) is a `@playwright/test` spec. The CLI is for finding out: reproducing a bug, exploring a flow before writing its spec, producing evidence for a review, or attaching to a paused failing test. Record a CLI session as code (`recording-start` / `recording-stop`, or the `### Ran Playwright code` block every command prints) and turn it into a spec; never leave a CLI transcript as the only proof. Cypress is not the toolkit's web E2E tool; keep it only where a repo already runs it. Playwright Test Agents (Planner/Generator/Healer) only plan or edit those committed specs in a product app; `/verify` still runs the suite.
 
 ## Install (pinned, reproducible)
 
@@ -120,6 +121,7 @@ For a server that is not running yet. Run `python scripts/with_server.py --help`
 | Resource | When to load |
 |----------|-------------|
 | [playwright-test-suite.md](reference/playwright-test-suite.md) | Writing or reviewing `@playwright/test` config/specs, CI workflow, flaky policy, visual thresholds, axe, 1.59–1.65 features and breaking changes |
+| [playwright-test-agents.md](reference/playwright-test-agents.md) | `/next` Planner/Generator/Healer triggers, healer overlay (never skip/weaken to hide app bugs), product-only `init-agents` (backup `.mcp.json` first — the command replaces it) |
 | [playwright-cli-tools.md](reference/playwright-cli-tools.md) | Full verified Playwright CLI command list, recipes for mocking, offline, responsive, auth state, evidence |
 | [browser-testing-workflows.md](reference/browser-testing-workflows.md) | Step-by-step QA workflows (login, form validation, journeys, responsive, performance) |
 | [chrome-devtools-tools.md](reference/chrome-devtools-tools.md) | Core Web Vitals, performance traces, throttling, Lighthouse, console/network diagnostics |

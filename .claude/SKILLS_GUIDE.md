@@ -42,7 +42,7 @@
 | Architecture | `.claude/skills/architecture-design/` | `architect` | `/design-architecture` |
 | Polyglot monorepo (MONO-ARCH-001: native-only / Melos-only / Nx-only / Nx + Melos; Flutter bridge; graph audit) | `.claude/skills/polyglot-monorepo/` | `architect` (no new agent); reviewers: `skill-reviewer`, `security-reviewer` | `/design-architecture`, `/new-project` (no `/scaffold-monorepo`) |
 | Plan Review | `.claude/skills/plan-mode-review/` | — | `/plan-review` |
-| Browser Testing | `.claude/skills/browser-testing/` | `browser-testing` | — |
+| Browser Testing | `.claude/skills/browser-testing/` (`reference/playwright-test-agents.md` for product-repo Planner/Generator/Healer as conditional `/next` specialists; `/verify` stays `playwright test`) | `browser-testing` | — |
 | Next work item (`/next`, GitHub issues/project, local plans, blockers, verification, implementation notes; opt-in `/next --auto`) | `.claude/skills/next-issue/` (`references/implementation-notes.md`, `references/auto-loop.md`) | — | `/next` |
 | AWS AI-DLC (optional; official `aidlc` CLI + `/aidlc`; not a copy of the engine; independent of `/next`) | `.claude/skills/aws-aidlc-integration/` | — | `/setup-aidlc` |
 | Partner testing (paired manual QA, findings ledger, fix/retest) | `.claude/skills/test-partner/` | — | `/test-partner` |

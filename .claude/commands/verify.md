@@ -377,7 +377,7 @@ Run this block once from the repo root with `MODE=quick`, `MODE=full` or `MODE=p
 | UI mode (quick+) | `angular-ui-mode.sh detect`: `package.json` `config.uiMode` matches the installed UI packages and the global stylesheet (`angular-spa/reference/ui-mode-selection.md`); a plain-CSS workspace passes as `none` | — |
 | Unit (full+) | `ng test --watch=false` (`@angular/build:unit-test`: Vitest + jsdom by default; no Karma `--browsers` flag) | `vitest run`, else `npm test` |
 | Build (full+) | `ng build` (production by default) | `npm run build` |
-| E2E (full+) | `playwright test --fail-on-flaky-tests` when `playwright.config.*` exists; PASS needs exit 0 **and** executed > 0 (an all-skipped run exits 0); missing browser/server → **BLOCKED** | same |
+| E2E (full+) | `playwright test --fail-on-flaky-tests` when `playwright.config.*` exists; PASS needs exit 0 **and** executed > 0 (an all-skipped run exits 0); missing browser/server → **BLOCKED**. Planner/Generator/Healer are not this gate (`.claude/skills/browser-testing/reference/playwright-test-agents.md`) | same |
 | Audit (pre-pr) | `npm audit --audit-level=high` | same |
 
 ```bash

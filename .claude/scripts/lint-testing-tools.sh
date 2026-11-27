@@ -24,6 +24,8 @@
 #       UI/E2E driver (Detox, Appium, Patrol, Espresso, XCUITest, flutter_driver) unless the line carries a guard word.
 #   R7  The scan set cannot shrink silently: every MOBILE_CONTEXT pattern matches at least one file and every
 #       BROWSER_ASSETS / MUST_LINK_CANON file exists (a deleted or renamed file is a violation, not a skipped scan).
+#   R8  This toolkit must not vendor official Playwright Test Agents (`playwright-test-{planner,generator,healer}.md`)
+#       or a `playwright-test` MCP server in `.mcp.json`. Product Angular/React apps run `init-agents`; the kit routes.
 #
 # Usage: lint-testing-tools.sh [--root <repo>] [--selftest]      Exit 0 = clean, 1 = violations.
 set -uo pipefail
@@ -52,6 +54,12 @@ BROWSER_ASSETS = [
     ".claude/agents/browser-testing.md", ".claude/skills/browser-testing/SKILL.md",
     ".claude/agents/reality-checker.md", ".claude/skills/browser-testing/reference/browser-testing-workflows.md",
     ".claude/skills/browser-testing/reference/playwright-test-suite.md",
+    ".claude/skills/browser-testing/reference/playwright-test-agents.md",
+]
+KIT_FORBIDDEN_PW_AGENTS = [
+    ".claude/agents/playwright-test-planner.md",
+    ".claude/agents/playwright-test-generator.md",
+    ".claude/agents/playwright-test-healer.md",
 ]
 MUST_LINK_CANON = ["CLAUDE.md", ".claude/skills/flutter-mobile/SKILL.md",
                    ".claude/skills/flutter-mobile/reference/flutter-e2e-maestro.md", ".claude/rules/skill-triggers.md"]
@@ -148,6 +156,19 @@ def lint(root):
         for n, line in enumerate(open(f, errors="ignore"), 1):
             if OTHER_E2E.search(line) and not GUARD_R6.search(line):
                 bad.append(f"R6 {rel(root, f)}:{n}: Flutter file recommends a non-Maestro device E2E tool: {line.strip()[:110]}")
+    # R8: do not vendor Playwright Test Agents or their MCP server in this toolkit
+    for p in KIT_FORBIDDEN_PW_AGENTS:
+        if os.path.exists(os.path.join(root, p)):
+            bad.append(f"R8 {p}: do not vendor Playwright Test Agents here; product repos run npx playwright init-agents --loop=claude")
+    mcp_path = os.path.join(root, ".mcp.json")
+    if os.path.isfile(mcp_path):
+        try:
+            import json
+            servers = (json.load(open(mcp_path, errors="ignore")) or {}).get("mcpServers") or {}
+            if "playwright-test" in servers:
+                bad.append("R8 .mcp.json: playwright-test MCP belongs in product Angular/React apps, not this toolkit")
+        except (OSError, ValueError):
+            pass
     return bad
 
 
@@ -209,6 +230,16 @@ def selftest():
             print(f"  {'ok  ' if hits else 'FAIL'} detects R7 shrunken scan set when {path} is deleted")
             fail += (not hits)
             w(path, saved)
+        w(".claude/agents/playwright-test-planner.md", "# planted vendor agent\n")
+        hits = [h for h in lint(t) if h.startswith("R8") and "playwright-test-planner" in h]
+        print(f"  {'ok  ' if hits else 'FAIL'} detects R8 vendored Playwright Test Agent")
+        fail += (not hits)
+        os.remove(os.path.join(t, ".claude/agents/playwright-test-planner.md"))
+        w(".mcp.json", '{"mcpServers":{"playwright-test":{"command":"npx"}}}\n')
+        hits = [h for h in lint(t) if h.startswith("R8") and ".mcp.json" in h]
+        print(f"  {'ok  ' if hits else 'FAIL'} detects R8 playwright-test MCP in toolkit .mcp.json")
+        fail += (not hits)
+        os.remove(os.path.join(t, ".mcp.json"))
         guarded = [
             ".claude/skills/flutter-mobile/reference/y.md|Never test the Android emulator app with Playwright; use Maestro.\n",
             "docs/g3.md|Angular web app on an emulator-sized viewport uses Playwright.\n",

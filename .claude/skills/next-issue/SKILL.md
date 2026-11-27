@@ -1,15 +1,15 @@
 ---
 name: next-issue
 description: "Use when the user says /next, next issue, start next issue, pick up next task, what should I work on, or /next-issue --wave N / --plan / --auto. Picks the next actionable work item from GitHub Project/issues, local plans, session tasks, and in-flight branches, honouring blockers, assignees, waves, layer order, and failed verification. `/next --auto` is opt-in multi-story automation (explicit flag only). Not /status-check (binary feature health), /project-status (inventory), or /checkpoint (session snapshots)."
-allowed-tools: Bash, Read, Glob, Grep, Write, Edit
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit, Agent
 argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [--fix-loop] [--auto] [#N]"
 metadata:
   domain: workflow
   role: orchestrator
   scope: session
   triggers: /next, next issue, next-issue, what should I work on, pick up next task, start next issue
-  related-skills: plan-mode-review, verification-before-completion, systematic-debugging, subagent-driven-development
-last-reviewed: "2026-11-26"
+  related-skills: plan-mode-review, verification-before-completion, systematic-debugging, subagent-driven-development, browser-testing
+last-reviewed: "2026-11-27"
 ---
 
 # Next Issue (`/next`)
@@ -106,7 +106,7 @@ Do not write code, create a branch, or touch files until the user replies `appro
 
 ## Step 4 — Load the stack skill
 
-Dispatch from SKILLS_GUIDE (`references/plan-and-handoff.md`). Flutter Android/iOS E2E remains Maestro. Web E2E remains Playwright CLI/Test. Chrome DevTools MCP is diagnostics, not a substitute for either.
+Dispatch from SKILLS_GUIDE (`references/plan-and-handoff.md`). Both UI stacks follow the same **E2E quality contract** there: plan coverage → implement → update E2E → run on a real browser/device → classify failures → never weaken assertions → `/review-code` → `/ship` → human merge. Flutter Android/iOS uses `flutter-mobile` + Maestro CLI/MCP (no Maestro Planner/Generator/Healer agents). Web uses Playwright CLI/Test; product Playwright Test Agents are conditional specialists only (`browser-testing/reference/playwright-test-agents.md`). Chrome DevTools MCP is diagnostics, not a substitute.
 
 ## Step 5–8 — Branch, implement, verify, ship
 

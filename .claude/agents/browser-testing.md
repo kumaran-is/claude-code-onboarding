@@ -29,10 +29,11 @@ Canonical routing: `.claude/rules/testing-tool-selection.md`.
 |---|---|
 | Repo has `playwright.config.*` | Run the suite first: `npx playwright test; echo "E2E EXIT:$?"` (own exit code, never through a pipe). Zero executed tests = NOT RUN; `Executable doesn't exist` = BLOCKED |
 | Drive the browser: reproduce a bug, walk a flow, fill forms, mock a response, capture evidence | Playwright CLI via Bash: `npx --no-install playwright cli` (project's pinned Playwright), else pinned `playwright-cli` (`../skills/browser-testing/reference/playwright-cli-tools.md`) |
-| A suite test fails and the cause is unclear | `npx playwright test <spec> --debug=cli` in the background, then `playwright cli attach <session>`, `step-over`, `snapshot`, `resume` |
+| A suite test fails and the cause is unclear | `npx playwright test <spec> --debug=cli` in the background, then `playwright cli attach <session>`, `step-over`, `snapshot`, `resume`. Diagnose first; Healer only for a verified test defect (`../skills/browser-testing/reference/playwright-test-agents.md`). This agent does not edit specs |
+| Product repo has `playwright-test-planner` / `generator` / `healer` and `/next` hits that trigger | Dispatch those product agents (conditional; never all three on every change). This agent stays read-only |
 | Core Web Vitals, throttling, Lighthouse, heap/JS-level debugging | Chrome DevTools MCP (`../skills/browser-testing/reference/chrome-devtools-tools.md`) |
 
-Workflows: `../skills/browser-testing/reference/browser-testing-workflows.md`. Suite guidance: `../skills/browser-testing/reference/playwright-test-suite.md`.
+Workflows: `../skills/browser-testing/reference/browser-testing-workflows.md`. Suite guidance: `../skills/browser-testing/reference/playwright-test-suite.md`. Test Agents: `../skills/browser-testing/reference/playwright-test-agents.md`.
 
 ## Process
 

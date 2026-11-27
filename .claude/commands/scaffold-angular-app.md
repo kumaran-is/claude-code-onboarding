@@ -202,6 +202,7 @@ interface. Replace every placeholder before step 12 — never ship them.
     then `playwright.config.ts` from `browser-testing/reference/playwright-test-suite.md` with
     `webServer.command: 'npm exec --no -- ng serve --host 127.0.0.1 --port 4200'` (the baseURL host; `ng serve` may bind only `[::1]`); gitignore `playwright/.auth/` and `.playwright-cli/`.
     The same install gives Claude the Playwright CLI (`npx --no-install playwright cli`).
+    Optional in the **product** app (never this toolkit): backup `.mcp.json` if it exists, `npx playwright init-agents --loop=claude` (that command **replaces** `.mcp.json` with only `playwright-test`), then merge other servers back — `browser-testing/reference/playwright-test-agents.md` "Scaffold hint" and `browser-testing/scripts/merge-playwright-test-mcp.py`.
 13. **Summary** — the UI mode and how it was chosen (flag, question, project, non-interactive default),
     which files the CLI and the Spartan generators produced vs which were hand-written (steps 5–11), the exit
     codes, how to run (`npm start`), next steps.

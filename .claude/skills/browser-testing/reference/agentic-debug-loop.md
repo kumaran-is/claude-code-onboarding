@@ -4,7 +4,7 @@ The pattern for using live browser runtime data — console errors, network resp
 
 ## Core Principle
 
-Static code analysis guesses at runtime behavior. The agentic debug loop observes actual runtime behavior first, then reads source only to understand what it saw. The sequence is always: **observe → diagnose → fix → re-verify in browser.** Never guess from code alone when you can run the flow and read the real error.
+Static code analysis guesses at runtime behavior. The agentic debug loop observes actual runtime behavior first, then reads source only to understand what it saw. The sequence is always: **observe → diagnose → fix → re-verify in browser.** Never guess from code alone when you can run the flow and read the real error. After diagnosing a Playwright **test** defect (stale locator, timing), dispatch the product `playwright-test-healer` if it exists (`playwright-test-agents.md`); an application bug is a production-code fix, never `test.fixme` / skip / a weaker `expect()`.
 
 ## When to Use
 

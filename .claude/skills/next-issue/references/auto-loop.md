@@ -65,8 +65,13 @@ Reuse HITL steps; only the human gates are replaced.
    ambiguous AC, or `needs human review` → `BLOCKED` (do not downgrade).
 4. **Plan** automatically. Scan with `check-sdd-ledger.py --scan-plan`. Plan
    verdict must be Approve. Revise/Block → `BLOCKED`, do not self-approve a bad plan.
-5. **Implement** via stack skills (Sonnet). Seed implementation notes.
-6. **Verify** `check-verify-impact.py --stage iteration` then `/verify`.
+5. **Implement** via stack skills (Sonnet). Seed implementation notes. Follow the
+   E2E quality contract in `plan-and-handoff.md`. Angular/React Playwright Test
+   Agents stay conditional; Flutter Maestro stays `flutter-mobile` + MCP (no extra
+   agents). Do not invoke Planner+Generator+Healer on every story.
+6. **Verify** `check-verify-impact.py --stage iteration` then `/verify`
+   (`playwright test` / `maestro test` are the gates). Classify failures before
+   `--fix-loop`; Healer only after a diagnosed Playwright test defect.
 7. **Auto-fix** only after GO: existing `--fix-loop` / Ralph max 5,
    `require_verify`, contract snapshot, WEAKENED → ESCALATED. Ralph still does
    not chain issues; this coordinator does after merge confirm.

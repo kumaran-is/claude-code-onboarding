@@ -205,10 +205,10 @@ Conventions, `integration_test` vs Maestro, and iOS/Android divergences: [refere
 
 ```
 1. Build and launch app (XcodeBuildMCP for iOS, flutter run for Android)
-2. Describe the test flow in natural language
-3. Claude generates YAML via Maestro MCP and runs it
-4. Claude reports pass/fail per step
-5. Save generated YAML to <app>/.maestro/<flow-name>.yaml for reuse
+2. Describe the test flow in natural language (from approved AC / `/next --plan`)
+3. Claude generates YAML via Maestro MCP and runs it on a live device (list_devices first)
+4. Classify: PASS / FAIL / TEST_DEFECT / SETUP_FAIL / INFRA_FAIL (`flutter-testing-traps.md` §8). No Maestro Planner, Generator, or Healer agents
+5. Save generated YAML to <app>/.maestro/<flow-name>.yaml; `/verify` re-runs `maestro test` — never weaken required assertions
 ```
 
 ### Flow File Conventions

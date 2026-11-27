@@ -199,7 +199,8 @@ flowchart LR
 |---|---|
 | **Pick** | `/next` reads GitHub issues/projects, local `docs/plans/`, and in-flight branches. It does not implement until the full issue or plan is read. `/next --plan` waits for your approval. |
 | **Build** | Stack skills and agents write the change. `/next --fix-loop` is opt-in after a failing `/verify` (bounded Ralph retry, never the next issue). |
-| **Verify** | `/verify` runs impact-aware compile/lint/tests. `/verify quick` is not PR evidence. `/verify pre-pr` runs on a frozen tree. |
+| **E2E** | Same `/next` contract on Flutter and web: plan coverage from AC, update tests for changed journeys, run on a real device (Maestro) or browser (`playwright test`), classify failures, never weaken assertions. Playwright Test Agents are optional in product Angular/React apps; there are no extra Maestro agents. |
+| **Verify** | `/verify` runs impact-aware compile/lint/tests (including that E2E gate). `/verify quick` is not PR evidence. `/verify pre-pr` runs on a frozen tree. |
 | **Review** | `/review-code` dispatches independent reviewers. The implementer is not the approver. |
 | **Ship** | `/ship` is a **readiness** report. It does not merge. `/create-pr` prints `gh pr create`; you run it. Merge is a human keyword. |
 

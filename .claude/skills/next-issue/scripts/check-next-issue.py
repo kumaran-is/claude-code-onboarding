@@ -12,6 +12,7 @@ Usage:
   check-next-issue.py --verify-cmd-for STACK
   check-next-issue.py --snapshot-contract PAYLOAD.json [--root DIR]
   check-next-issue.py --check-contract SNAPSHOT.json [--root DIR]
+  check-next-issue.py --scan-skip-delta FILE [FILE ...] [--root DIR]
 
 Exit: 0 ok, 1 no pick / scan finding, 2 usage or broken selftest.
 Stdlib only. Never hardcodes a product, owner, repo, or absolute path.
@@ -23,6 +24,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -130,11 +132,16 @@ SENSITIVE_RE = re.compile(
     re.I,
 )
 SKIP_TEST_RE = re.compile(
-    r"xit\(|xdescribe\(|it\.skip|test\.skip|pytest\.mark\.skip|"
-    r"@unittest\.skip|\.skip\(|describe\.skip|skip:\s*true",
+    r"xit\(|xdescribe\(|xtest\(|it\.skip|test\.skip|test\.fixme|it\.fixme|"
+    r"describe\.fixme|test\.fail|it\.fail|describe\.fail|pytest\.mark\.skip|"
+    r"@unittest\.skip|\.skip\(|describe\.skip|skip:\s*true|"
+    r"optional\s*:\s*['\"]?true['\"]?",
     re.I,
 )
-ASSERT_TEST_RE = re.compile(r"\bassert\b|expect\(|XCTAssert|fail\(|verifyThat", re.I)
+ASSERT_TEST_RE = re.compile(
+    r"\bassert\b|assertVisible|assertNotVisible|expect\(|XCTAssert|fail\(|verifyThat",
+    re.I,
+)
 COV_FLOOR_RE = re.compile(
     r"(?i)(?:fail[_-]?under|cov-fail-under|--cov-fail-under|"
     r"branches|functions|lines|statements|coverageThreshold)"
@@ -500,6 +507,54 @@ def check_contract(snapshot: dict[str, Any], root: Path, payload: dict[str, Any]
     }
 
 
+def _git_show(root: Path, rel: str) -> str | None:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "show", f"HEAD:{rel}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout
+
+
+def _repo_rel(root: Path, spec: str) -> tuple[Path, str] | str:
+    """Resolve spec to (path, git-relative). Return an error string if it is outside root."""
+    raw = Path(spec)
+    path = raw if raw.is_absolute() else (root / spec)
+    try:
+        rel = str(path.resolve().relative_to(root.resolve()))
+    except ValueError:
+        return f"{spec}: path is outside --root"
+    return path, rel
+
+
+def scan_skip_delta(root: Path, rels: list[str]) -> list[str]:
+    """Fail closed when skip/fixme/optional count rose vs HEAD (healer path; no Ralph snapshot)."""
+    findings: list[str] = []
+    root = root.resolve()
+    for spec in rels:
+        resolved = _repo_rel(root, spec)
+        if isinstance(resolved, str):
+            findings.append(resolved)
+            continue
+        path, rel = resolved
+        if not path.is_file():
+            findings.append(f"{rel}: missing (not a file)")
+            continue
+        after = path.read_text(encoding="utf-8", errors="replace")
+        before = _git_show(root, rel) or ""
+        n_after = len(SKIP_TEST_RE.findall(after))
+        n_before = len(SKIP_TEST_RE.findall(before))
+        if n_after > n_before:
+            findings.append(f"{rel}: skip/fixme/optional count rose {n_before} → {n_after}")
+    return findings
+
+
 def load_candidates(path: Path) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(data, list):
@@ -590,7 +645,7 @@ def scan_skill(skill_dir: Path) -> list[str]:
         findings.append("plan-and-handoff.md missing --fix-loop")
     if "Auto-merge is forbidden" not in handoff_body:
         findings.append("plan-and-handoff.md lost HITL auto-merge forbid")
-    for needle in ("check-verify-impact.py", "/create-pr", "does not merge", "--stage iteration", "--stage frozen"):
+    for needle in ("check-verify-impact.py", "/create-pr", "does not merge", "--stage iteration", "--stage frozen", "playwright-test-agents.md", "E2E quality contract", "--scan-skip-delta"):
         if needle not in handoff_body:
             findings.append(f"plan-and-handoff.md missing {needle}")
     auto_ref = skill_dir / "references" / "auto-loop.md"
@@ -912,6 +967,78 @@ def selftest() -> int:
         testf.write_text("void main() { test('empty', () {}, skip: true); }\n", encoding="utf-8")
         chk = check_contract(snap, tdir, snap_payload)
         check("negative-skip-is-weakening", chk["verdict"], "WEAKENED")
+        pw = tdir / "signin.spec.ts"
+        pw.write_text(
+            "test('shows heading', async ({ page }) => { await expect(page.getByRole('heading')).toBeVisible(); });\n",
+            encoding="utf-8",
+        )
+        pw_payload = {
+            "title": "Sign in heading",
+            "acceptance_criteria": ["heading is visible"],
+            "verify_cmd": STACK_VERIFY_CMDS["angular"],
+            "test_files": ["signin.spec.ts"],
+        }
+        pw_snap = snapshot_contract(pw_payload, tdir)
+        pw.write_text(
+            "test.fixme('shows heading', async ({ page }) => { await expect(page.getByRole('heading')).toBeVisible(); });\n",
+            encoding="utf-8",
+        )
+        chk = check_contract(pw_snap, tdir, pw_payload)
+        check("negative-fixme-is-weakening", chk["verdict"], "WEAKENED")
+        repo = tdir / "repo"
+        repo.mkdir()
+        spec = repo / "e2e.spec.ts"
+        spec.write_text("test('ok', async ({ page }) => { await expect(page).toHaveURL('/'); });\n", encoding="utf-8")
+        git_id = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "core.hooksPath", "/dev/null"], cwd=repo, check=True)
+        subprocess.run([*git_id, "add", "e2e.spec.ts"], cwd=repo, check=True)
+        subprocess.run([*git_id, "commit", "-qm", "base"], cwd=repo, check=True)
+        spec.write_text("test.fixme('ok', async ({ page }) => { await expect(page).toHaveURL('/'); });\n", encoding="utf-8")
+        delta = scan_skip_delta(repo, ["e2e.spec.ts"])
+        check("negative-scan-skip-delta-fixme", bool(delta), True)
+        spec.write_text("test('ok', async ({ page }) => { await expect(page).toHaveURL('/'); });\n", encoding="utf-8")
+        check("positive-scan-skip-delta-clean", scan_skip_delta(repo, ["e2e.spec.ts"]), [])
+        flow = repo / "increment.yaml"
+        flow.write_text('appId: x\n---\n- assertVisible: "1"\n', encoding="utf-8")
+        subprocess.run([*git_id, "add", "increment.yaml"], cwd=repo, check=True)
+        subprocess.run([*git_id, "commit", "-qm", "flow"], cwd=repo, check=True)
+        flow.write_text(
+            'appId: x\n---\n- assertVisible:\n    text: "1"\n    optional: true\n',
+            encoding="utf-8",
+        )
+        check(
+            "negative-scan-skip-delta-optional",
+            bool(scan_skip_delta(repo, ["increment.yaml"])),
+            True,
+        )
+        subprocess.run(["git", "checkout", "-q", "--", "increment.yaml"], cwd=repo, check=True)
+        flow.write_text(
+            'appId: x\n---\n- assertVisible:\n    text: "1"\n    optional : true\n',
+            encoding="utf-8",
+        )
+        check(
+            "negative-scan-skip-delta-optional-space",
+            bool(scan_skip_delta(repo, ["increment.yaml"])),
+            True,
+        )
+        check(
+            "negative-scan-skip-delta-missing",
+            bool(scan_skip_delta(repo, ["nope.spec.ts"])),
+            True,
+        )
+        yml = tdir / "flow.yaml"
+        yml.write_text('appId: x\n---\n- assertVisible: "1"\n', encoding="utf-8")
+        yml_payload = {
+            "title": "Increment",
+            "acceptance_criteria": ["counter is 1"],
+            "verify_cmd": STACK_VERIFY_CMDS["flutter"],
+            "test_files": ["flow.yaml"],
+        }
+        yml_snap = snapshot_contract(yml_payload, tdir)
+        yml.write_text('appId: x\n---\n- tapOn: "Increment"\n', encoding="utf-8")
+        chk = check_contract(yml_snap, tdir, yml_payload)
+        check("negative-maestro-deleted-assertVisible", chk["verdict"], "WEAKENED")
         testf.write_text("void main() {}\n", encoding="utf-8")
         chk = check_contract(snap, tdir, snap_payload)
         check("negative-deleted-assertions", chk["verdict"], "WEAKENED")
@@ -976,6 +1103,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--verify-cmd-for", dest="verify_for", default=None)
     parser.add_argument("--snapshot-contract", type=Path)
     parser.add_argument("--check-contract", type=Path)
+    parser.add_argument("--scan-skip-delta", nargs="+", metavar="FILE")
     parser.add_argument("--root", type=Path, default=None)
     parser.add_argument("--payload", type=Path, default=None)
     args = parser.parse_args(argv)
@@ -1014,6 +1142,15 @@ def main(argv: list[str]) -> int:
         result = check_contract(snapshot, root, payload)
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result["verdict"] == "OK" else 1
+    if args.scan_skip_delta:
+        root = (args.root or Path.cwd()).resolve()
+        findings = scan_skip_delta(root, args.scan_skip_delta)
+        if findings:
+            for f in findings:
+                print(f)
+            return 1
+        print("SKIP DELTA OK")
+        return 0
     if args.check_notes:
         findings = check_notes(args.check_notes)
         if findings:

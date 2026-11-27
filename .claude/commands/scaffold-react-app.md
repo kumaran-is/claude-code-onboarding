@@ -121,6 +121,7 @@ sample feature.
    trap, Escape, focus return), `e2e/responsive-security.spec.ts` (no overflow at 375 px, open-redirect
    negatives); axe tags `wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa` and the planted-violation control.
    Install the browser once: `npx playwright install chromium`.
+   Optional in the **product** app (never this toolkit): backup `.mcp.json` if it exists, `npx playwright init-agents --loop=claude` (that command **replaces** `.mcp.json` with only `playwright-test`), then merge other servers back — `browser-testing/reference/playwright-test-agents.md` "Scaffold hint" and `browser-testing/scripts/merge-playwright-test-mcp.py`.
 10. **Verify** — run each and report its own exit code; any non-zero → fix before finishing:
     ```bash
     npx tsc -b; echo "tsc exit=$?"

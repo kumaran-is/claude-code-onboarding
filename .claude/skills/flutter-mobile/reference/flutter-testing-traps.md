@@ -192,12 +192,13 @@ Report the failure; do not launder it. (Same rule for E2E flows: [flutter-e2e-ma
 | Outcome | Meaning | Action |
 |---------|---------|--------|
 | **PASS** | The app behaved correctly | Keep evidence |
-| **FAIL** | The app ran; behaviour was wrong | Product bug: root-cause, fix, re-run the exact scenario |
-| **SETUP_FAIL** | Precondition invalid (stale fixture, wrong account, not signed in, aged seed data) | Reset once, re-verify; still wrong → stop and report |
-| **INFRA_FAIL** | Environment prevented execution (simulator won't boot, runner missing, backend down, emulator left offline) | Fix the environment; do not touch tests or product code |
+| **FAIL** | The app ran; behaviour was wrong | Application defect: root-cause, fix production code, re-run the exact scenario. Not `--fix-loop` until classified |
+| **TEST_DEFECT** | The app behaved correctly; the test/flow is wrong (stale selector, YAML, timing, seed) | Repair the widget test or Maestro flow only. Never `optional: true` on a required check, skip, or weaken an assertion (`flutter-e2e-maestro.md` §5). Re-run the same command. There is no Maestro Healer agent |
+| **SETUP_FAIL** | Precondition invalid (stale fixture, wrong account, not signed in, aged seed data) | Reset once, re-verify; still wrong → stop and report. Not a product or test edit |
+| **INFRA_FAIL** | Environment prevented execution (simulator won't boot, runner missing, backend down, emulator left offline) | Fix the environment; do not touch tests or product code. `/verify` reports **BLOCKED** |
 
-Never report SETUP_FAIL or INFRA_FAIL as FAIL: it sends someone to fix code that was never broken. In the validation
-matrix below, these two are reported as **BLOCKED** with the reason.
+Never report SETUP_FAIL, INFRA_FAIL or TEST_DEFECT as FAIL: it sends someone to fix the wrong layer. In the validation
+matrix below, SETUP_FAIL and INFRA_FAIL are **BLOCKED** with the reason; TEST_DEFECT is a test-file fix then a re-run.
 
 ## 9. Flaky tests, false reds and attribution
 

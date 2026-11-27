@@ -5,7 +5,12 @@ Does **not** start the next issue after this one. Does **not** commit, push, or 
 
 ## When it runs
 
-Default `/next` still stops after a failing `/verify` and reports. `--fix-loop` is the
+Default `/next` still stops after a failing `/verify` and reports. Classify the
+failure first (`plan-and-handoff.md` E2E quality contract; Flutter traps §8).
+Playwright Healer is not this loop (test/selector/timing defect only, after
+diagnosis). Maestro has no healer agent: TEST_DEFECT is a flow edit then the
+same `maestro test` command; SETUP_FAIL / INFRA_FAIL are **NO-GO** (fix the
+environment, do not Ralph). Application FAIL stays here after GO. `--fix-loop` is the
 only unattended inner retry. `--plan` and merge remain human gates in HITL `/next`.
 `/next --auto` (exact flag only) is a separate outer coordinator in `auto-loop.md`.
 

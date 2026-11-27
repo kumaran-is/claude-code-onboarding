@@ -193,7 +193,7 @@ Provider rerank APIs (Cohere, Voyage, Vertex AI Ranking) and local cross-encoder
 
 ## LangChain Integration
 
-Optional. Use `langchain-postgres` (`from langchain_postgres import PGEngine, PGVectorStore`) — not the older `langchain_community` PGVector. Match the distance strategy to the index ops class, keep the tenant/permission filter in the store call, and route embeddings through the same chokepoint. Full LangGraph RAG patterns: `agentic-ai-dev` skill.
+Optional when `framework=langchain` (`rag-architect/references/framework-selection.md`). LlamaIndex store adapters live in the `llamaindex` skill — do not duplicate them here. Use `langchain-postgres` (`from langchain_postgres import PGEngine, PGVectorStore`) — not the older `langchain_community` PGVector. Match the distance strategy to the index ops class, keep the tenant/permission filter in the store call, and route embeddings through the same chokepoint. Full LangGraph RAG patterns: `agentic-ai-dev` skill.
 
 ---
 

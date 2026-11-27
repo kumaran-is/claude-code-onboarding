@@ -13,9 +13,11 @@ Audit a RAG pipeline against the production checklist covering all 8 stages: ing
 
 Walk the repo and identify:
 - Where is the RAG pipeline code? (`rag/`, `retrieval/`, `pipeline/`, `agents/`, or similar)
+- **Which selectable framework?** (`google-adk` / `llamaindex` / `langchain`; custom Python is compatibility-only)
 - What vector DB is used? (check imports: pgvector, weaviate, qdrant, pinecone, chroma)
 - What embedding model and reranker, if any?
-- Where is the generation prompt template?
+- Where is the generation prompt template? Is there a second synthesizer (LlamaIndex query engine **and** ADK/LangGraph generate)?
+- Hosted LlamaParse / `llama_cloud` without an approval record?
 - Is there an audit log?
 - Is there an eval directory with a golden set?
 
@@ -38,7 +40,7 @@ For every ❌ or ⚠️ finding, cite **file:line** as evidence. No generic advi
 
 **Repo:** {{repo-name}}
 **Date:** {{today}}
-**Stack detected:** {{vector DB | embedding model | reranker | LLM}}
+**Stack detected:** {{framework | vector DB | embedding model | reranker | LLM}}
 
 ## Summary
 

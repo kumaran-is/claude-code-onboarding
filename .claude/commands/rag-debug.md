@@ -8,6 +8,8 @@ allowed-tools: Read, Glob, Grep, Bash
 
 Diagnose a specific RAG failure by walking the 9-layer diagnostic chain (playbook §40).
 
+Load `rag-debugger` and `rag-architect`. If the pipeline is LlamaIndex, also load `llamaindex` (ingest cache, `doc_id` hash skip, `MetadataFilters`). If ADK, confirm retrieve is a `FunctionNode`/MCP tool and that a query engine is not also synthesizing. If LangChain, load `agentic-templates-rag.md`.
+
 **Symptom or failing query:** $ARGUMENTS
 
 ## Phase 1: Get the trace

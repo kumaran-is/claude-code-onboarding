@@ -14,6 +14,7 @@ Ask:
 2. Python or another language? (default: Python — matches FastAPI / ADK stack)
 3. Does a golden set already exist anywhere? (CSV, spreadsheet, Notion?)
 4. Vector DB / retrieval entry point? (so the runner can hit it)
+5. Which framework owns retrieve (`google-adk` / `llamaindex` / `langchain`)? One runner, same golden-set schema (`eval-guide`); do not create a per-framework eval format. Live-provider judge metrics stay labelled LIVE-PROVIDER / MOCKED.
 
 ## Phase 2: Create the directory structure
 

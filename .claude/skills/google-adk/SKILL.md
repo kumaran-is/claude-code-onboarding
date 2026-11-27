@@ -111,7 +111,7 @@ Choose deployment target when prompted: `cloud_run` or `agent_engine`.
 | Memory | `InMemoryMemoryService` + `load_memory` tool | `adk-memory-artifacts.md` |
 | Testing | Scripted fake `BaseLlm` + `InMemoryRunner` + pytest-asyncio | `adk-testing.md` |
 | FastAPI SSE | `runner.run_async()` + `StreamingResponse` | `adk-fastapi-integration.md` |
-| RAG | MCP/tool retrieve + ACL in the query; cite only retrieved ids; retrieved text is data not instructions | `rag-architect`, `adk-gemini-prompt-templates.md` §2 |
+| RAG | MCP/tool retrieve + ACL in the query; cite only retrieved ids; retrieved text is data not instructions. LlamaIndex/LangChain retriever as graph `FunctionNode` or MCP tool when requested — never `as_query_engine()` plus this agent | `rag-architect`, `llamaindex/references/adk-tool-wrap.md`, `adk-gemini-prompt-templates.md` §2 |
 | Evaluation | `adk eval` + evalset schema + LLM-as-judge | `adk-eval-guide` skill |
 | Deployment | Agent Engine, Cloud Run, CI/CD | `adk-deploy-guide` skill |
 | Observability | Cloud Trace, prompt logging, agent analytics | `adk-observability-guide` skill; `deployment-ci-cd/reference/ai-observability.md` |

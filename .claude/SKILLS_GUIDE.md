@@ -20,6 +20,7 @@
 | Python / FastAPI | `.claude/skills/python-dev/` | `python-dev` | `/scaffold-python-api` |
 | Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/agentic-architecture-choice.md`, `llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
+| LlamaIndex RAG (document-centric APIs; shared contract in `rag-architect`; not a fourth custom-python choice) | `.claude/skills/llamaindex/` | — (review: `rag-implementation-reviewer`) | `/scaffold-rag-pipeline` (`framework=llamaindex`) |
 | Angular (UI mode `daisyui` default, `spartan`, `hybrid`: `angular-spa/reference/ui-mode-selection.md`; official `daisyui` and `spartan` skills by mode; official Angular team skill `angular-developer`, with `angular-new-app` as reference only) | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app [--ui=…]` |
 | React (web SPA; Tailwind CSS v4 + shadcn/ui on Base UI, official `shadcn` skill vendored; full-stack choice in `/scaffold-react-app`; not React Native) | `.claude/skills/react-spa/` (`reference/tailwind-shadcn.md`), `.claude/skills/shadcn/` | `react-spa` | `/scaffold-react-app` |
 | GenUI contract (suitability gate, A2UI 1.0 target + v0.9.x compatibility, cross-platform catalog, shared/standalone backends, AG-UI, CopilotKit) | `.claude/skills/genui-contract/` | `genui-contract-reviewer` | `/scaffold-genui-feature`, `/audit-a2ui-parity`, `/validate-genui-feature` |
@@ -67,7 +68,8 @@
 | Eval metric formulas + A/B statistics (canonical) | `.claude/skills/llm-evaluation/` (`reference/evaluation-metrics.md` §2) | — | — |
 | AI Observability (OTel GenAI, tokens/cost, Langfuse optional) | `.claude/skills/deployment-ci-cd/reference/ai-observability.md` | — | — |
 | LLMOps: prompt/model release, canary, rollback | `.claude/skills/deployment-ci-cd/reference/llmops-release-and-rollout.md` | `deployment-engineer` | — |
-| RAG Architecture Design | `.claude/skills/rag-architect/` | — | `/rag-design` |
+| RAG Architecture Design (shared lifecycle; `framework=auto\|google-adk\|llamaindex\|langchain`) | `.claude/skills/rag-architect/` (`references/framework-selection.md`) | `rag-implementation-reviewer` | `/rag-design`, `/scaffold-rag-pipeline` |
+| LlamaIndex RAG APIs (`IngestionPipeline`, `VectorStoreIndex`, LiteParse / LlamaParse) | `.claude/skills/llamaindex/` | `rag-implementation-reviewer` (framework checks) | `/scaffold-rag-pipeline` (`framework=llamaindex`) |
 | RAG Failure Debugging | `.claude/skills/rag-debugger/` | — | `/rag-debug` |
 | RAG Evaluation Framework | `.claude/skills/rag-evaluator/` | — | `/rag-eval-init` |
 | RAG Security Controls (canonical: permission-aware, tenant-scoped retrieval) | `.claude/skills/rag-security-reviewer/` | — | — |

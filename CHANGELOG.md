@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Three-framework RAG contract** — selectable `framework=auto|google-adk|llamaindex|langchain` on the existing `/rag-design` → `/scaffold-rag-pipeline` → `/rag-review` → `/rag-debug` → `/rag-eval-init` lifecycle. Deterministic selector: `.claude/skills/rag-architect/scripts/select_rag_framework.py`. Isolated fixtures: `run_rag_framework_fixtures.py` (Google ADK, LlamaIndex, LangChain, LlamaIndex retriever wrapped as an ADK tool payload). Custom Python stays a compatibility path, not a fourth choice.
+- **`llamaindex` skill** — official `Document`/`Node`, `IngestionPipeline`, `VectorStoreIndex`, LiteParse vs approval-gated LlamaParse (`llama-cloud`, not deprecated `llama-parse`), and ADK retriever wrap without a second synthesizer.
+
+### Changed
+
+- `/rag-design`, `/scaffold-rag-pipeline`, `/rag-review`, `/rag-debug`, `/rag-eval-init`, `rag-architect`, `rag-implementation-reviewer`, and `rag-review` now route by framework instead of “LangChain or custom Python”.
+- Table/PDF parsing guidance prefers LiteParse locally and requires explicit approval before hosted LlamaParse.
+
 ## [1.0.0] - 2026-11-27
 
 Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop`.

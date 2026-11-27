@@ -1,6 +1,6 @@
 ---
-description: Scaffold a full RAG pipeline — chunking → embedding → storage (pgvector or Weaviate) → retrieval → reranking → LangChain or custom Python. Generates production-ready pipeline with pinned model, batch embedding, null guards, error handling, and optional reranker.
-argument-hint: "[pipeline name] [storage: pgvector|weaviate|both] [use case description]"
+description: Scaffold a full RAG pipeline — chunking → embedding → storage (pgvector or Weaviate) → retrieval → reranking for framework=google-adk|llamaindex|langchain. Generates production-ready pipeline with pinned model, batch embedding, null guards, error handling, and optional reranker.
+argument-hint: "[pipeline name] [storage: pgvector|weaviate|both] [framework: auto|google-adk|llamaindex|langchain] [use case]"
 allowed-tools: Bash, Read, Write, Edit
 disable-model-invocation: true
 ---
@@ -13,7 +13,7 @@ Generate a complete retrieval-augmented generation pipeline.
 
 ## Steps
 
-1. **Load the `vector-database` skill** — read `SKILL.md` and `references/rag-pipeline-patterns.md` for templates and anti-patterns.
+1. **Load skills** — `rag-architect` + `references/framework-selection.md`; `vector-database` + `references/rag-pipeline-patterns.md`; then **exactly one** API skill: `llamaindex`, `google-adk`, or `agentic-ai-dev` (LangChain). Do not scaffold a parallel lifecycle.
 
 2. **Gather requirements** — Extract from `$ARGUMENTS` or ask:
    - Pipeline name (snake_case, e.g., `kb_rag`)
@@ -22,7 +22,9 @@ Generate a complete retrieval-augmented generation pipeline.
    - Chunking strategy (recursive / sentence / paragraph / fixed) + chunk size
    - Reranking: provider API / local cross-encoder / none (production "none" needs an eval result)
    - Tenancy and permissions: tenant source (auth context) and ACL fields used in retrieval filters
-   - Framework: LangChain integration or custom Python
+   - **Framework:** `auto` | `google-adk` | `llamaindex` | `langchain`. Run `select_rag_framework.py` when `auto`. Do **not** offer custom Python as a new choice; if the repo already has a custom pipeline, extend it in place.
+   - LlamaIndex parser: builtin readers / LiteParse / LlamaParse (**LlamaParse only after explicit approval**)
+   - Optional: expose the retriever as an ADK graph `FunctionNode` or MCP tool (`llamaindex/references/adk-tool-wrap.md`) — retriever only, no second synthesizer
    - Use case (determines retrieval filters and query patterns)
 
 3. **Generate pipeline files**:
@@ -34,11 +36,12 @@ Generate a complete retrieval-augmented generation pipeline.
    - Retry only transient errors (429/503/timeouts) with capped backoff, then raise; non-transient errors raise immediately
    - Pattern: `references/rag-pipeline-patterns.md` §Embedding Pipeline
 
-   ### `chunking.py`
-   - Chunking function with strategy from requirements
-   - `langchain_text_splitters.RecursiveCharacterTextSplitter` (or a plain splitter) with overlap per the canonical rule in `rag-architect/SKILL.md`
-   - Final chunk capped at the reranker input limit minus the longest query; stable chunk ids
-   - Returns `List[{"text": str, "metadata": dict}]`
+   ### `chunking.py` / ingest
+   - `langchain`: `langchain_text_splitters.RecursiveCharacterTextSplitter` (`rag-pipeline-patterns.md` §6)
+   - `llamaindex`: official `IngestionPipeline` + `SentenceSplitter` (or document-aware parser) — `llamaindex` skill; not a one-off split loop
+   - `google-adk`: same chokepoint as the chosen retriever library; ADK does not parse PDFs
+   - Overlap per the canonical rule in `rag-architect/SKILL.md`; final chunk capped at the reranker input limit minus the longest query; stable chunk ids
+   - Returns nodes/chunks with metadata envelope (`tenant_id`, `acl`, `document_id`, versions)
 
    ### `{storage}_retriever.py` (pgvector and/or weaviate)
    - One scoped entry `secure_retrieve(query, query_vec, ctx, limit)`: tenant + ACL from `ctx` (auth context), active `embedding_model`, `is_current`, null guard — no optional tenant parameter
@@ -53,6 +56,7 @@ Generate a complete retrieval-augmented generation pipeline.
 
    ### `pipeline.py`
    - Orchestrates: query → embed query → retrieve → rerank → format context
+   - Framework wiring: LlamaIndex `as_retriever` + `MetadataFilters`; LangChain retriever + evidence gate (`agentic-templates-rag.md`); ADK retrieve `FunctionNode` or MCP tool then `LlmAgent` generate — **never** LlamaIndex `as_query_engine()` plus ADK generate
    - Score threshold filter (configurable, calibrated on the golden set)
    - Embed failure → keyword fallback only as a flagged degradation (`retrieval_mode`), logged
    - Per-request budgets: max derived queries, max rerank candidates, one deadline

@@ -1,12 +1,14 @@
 ---
-description: Interactive RAG architecture design — produces an ADR with stack choices grounded in the production playbook
-argument-hint: "[project-name]"
+description: Interactive RAG architecture design — produces an ADR with framework=auto|google-adk|llamaindex|langchain and stack choices grounded in the production playbook
+argument-hint: "[project-name] [framework=auto|google-adk|llamaindex|langchain]"
 allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 ---
 
 # /rag-design — Interactive RAG Architecture Design
 
 You are helping the user design a production RAG system for the project: **$ARGUMENTS**.
+
+Load `rag-architect` (contract) and `references/framework-selection.md`. If the arguments include `framework=google-adk|llamaindex|langchain`, respect that choice. If `framework=auto` or omitted, run `python3 .claude/skills/rag-architect/scripts/select_rag_framework.py --requirements <tmp.json>` after Phase 1 and record scores + reasons in the ADR. Custom Python is not a selectable framework.
 
 Produce an Architecture Decision Record (ADR) in markdown, saved to `docs/adr/NNN-rag-architecture.md` (auto-numbered).
 
@@ -40,20 +42,26 @@ Ask these questions one at a time. Wait for the user's answer before continuing.
    - Are some questions actually about structured data (orders, inventory, account state) that should hit SQL / API instead?
    - This is the §19.5 question — flag it explicitly.
 
+6. **Implementation framework** (`framework=auto|google-adk|llamaindex|langchain`)
+   - Explicit user choice wins.
+   - `auto`: document complexity, OCR/multimodal, agentic/multi-tool needs, existing stack (ADK / LlamaIndex / LangChain / custom-python compatibility).
+   - Hosted LlamaParse is **off** until the user approves data processing, credentials, and cost.
+
 ## Phase 2: Apply the playbook decision framework
 
 Based on answers, walk these decisions and explain each:
 
 1. **Is RAG the right tool for each query type?** Some may route to SQL/API/tool use (§19.5).
-2. **Chunking strategy** (chunking decision tree, §10.2)
-3. **Embedding model selection** (§14, §15)
-4. **Retrieval method** — likely hybrid (BM25 + dense + RRF), justify (§23)
-5. **Filtering / multi-tenancy pattern** (§17, §20.2 — filter inside the retrieval call, scope from the auth context; canonical: `rag-security-reviewer` §1–2; pgvector selective filters need the filtered-ANN mitigation)
-6. **Reranking** — cross-encoder default (§28)
-7. **Abstention threshold strategy** (§30)
-8. **Generation prompt + answer contract** (§32)
-9. **Eval approach for v1** — golden set size, metrics (§33–37)
-10. **Operational concerns** — observability, cost, ingestion lifecycle
+2. **Framework** — `google-adk` (agent-first) / `llamaindex` (document-centric) / `langchain` (composable pipelines). Cite selector output. Load `llamaindex`, `google-adk`, or `agentic-ai-dev` for APIs — do not duplicate the contract.
+3. **Chunking strategy** (chunking decision tree, §10.2)
+4. **Embedding model selection** (§14, §15)
+5. **Retrieval method** — likely hybrid (BM25 + dense + RRF), justify (§23)
+6. **Filtering / multi-tenancy pattern** (§17, §20.2 — filter inside the retrieval call, scope from the auth context; canonical: `rag-security-reviewer` §1–2; pgvector selective filters need the filtered-ANN mitigation)
+7. **Reranking** — cross-encoder default (§28)
+8. **Abstention threshold strategy** (§30)
+9. **Generation prompt + answer contract** (§32). If ADK generates, LlamaIndex/LangChain expose a **retriever only** (no second synthesizer).
+10. **Eval approach for v1** — golden set size, metrics (§33–37)
+11. **Operational concerns** — observability, cost, ingestion lifecycle
 
 ## Phase 3: Produce the ADR
 
@@ -84,6 +92,8 @@ Save to `docs/adr/NNN-rag-architecture.md` using this template:
 
 | Layer | Choice | Rationale |
 |---|---|---|
+| Framework | {{google-adk \| llamaindex \| langchain}} | {{selector scores + reasons; explicit vs auto}} |
+| Parser | {{builtin-readers \| liteparse \| llamaparse}} | {{LlamaParse only if approved}} |
 | Parsing | {{}} | {{}} |
 | Chunking | {{}} | {{}} |
 | Chunk size | {{}} | {{}} |
@@ -119,7 +129,8 @@ Save to `docs/adr/NNN-rag-architecture.md` using this template:
 
 ## References
 
-- `rag-architect` skill (`.claude/skills/rag-architect/SKILL.md` and `references/`) — the external production RAG playbook that the § numbers cite is not shipped in this repository; mark a § citation UNVERIFIED unless you can open the source
+- `rag-architect` skill (`.claude/skills/rag-architect/SKILL.md` and `references/`) — including `framework-selection.md`; the external production RAG playbook that the § numbers cite is not shipped in this repository; mark a § citation UNVERIFIED unless you can open the source
+- Framework API skill: `llamaindex` / `google-adk` / `agentic-ai-dev` (exactly one)
 - §1.5 Default Stack
 - §19.5 RAG vs Tools vs SQL
 - {{other relevant sections}}

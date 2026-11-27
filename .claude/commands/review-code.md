@@ -41,6 +41,7 @@ Scan the file list for tech signals and build a dispatch list:
 | Flutter UI behaviour changed (screens, routes, journeys) or `<app>/.maestro/**` changed | + `code-reviewer` checks Maestro co-change and assertion integrity (`flutter-e2e-maestro.md` §5–6, traps §8 TEST_DEFECT). Missing flow for a changed journey, or `optional: true` on a required check, is a finding. No extra Maestro reviewer agent |
 | `*.py` + LangChain/LangGraph imports | `agentic-ai-reviewer` + `ai-security-reviewer` |
 | `*.py` + `google.adk` imports | `adk-reviewer` + `ai-security-reviewer` |
+| `*.py` + `llama_index` / `llama_cloud` / `liteparse` imports | `rag-implementation-reviewer` + `ai-security-reviewer` |
 | Any code that calls a model, retrieves for a model, declares agent tools or writes agent memory (any stack) | + `ai-security-reviewer` |
 | Retrieval / embedding / RAG pipeline code | + `rag-implementation-reviewer` |
 | Eval code, golden data, CI eval gates, prompt files (`**/evals/**`, `**/golden/**`, `prompts/**`) | + `eval-reviewer` |

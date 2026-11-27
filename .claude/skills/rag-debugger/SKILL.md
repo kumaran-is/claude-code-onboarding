@@ -64,7 +64,7 @@ Wrong answer
 
 | Layer | Symptom | Likely cause | Fix direction |
 |---|---|---|---|
-| 1 Parsing | Answer not in any chunk; raw doc has it | Parser dropped table, lost footer, OCR failed | Better parser (Unstructured.io / LlamaParse), OCR quality gates, chunk quality scoring |
+| 1 Parsing | Answer not in any chunk; raw doc has it | Parser dropped table, lost footer, OCR failed | Better parser (LiteParse local / LlamaParse hosted with approval), OCR quality gates, chunk quality scoring |
 | 1 Ingestion | Document not indexed | Failed job, deletion bug, tombstone | Audit ingestion logs, idempotency check |
 | 2 Chunking | Condition separated from rule | Fixed-size split mid-statement | Document-aware chunking, parent-child, overlap |
 | 2 Chunking | Table broken across chunks | Naive splitter cut the table | Adaptive chunking, preserve tables whole |

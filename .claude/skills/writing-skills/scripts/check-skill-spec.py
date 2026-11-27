@@ -84,6 +84,12 @@ CASES: tuple[dict[str, object], ...] = (
         "id": "ai-positive",
         "prompt": "Build a LangGraph agent with RAG retrieval and LangChain tools",
         "must": ("agentic-ai-dev",),
+        "must_not": ("flutter-mobile", "java-spring-api", "angular-spa", "llamaindex"),
+    },
+    {
+        "id": "llamaindex-positive",
+        "prompt": "Build a LlamaIndex IngestionPipeline with VectorStoreIndex and LiteParse",
+        "must": ("llamaindex",),
         "must_not": ("flutter-mobile", "java-spring-api", "angular-spa"),
     },
     {

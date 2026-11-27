@@ -45,6 +45,8 @@ Load the skill from `.claude/SKILLS_GUIDE.md` from the item's labels and the fil
 | Python / FastAPI | `python-dev` |
 | LangChain / LangGraph | `agentic-ai-dev` |
 | Google ADK | `google-adk` |
+| LlamaIndex | `llamaindex` (+ `rag-architect`) |
+| RAG (any framework) | `rag-architect` then exactly one of `google-adk` / `llamaindex` / `agentic-ai-dev` |
 | Angular | `angular-spa` |
 | React | `react-spa` |
 | Flutter | `flutter-mobile` |

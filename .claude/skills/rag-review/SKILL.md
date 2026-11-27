@@ -38,7 +38,7 @@ Cross-refs: `rag-architect/references/advanced-chunking-guide.md`, `rag-architec
 
 | # | Check | Severity if failing | Reference |
 |---|---|---|---|
-| 1.1 | Parser matches corpus type — not raw `pdf.extract_text()` for complex PDFs; Unstructured.io or LlamaParse for table-heavy docs | 🟠 | `advanced-chunking-guide.md §6` |
+| 1.1 | Parser matches corpus type — not raw `pdf.extract_text()` for complex PDFs; LiteParse (local) or LlamaParse (hosted, **approval required**; not deprecated `llama_parse`) for table-heavy / scanned docs | 🟠 | `llamaindex/references/parse-choice.md`, `advanced-chunking-guide.md §6` |
 | 1.2 | Document-aware chunking on headings/sections — NOT fixed-size sliding window as the only strategy | 🟠 | `advanced-chunking-guide.md §1` |
 | 1.3 | Chunk size calibrated by document type: prose 500–800 tokens, structured/SOP 300–600, tables = whole or row-groups | 🟡 | `advanced-chunking-guide.md §1` + `rag-operations-guide.md §6` |
 | 1.4 | ~10–15% overlap on size-based splitters; 0 allowed on natural boundaries with parent/neighbour expansion | 🟡 | `rag-architect/SKILL.md` (canonical overlap and cap rule) |

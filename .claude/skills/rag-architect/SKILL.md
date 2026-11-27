@@ -1,8 +1,8 @@
 ---
 name: rag-architect
-description: "Design or change a RAG pipeline: whether RAG fits, chunking, embedding model, retrieval method, hybrid fusion (RRF), reranking, abstention, multi-tenancy. Use for \"design a RAG system\", chunking or reranker choices. Not for vector schema/index work (vector-database) or debugging bad answers (rag-debugger)."
+description: "Design or change a RAG pipeline: whether RAG fits, chunking, embedding model, retrieval method, hybrid fusion (RRF), reranking, abstention, multi-tenancy, framework=auto|google-adk|llamaindex|langchain. Use for \"design a RAG system\", chunking or reranker choices. Not for vector schema/index work (vector-database), LlamaIndex APIs (llamaindex), or debugging bad answers (rag-debugger)."
 metadata:
-  triggers: design a RAG system, build retrieval, RAG architecture, should I use RAG, chunking strategy, hybrid retrieval, reranker choice, vector database, embedding model selection
+  triggers: design a RAG system, build retrieval, RAG architecture, should I use RAG, chunking strategy, hybrid retrieval, reranker choice, vector database, embedding model selection, framework=auto
 allowed-tools: Read, Glob, Grep
 ---
 
@@ -12,7 +12,7 @@ You are helping design a production RAG system. Apply these decision frameworks.
 
 ## Iron Law
 
-Confirm RAG is the right mechanism (Step 0) before designing retrieval. Every chunking, embedding, top-k and reranking number here is a starting point to tune against a golden set, never a final value.
+Confirm RAG is the right mechanism (Step 0) before designing retrieval. Pick exactly one implementation framework (`google-adk` | `llamaindex` | `langchain`) — never a fourth "custom" choice for new work. Every chunking, embedding, top-k and reranking number here is a starting point to tune against a golden set, never a final value.
 
 ## Step 0: Is RAG even the right tool?
 
@@ -45,7 +45,8 @@ If the user wants a recommended starting point, this is it. Reasons and alternat
 
 | Layer | Default |
 |---|---|
-| Parsing | Unstructured.io for mixed formats; LlamaParse or Marker for table-heavy PDFs |
+| Framework | `framework=auto\|google-adk\|llamaindex\|langchain` — selector: `references/framework-selection.md` |
+| Parsing | Built-in readers for ordinary text; LiteParse for local PDF/Office; hosted LlamaParse only with explicit approval (`llamaindex/references/parse-choice.md`) |
 | Chunking | Document-aware (Markdown/PDF headers) + parent-child |
 | Chunk size | 500–1000 tokens, 10–15% overlap — but never above the smallest downstream window: reranker max input (often 512 tokens including the query; check your reranker) < embedding model max < LLM budget |
 | Embeddings | Dense general-purpose (text-embedding-3-large, BGE-M3) |
@@ -175,22 +176,26 @@ ColBERT, SPLADE, Matryoshka truncation, Graph RAG, agentic RAG, HyDE, multi-quer
 
 Ship the default stack, run a month, identify your real top three failure modes, then pick v2 techniques that address them.
 
-## When to recommend Google ADK / agentic patterns
+## When to recommend Google ADK / LlamaIndex / LangChain
 
-ADK agentic patterns fit when:
-- Multi-step workflows requiring tool use + retrieval planning
-- Query decomposition across multiple data sources (RAG + SQL + API)
-- Complex orchestration where the LLM decides when/where to retrieve
+Exactly three selectable frameworks. Run `python3 .claude/skills/rag-architect/scripts/select_rag_framework.py --requirements req.json` (or `--selftest`). Details: `references/framework-selection.md`.
 
-Skip agentic patterns when sub-second latency is required or query is single-shot.
+| Choose | When |
+|---|---|
+| `google-adk` | The product is an ADK agent; retrieve is a graph `FunctionNode` or MCP tool; SQL/API tools sit beside retrieval |
+| `llamaindex` | Document-centric ingest, complex parsing, `IngestionPipeline` / `VectorStoreIndex`; load `llamaindex` skill |
+| `langchain` | Existing LangChain/LangGraph service; composable retrieve→gate→generate (`agentic-templates-rag.md`) |
+
+`auto` is evidence-based and recorded in the ADR. Explicit `framework=` wins. Preserve existing custom Python; do not offer it as a new scaffold option. ADK wrap of a LlamaIndex/LangChain **retriever**: only on request (`llamaindex/references/adk-tool-wrap.md`) — one generation path.
 
 ## How to apply
 
 1. Ask what they're building and the corpus characteristics.
 2. Check Step 0 — is RAG the right tool? If part of the answer is structured, recommend hybrid (RAG + SQL/API/tool).
-3. Walk through the Default Stack; deviate only when the user has a measured reason.
-4. Apply the chunking decision tree.
-5. End with the five hard rules and what to defer.
+3. Select `framework=` (`auto` or explicit). Load `llamaindex`, `google-adk`, or `agentic-ai-dev` for APIs — do not re-implement the contract there.
+4. Walk through the Default Stack; deviate only when the user has a measured reason.
+5. Apply the chunking decision tree.
+6. End with the five hard rules and what to defer.
 
 The § numbers in this skill (§19.5 RAG-vs-tools, §10.2 chunking tree, §17 multi-tenancy, §40 failure debugging) cite an external production RAG playbook that is not shipped in this repository. Use this skill's `references/` as the source; mark a § citation UNVERIFIED unless you can open the playbook.
 
@@ -198,6 +203,7 @@ The § numbers in this skill (§19.5 RAG-vs-tools, §10.2 chunking tree, §17 mu
 
 | File | Contents | When to Load |
 |---|---|---|
+| `references/framework-selection.md` | `framework=auto\|google-adk\|llamaindex\|langchain`; LiteParse vs LlamaParse gate; ADK wrap | Before `/rag-design` or `/scaffold-rag-pipeline`; when the user has not named a framework |
 | `references/advanced-chunking-guide.md` | §9 chunking techniques (late chunking, contextual retrieval, quality scoring, adaptive by type), §6 OCR quality gates, §12 full metadata schema (16 fields), §5.3 ingestion update strategies | Designing chunking strategy, debugging parser quality, setting up metadata schema |
 | `references/query-classification-taxonomy.md` | §18.1 nine query intent classes, §19 routing decision table (rule-based → classifier → LLM router), §19.5 when not to use RAG | Designing query understanding layer, building a query router |
 | `references/context-packing-patterns.md` | §31 eight packing techniques (MMR, parent expansion, neighbor, token budget, recency, authority), §32.1 structured answer contract JSON schema, §30 abstention calibration | Building the generation stage, designing the answer contract, tuning abstention |

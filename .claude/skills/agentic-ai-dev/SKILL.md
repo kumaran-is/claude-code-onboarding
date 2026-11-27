@@ -61,7 +61,7 @@ Pins are the set locked together for this toolkit (`uv lock` + `uv sync --locked
 | Limits | `recursion_limit` + `GraphRecursionError` mapping; call-limit middleware `exit_behavior="error"`; `asyncio.timeout` | `agentic-conventions.md` |
 | Streaming | `stream_mode="messages"` filtered to the model node; JSON SSE; one terminal event | `agentic-streaming-hitl.md` |
 | Human-in-the-Loop | `HumanInTheLoopMiddleware` or `interrupt()` + `Command(resume=...)` on a durable checkpointer | `agentic-streaming-hitl.md` |
-| RAG | LangChain graphs for agentic/corrective flows; hybrid/ACL/citations in `rag-architect` | `agentic-templates-rag.md` |
+| RAG | LangChain graphs for agentic/corrective flows when `framework=langchain`; hybrid/ACL/citations in `rag-architect`; do not reimplement LlamaIndex or ADK retrieve here | `agentic-templates-rag.md`, `rag-architect/references/framework-selection.md` |
 | Guardrails | Deterministic boundary + probabilistic signals; fail closed | `agentic-guardrails-security.md` |
 | Structured Output | Provider schema; `include_raw=True`; one fresh-context retry; typed failure | `llm-inference-and-model-routing.md` §4 |
 | Error Recovery | Transient-only retry/failover middleware; typed statuses | `agentic-templates-resilience.md`, `agentic-error-handling.md` |

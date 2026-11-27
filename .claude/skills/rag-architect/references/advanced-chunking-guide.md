@@ -87,7 +87,7 @@ Use different strategies per file type in the same corpus:
 | Long legal contracts | Parent-child, parents = clauses |
 | Emails / support messages | Full message = one chunk (usually short) |
 | Code files | Function/class boundary splits |
-| Tables / spreadsheets | Row-as-chunk or section-as-chunk; use LlamaParse |
+| Tables / spreadsheets | Row-as-chunk or section-as-chunk; LiteParse locally, LlamaParse only with approval |
 
 ### 1.9 Recursive Retrieval
 Index summaries at multiple granularities (doc → section → paragraph). Route query to the right level.
@@ -177,8 +177,8 @@ For new document types, manually verify 5–10 parsed samples before bulk ingest
 | Document Type | Recommended Parser |
 |---|---|
 | Mixed formats (Word, HTML, TXT) | Unstructured.io |
-| Table-heavy PDFs | LlamaParse or Camelot |
-| Scanned PDFs | Unstructured.io with OCR mode + quality gates |
+| Table-heavy PDFs | LiteParse (local) or LlamaParse (hosted, approval required) or Camelot |
+| Scanned PDFs | LiteParse with OCR, or LlamaParse after approval; Unstructured.io OCR + quality gates |
 | Markdown | Direct split — no parser needed |
 | Code files | Tree-sitter for language-aware splits |
 

@@ -180,15 +180,23 @@ Extend the standard chunk metadata schema with table-specific fields:
 
 ## 7. Parsing Tables from Source Documents
 
-### From PDF (LlamaParse recommended)
-LlamaParse preserves table structure including merged cells and multi-line cells. Fallback: Camelot or pdfplumber for simpler tables.
+### From PDF (LiteParse local, LlamaParse hosted)
+Digital tables: try **LiteParse** first (local, no API key). Scans / merged cells / structured extract: **LlamaParse** (`llama-cloud>=2.8`) only after explicit approval for data processing, credentials, and cost. Deprecated: `from llama_parse import LlamaParse`. Fallback: Camelot or pdfplumber for simpler tables. Full decision: `llamaindex/references/parse-choice.md`.
 
 ```python
-from llama_parse import LlamaParse
+# Local default
+from liteparse import LiteParse
+from llama_index.core import Document
 
-parser = LlamaParse(result_type="markdown")  # preserves table as markdown
-documents = await parser.aload_data("document.pdf")
-# Tables arrive as markdown; parse with a markdown table parser
+local = LiteParse(output_format="markdown")
+parsed = local.parse("document.pdf")
+documents = [Document(text=parsed.text, doc_id=stable_id)]
+
+# Hosted — BLOCK without approval
+# from llama_cloud import LlamaCloud
+# client = LlamaCloud()  # LLAMA_CLOUD_API_KEY
+# file = client.files.create(file="document.pdf", purpose="parse")
+# result = client.parsing.parse(file_id=file.id, tier="agentic", version="latest", expand=["markdown"])
 ```
 
 ### From Markdown

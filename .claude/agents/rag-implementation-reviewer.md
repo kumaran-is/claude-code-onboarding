@@ -9,6 +9,8 @@ skills:
   - rag-review
   - rag-security-reviewer
   - vector-database
+  - rag-architect
+  - llamaindex
 vibe: "Unranked retrieval, unpinned models and post-filtered tenants are production incidents waiting to happen"
 color: blue
 emoji: "🔗"
@@ -50,7 +52,7 @@ Out of scope:
 
 1. **Map the pipeline.** Take target files from the user request or `git diff --name-only`; otherwise Glob/Grep typical paths: `rag/`, `retrieval/`, `pipeline/`, `agents/`, `app/rag/`. Identify the ingestion, embedding, retrieval and generation entry points.
 
-2. **Identify the stack.** Vector DB (look for imports), embedding model, reranker if any, LLM provider. This informs which checks apply.
+2. **Identify the stack.** Selectable framework (`google-adk` / `llamaindex` / `langchain`; custom Python is compatibility-only, not a fourth choice), vector DB, embedding model, reranker if any, LLM provider. This informs which checks apply. Dual generation (LlamaIndex `as_query_engine` **and** ADK/LangGraph synthesize) is in-scope.
 
 3. **Load patterns.** Read `references/rag-pipeline-patterns.md` from the `vector-database` skill. If it cannot be read, continue with this checklist only.
 
@@ -136,6 +138,14 @@ Out of scope:
 - CI gate?
 - Or no evaluation infrastructure?
 
+### Framework consistency (exactly three selectable frameworks)
+
+- `[H]` **One selectable framework** is recorded (`google-adk` | `llamaindex` | `langchain`). `auto` must have selector scores/reasons in the ADR (`rag-architect/references/framework-selection.md`). New "custom Python" scaffolds are a finding; existing custom pipelines may stay.
+- `[C]` **One generation path.** LlamaIndex `as_query_engine()` / response synthesizer plus an ADK `LlmAgent` or LangGraph generate node on the same request is critical. ADK wrap uses the **retriever** only (`llamaindex/references/adk-tool-wrap.md`).
+- `[H]` **Official LlamaIndex APIs** when `framework=llamaindex`: `IngestionPipeline` transformations, `VectorStoreIndex.from_vector_store` (or documented equivalent), `MetadataFilters` from the auth context. Invented wrappers that bypass `Document`/`Node` without a compatibility reason are a finding.
+- `[C]` **LlamaParse approval.** `LlamaCloud` / hosted parse without a recorded approval (data processing, credentials, cost) is critical. `[H]` `from llama_parse import LlamaParse` or `llama-cloud-services` in new code — deprecated; use `llama-cloud>=2.8` (`from llama_cloud import LlamaCloud`) or LiteParse.
+- `[H]` **ADK tool placement.** Model-chosen retrieve is MCP (`McpToolset`), not a `FunctionTool` that opens the vector store. Graph `FunctionNode` retrieve is allowed.
+
 ### Ingestion lifecycle
 
 - Content-hash diffing for updates? Or full re-ingest every time?
@@ -166,6 +176,8 @@ Grep specifically for these patterns:
 | `random.seed(...)` near retrieval / reranking | Suspicious nondeterminism | Remove or justify |
 | `time.sleep` or blocking calls in async retrieval paths | Blocks the event loop | Async client / `asyncio.sleep` |
 | No timeout on LLM, embedding or vector store calls | Latency time bomb | Explicit client timeouts |
+| `from llama_parse import LlamaParse` | Deprecated SDK | `llama_cloud.LlamaCloud` or LiteParse (`parse-choice.md`) |
+| `index.as_query_engine()` and `LlmAgent(...)` on one path | Dual generation | Retriever + one synthesizer (`adk-tool-wrap.md`) |
 
 ## Output format
 
@@ -175,7 +187,7 @@ Grep specifically for these patterns:
 **Repo:** {{repo-name}}
 **Date:** {{today}}
 **Files reviewed:** {{count}}
-**Stack detected:** {{vector DB, embedding model, reranker, LLM}}
+**Stack detected:** {{framework, vector DB, embedding model, reranker, LLM}}
 
 ## Summary
 

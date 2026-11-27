@@ -1,5 +1,4 @@
 ---
-name: scaffold-a2ui
 description: Scaffold an A2UI (Agent-to-User Interface) renderer feature module in an existing Angular 22.x app with component catalog, recursive renderer, agent service, and chat page
 argument-hint: "[feature name, default: a2ui-chat]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__angular-cli__get_best_practices, mcp__angular-cli__search_documentation, mcp__context7__resolve-library-id, mcp__context7__query-docs

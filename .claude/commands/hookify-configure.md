@@ -1,5 +1,5 @@
 ---
-description: Enable or disable Hookify rules interactively. Usage: /hookify-configure
+description: "Enable or disable Hookify rules interactively. Usage: /hookify-configure"
 allowed-tools: Glob, Read, Edit, AskUserQuestion
 ---
 

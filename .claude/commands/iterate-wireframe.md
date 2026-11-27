@@ -1,5 +1,4 @@
 ---
-name: iterate-wireframe
 description: "Apply review feedback to improve a wireframe using 3-pass iteration"
 argument-hint: "[path to wireframe HTML file]"
 allowed-tools: Read, Write, Edit, Glob, Grep

@@ -1,5 +1,4 @@
 ---
-name: test-partner
 description: "Paired manual QA: Claude guides one step at a time while you tap or click, watches logs, records defects, and verifies retests. Use for /test-partner, partner testing, pass fail shot, or watch logs while I test. Maestro for Flutter Android/iOS; Playwright for web; Chrome DevTools MCP for diagnostics."
 argument-hint: "[--target flutter-android|flutter-ios|angular|react|web] [--flow <name>] [--device auto|<id>]"
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit

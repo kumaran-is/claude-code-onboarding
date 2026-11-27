@@ -1,5 +1,4 @@
 ---
-name: setup-team-memory
 description: One-shot setup of claude-mem + claude-mem-sync for team memory sharing. Installs, configures, and verifies end-to-end. Safe to run multiple times — skips steps already completed.
 allowed-tools: Bash, Read, Write, Edit, Glob
 ---

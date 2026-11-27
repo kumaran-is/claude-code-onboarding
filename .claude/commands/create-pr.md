@@ -1,5 +1,5 @@
 ---
-description: Create a PR with embedded risk score, conventional title, and context-aware checklist. Analyzes the diff to calculate risk (size, complexity, test coverage, dependencies, security) and generates the gh pr create command. Usage: /create-pr [optional: target branch, defaults to develop]
+description: "Create a PR with embedded risk score, conventional title, and context-aware checklist. Analyzes the diff to calculate risk (size, complexity, test coverage, dependencies, security) and generates the gh pr create command. Usage: /create-pr [optional: target branch, defaults to develop]"
 allowed-tools: Bash, Read, Glob, Grep
 ---
 

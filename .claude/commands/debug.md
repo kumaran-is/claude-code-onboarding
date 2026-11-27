@@ -1,5 +1,4 @@
 ---
-name: debug
 description: Systematic debugging mode — loads the systematic-debugging skill and enforces root-cause-first investigation with structured output. Use when something is broken, a test fails, or behavior is unexpected.
 allowed-tools: Read, Grep, Glob, Bash
 ---

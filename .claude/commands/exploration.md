@@ -1,5 +1,4 @@
 ---
-name: exploration
 description: CTO Challenge Mode — adversarial convergent stress-test of a specific proposed solution before committing to it. Use when you have a plan and want it challenged. NOT for divergent exploration (use /brainstorm for that).
 allowed-tools: Read, Grep, Glob
 ---

@@ -40,8 +40,8 @@ Authoritative format: [Agent Skills specification](https://agentskills.io/specif
 name: my-skill                          # Required -- matches directory name
 description: [trigger text]            # Required -- this is how the skill gets selected
 allowed-tools: Read, Write, Glob        # Strongly recommended -- limits available tools
-last-reviewed: "YYYY-MM-DD"            # Recommended -- for /audit-skills staleness check
-metadata:                              # Optional -- arbitrary key/value
+last-reviewed: "YYYY-MM-DD"            # Kit extra (not an official field); /audit-skills staleness
+metadata:                              # Official Agent Skills map for kit extras
   version: "1.0"
 ---
 ```

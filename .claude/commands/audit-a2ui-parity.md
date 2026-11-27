@@ -1,5 +1,4 @@
 ---
-name: audit-a2ui-parity
 description: Deterministic parity audit of a GenUI A2UI catalog (1.0 target or v0.9.x compatibility) against its Angular, React and Flutter renderers — PASS / FAIL / BLOCKED / NOT RUN per check, failing a missing platform only when the contract declares it
 argument-hint: "[path to catalog JSON, default: first **/*catalog*.json with x-genui]"
 allowed-tools: Bash, Read, Glob, Grep

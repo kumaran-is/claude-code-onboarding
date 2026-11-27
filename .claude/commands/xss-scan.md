@@ -1,5 +1,5 @@
 ---
-description: XSS sink scanner for Angular and React web apps. Detects bypassSecurityTrust* misuse, raw DOM HTML sinks, [innerHTML] bindings, React dangerouslySetInnerHTML, unsafe URLs and string-to-code. Produces framework-aware findings with DOMPurify fix patterns. Rules: security-reviewer/reference/web-frontend-security.md §1.
+description: "XSS sink scanner for Angular and React web apps. Detects bypassSecurityTrust* misuse, raw DOM HTML sinks, [innerHTML] bindings, React dangerouslySetInnerHTML, unsafe URLs and string-to-code. Produces framework-aware findings with DOMPurify fix patterns. Rules: security-reviewer/reference/web-frontend-security.md §1."
 allowed-tools: Bash, Read, Glob, Grep
 disable-model-invocation: true
 ---

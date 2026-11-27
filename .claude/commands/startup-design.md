@@ -1,5 +1,4 @@
 ---
-name: startup-design
 description: "Run the startup idea → Stitch → DESIGN.md → interactive prototype workflow, then Flutter/Angular/React only after explicit production approval. Use for 'design my startup app', resume an interrupted stage, or check workflow status."
 argument-hint: "[idea | resume | status | G0-G10]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, Agent

@@ -1,5 +1,4 @@
 ---
-name: setup-aidlc
 description: "Install, configure, validate, or upgrade the official AWS AI-DLC CLI for Claude Code in the current project. Use for /setup-aidlc, install AI-DLC, aidlc config, or aidlc doctor. Delegates to aws-aidlc-integration. Not /next and not a copy of the AI-DLC engine."
 argument-hint: "[--pin X.Y.Z] [--upgrade] [--doctor] [--project DIR]"
 allowed-tools: Bash, Read, Glob, Grep

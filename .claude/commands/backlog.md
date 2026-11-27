@@ -1,5 +1,4 @@
 ---
-name: backlog
 description: "Generate a comprehensive feature backlog from a product idea"
 argument-hint: "[product idea]"
 allowed-tools: Read, Write, Glob, Grep, WebSearch, WebFetch

@@ -1,5 +1,4 @@
 ---
-name: sketch-wireframe
 description: "Generate hand-drawn lo-fi sketch wireframes from MVP specs or an idea"
 argument-hint: "[idea or MVP spec]"
 allowed-tools: Read, Write, Glob

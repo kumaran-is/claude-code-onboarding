@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # lint-commands.sh — Lint all command .md files in .claude/commands/
 # bash 3.2 compatible (macOS)
+#
+# Official Claude Code: a command file accepts skill frontmatter except `name` and `paths`
+# (the filename is the command). Invalid YAML loads the file with no fields set.
+# https://code.claude.com/docs/en/skills
 
 set -uo pipefail
 
@@ -12,7 +16,41 @@ DEFAULT_DIR="$(cd "$SCRIPT_DIR/../commands" && pwd)"
 COMMANDS_DIR="$DEFAULT_DIR"
 QUIET=0
 
-# ---------------------------------------------------------------------------
+yaml_frontmatter_errors() { # file paths on stdin
+  python3 -c '
+import sys
+try:
+    import yaml
+except ImportError:
+    print("PYYAML_MISSING"); sys.exit(0)
+n = 0
+for path in sys.stdin.read().splitlines():
+    n += 1
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except OSError as e:
+        print(f"{path}\tunreadable: {e}"); continue
+    if not lines or lines[0].strip() != "---":
+        print(f"{path}\tno opening --- frontmatter line"); continue
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        print(f"{path}\tfrontmatter has no closing ---"); continue
+    try:
+        data = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.YAMLError as e:
+        msg = " ".join(str(e).split())
+        print(f"{path}\tinvalid YAML: {msg[:200]}"); continue
+    if not isinstance(data, dict):
+        print(f"{path}\tfrontmatter is not a YAML mapping"); continue
+    if "name" in data:
+        print(f"{path}\tname is not valid on command files (filename is the command)")
+    if "paths" in data:
+        print(f"{path}\tpaths is not valid on command files")
+print(f"PARSED {n}")
+'
+}
+
 # Known-broken shell shapes in command instructions. Prints "LINE<TAB>LABEL" per hit.
 # Scans fenced code (shell comments stripped) and inline `code` spans on prose lines that are not
 # explanatory (a line saying the shape is wrong: not / never / no / reports / instead is skipped).
@@ -21,7 +59,6 @@ QUIET=0
 #   gate | summarize-test-log   $? is the summarizer's status (0 even on FAIL/UNKNOWN), not the runner's
 #   flutter pub audit           not a pub subcommand (3.44: help + exit 0; 3.50.1: exit 64)
 #   semgrep scan/--config without --error   exits 0 even with findings
-# ---------------------------------------------------------------------------
 broken_shapes() {
   awk '
     /^[[:space:]]*```/ { fence = !fence; next }
@@ -60,6 +97,15 @@ selftest() {
   run_case "positive: flutter pub audit" $'Run `flutter pub audit` for CVEs.' 1 'flutter pub audit is not a command'
   run_case "positive: semgrep without --error" $'```bash\nsemgrep scan --config auto --json -o semgrep.json .\n```' 1 'semgrep without --error'
   run_case "negative: correct forms and explanatory mentions pass" $'```bash\nTARGET="$ARGUMENTS"; [ -n "$TARGET" ] || TARGET="."   # `${ARGUMENTS:-.}` is never substituted\nnpm test > test.log 2>&1; echo "EXIT:$?"; tail -20 test.log\nnpm test > test.log 2>&1; rc=$?; echo "EXIT:$rc"\npython3 .claude/scripts/summarize-test-log.py --log test.log --exit-code "$rc"\nsemgrep scan --config auto --error .\n# flutter pub audit is not a command\n```\n`cmd | tail; echo $?` reports the status of `tail`.\nThere is no `flutter pub audit` subcommand.' 0 ""
+  run_fm() { # $1 label, $2 full file, $3 expected rc, $4 needle
+    rm -f "$tmp"/*.md; printf '%s' "$2" > "$tmp/case.md"
+    out=$(bash "$self" --dir "$tmp" 2>&1); rc=$?
+    if [ "$rc" -eq "$3" ] && printf '%s' "$out" | grep -qF -- "$4"; then echo "  ok   $1"
+    else echo "  FAIL $1 (rc=$rc: $out)"; fail=1; fi
+  }
+  run_fm "positive: unquoted colon in description" $'---\ndescription: Use when: the lint selftest runs a planted invalid YAML command.\nallowed-tools: Bash\n---\n\nThis body is long enough to pass the body length check for a command file.\n' 1 'invalid YAML'
+  run_fm "positive: frontmatter name:" $'---\nname: case\ndescription: Fixture command for the lint selftest only.\nallowed-tools: Bash\n---\n\nThis body is long enough to pass the body length check for a command file.\n' 1 'filename is the command'
+  run_fm "positive: frontmatter paths:" $'---\ndescription: Fixture command for the lint selftest only.\npaths:\n  - "**/*.ts"\nallowed-tools: Bash\n---\n\nThis body is long enough to pass the body length check for a command file.\n' 1 'paths is not valid on command files'
   rm -rf "$tmp"
   if [ "$fail" -eq 0 ]; then echo "selftest PASS"; else echo "selftest FAIL"; fi
   return "$fail"
@@ -219,6 +265,12 @@ lint_file() {
         status="warn"
       fi
     fi
+
+    yaml_err=$(printf '%s\n' "$yaml_report" | awk -F'\t' -v f="$abs_path" '$1 == f { print $2; exit }')
+    if [[ -n "$yaml_err" ]]; then
+      messages+=("ERROR: frontmatter ${yaml_err}")
+      status="fail"
+    fi
   fi
 
   # ---- 4. Body not empty check ----
@@ -261,6 +313,7 @@ EOF_SHAPES
 # ---------------------------------------------------------------------------
 declare -a md_files_abs=()
 declare -a md_files_rel=()
+yaml_report=""
 
 # Top-level .md files
 for f in "$COMMANDS_DIR"/*.md; do
@@ -279,6 +332,17 @@ for d in "$COMMANDS_DIR"/*/; do
     md_files_rel+=("${subdir_name}/$(basename "$f")")
   done
 done
+
+# ---------------------------------------------------------------------------
+# Strict YAML parse (official: invalid YAML loads the command with no fields)
+# ---------------------------------------------------------------------------
+if [[ ${#md_files_abs[@]} -gt 0 ]]; then
+  yaml_report=$(printf '%s\n' "${md_files_abs[@]}" | yaml_frontmatter_errors)
+  if [[ "$yaml_report" == *PYYAML_MISSING* ]]; then
+    echo "ERROR: python3 with PyYAML is required for the strict frontmatter parse (pip install pyyaml); nothing was parsed." >&2
+    exit 1
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Lint each file

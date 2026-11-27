@@ -1,5 +1,4 @@
 ---
-name: validate-genui-feature
 description: Validate a generative-UI (A2UI 1.0 target or v0.9.x compatibility) feature end to end — contract schema and fixtures, per-platform type checks and tests routed by target (Playwright for web, Maestro only for Flutter mobile), action/interaction contracts, accessibility, streaming and cancel — with per-check evidence
 argument-hint: "[feature name or path] [platforms: angular|react|flutter|all, default: declared in the contract]"
 allowed-tools: Bash, Read, Glob, Grep

@@ -68,10 +68,14 @@ Available tool names:
 
 **Principle:** List the MINIMUM tools the skill needs. Do not grant Write/Edit if the skill is read-only (reviewers). Do not grant Bash if no shell commands are needed.
 
-### `last-reviewed` (Recommended)
+### `last-reviewed` (Kit extra — not an official Claude Code field)
+
+Official skill fields: [Extend Claude with skills](https://code.claude.com/docs/en/skills). Claude Code ignores unrecognized keys. This kit still reads a top-level `last-reviewed` in `/audit-skills`. For new skills, also set `metadata.last-reviewed` so Agent Skills packaging stays spec-legal (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`).
 
 ```yaml
 last-reviewed: "2026-03-14"
+metadata:
+  last-reviewed: "2026-03-14"
 ```
 
 - ISO-8601 date of last substantive review (content verified against current docs/APIs)

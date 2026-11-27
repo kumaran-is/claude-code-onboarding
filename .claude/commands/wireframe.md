@@ -1,5 +1,4 @@
 ---
-name: wireframe
 description: "Generate premium dual-theme wireframes from MVP specs or an idea"
 argument-hint: "[idea or MVP spec]"
 allowed-tools: Read, Write, Glob

@@ -2,6 +2,7 @@
 description: Scaffold a TypeScript MCP server (SDK v2, Node 26 LTS, TypeScript 6.0.3) with stdio and/or Streamable HTTP on Fastify, one shared tool registry, zod schemas, bearer auth + per-tool scope allowlist, pino to stderr, real-Client vitest tests, Dockerfile, CI and Inspector. Use when starting a new MCP server; not for Python servers (mcp-builder python-mcp-setup.md) or adding tools to an existing one.
 argument-hint: "[server-name] [stdio|http|both]"
 allowed-tools: Bash, Read, Write, Edit
+disable-model-invocation: true
 ---
 
 # Scaffold: TypeScript MCP Server

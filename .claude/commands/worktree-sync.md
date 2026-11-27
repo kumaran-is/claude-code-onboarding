@@ -1,5 +1,5 @@
 ---
-description: Sync git worktrees for all open PRs so each branch has its own directory for parallel work without stashing. Usage: /worktree-sync [--new <branch>] (default: sync all open PRs to ./tree/). Optional isolation — not mandatory.
+description: "Sync git worktrees for all open PRs so each branch has its own directory for parallel work without stashing. Usage: /worktree-sync [--new <branch>] (default: sync all open PRs to ./tree/). Optional isolation — not mandatory."
 allowed-tools: Bash, Read
 ---
 

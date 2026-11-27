@@ -2,6 +2,7 @@
 description: Scaffold a new component or domain model into shared Flutter Melos packages (shared_ui or shared_core).
 argument-hint: "shared_ui <ComponentName> | shared_core <ModelName>"
 allowed-tools: Bash, Read, Write, Edit
+disable-model-invocation: true
 ---
 
 # /scaffold-flutter-package

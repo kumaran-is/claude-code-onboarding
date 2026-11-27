@@ -1,5 +1,4 @@
 ---
-name: publish-wireframes
 description: "Deploy all wireframes to Firebase Hosting"
 allowed-tools: Read, Write, Bash, Glob, Grep, ToolSearch
 disable-model-invocation: true

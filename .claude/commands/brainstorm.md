@@ -1,5 +1,4 @@
 ---
-name: brainstorm
 description: Optional divergent exploration — playback of intent, Socratic questions when ambiguous, then 3+ alternatives with trade-offs. Use when planning features or deciding between approaches. Never a gate on approved work.
 allowed-tools: Read, AskUserQuestion
 ---

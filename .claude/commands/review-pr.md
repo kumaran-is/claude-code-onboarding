@@ -1,5 +1,5 @@
 ---
-description: Run a 6-role PR review covering comment accuracy, test coverage, error handling, type design, code quality, and simplification. Dispatches specialized agents by concern — not by tech stack. Use before creating a PR or reviewing someone else's changes. Optional topic filter: comments, tests, errors, types, code, simplify (default: all 6 roles).
+description: "Run a 6-role PR review covering comment accuracy, test coverage, error handling, type design, code quality, and simplification. Dispatches specialized agents by concern — not by tech stack. Use before creating a PR or reviewing someone else's changes. Optional topic filter: comments, tests, errors, types, code, simplify (default: all 6 roles)."
 allowed-tools: Bash, Read, Glob, Grep, Task
 disable-model-invocation: true
 ---

@@ -16,8 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTS_DIR="${SCRIPT_DIR}/../agents"
 QUIET=false
 
-# Strict YAML parse of agent frontmatter (ADVISORY: reported as WARN, never fails the lint yet; many
-# agent descriptions still carry unquoted ": " or multi-line <example> blocks). Same parser as lint-skills.sh.
+# Strict YAML parse of agent frontmatter. Invalid YAML is an ERROR: Claude Code skips the agent
+# (https://code.claude.com/docs/en/sub-agents). Same parser as lint-skills.sh.
 yaml_frontmatter_errors() { # file paths on stdin
   python3 -c '
 import sys
@@ -66,7 +66,7 @@ selftest() {
     rm -f "$tmp"/*.md
   }
   mk yamlbad.md 'tools: Read\n' 'Body.'; sed -i.bak 's/^description: .*/description: Use when: the lint selftest runs/' "$tmp/yamlbad.md"; rm -f "$tmp/yamlbad.md.bak"
-  check "advisory: invalid YAML frontmatter warns, exit stays 0" 0 "WARN yaml (yamlbad.md): invalid YAML"
+  check "positive: invalid YAML frontmatter fails" 1 "invalid YAML"
   mk exdesc.md 'tools: Read\n' 'Body.'; sed -i.bak 's/^description: .*/description: Use for fixtures.\\n\\n<example>\\nUser: hi\\n<\/example>/' "$tmp/exdesc.md"; rm -f "$tmp/exdesc.md.bak"
   check "positive: <example> inside the description -> fail" 1 "description embeds <example> blocks"
   mk longdesc.md 'tools: Read\n' 'Body.'; out=$(AGENT_DESC_WARN_CHARS=30 bash "$self" --dir "$tmp" 2>&1); rc=$?
@@ -262,11 +262,16 @@ done
 
 yaml_report=$(ls "$AGENTS_DIR"/*.md 2>/dev/null | yaml_frontmatter_errors)
 if [[ "$yaml_report" == *PYYAML_MISSING* ]]; then
-  echo "WARN yaml: strict frontmatter parse NOT RUN (python3 with PyYAML not found)"
+  echo "ERROR: python3 with PyYAML is required for the strict frontmatter parse (pip install pyyaml); nothing was parsed." >&2
+  exit 1
+fi
+yaml_bad=$(printf '%s\n' "$yaml_report" | grep -vc '^PARSED ' || true)
+if [[ "${yaml_bad:-0}" -gt 0 ]]; then
+  printf '%s\n' "$yaml_report" | awk -F'\t' '!/^PARSED / && NF > 1 { n = split($1, p, "/"); printf "   ERROR yaml (%s): %s\n", p[n], $2 }'
+  echo "YAML frontmatter: ${yaml_bad} of $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') agent file(s) fail a strict parse (Claude Code skips agents whose YAML does not parse)"
+  failed=$((failed + yaml_bad))
 else
-  yaml_bad=$(printf '%s\n' "$yaml_report" | grep -vc '^PARSED ' || true)
-  printf '%s\n' "$yaml_report" | awk -F'\t' '!/^PARSED / && NF > 1 { n = split($1, p, "/"); printf "   WARN yaml (%s): %s\n", p[n], $2 }'
-  echo "YAML frontmatter (advisory): ${yaml_bad:-0} of $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') agent file(s) fail a strict parse"
+  echo "YAML frontmatter: 0 of $(printf '%s\n' "$yaml_report" | awk '/^PARSED /{print $2}') agent file(s) fail a strict parse"
 fi
 
 echo ""

@@ -1,5 +1,5 @@
 ---
-description: Calculate a composite PR risk score (size, complexity, test coverage, dependencies, security) before merging or reviewing. Detects large PRs needing splits and generates a context-aware pre-merge checklist. Run before /review-pr or before opening a PR. Usage: /pr-risk [branch or commit range] (default: HEAD~1..HEAD)
+description: "Calculate a composite PR risk score (size, complexity, test coverage, dependencies, security) before merging or reviewing. Detects large PRs needing splits and generates a context-aware pre-merge checklist. Run before /review-pr or before opening a PR. Usage: /pr-risk [branch or commit range] (default: HEAD~1..HEAD)"
 allowed-tools: Bash, Read, Glob, Grep
 ---
 

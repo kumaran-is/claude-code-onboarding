@@ -2,6 +2,7 @@
 description: Scaffold a standalone Python 3.14 background worker service. Use for event-driven or scheduled processing jobs that are NOT FastAPI REST APIs and NOT AI agents.
 argument-hint: "[service name]"
 allowed-tools: Bash, Read, Write, Edit
+disable-model-invocation: true
 ---
 
 # Scaffold: Python Background Worker

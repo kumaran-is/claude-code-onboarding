@@ -1,5 +1,4 @@
 ---
-name: end-session
 description: "Wrap the session: snapshot via /checkpoint, run /promote-lessons, capture current work, failed approaches, decisions, blockers, Git status, and a pasteable resume prompt. Use when the user says end session, done for the day, close this session, or wrap up. Does not commit or push unless the user already asked in this session."
 argument-hint: "[optional wrap note]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep

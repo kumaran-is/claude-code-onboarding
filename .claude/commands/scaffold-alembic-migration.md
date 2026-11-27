@@ -2,6 +2,7 @@
 description: Generate a new Alembic database migration with full design-first workflow
 argument-hint: "<description> (e.g. add_user_table, add_embedding_column)"
 allowed-tools: Bash, Read, Write, Edit
+disable-model-invocation: true
 ---
 
 # /scaffold-alembic-migration

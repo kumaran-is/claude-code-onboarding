@@ -1,5 +1,4 @@
 ---
-name: validate-changes
 description: Evaluate staged git changes with the output-evaluator agent (LLM-as-a-Judge) before committing. Returns APPROVE / NEEDS_REVIEW / REJECT with scores and specific issues.
 allowed-tools: Read, Grep, Glob, Bash, Agent
 ---

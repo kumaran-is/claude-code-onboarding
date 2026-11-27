@@ -1,5 +1,4 @@
 ---
-name: scaffold-genui
 description: Scaffold a Flutter A2UI 1.0 agent-driven UI feature module (v0.9.x compatibility-path templates) — pinned a2ui_flutter/a2ui_core, catalog, surface host, transport, actions, and tests
 argument-hint: "[feature name, default: agent-ui]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__dart-mcp-server__dart, mcp__context7__resolve-library-id, mcp__context7__query-docs

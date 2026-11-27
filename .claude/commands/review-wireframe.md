@@ -1,5 +1,4 @@
 ---
-name: review-wireframe
 description: "Review a wireframe HTML file with Elon + Steve dual-persona scoring"
 argument-hint: "[path to wireframe HTML file]"
 allowed-tools: Read, Write, Glob, Grep

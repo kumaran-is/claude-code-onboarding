@@ -1,5 +1,4 @@
 ---
-name: slides
 description: "Create animation-rich HTML slide presentations for investor pitches, architecture discussions, and business reviews"
 argument-hint: "[topic or description]"
 allowed-tools: Read, Write, Glob, Grep, Bash

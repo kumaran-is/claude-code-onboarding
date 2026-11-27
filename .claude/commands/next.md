@@ -1,5 +1,4 @@
 ---
-name: next
 description: "Pick the next actionable work item from GitHub issues/project, local plans, session tasks, and in-flight branches. Use for /next, next issue, what should I work on, or start next issue. Supports --plan, --wave N, --build #N, --finish #N, --fix-loop, --auto."
 argument-hint: "[--plan] [--wave N] [--build #N] [--finish #N] [--fix-loop] [--auto] [#N]"
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit

@@ -1,5 +1,4 @@
 ---
-name: research
 description: "Mine Reddit for real customer pain points and unmet needs"
 argument-hint: "[topic]"
 allowed-tools: Read, Write, Glob, Grep, WebSearch, WebFetch

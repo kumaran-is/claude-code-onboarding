@@ -1,6 +1,5 @@
 ---
-name: audit-skills
-description: Periodic health audit of all skills in .claude/skills/ and agents in .claude/agents/. Scores each against a 16-criterion rubric (32 points max), assigns A–F production readiness grade (80% = B = production ready), checks Agent Skills spec (https://agentskills.io/specification) and skill activation/non-activation via the existing lint-skills evaluator, and outputs a prioritised fix list. Use when: auditing skill health, reviewing skill governance, finding stale skills, checking skill compliance, grading the skill library, evaluating skill triggers.
+description: "Periodic health audit of all skills in .claude/skills/ and agents in .claude/agents/. Scores each against a 16-criterion rubric (32 points max), assigns A–F production readiness grade (80% = B = production ready), checks Agent Skills spec (https://agentskills.io/specification) and skill activation/non-activation via the existing lint-skills evaluator, and outputs a prioritised fix list. Use when: auditing skill health, reviewing skill governance, finding stale skills, checking skill compliance, grading the skill library, evaluating skill triggers."
 allowed-tools: Read, Glob, Grep, Bash
 ---
 

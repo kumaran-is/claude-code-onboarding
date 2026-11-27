@@ -1,5 +1,4 @@
 ---
-name: scaffold-genui-feature
 description: Scaffold one generative-UI feature across the A2UI contract (v1.0 preferred, v0.9.x where a renderer is not proven on 1.0), backend adapter and Angular / React / Flutter renderers — contract-first, detects existing conventions, never overwrites without review, delegates platform code to the existing GenUI skills and commands
 argument-hint: "<feature> <ComponentId> [angular|react|flutter|all] [shared-backend|standalone-backend] [langgraph|adk|other] [existing|new]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, mcp__context7__resolve-library-id, mcp__context7__query-docs

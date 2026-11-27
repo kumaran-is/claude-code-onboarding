@@ -1,5 +1,5 @@
 ---
-description: List all Hookify rules — shows name, event, pattern, enabled/disabled status. Usage: /hookify-list
+description: "List all Hookify rules — shows name, event, pattern, enabled/disabled status. Usage: /hookify-list"
 allowed-tools: Glob, Read
 ---
 

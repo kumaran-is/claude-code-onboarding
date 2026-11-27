@@ -41,12 +41,33 @@ Clone it, install Claude Code, run `/next`.
 
 ![Claude Code Master](./img/mastering-claudecode.png)
 
+## Contents
+
+- [Why this toolkit](#why-this-toolkit)
+- [Getting started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Clone this repo](#clone-this-repo)
+  - [Set up your editor](#set-up-your-editor)
+  - [Install Claude Code](#install-claude-code)
+  - [First run](#first-run)
+  - [Optional: memory and voice](#optional-memory-and-voice)
+  - [First five minutes](#first-five-minutes)
+- [Engineering workflow](#engineering-workflow)
+- [Key commands](#key-commands)
+- [Polyglot monorepo (native-only, Melos-only, Nx-only, Nx + Melos)](#polyglot-monorepo-native-only-melos-only-nx-only-nx--melos)
+- [What's included](#whats-included)
+- [Security and quality](#security-and-quality)
+- [Optional AWS AI-DLC](#optional-aws-ai-dlc)
+- [Customize, docs, and contributing](#customize-docs-and-contributing)
+- [Troubleshooting](#troubleshooting)
+- [Resources](#resources)
+
 ## Why this toolkit
 
 - **`/next` engineering loop** — pick the next GitHub issue or local plan, implement, verify, review, and stop at a human merge gate.
 - **Stack specialists** — skills and agents for Java, NestJS, Python, Angular, React, and Flutter, routed from [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md).
 - **Evidence over claims** — `/verify` and `/ship` are binary PASS/FAIL; independent reviewers do not implement the change.
-- **Guardrails that stay on** — hooks block destructive commands and secret edits; git refuses secret-bearing commits.
+- **Guardrails** — hooks catch common destructive commands and secret edits; git refuses secret-bearing commits. They are not an absolute security boundary.
 
 [Changelog](CHANGELOG.md) · [Notes](docs/articles.md) · [Full docs](docs/README.md) · [Official Claude Code](https://code.claude.com/docs/en/overview)
 
@@ -54,7 +75,7 @@ Clone it, install Claude Code, run `/next`.
 
 ### Prerequisites
 
-- A **Claude Pro or Max** subscription at [claude.ai](https://claude.ai), or an Anthropic API key from the [Console](https://console.anthropic.com)
+- A **Claude Pro, Max, Ultra, Team, or Enterprise** subscription at [claude.ai](https://claude.ai), or an Anthropic API key from the [Console](https://console.anthropic.com)
 
 Optional for MCP servers and this kit's stacks: [Node.js 26.13.x LTS](https://nodejs.org/en/download) and [Python 3.14+](https://www.python.org/downloads/).
 
@@ -70,18 +91,36 @@ cp git-hooks/pre-commit-secrets.sh .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 ```
 
-**Option B — copy into an existing project**
+**Option B — add to an existing project (merge, do not overwrite)**
+
+Do **not** `cp -r` the kit onto a project that already has `.claude/`, `CLAUDE.md`, or `.mcp.json`. Back those up, copy only missing kit files, and merge the rest by hand.
 
 ```bash
-cp -r claude-code-onboarding/.claude/ your-project/.claude/
-cp claude-code-onboarding/CLAUDE.md your-project/
-cp claude-code-onboarding/.mcp.json your-project/
-cp claude-code-onboarding/git-hooks/pre-commit-secrets.sh your-project/.git/hooks/pre-commit
-chmod +x your-project/.claude/hooks/*.sh your-project/.git/hooks/pre-commit
-cd your-project
+stamp=$(date +%Y%m%d)
+dest="$HOME/claude-kit-backup-$stamp"
+mkdir -p "$dest"
+[ -d your-project/.claude ] && cp -R your-project/.claude "$dest/claude"
+[ -f your-project/CLAUDE.md ] && cp your-project/CLAUDE.md "$dest/"
+[ -f your-project/.mcp.json ] && cp your-project/.mcp.json "$dest/"
+[ -f your-project/.git/hooks/pre-commit ] && cp your-project/.git/hooks/pre-commit "$dest/"
+
+mkdir -p your-project/.claude
+for d in skills agents commands hooks rules scripts; do
+  mkdir -p "your-project/.claude/$d"
+  cp -Rn "claude-code-onboarding/.claude/$d/." "your-project/.claude/$d/"
+done
+chmod +x your-project/.claude/hooks/*.sh
+[ -f your-project/.claude/settings.json ] || cp claude-code-onboarding/.claude/settings.json your-project/.claude/
 ```
 
-Then edit `CLAUDE.md` for your stack, trim unused skills/agents/commands, and keep only the MCP servers you need. Committed `.claude/settings.json` sets `permissions.defaultMode` to `auto` with **no allow/deny lists**. Put personal allow rules in `.claude/settings.local.json` (gitignored). Hooks are the project guardrails.
+Diff and merge `CLAUDE.md`, `.mcp.json`, and `.claude/settings.json` yourself — do not replace live copies with the kit files. Hooks only run if `settings.json` registers them; merge those entries if the file already exists. Keep only the MCP servers you need (`${ENV_VAR}` tokens). If `.git/hooks/pre-commit` already exists, chain the secrets scan; otherwise:
+
+```bash
+cp claude-code-onboarding/git-hooks/pre-commit-secrets.sh your-project/.git/hooks/pre-commit
+chmod +x your-project/.git/hooks/pre-commit
+```
+
+Then trim unused skills/agents/commands. This kit's committed `.claude/settings.json` sets `permissions.defaultMode` to `auto` with **no allow/deny lists**. Put personal allow rules in `.claude/settings.local.json` (gitignored).
 
 ### Set up your editor
 
@@ -247,7 +286,9 @@ Do not inventory every file here — counts rot. Use [`.claude/SKILLS_GUIDE.md`]
 
 - Prompts, `@file` contents, and tool output go to Anthropic's API. Never paste live secrets.
 - `.mcp.json` must use `${ENV_VAR}` references, never hardcoded tokens.
-- Committed `settings.json`: `model: sonnet`, `permissions.defaultMode: auto`, **no** allow/deny lists. Hooks block `rm -rf`, force-push to main, `DROP DATABASE`, piping curl to a shell, and edits to `.env` / keys / lockfiles.
+- Committed `settings.json`: `model: sonnet`, `permissions.defaultMode: auto`, **no** allow/deny lists.
+- Hooks are **guardrails, not a security boundary**. They block common `rm -rf`, force-push to main, `DROP DATABASE`, piping curl to a shell, and **Write/Edit** of `.env`, keys, and lockfiles. Wrappers such as `bash -c`, `env`, `time`, and `pnpm exec` can skip some `nx init` / raw-scaffold checks. `CC_NX_INIT=1` is a transcript marker, not a cryptographic gate.
+- Update lockfiles with the package manager in Bash (`npm install`, `uv lock`, `flutter pub get`). Hooks block Claude from **Write/Edit** of those files so they are not hand-edited; they do not block legitimate package-manager updates.
 - Install the git secrets hook after clone (`git-hooks/pre-commit-secrets.sh`). Never `--no-verify` around it.
 - `/verify` and `/ship` require executed evidence. Independent review is required before READY.
 - `/next --auto` still cannot self-approve, `--force` merge, or skip the human for production secrets.

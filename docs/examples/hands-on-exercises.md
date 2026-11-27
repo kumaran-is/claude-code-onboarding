@@ -366,12 +366,7 @@ dependencies:
 
 You've used every component in the kit — agents, skills, commands, hooks, and MCP servers. Now apply it to your own project:
 
-1. **Copy the config** into your project (Option B from [Clone this repo](../../README.md#clone-this-repo)):
-   ```bash
-   cp -r .claude/ your-project/.claude/
-   cp CLAUDE.md your-project/
-   cp .mcp.json your-project/
-   ```
+1. **Copy the config** into your project using Option B in [Clone this repo](../../README.md#clone-this-repo) (backup, copy without clobbering, merge `CLAUDE.md` / `.mcp.json` by hand — do not `cp -r` over a live project).
 2. **Trim what you don't need** — remove agents, skills, and commands for stacks you don't use. See [Removing Components You Don't Need](../engineering/customizing.md#removing-components-you-dont-need).
 3. **Write your own CLAUDE.md** — replace the tech stack, conventions, and rules with your project's. See [Claude Code memory docs](https://code.claude.com/docs/en/memory).
 4. **Set up credentials** — copy `.env.example` to `.env`, configure MCP server tokens as environment variables

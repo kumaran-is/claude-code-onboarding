@@ -101,6 +101,12 @@ markers = [
 
 Run R1 locally and in CI: `uv run pytest -m "not live"`; live suites in their own job with credentials.
 
+## R1 golden cases (LangChain/LangGraph, offline)
+
+Layout and schemas: `eval-guide/reference/golden-dataset.md`. Feature-specific R1 fixtures for this skill: `assets/r1-golden/rag_cases.jsonl` and `tool_cases.jsonl`.
+
+Executed (langchain 1.5.2 / langgraph 1.2.24, scripted model, no live provider, no RAGAS/DeepEval/LangSmith): 4 RAG cases (grounding, empty retrieval, answer relevance, ACL-blocked unsafe retrieval — leak check uses graph `doc_ids`, not a second retriever call) and 4 tool cases (happy lookup, `NOT_FOUND`, `FORBIDDEN` for `o-secret` under `org_a`, `OK` for the same id under `org_b`) all PASS. Verdicts are deterministic (status, citation/ACL ids, tool JSON `ok`/`error_code`). They are **not** live-judge faithfulness scores and **not** LangSmith dataset runs.
+
 ## Key Testing Rules
 
 | Rule | Standard |

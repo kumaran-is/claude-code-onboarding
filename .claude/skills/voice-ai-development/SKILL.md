@@ -84,7 +84,7 @@ Reject by `Content-Length` before buffering, then enforce the exact byte cap whi
 - Model ids and voice names: settings only, no defaults (`reference/gemini-provider-setup.md` — executed settings class). Voice names come from the provider's current prebuilt-voice list.
 - Deployed environments authenticate keyless (workload identity); a developer API key exists only locally; browsers use provider ephemeral tokens or your proxy — never the API key.
 - Pin dependencies exactly with a lockfile (`uv add "google-genai==<verified>"`, `uv sync --locked`); never `>=` ranges in a scaffold. SDK: `google-genai`, never `google-generativeai`.
-- Version boundary (PyPI, 2026-11-23): google-adk 2.15.0 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`. A service that includes ADK runs google-genai 2.x; a Live/TTS-only service can pin 3.6.1. The Live calls in section 8 have the same signatures on 2.34 (signature-checked).
+- Version boundary (PyPI, 2026-11-23): google-adk 2.15.1 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`. A service that includes ADK runs google-genai 2.x; a Live/TTS-only service can pin 3.6.1. The Live calls in section 8 have the same signatures on 2.34 (signature-checked).
 - Audio files: WAV through stdlib `wave`; MP3 through the ffmpeg CLI. Not pydub: 0.25.1 imports `audioop`, removed in Python 3.13, so it fails to import on 3.14.
 
 ## 8. Gemini Live essentials (verified on google-genai 3.6.1)

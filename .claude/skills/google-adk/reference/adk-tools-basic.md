@@ -149,15 +149,15 @@ def archive_document(document_id: str, tool_context: ToolContext) -> dict:
 archive_tool = FunctionTool(archive_document, require_confirmation=True)
 ```
 
-Round trip (executed on 1.29 and 2.15 with a scripted model): the first run does **not** execute the
-tool; it emits a function call named `adk_request_confirmation` (args `originalFunctionCall`,
-`toolConfirmation`). Show it to the user, then send the decision as the next message:
+Round trip (**executed on 2.15.1** with a scripted model; also 1.29 / 2.15.0): the first run does **not** execute the
+tool; it emits `adk_request_confirmation`. `{"confirmed": True}` then runs the tool; `{"confirmed": False}` skips it.
+Iterate `run_async` — do not `await` the generator. Pass `invocation_id` from the pause event:
 
 ```python
 decision = types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
     id=confirmation_call.id, name="adk_request_confirmation", response={"confirmed": True},
 ))])
-async for event in runner.run_async(user_id=principal.user_id, session_id=session.id, new_message=decision):
+async for event in runner.run_async(user_id=principal.user_id, session_id=session.id, invocation_id=pause_event.invocation_id, new_message=decision):
     ...
 ```
 
@@ -174,7 +174,7 @@ only risky argument values.
 | `google_search` | `from google.adk.tools import google_search` | Web search via Google |
 | `load_memory` | `from google.adk.tools import load_memory` | Load from memory service |
 | `preload_memory` | `from google.adk.tools import preload_memory` | Preload memories into context |
-| `exit_loop` | `from google.adk.tools import exit_loop` | Exit LoopAgent iteration |
+| `exit_loop` | `from google.adk.tools import exit_loop` | Exit a deprecated `LoopAgent` iteration only (`adk-agent-teams-and-migration.md`). New loops: bounded `ctx.run_node` (`adk-agent-types.md` §4) |
 | `transfer_to_agent` | injected automatically when `sub_agents` is set — do not list it in `tools=` | Hand off to sub-agent |
 | `AgentTool` | `from google.adk.tools import AgentTool` | Call another agent as a tool (parent keeps control) |
 | `get_user_choice` | `from google.adk.tools import get_user_choice` | Get user selection |
@@ -194,7 +194,11 @@ Build toolsets through one project factory that raises on a missing/empty filter
 startup or CI check that every allowlisted name exists on the server (a typo silently leaves
 the agent with fewer tools).
 
+`require_confirmation` on `McpToolset` is passed through to every listed tool (**executed on 2.15.1** with a local stdio mock MCP and `require_confirmation=True`: approve ran `archive_document`, reject did not; callable form is source-only, **NOT TESTED**). Pass it through the factory — do not construct `McpToolset` in agent modules.
+
 ```python
+from collections.abc import Callable
+
 from google.adk.tools import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import (
     StdioConnectionParams,
@@ -203,10 +207,19 @@ from google.adk.tools.mcp_tool.mcp_session_manager import (
 from mcp import StdioServerParameters
 
 
-def mcp_toolset(connection_params, tool_filter: list[str]) -> McpToolset:
+def mcp_toolset(
+    connection_params,
+    tool_filter: list[str],
+    *,
+    require_confirmation: bool | Callable[..., bool] = False,
+) -> McpToolset:
     if not tool_filter:
         raise ValueError("tool_filter must be a non-empty allowlist")  # ADK would expose ALL tools
-    return McpToolset(connection_params=connection_params, tool_filter=tool_filter)
+    return McpToolset(
+        connection_params=connection_params,
+        tool_filter=tool_filter,
+        require_confirmation=require_confirmation,
+    )
 
 
 # stdio (subprocess). StdioConnectionParams takes server_params=, not command=/args=

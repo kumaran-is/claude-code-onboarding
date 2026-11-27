@@ -79,13 +79,14 @@ async def run_once(runner: Runner, user_id: str, text: str) -> str:
 
 dev_runner = InMemoryRunner(agent=analysis_agent, app_name="my_app")   # in-memory services, REAL model
 service_runner = Runner(app_name="my_app", agent=analysis_agent, session_service=InMemorySessionService())
+# Exactly one of app=, agent=, or node= (2.15.1). Graphs: Runner(app_name=..., node=workflow, session_service=...)
 ```
 
 `InMemoryRunner` is not a test double: it still calls the configured model. Tests use a scripted model (`adk-testing.md`). In a service, wrap `run_async` in `asyncio.timeout(...)` and map failures to typed statuses (`adk-fastapi-integration.md` §5).
 
 ## 3. App class
 
-Use `App` when you need plugins, context caching, events compaction or resumability (fields unchanged in 2.15: `name`, `root_agent`, `plugins`, `events_compaction_config`, `context_cache_config`, `resumability_config`; in 2.x `root_agent` also accepts a `Workflow`):
+Use `App` when you need plugins, context caching, events compaction or resumability (fields unchanged in 2.15: `name`, `root_agent`, `plugins`, `events_compaction_config`, `context_cache_config`, `resumability_config`; in 2.x `root_agent` also accepts a `Workflow`). Shared static policy across a tree: `GlobalInstructionPlugin` on `App` — `LlmAgent.global_instruction` is deprecated (2.15.1 source).
 
 ```python
 from google.adk.apps.app import App

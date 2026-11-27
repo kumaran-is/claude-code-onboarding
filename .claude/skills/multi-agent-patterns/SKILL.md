@@ -9,7 +9,7 @@ metadata:
   role: architect
   scope: design
   output-format: architecture
-last-reviewed: "2026-11-22"
+last-reviewed: "2026-11-26"
 ---
 
 ## Iron Law
@@ -70,6 +70,7 @@ Does the task have clear hierarchical abstraction layers (strategy → planning 
 | Topic | Reference | Load When |
 |-------|-----------|-----------|
 | All 3 architectural patterns (deep) | `references/architectural-patterns.md` | Choosing a pattern or implementing a new multi-agent system |
+| LangChain/LangGraph runtime choice | `../agentic-ai-dev/reference/agentic-architecture-choice.md` | `create_agent` vs StateGraph vs `Send` vs Functional API vs Deep Agents vs ADK |
 | Token economics and cost data | `references/token-economics.md` | Deciding whether multi-agent architecture is justified |
 | Failure modes and mitigations | `references/failure-modes.md` | Debugging a multi-agent system or designing resilience |
 
@@ -86,13 +87,14 @@ Single agents face context ceilings. As tasks grow, context windows fill with ac
 
 Multi-agent architectures address this by partitioning work across multiple context windows.
 
-### The Three Patterns
+### Coordination patterns
 
 | Pattern | Control | Use When | Risk |
 |---------|---------|----------|------|
 | Supervisor/Orchestrator | Centralized | Clear decomposition, human oversight needed | Supervisor bottleneck |
 | Peer-to-Peer/Swarm | Distributed | Flexible exploration, rigid planning counterproductive | Divergence, coordination overhead |
 | Hierarchical | Layered | Strategy → planning → execution separation | Misalignment between layers |
+| Parallel fan-out/fan-in | `Send` map-reduce (LangGraph native) | Independent specialist/retrieval work items | Unbounded `Send` lists; model-chosen node names |
 
 ### Context Isolation Mechanisms
 

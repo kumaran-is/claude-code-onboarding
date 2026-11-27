@@ -13,7 +13,7 @@ Delegate to the `agentic-ai-dev` skill for all patterns, templates, and referenc
 
 ## Steps
 
-1. Read the `agentic-ai-dev` skill and its reference files for exact code templates
+1. Read the `agentic-ai-dev` skill, then `reference/agentic-architecture-choice.md`, and pick `create_agent` / `StateGraph` / Functional API / deterministic / ADK before copying templates. Do not add `deepagents` unless the service explicitly needs that harness.
 2. Initialize project — `uv init $ARGUMENTS --python 3.14`
 3. Add production + dev dependencies with the exact pins in `agentic-config-project.md` (`langgraph` and `langgraph-prebuilt` together); commit `uv.lock`
 4. Create directory structure under `src/<service_name>/` per skill conventions

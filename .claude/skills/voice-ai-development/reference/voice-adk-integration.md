@@ -2,7 +2,7 @@
 
 > Framework: `google-adk` 2.15.0. ADK agent patterns in general: `google-adk` skill. Model ids and voices come from settings (`AGENT_MODEL`, `LIVE_MODEL`, `TTS_MODEL_FAST`, `LIVE_VOICE`), never literals.
 > Executed on google-adk 2.15.0 (Python 3.14.10, DeprecationWarning raised as an error): section 2 (`voice_turn`) with a scripted `BaseLlm` subclass and fake STT/TTS, 1 test passes, no provider call; control: putting the audio hex into the prompt fails the "model saw text only" assertion. Signatures of `Runner`, `run_async`, `run_live`, `LiveRequestQueue`, `InMemorySessionService.create_session` read from the installed 2.15.0 package.
-> Dependency boundary: google-adk 2.15.0 requires `google-genai>=2.34,<3` (it resolved 2.34.0), so an ADK voice service does not run on google-genai 3.6.1. Pin what the ADK release allows and keep the Live API helpers to the signatures shared by both lines (`gemini-live-api.md`).
+> Dependency boundary: google-adk 2.15.1 requires `google-genai>=2.34,<3` (it resolved 2.34.0), so an ADK voice service does not run on google-genai 3.6.1. Pin what the ADK release allows and keep the Live API helpers to the signatures shared by both lines (`gemini-live-api.md`).
 ---
 
 ## 1. Design correction (read first)

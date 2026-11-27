@@ -1,6 +1,10 @@
 # ADK Testing Patterns
 
-Every snippet here was executed with `google-adk==1.29.0`; the behaviours they assert were re-checked on `google-adk==2.15.0` (36 behaviour tests, fixture model, not live), pytest and `asyncio_mode = "auto"` (12 tests passed; no network, no credentials). Eval sets, judges and golden cases: `adk-eval-guide` and `eval-guide`. Live end-to-end replay against the running service before merge: `agentic-ai-dev/reference/agentic-testing.md`.
+Install pin: `google-adk==2.15.1`. Scripted `BaseLlm` only.
+
+**Executed on 2.15.1 (local):** FunctionNode graphs; LlmAgent-in-graph `output_key`; `ctx.run_node(LlmAgent)` RetryConfig / `ITERATION_LIMIT` / `Event(state=...)`; FunctionTool and `McpToolset(require_confirmation=True)` (local mock MCP); FastAPI ASGI with `InMemorySessionService` (`adk-fastapi-integration.md` §9); loopback A2A including `partial=None` chunks persisted (`adk-agent-handoff.md`); converter `last_chunk`; `finish_task`; root `single_turn` `ValueError`; `parameter_binding`. Reproduce with this file's `ScriptedLlm` plus those references — the throwaway harness is not in-repo.
+
+**Not tested:** live Gemini, Gemini Live, non-loopback A2A, sqlite `DatabaseSessionService` on 2.15.1 (last 2.15.0). Eval sets: `adk-eval-guide`.
 
 ## 1. InMemoryRunner does NOT fake the model
 
@@ -70,9 +74,14 @@ Sessions must exist before `run_async`: `InMemoryRunner.auto_create_session` is 
 from typing import Any
 
 import pytest
-from google.adk.agents import Agent, LoopAgent, RunConfig, SequentialAgent
+from pydantic import ValidationError
+from google.adk import Event, Workflow
+from google.adk.agents import Agent, Context, LoopAgent, RunConfig
 from google.adk.agents.invocation_context import LlmCallsLimitExceededError
+from google.adk.events import RequestInput
 from google.adk.runners import InMemoryRunner
+from google.adk.tools import FunctionTool
+from google.adk.workflow import DEFAULT_ROUTE, FunctionNode, JoinNode, node
 from google.genai import types
 
 from tests.fakellm import ScriptedLlm
@@ -101,18 +110,132 @@ async def test_tool_called_with_scripted_args():
     assert events[-1].is_final_response() and events[-1].content.parts[0].text == "Added."
 
 
-async def test_sequential_pipeline_final_author():
+async def test_workflow_pipeline_final_author():
+    # Executed google-adk==2.15.1 with ScriptedLlm. SequentialAgent form also ran on 2.15.0.
     ScriptedLlm.script = ["one-line summary", "expanded text"]
-    pipeline = SequentialAgent(name="p", sub_agents=[
+    pipeline = Workflow(name="p", edges=[(
+        "START",
         Agent(name="researcher", model=MODEL, instruction="Summarize.", output_key="summary"),
         Agent(name="writer", model=MODEL, instruction="Expand on this summary: {summary}"),
-    ])
-    events = await run_turn(InMemoryRunner(agent=pipeline, app_name="t"), "topic")
+    )])
+    events = await run_turn(InMemoryRunner(node=pipeline, app_name="t"), "topic")
     assert [e.author for e in events if e.is_final_response()][-1] == "writer"
-    assert "one-line summary" in str(ScriptedLlm.requests[-1].config.system_instruction)  # state templating
+    assert "one-line summary" in str(ScriptedLlm.requests[-1].config.system_instruction)
 
 
-async def test_loop_is_capped():
+def _out(events):
+    return [e.output for e in events if e.output is not None]
+
+
+async def test_join_route_hitl_and_loop_on_function_nodes():
+    # Executed google-adk==2.15.1, no model. Join keys = predecessor function names.
+    def left(node_input) -> str:
+        return "L"
+    def right(node_input) -> str:
+        return "R"
+    def synth(node_input: dict) -> dict:
+        return node_input
+    gather = JoinNode(name="gather")
+    joined = await run_turn(InMemoryRunner(node=Workflow(name="fan_out", edges=[
+        ("START", left, gather), ("START", right, gather), (gather, synth),
+    ]), app_name="j"), "go")
+    assert _out(joined)[-1] == {"left": "L", "right": "R"}
+
+    def router(node_input):
+        return Event(route="".join(p.text or "" for p in node_input.parts), output="x")
+    def handle_bug():
+        return Event(output="BUG_OK")
+    def handle_unknown():
+        return Event(output="UNKNOWN")
+    routed = Workflow(name="r", edges=[("START", router), (router, {"BUG": handle_bug, DEFAULT_ROUTE: handle_unknown})])
+    assert _out(await run_turn(InMemoryRunner(node=routed, app_name="rb"), "BUG"))[-1] == "BUG_OK"
+    assert _out(await run_turn(InMemoryRunner(node=routed, app_name="ru"), "NOPE"))[-1] == "UNKNOWN"
+
+    def step1():
+        yield RequestInput(message="Enter a number:", response_schema=int)
+    def step2(node_input):
+        return node_input * 2
+    hitl = InMemoryRunner(node=Workflow(name="hitl", edges=[("START", step1, step2)]), app_name="h")
+    session = await hitl.session_service.create_session(app_name=hitl.app_name, user_id="u1")
+    paused = [e async for e in hitl.run_async(user_id="u1", session_id=session.id, new_message=types.UserContent(parts=[types.Part(text="start")]))]
+    fc = next(p.function_call for e in paused for p in (e.content.parts if e.content else []) if p.function_call)
+    inv = next(e.invocation_id for e in paused if e.long_running_tool_ids)
+    resumed = [e async for e in hitl.run_async(
+        user_id="u1", session_id=session.id, invocation_id=inv,
+        new_message=types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+            id=fc.id, name="adk_request_input", response={"result": 21}))]))]
+    assert _out(resumed)[-1] == 42
+
+    @node(name="lint_reviewer")
+    async def compile_lint_check(ctx: Context, node_input: str) -> dict:
+        return {"findings": "x"}
+    @node(rerun_on_resume=True)
+    async def code_workflow(ctx: Context, node_input):
+        check = {"findings": "x"}
+        for _ in range(3):
+            check = await ctx.run_node(compile_lint_check, "draft")
+            if not check.get("findings"):
+                yield Event(output="ok")
+                return
+        yield Event(output={"ok": False, "error_code": "ITERATION_LIMIT"})
+    assert _out(await run_turn(InMemoryRunner(node=Workflow(name="code_refine", edges=[("START", code_workflow)]), app_name="l"), "go"))[-1]["error_code"] == "ITERATION_LIMIT"
+    with pytest.raises(ValidationError):
+        Workflow(name="bad", edges=[("START", lambda x: x)])
+    with pytest.raises(ValueError, match="multiple terminal"):
+        await run_turn(InMemoryRunner(node=Workflow(name="two_term", edges=[("START", left), ("START", right)]), app_name="two"), "x")
+
+
+async def test_confirmation_state_binding_and_task_mode():
+    # Executed google-adk==2.15.1, ScriptedLlm. Consume run_async as an async generator — do not await it.
+    called: list[str] = []
+
+    def archive_document(document_id: str) -> dict:
+        called.append(document_id)
+        return {"ok": True, "error_code": None, "data": {"document_id": document_id}}
+
+    agent = Agent(name="arch", model=MODEL, instruction="x", tools=[FunctionTool(archive_document, require_confirmation=True)])
+    ScriptedLlm.script = [{"name": "archive_document", "args": {"document_id": "d1"}}, "archived"]
+    runner = InMemoryRunner(agent=agent, app_name="c")
+    session = await runner.session_service.create_session(app_name=runner.app_name, user_id="u1")
+    paused = [e async for e in runner.run_async(user_id="u1", session_id=session.id, new_message=types.UserContent(parts=[types.Part(text="go")]))]
+    assert called == []
+    e, fc = next((ev, p.function_call) for ev in paused for p in (ev.content.parts if ev.content else []) if p.function_call and p.function_call.name == "adk_request_confirmation")
+    resumed = [ev async for ev in runner.run_async(
+        user_id="u1", session_id=session.id, invocation_id=e.invocation_id,
+        new_message=types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+            id=fc.id, name="adk_request_confirmation", response={"confirmed": True}))]))]
+    assert called == ["d1"] and any("archiv" in (p.text or "") for ev in resumed for p in (ev.content.parts if ev.content else []))
+    called.clear()
+    ScriptedLlm.script = [{"name": "archive_document", "args": {"document_id": "d2"}}, "no"]
+    session2 = await runner.session_service.create_session(app_name=runner.app_name, user_id="u1")
+    paused2 = [e async for e in runner.run_async(user_id="u1", session_id=session2.id, new_message=types.UserContent(parts=[types.Part(text="go")]))]
+    e2, fc2 = next((ev, p.function_call) for ev in paused2 for p in (ev.content.parts if ev.content else []) if p.function_call and p.function_call.name == "adk_request_confirmation")
+    _ = [ev async for ev in runner.run_async(
+        user_id="u1", session_id=session2.id, invocation_id=e2.invocation_id,
+        new_message=types.Content(role="user", parts=[types.Part(function_response=types.FunctionResponse(
+            id=fc2.id, name="adk_request_confirmation", response={"confirmed": False}))]))]
+    assert called == []
+
+    def greet(name: str, city: str) -> str:
+        return f"{name}@{city}"
+    assert _out(await run_turn(InMemoryRunner(node=Workflow(name="g", edges=[("START", greet)]), app_name="st"), "x", state={"name": "Ada", "city": "Paris"}))[-1] == "Ada@Paris"
+    with pytest.raises(ValueError, match="city"):
+        await run_turn(InMemoryRunner(node=Workflow(name="gm", edges=[("START", greet)]), app_name="stm"), "x", state={"name": "Ada"})
+    def seed(node_input) -> dict:
+        return {"name": "Bob", "city": "Lyon"}
+    assert "Bob@Lyon" in _out(await run_turn(InMemoryRunner(node=Workflow(name="ni", edges=[("START", seed, FunctionNode(func=greet, name="greet", parameter_binding="node_input"))]), app_name="ni"), "x"))
+
+    ScriptedLlm.script = [{"name": "specialist", "args": {}}, {"name": "finish_task", "args": {"result": "ok"}}, "done"]
+    spec = Agent(name="specialist", model=MODEL, mode="task", instruction="x")
+    team = await run_turn(InMemoryRunner(agent=Agent(name="coordinator", model=MODEL, instruction="x", sub_agents=[spec]), app_name="team"), "please")
+    names = [p.function_call.name for e in team for p in (e.content.parts if e.content else []) if p.function_call]
+    assert "specialist" in names and "finish_task" in names
+    with pytest.raises(ValueError, match="single_turn"):
+        await run_turn(InMemoryRunner(agent=Agent(name="st", model=MODEL, mode="single_turn", instruction="x"), app_name="stroot"), "hi")
+
+
+async def test_legacy_loop_is_capped():
+    # Deprecated LoopAgent still runs (executed on 2.15.0). New loops: adk-agent-types.md §4
     ScriptedLlm.script = ["again"] * 10
     loop = LoopAgent(name="l", sub_agents=[Agent(name="a", model=MODEL, instruction="x")], max_iterations=3)
     events = await run_turn(InMemoryRunner(agent=loop, app_name="t"), "go")
@@ -152,73 +275,19 @@ async def test_callback_short_circuits_model():
     assert ScriptedLlm.requests == []  # the model was never called
 ```
 
-## 5. FastAPI tests (contract from `adk-fastapi-integration.md`)
+## 5. FastAPI tests
 
-Run the real lifespan with a real session service (SQLite via `aiosqlite` in tests, Postgres in integration), the fake model, and an overridden principal dependency. Drive the app with `httpx2` (`ASGITransport` + `AsyncClient`); outbound HTTP clients in the service stay on `httpx`. `ASGITransport` does **not** run the lifespan, so enter it yourself (`main.lifespan(app)` or `app.router.lifespan_context(app)`). Executed on google-adk 2.15.0 with httpx2 2.16.2 (fixture model): without the lifespan context, state set in the lifespan was missing; with it, present; SSE lines stream through `client.stream(...).aiter_lines()`; ADK's own `get_fast_api_app(agents_dir=..., session_service_uri="sqlite+aiosqlite:///...", web=False)` served `/list-apps`, created a session and answered `/run`, and a different `user_id` presenting that session id got 404.
-
-```python
-import json
-
-import pytest
-from google.genai import errors
-from httpx2 import ASGITransport, AsyncClient   # Starlette 1.10 deprecates httpx for driving the app
-
-from src import main
-from src.api import routes
-
-
-@pytest.fixture
-async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_MODEL", "fake-model")
-    monkeypatch.setenv("SESSION_DB_URL", f"sqlite+aiosqlite:///{tmp_path}/sessions.db")
-    current = {"p": routes.Principal(user_id="alice", org_id="org-a")}
-    main.app.dependency_overrides[routes.get_principal] = lambda: current["p"]
-    async with main.lifespan(main.app):
-        async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as c:
-            c.as_user = lambda p: current.update(p=p)
-            yield c
-    main.app.dependency_overrides.clear()
-
-
-async def test_foreign_session_is_404(client):
-    ScriptedLlm.script = ["x"]
-    sid = (await client.post("/api/chat", json={"message": "hi"})).json()["session_id"]
-    client.as_user(routes.Principal(user_id="mallory", org_id="org-m"))
-    assert (await client.post("/api/chat", json={"message": "hi", "session_id": sid})).status_code == 404
-
-
-async def test_model_error_maps_to_typed_status_without_text(client):
-    ScriptedLlm.script = [errors.ServerError(503, {"error": {"message": "secret-detail-123"}})]
-    r = await client.post("/api/chat", json={"message": "hi"})
-    assert r.json()["status"] == "MODEL_UNAVAILABLE" and "secret-detail-123" not in r.text
-
-
-async def test_stream_partials_only_one_terminal_event(client):
-    ScriptedLlm.script = ["alpha beta"]
-    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
-        lines = [ln async for ln in r.aiter_lines() if ln]
-    events = [ln.split(": ", 1)[1] for ln in lines if ln.startswith("event: ")]
-    texts = [json.loads(ln.split(": ", 1)[1]).get("text", "") for ln in lines if ln.startswith("data: ")]
-    assert events == ["content", "content", "done"] and "".join(texts) == "alpha beta "
-
-
-async def test_stream_error_is_opaque_and_terminal(client):
-    ScriptedLlm.script = [RuntimeError("db password=hunter2")]
-    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
-        text = "".join([ln async for ln in r.aiter_lines()])
-    assert "event: error" in text and "event: done" not in text and "hunter2" not in text
-```
+Contract tests live in `adk-fastapi-integration.md` §9 (**2.15.1** `InMemorySessionService` + `httpx2` ASGI).
 
 ## 6. Test checklist
 
-- [ ] Fake model registered; no test reaches a real model id
-- [ ] Sessions created (awaited) before `run_async`
-- [ ] Tool selection asserted from events (`function_call.name`), tool logic tested directly
-- [ ] Pipeline: final author and `{key}` state templating asserted
-- [ ] Loop cap and `max_llm_calls` cap each have a test
-- [ ] Callback wiring (identity) + behaviour test
-- [ ] Foreign session → 404; model error → typed status with no exception text; SSE → one terminal event
-- [ ] Scope injection: a forged `org_id` from the model is overwritten (`adk-tools-callbacks.md` §5)
+- [ ] Fake model registered; sessions awaited before `run_async`; no live model id
+- [ ] Tool selection from `function_call.name`; pipeline author + `{key}` templating
+- [ ] FunctionNode graphs: JoinNode, DEFAULT_ROUTE, RequestInput, ITERATION_LIMIT, two-terminal error
+- [ ] `require_confirmation` approve/reject; `parameter_binding='state'`; `finish_task`; loop/`max_llm_calls` caps
+- [ ] Callback wiring (identity) + behaviour; forged `org_id` overwritten (`adk-tools-callbacks.md` §5)
+- [ ] Foreign session 404; opaque model error; SSE one terminal event
+- [ ] `ctx.run_node(LlmAgent)` retry / `ITERATION_LIMIT` / non-retryable; `McpToolset(require_confirmation=True)`; local A2A chunks/fail/timeout
 
 ## 7. What not to do
 

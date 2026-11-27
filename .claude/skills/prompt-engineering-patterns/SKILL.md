@@ -55,7 +55,7 @@ What's the problem?
 |---------|------|-----------|------------|-----------|
 | Few-Shot | Output format needs demonstration | `HumanMessage` with examples in node prompt | `instruction=` block with examples | `reference/few-shot-learning.md` |
 | Chain-of-Thought | Multi-step reasoning on non-thinking models | `SystemMessage` with explicit steps | `instruction=` with numbered steps | `reference/chain-of-thought.md` (thinking models: use the thinking setting instead) |
-| Tree-of-Thought | Complex exploration / planning | Parallel branch nodes + aggregator | `ParallelAgent` + synthesizer | `reference/chain-of-thought.md` |
+| Tree-of-Thought | Complex exploration / planning | Parallel branch nodes + aggregator | `JoinNode` + synthesizer (`Workflow`) | `reference/chain-of-thought.md` |
 | Self-Consistency | High-accuracy critical tasks | Multiple `llm.invoke()` + majority vote | Multiple ADK runs + vote | `reference/chain-of-thought.md` |
 | System Prompt Design | Define agent role, behavior, constraints | `SystemMessage` as first message | `LlmAgent(instruction=...)` | `reference/system-prompts.md` |
 | Prompt Templates | Reusable structured prompts | f-string + `SystemMessage` | `instruction=` with `{variable}` | `reference/prompt-templates.md` |

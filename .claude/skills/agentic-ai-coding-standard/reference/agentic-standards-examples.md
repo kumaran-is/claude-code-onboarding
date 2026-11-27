@@ -228,7 +228,7 @@ config = {"metadata": {"user_id": "usr_abc123"}}  # Use opaque IDs
 |---|-------------|---------|-----|
 | 1 | `dict[str, Any]` for state | No type safety, IDE can't help | Use `TypedDict` |
 | 2 | No `add_messages` | Messages overwrite instead of merge | Use `Annotated[list, add_messages]` |
-| 3 | No step cap | Runaway loops (LangGraph default `recursion_limit` is 10000) | Explicit `recursion_limit` + catch `GraphRecursionError` + typed status |
+| 3 | No step cap | Runaway loops (LangGraph 1.2.x default `recursion_limit` is 10007) | Explicit `recursion_limit` + catch `GraphRecursionError` + typed status |
 | 4 | `@tool` without docstring | LLM can't decide when to use tool | Always add descriptive docstring |
 | 5 | Inline `ChatAnthropic()` | Scattered config, no fallback | Use `LLMProviderFactory` |
 | 6 | One temperature rule for all models | Looping/degraded output or rejected params on some models | Follow provider guidance per model; determinism from schemas + validators |

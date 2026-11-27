@@ -349,6 +349,11 @@
       },
       "timeout": 60000,
       "description": "Google Stitch remote MCP (https://stitch.google.com/docs/mcp/setup). Create an API key in Stitch Settings and export STITCH_API_KEY; if the variable is unset the header is empty and the server rejects it. Never commit the key."
+    },
+    "nx-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["nx", "mcp"]
     }
   }
 }

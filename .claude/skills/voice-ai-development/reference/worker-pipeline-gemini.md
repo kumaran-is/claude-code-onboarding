@@ -1,6 +1,6 @@
 # Worker Pipeline — Gemini Implementations + FastAPI Wiring
 
-Concrete workers for the base classes in `worker-pipeline.md` (BaseWorker, BaseTranscriber, BaseAgent, BaseSynthesizer) and the FastAPI WebSocket server that wires them. Execution evidence and the dependency boundary (google-adk 2.15.0 requires `google-genai>=2.34,<3`) are stated in the header of `worker-pipeline.md`; `StreamingConversation` and provider selection stay there.
+Concrete workers for the base classes in `worker-pipeline.md` (BaseWorker, BaseTranscriber, BaseAgent, BaseSynthesizer) and the FastAPI WebSocket server that wires them. Execution evidence and the dependency boundary (google-adk 2.15.1 requires `google-genai>=2.34,<3`) are stated in the header of `worker-pipeline.md`; `StreamingConversation` and provider selection stay there.
 
 ---
 

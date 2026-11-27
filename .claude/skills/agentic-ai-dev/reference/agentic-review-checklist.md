@@ -26,6 +26,9 @@ Area headings carry the guardrail ids of `ai-playbook/reference/engineering-guar
 ### 2. Execution control (CRITICAL/HIGH) — G5, G12
 - **[LG]** Explicit `recursion_limit` from settings (default is 10007 in langgraph 1.2.x, 10000 in 1.0.x); `GraphRecursionError` caught and mapped to a typed status
 - **[LG]** `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` use `exit_behavior="error"` (the default `"end"` returns a library string as the answer)
+- **[LG]** Runtime matches the need (`agentic-architecture-choice.md`): no `create_react_agent`; `Send` lists size-capped in code (`FANOUT_LIMIT`); `recursion_limit` does not bound `Send` width — shared request budget; `Send`/`@task` state schemas at module scope; no identity in `Send.arg`; subgraphs take `RunnableConfig` not `Any` and the *remaining* budget
+- **[LG]** Functional API: `checkpointer=` required for durability; side effects only inside `@task` (entrypoint body replays); HITL same as graphs
+- **[LG]** If `deepagents` is adopted: virtual FS only, per-subagent allowlist, write HITL, principal-scoped store, one cumulative budget — else it is out of pin and must not appear in the lockfile
 - Every run is inside `asyncio.timeout(settings.…)`; `TimeoutError` mapped to a typed status
 - Budgets are cumulative across router, sub-agents, retries and fallback models
 - A cap never returns the last message (possibly an unanswered tool call) as success
@@ -37,7 +40,7 @@ Area headings carry the guardrail ids of `ai-playbook/reference/engineering-guar
 - Tool contracts carry an explicit schema version; an unsupported version returns `SCHEMA_VERSION_MISMATCH` and nothing executes; the tool surface lock test exists (G3)
 - A human override bumps the record version and cancels pending AI intents; a late AI write without a matching version is rejected (G5)
 - HITL uses `interrupt()`/`HumanInTheLoopMiddleware` + `Command(resume=<typed decision>)` with a durable checkpointer and an approval record; no substring matching, no in-process events, no new-message "resume"
-- Code before `interrupt()` has no side effects (the node re-runs on resume)
+- Code before `interrupt()` has no side effects (the node re-runs on resume); same for `@entrypoint` bodies (only `@task` results restore); no `interrupt()` inside `Send` workers
 - No stub tools returning synthetic data; each tool documents its degradation mode
 
 ### 4. Errors, retries, failover (HIGH) — G6, G20

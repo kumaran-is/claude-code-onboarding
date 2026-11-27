@@ -16,7 +16,7 @@ Last verified: 2026-03-15
 | `flutter-mobile` | Flutter, Dart, Riverpod, Firebase | Cross-platform screens, providers, Firebase integration |
 | `angular-spa` | Angular, standalone, signals, TailwindCSS | Standalone components, lazy routing, daisyUI |
 | `agentic-ai-dev` | LangGraph, LangChain, agent, RAG | StateGraph, tool nodes, memory, RAG pipelines |
-| `google-adk` | Google ADK, Gemini, SequentialAgent | ADK agents, McpToolset, session management |
+| `google-adk` | Google ADK, Gemini, Workflow | ADK 2.x Workflow graphs, McpToolset, session management |
 | `database-designer` | schema design, ERD, migrations | Flyway migrations, index strategy, Firestore collections |
 | `deployment-engineer` | CI/CD, Docker, Cloud Run, GitHub Actions | Multi-stage Dockerfiles, Workload Identity, pipeline |
 | `terraform-specialist` | Terraform, GCP, Cloud Run, Cloud SQL | Cloud Run v2, Cloud SQL, Artifact Registry, IAM |

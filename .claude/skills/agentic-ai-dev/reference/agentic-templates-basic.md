@@ -1,6 +1,6 @@
 # Agentic AI — Basic Agent Patterns
 
-Start with the least machinery that works: a deterministic workflow or one structured model call when the steps are known; `create_agent` for a tool loop; a custom `StateGraph` only when you need control flow `create_agent` doesn't give you. Every run gets `recursion_limit`, a deadline and typed status mapping at the route (`agentic-templates-core.md`).
+Start with the least machinery that works: a deterministic workflow or one structured model call when the steps are known; `create_agent` for a tool loop; a custom `StateGraph` only when you need control flow `create_agent` doesn't give you (`Send`, `Command`, subgraphs). Durable functions without a node graph use `@entrypoint`/`@task`. Decision table: `agentic-architecture-choice.md`. Every run gets `recursion_limit`, a deadline and typed status mapping at the route (`agentic-templates-core.md`).
 
 Executed (langchain 1.2.8 / langgraph 1.0.7, recursion-limit path re-run on 1.5.2 / 1.2.24, scripted models, `ruff` + `mypy --strict` clean, 2 tests): Pattern 2 answered after one tool call and raised `GraphRecursionError` at `recursion_limit=6` with a looping model; Pattern 3 ran only the planned specialists in code-defined order and rejected an unknown specialist name at schema validation.
 

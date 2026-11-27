@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: workflow
   output-format: guide
-last-reviewed: "2026-11-23"
+last-reviewed: "2026-11-26"
 ---
 
 # ADK Development Guide
@@ -43,7 +43,7 @@ Every ADK agent feature follows this workflow. Skipping phases increases risk of
 - Import tools with precision (see ADK Import Precision Rules section below)
 - Add `# Fallback:` comment to every tool function
 - Tests use `InMemoryRunner` **plus a scripted fake model** — `InMemoryRunner` only swaps services and still calls the real model (`google-adk/reference/adk-testing.md` §2)
-- Bound every run: `RunConfig(max_llm_calls=N)`, `asyncio.timeout`, `LoopAgent(max_iterations=N)` (its default is unbounded)
+- Bound every run: `RunConfig(max_llm_calls=N)` + `asyncio.timeout` on `run_async`. New multi-step flows are a `Workflow` graph (`google-adk/reference/adk-agent-types.md`): sequential edges, `JoinNode`, `Event(route=...)`, nested Workflows, or a `@node` + `ctx.run_node` loop with `for _ in range(N)` and a typed `ITERATION_LIMIT`. `FunctionNode(timeout=...)` is per-node wall time, not a loop cap. `LoopAgent(max_iterations=N)` only if the orchestrator must sit under an `LlmAgent` (default `max_iterations` is unbounded; deprecated in 2.x)
 - Development commands:
   - `adk web` — launch ADK playground for interactive testing
   - `uv run pytest tests/ -v` — run unit tests
@@ -123,16 +123,17 @@ One-sentence mission statement.
 
 ## ADK Import Precision Rules
 
-Use the import paths the **installed** package exports; never guess and never copy paths from older docs. Executed against `google-adk==2.15.0`:
+Use the import paths the **installed** package exports; never guess and never copy paths from older docs. Executed against `google-adk==2.15.0`; install pin `2.15.1` (PyPI `requires_dist` still `google-genai>=2.34,<3`). **2.15.1 import re-check: NOT TESTED.**
 
 ```python
 # ✅ Works in 2.15
 from google.adk.tools import google_search, load_web_page, exit_loop, AgentTool, FunctionTool, ToolContext
 from google.adk.code_executors import BuiltInCodeExecutor      # Agent(code_executor=BuiltInCodeExecutor())
 from google.adk.runners import InMemoryRunner, Runner
-from google.adk.agents import Agent, LlmAgent, SequentialAgent, ParallelAgent, LoopAgent, RunConfig  # the three orchestrators warn: deprecated in favor of Workflow
+from google.adk.agents import Agent, LlmAgent, RunConfig
+from google.adk.agents import SequentialAgent, ParallelAgent, LoopAgent  # still run; DeprecationWarning; keep if evals pass / must sit under LlmAgent
 from google.adk import Agent, Context, Event, Runner, Workflow  # google.adk.__all__ in 2.15
-from google.adk.workflow import FunctionNode, RetryConfig, node
+from google.adk.workflow import DEFAULT_ROUTE, FunctionNode, JoinNode, RetryConfig, START, node  # 2.15.1 source; import NOT TESTED
 from google.adk.tools import McpToolset                        # needs the google-adk[mcp] extra
 
 # ❌ Fails in 2.15 (ModuleNotFoundError / ImportError)
@@ -202,7 +203,7 @@ If the same error occurs 3+ times in a row: **STOP immediately**. Do not retry t
 - Tool returns error → model retries same tool → same error (repeat forever)
 - State validation fails → agent resets state → validation fails again
 - Rate limit hit → agent retries immediately → rate limit hit again
-- `LoopAgent` without `max_iterations` (default `None`) or a run without `max_llm_calls` (default 500)
+- A `@node` loop without `range(N)` / `ITERATION_LIMIT`, a `LoopAgent` without `max_iterations` (default `None`), or a run without `max_llm_calls` (default 500)
 
 ### How to Break the Loop
 
@@ -296,7 +297,7 @@ def build_runner_agent(settings: Settings) -> Agent:
     )
 ```
 
-Executed on `google-adk==2.15.0` with no credentials: `state={"energy": 0.1}` produced `decision == "slow"` and no model call. `runner_mode` comes from settings, not an ad-hoc `os.getenv` at the call site.
+Executed on `google-adk==2.15.0` with no credentials (**2.15.1 re-run: NOT TESTED**): `state={"energy": 0.1}` produced `decision == "slow"` and no model call. `runner_mode` comes from settings, not an ad-hoc `os.getenv` at the call site.
 
 Use the autopilot variant when you need whole-system runs without a model (load tests, demos). For unit tests of a real `LlmAgent`, prefer the scripted fake model (`google-adk/reference/adk-testing.md` §2): it exercises your actual instructions and the model-facing path, which the callback skips.
 

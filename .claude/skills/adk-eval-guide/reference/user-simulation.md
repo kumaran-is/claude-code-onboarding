@@ -91,7 +91,7 @@ Override default simulator behavior in `eval_config.json`:
 }
 ```
 
-`<simulator-model-id>` and `<judge-model-id>` are placeholders for ids you checked on the current models page; omitted, `google-adk==2.15.0` falls back to `gemini-2.5-flash` (`criteria-guide.md`).
+`<simulator-model-id>` and `<judge-model-id>` are placeholders for ids you checked on the current models page; omitted, `google-adk==2.15.1` falls back to `gemini-2.5-flash` (`criteria-guide.md`).
 
 - `model` — model backing the user simulator
 - `model_configuration` — `GenerateContentConfig` controlling model behavior

@@ -209,7 +209,7 @@ middleware = [
 config = {"configurable": {"thread_id": key}, "recursion_limit": settings.max_graph_steps}
 ```
 
-Executed: with `exit_behavior="error"` a looping fake model raised `ModelCallLimitExceededError` after 3 calls; with the default `"end"` the run ended on an `AIMessage` reading "Model call limits exceeded: run limit (3/3)", which a naive route would show as the answer. LangGraph's default `recursion_limit` is 10000; set it and map `GraphRecursionError` (`agentic-templates-core.md`). Sub-agents receive the *remaining* budget, not a fresh one. Calibrate limits from measured p95/p99 of real runs; add per-org rate and concurrency caps at the gateway.
+Executed: with `exit_behavior="error"` a looping fake model raised `ModelCallLimitExceededError` after 3 calls; with the default `"end"` the run ended on an `AIMessage` reading "Model call limits exceeded: run limit (3/3)", which a naive route would show as the answer. LangGraph 1.2.x default `recursion_limit` is 10007 (1.0.x: 10000); set it and map `GraphRecursionError` (`agentic-templates-core.md`). Sub-agents receive the *remaining* budget, not a fresh one. Calibrate limits from measured p95/p99 of real runs; add per-org rate and concurrency caps at the gateway.
 
 ## 9. Compensation: agents do not own transactions
 

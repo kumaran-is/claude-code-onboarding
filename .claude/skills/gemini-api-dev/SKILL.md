@@ -55,7 +55,7 @@ Do not hardcode model ids in code or in this skill — the lineup changes faster
 
 - **Python**: `google-genai` — `uv add "google-genai==3.6.1"` for direct Gemini code and LangChain (`langchain-google-genai==4.5.2` requires `google-genai>=3.3`).
 
-> **Two genai lines, never one lock.** Services built on `google-adk==2.15.0` (or `google-cloud-aiplatform==2.10.0`) must stay on `google-genai==2.34.0`: their PyPI metadata (`requires_dist`) declares `google-genai>=2.34,<3` (ADK) and `google-genai>=1.66.0,<3.0.0` (aiplatform), and `uv lock` with genai 3.x next to ADK is unsatisfiable (executed). Do not "upgrade" genai under ADK; move to 3.x only when an ADK release allows it. Everything in this skill was checked on both lines unless marked 3.x-only (fake HTTP server, no live call): on 2.34.0 the developer API default is still `v1beta`.
+> **Two genai lines, never one lock.** Services built on `google-adk==2.15.1` (or `google-cloud-aiplatform==2.10.0`) must stay on `google-genai==2.34.0`: their PyPI metadata (`requires_dist`) declares `google-genai>=2.34,<3` (ADK) and `google-genai>=1.66.0,<3.0.0` (aiplatform), and `uv lock` with genai 3.x next to ADK is unsatisfiable (executed). Do not "upgrade" genai under ADK; move to 3.x only when an ADK release allows it. Everything in this skill was checked on both lines unless marked 3.x-only (fake HTTP server, no live call): on 2.34.0 the developer API default is still `v1beta`.
 - **TypeScript/NestJS**: `@google/genai` — `npm install @google/genai`
 
 > **Legacy SDKs are deprecated:** `google-generativeai` (Python) and `@google/generative-ai` (JS) — do not use.

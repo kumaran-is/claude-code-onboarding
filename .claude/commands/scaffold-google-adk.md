@@ -64,7 +64,7 @@ Before writing any code or running any command, ask ALL of the following. Presen
 
    Add dependencies:
    ```bash
-   uv add "google-adk[db,mcp,otel]==2.15.0" "google-genai==2.34.0" "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "uvicorn[standard]==0.54.0" "pydantic-settings==2.16.3" "structlog==26.1.0" "sqlalchemy[asyncio]==2.1.9" "asyncpg==0.32.0"
+   uv add "google-adk[db,mcp,otel]==2.15.1" "google-genai==2.34.0" "fastapi[standard-no-fastapi-cloud-cli]==0.165.0" "uvicorn[standard]==0.54.0" "pydantic-settings==2.16.3" "structlog==26.1.0" "sqlalchemy[asyncio]==2.1.9" "asyncpg==0.32.0"
    # google-adk 2.15 requires google-genai>=2.34,<3; McpToolset needs the mcp extra
    uv add --dev "pytest==9.2.0" "pytest-asyncio==1.5.0" "httpx2==2.16.2" "aiosqlite==0.22.1" "ruff==0.17.6" "mypy==2.4.1"
    # pin every dependency exactly (==) to what uv lock resolved; commit uv.lock
@@ -73,11 +73,12 @@ Before writing any code or running any command, ask ALL of the following. Presen
    Create directory structure per `adk-project-config.md`:
    - `src/config.py` — Settings with required `agent_model` and the per-environment auth matrix (`adk-project-config.md` §3)
    - `src/agents/` — Agent definitions with `model=settings.agent_model` (no literal id)
+   - `src/workflows/` — only if the spec is a multi-step process: graph `Workflow` (`adk-agent-types.md`). A single tool-calling assistant is `src/agents/` only. Scaffold Sequential/Parallel/Loop only when the flow must sit under an `LlmAgent` (Workflow cannot yet be a sub-agent)
    - `src/tools/` — Tool functions with full docstrings
    - `src/api/routes.py` — POST /chat and POST /stream (`adk-fastapi-integration.md`: principal-owned sessions, timeout, `max_llm_calls`, typed statuses)
    - `src/main.py` — FastAPI app with lifespan: session service + Runner once, `await runner.close()` on shutdown
 
-   Create a sample agent demonstrating: Agent with 1 tool (typed result), POST /chat, POST /stream SSE
+   Create a sample demonstrating: one `Agent` with 1 tool (typed result) **or**, if the spec is multi-step, a `Workflow` with `Runner(node=...)`; POST /chat, POST /stream SSE
 
    Create `tests/fakellm.py` (scripted model, `adk-testing.md` §2) and `tests/test_agent.py` + `tests/test_api.py` using it — `InMemoryRunner` alone still calls the real model
 

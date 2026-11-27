@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: review
   output-format: report
-last-reviewed: "2026-11-23"
+last-reviewed: "2026-11-26"
 ---
 
 # Agentic AI Coding Standards
@@ -26,7 +26,7 @@ Mandatory coding standards for all Python agentic AI services using LangChain, L
 |---|------|----------|
 | 1 | State typing | Always `TypedDict`; never `dict[str, Any]` |
 | 2 | Message lists | `Annotated[list[BaseMessage], add_messages]` |
-| 3 | Loop protection | Explicit `recursion_limit` from settings on every run (library default is 10000); `GraphRecursionError` → typed `ITERATION_LIMIT`; call-limit middleware with `exit_behavior="error"` |
+| 3 | Loop protection | Explicit `recursion_limit` from settings on every run (LangGraph 1.2.x default is 10007; never rely on it); `GraphRecursionError` → typed `ITERATION_LIMIT`; call-limit middleware with `exit_behavior="error"` |
 | 4 | Tool functions | `@tool` + docstring (incl. degradation mode) + `args_schema` bounds; scope via `ToolRuntime`; return typed `ToolResult` (`ok`/`error_code`/`data`); no exception text; no stub tools with synthetic data |
 | 5 | LLM instantiation | `init_chat_model` in one module, model ids from settings; never inline `ChatX()` in nodes |
 | 6 | Sampling | Per provider guidance per model (e.g. Gemini 3.x: keep default temperature); no global "temperature 0" rule; output limit covers reasoning tokens |

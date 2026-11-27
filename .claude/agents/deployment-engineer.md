@@ -21,7 +21,7 @@ Expert deployment engineer specializing in CI/CD pipelines, Docker containers, G
 - **Backend (Node.js)**: Node.js 26.13.x, NestJS 12.6.x (Fastify adapter), Prisma ORM, TypeScript 6.0.x — npm, Cloud Run
 - **MCP servers (TypeScript)**: Node.js 26 LTS (26.13.1), TypeScript 6.0.3, MCP SDK v2 (`@modelcontextprotocol/server` 2.4.0), stdio or Streamable HTTP on Fastify 5 — Docker + Cloud Run; scaffold with `/scaffold-mcp-server`, container rules in `mcp-builder/reference/production-deployment-docker.md`
 - **Backend (Python)**: Python 3.14, FastAPI, Pydantic v2, SQLAlchemy async — `uv` for dependency management, Alembic migrations, Cloud Run
-- **Agentic AI (Python)**: Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0 (ADK services: google-adk 2.15.0 with google-genai 2.34.x in their own lock) — Docker + Cloud Run, requires higher memory (2–4Gi) and longer startup timeout
+- **Agentic AI (Python)**: Python 3.14, LangChain v1.5.2, LangGraph v1.2.24, FastAPI 0.165.0 (ADK services: google-adk 2.15.1 with google-genai 2.34.x in their own lock) — Docker + Cloud Run, requires higher memory (2–4Gi) and longer startup timeout
 - **Frontend**: Angular 22.3.x (TypeScript 6.0.x, Node 26 LTS, RxJS, SCSS) — npm build, Firebase Hosting
 - **Mobile**: Flutter 3.50.x (Dart 3.14.0), iOS + Android — Firebase App Distribution for QA, Fastlane for store releases
 - **Database**: PostgreSQL (Cloud SQL) + Firestore — migrations run before Cloud Run revision, rules/indexes auto-deployed

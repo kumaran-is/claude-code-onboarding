@@ -396,7 +396,7 @@ Validated 2026-11-23 with uv 0.13.9: core FastAPI/SQLAlchemy/asyncpg/OTel set lo
 | Free-threaded build (`3.14t`) | **DEFER** for services; OPTIONAL for an isolated CPU-bound pure-Python job | officially supported but optional (PEP 779). Measured, one noisy dev machine: 4 CPU threads 2.6–3.7 s with the GIL vs 0.9–1.5 s free-threaded. Wheel gaps are real: orjson 3.13.0 and grpcio 1.85.3 publish no `cp314t` wheel (orjson failed to build) |
 | Subinterpreters (`concurrent.interpreters`, `InterpreterPoolExecutor`) | OPTIONAL | stdlib in 3.14 (PEP 734), executed; C extensions must support them: prove each import in a worker interpreter first |
 
-| Separate lock (same interpreter) | REQUIRED for google-adk 2.15 next to google-genai 3.x users | google-adk 2.15.0 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`; langchain-google-genai 4.5.2 requires `google-genai>=3.3.0`: one workspace lock fails (executed, uv 0.13.9); two projects lock fine (`uv-package-manager` playbook section 7) |
+| Separate lock (same interpreter) | REQUIRED for google-adk 2.15 next to google-genai 3.x users | google-adk 2.15.1 requires `google-genai>=2.34,<3` and `websockets>=15.0.1,<16`; langchain-google-genai 4.5.2 requires `google-genai>=3.3.0`: one workspace lock fails (executed, uv 0.13.9); two projects lock fine (`uv-package-manager` playbook section 7) |
 
 Rules:
 - Commit `.python-version` (patch pinned) and match the Docker base tag; `requires-python = ">=3.14"`. uv 0.13 downloads 3.15 when nothing is pinned (executed: a project without `.python-version` or `requires-python` resolved for `>=3.15`).

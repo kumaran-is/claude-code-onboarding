@@ -9,7 +9,7 @@ metadata:
   role: specialist
   scope: evaluation
   output-format: code
-last-reviewed: "2026-11-23"
+last-reviewed: "2026-11-26"
 ---
 
 # ADK Evaluation Guide
@@ -79,7 +79,7 @@ adk eval_set create <agent_path> <eval_set_id>
 adk eval_set add_eval_case <agent_path> <eval_set_id> --scenarios_file <path> --session_input_file <path>
 ```
 
-**CLI options** (`adk eval --help`, google-adk 2.15.0): `--config_file_path`, `--print_detailed_results`, `--eval_storage_uri`, `--num_runs`, `--parallelism`, `--log_level`. Since 2.13 `adk eval` exits 1 when any case fails or no results were produced (1.29 exited 0), so a CI step can gate on its exit code. `adk eval_set` also has `generate_eval_cases`.
+**CLI options** (`adk eval --help`, executed google-adk 2.15.0; install pin `2.15.1`, CLI re-check **NOT TESTED**): `--config_file_path`, `--print_detailed_results`, `--eval_storage_uri`, `--num_runs`, `--parallelism`, `--log_level`. Since 2.13 `adk eval` exits 1 when any case fails or no results were produced (1.29 exited 0), so a CI step can gate on its exit code. `adk eval_set` also has `generate_eval_cases`.
 
 ---
 

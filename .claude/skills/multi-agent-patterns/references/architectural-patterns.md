@@ -110,7 +110,7 @@ Handoffs are tool calls the model proposes; code executes them. In LangGraph a h
 **Convergence constraints (mandatory):**
 ```python
 class SwarmConfig:
-    max_graph_steps: int = 20            # LangGraph recursion_limit (library default 10000: always set it)
+    max_graph_steps: int = 20            # LangGraph recursion_limit (1.2.x default 10007: always set it)
     max_agent_hops: int = 5              # Handoff cap with a typed HOP_LIMIT status
     time_to_live_seconds: int = 300      # asyncio.timeout around the run
     convergence_check_interval: int = 3  # Check every N hops

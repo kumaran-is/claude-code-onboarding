@@ -122,7 +122,7 @@ REMOVED (wrong): the old template caught the provider error and appended `AIMess
 |----------|---------------|--------|
 | State typing | `TypedDict` (or `create_agent`'s `AgentState` + `state_schema=`) | Type safety, LangGraph compatibility |
 | Routing | `Command(goto=...)` from code-validated values | Never `goto=` a raw model string (`agentic-templates-advanced.md`) |
-| Step caps | `recursion_limit` + call-limit middleware, both from settings | Default recursion limit is 10000; caps must produce a typed status |
+| Step caps | `recursion_limit` + call-limit middleware, both from settings | LangGraph 1.2.x default is 10007; caps must produce a typed status |
 | Retry | One layer, transient errors only, inside the run deadline | Stacked retries multiply latency and cost |
 | Failover | Same tier, approved equivalent, availability errors only | Silent downgrade to an unevaluated model is a quality incident |
 | Checkpointing | Durable saver entered in lifespan | Crash recovery and HITL; resumed nodes re-run, so keep them idempotent |

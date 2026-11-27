@@ -255,44 +255,42 @@ tot_graph.add_edge("branch_b", "synthesizer")
 tot_graph.add_edge("branch_c", "synthesizer")
 ```
 
-**Google ADK — ParallelAgent + Synthesizer:**
+**Google ADK — Workflow + JoinNode (2.x).** `ParallelAgent`/`SequentialAgent` are deprecated (`google-adk/reference/adk-agent-types.md` §1). **NOT TESTED on 2.15.1.**
 ```python
-from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
+from google.adk.agents import LlmAgent
+from google.adk.workflow import JoinNode, Workflow
 
 branch_a = LlmAgent(
     name="microservices_explorer",
     model=settings.agent_model,
-    instruction="Explore the microservices approach for the given problem. Analyze pros, cons, complexity, and fit."
+    instruction="Explore the microservices approach for the given problem. Analyze pros, cons, complexity, and fit.",
 )
-
 branch_b = LlmAgent(
     name="monolith_explorer",
     model=settings.agent_model,
-    instruction="Explore the modular monolith approach. Analyze pros, cons, complexity, and fit."
+    instruction="Explore the modular monolith approach. Analyze pros, cons, complexity, and fit.",
 )
-
 branch_c = LlmAgent(
     name="serverless_explorer",
     model=settings.agent_model,
-    instruction="Explore the serverless approach. Analyze pros, cons, complexity, and fit."
+    instruction="Explore the serverless approach. Analyze pros, cons, complexity, and fit.",
 )
-
-parallel_explorer = ParallelAgent(
-    name="parallel_explorer",
-    sub_agents=[branch_a, branch_b, branch_c]
-)
-
+gather = JoinNode(name="gather")
 synthesizer = LlmAgent(
     name="synthesizer",
     model=settings.reasoning_model,  # a stronger configured model for synthesis
-    instruction="""Review the three architectural explorations from the parallel agents.
+    instruction="""Review the three architectural explorations from the joined nodes.
 Select the best approach based on the original problem requirements.
-Output: Decision (which approach), Rationale (3 bullet points), Risk Mitigation (top 2 risks)."""
+Output: Decision (which approach), Rationale (3 bullet points), Risk Mitigation (top 2 risks).""",
 )
-
-tot_pipeline = SequentialAgent(
+tot_pipeline = Workflow(
     name="tot_pipeline",
-    sub_agents=[parallel_explorer, synthesizer]
+    edges=[
+        ("START", branch_a, gather),
+        ("START", branch_b, gather),
+        ("START", branch_c, gather),
+        (gather, synthesizer),
+    ],
 )
 ```
 

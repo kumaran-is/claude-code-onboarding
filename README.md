@@ -12,7 +12,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.165.x-009688?style=flat&logo=fastapi&logoColor=white)
 ![LangChain](https://img.shields.io/badge/LangChain-1.5.2-1C3C3C?style=flat&logo=langchain&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.2.24-1C3C3C?style=flat)
-![Google ADK](https://img.shields.io/badge/Google%20ADK-2.15.0-4285F4?style=flat&logo=google&logoColor=white)
+![Google ADK](https://img.shields.io/badge/Google%20ADK-2.15.1-4285F4?style=flat&logo=google&logoColor=white)
 ![Angular](https://img.shields.io/badge/Angular-22.3.x-DD0031?style=flat&logo=angular&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.3-61DAFB?style=flat&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0.x-3178C6?style=flat&logo=typescript&logoColor=white)
@@ -32,7 +32,7 @@ This is a pre-configured Claude Code toolkit: skills, agents, slash commands, ho
 | Layer | Technologies |
 |---|---|
 | **Backend** | Java 25 LTS, Spring Boot 4.2.x (Spring Framework 7.1; MVC default, WebFlux when justified), Node.js 26.13.x, NestJS 12.6.x, Fastify, Prisma 7, Python 3.14, FastAPI 0.165.x, TypeScript 6.0.x |
-| **Agentic AI** | LangChain 1.5.2, LangGraph 1.2.24, Google ADK 2.15.0, FastAPI 0.165.0 |
+| **Agentic AI** | LangChain 1.5.2, LangGraph 1.2.24, Google ADK 2.15.1, FastAPI 0.165.0 |
 | **Frontend** | Angular 22.3.x, TypeScript 6.0.x, Tailwind CSS 4.3.5, React 19.3 + Vite 8 (optional), A2UI 1.0 |
 | **Mobile** | Flutter 3.50.x, Dart 3.14.0 |
 | **Data & infra** | PostgreSQL 18 + pgvector 0.8, Weaviate, Firebase, Docker |

@@ -64,6 +64,8 @@ class ModelMetricsMiddleware(AgentMiddleware[Any, Any]):
 
 Executed with `create_agent` and a scripted message carrying `usage_metadata` (100 in / 40 out / 30 reasoning / 60 cache-read): all four series and the duration count matched; `ruff` and `mypy --strict` clean. Exception class names are a bounded label set; never use `str(exc)` as a label. Add it before retry/fallback middleware to count each attempt, after them to count each logical call; name the choice in the metric help text.
 
+Local callback/`stream_mode="messages"` instrumentation (langchain 1.5.2 / langgraph 1.2.24, `BaseCallbackHandler` recording `chain_start`/`chain_end`, JSON SSE `content` then one `done`) is **not** LangSmith and **not** a live-provider trace. Set `LANGSMITH_TRACING` only in the deployment environment; an unreachable LangSmith backend must not fail the request. This session did not call LangSmith.
+
 Other counters to emit (names and labels per `ai-observability.md` §4): tool calls by tool + outcome code, retries, failovers (from → to model label), cap hits (`ITERATION_LIMIT`, `TIMEOUT`, `BUDGET_EXHAUSTED`), guardrail blocks by code, cache hits by tier, HITL approvals pending/expired. **Time to first token** for streaming routes: measure in the SSE generator from request start to the first `content` event.
 
 ## Logs

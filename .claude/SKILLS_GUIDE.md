@@ -18,7 +18,7 @@
 | NestJS | `.claude/skills/nestjs-api/` | `nestjs-api` | `/scaffold-nestjs-api` |
 | MCP servers (TypeScript, SDK v2, Node 26 LTS) | `.claude/skills/mcp-builder/` | — | `/scaffold-mcp-server` |
 | Python / FastAPI | `.claude/skills/python-dev/` | `python-dev` | `/scaffold-python-api` |
-| Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
+| Agentic AI (framework-neutral core + LangChain/LangGraph; inference, tools, memory) | `.claude/skills/agentic-ai-dev/` (`reference/agentic-architecture-choice.md`, `llm-inference-and-model-routing.md`, `tool-execution-safety.md`, `agentic-memory-systems.md`) | `agentic-ai-dev` | `/scaffold-agentic-ai` |
 | Google ADK (optional extension) | `.claude/skills/google-adk/` | `google-adk` | `/scaffold-google-adk` |
 | Angular (UI mode `daisyui` default, `spartan`, `hybrid`: `angular-spa/reference/ui-mode-selection.md`; official `daisyui` and `spartan` skills by mode; official Angular team skill `angular-developer`, with `angular-new-app` as reference only) | `.claude/skills/angular-spa/` | `angular-spa` | `/scaffold-angular-app [--ui=…]` |
 | React (web SPA; Tailwind CSS v4 + shadcn/ui on Base UI, official `shadcn` skill vendored; full-stack choice in `/scaffold-react-app`; not React Native) | `.claude/skills/react-spa/` (`reference/tailwind-shadcn.md`), `.claude/skills/shadcn/` | `react-spa` | `/scaffold-react-app` |

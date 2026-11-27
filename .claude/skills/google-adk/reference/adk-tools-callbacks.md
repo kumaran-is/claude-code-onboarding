@@ -17,7 +17,7 @@ Executed with `google-adk==1.29.0` and re-checked on `2.15.0` with a scripted fa
 | `after_tool_callback` | `(tool, args, tool_context, tool_response)` | `dict` replaces the result |
 | `on_tool_error_callback` | `(tool, args, tool_context, error)` | `dict` recovers; `None` re-raises |
 
-- **Model callbacks exist only on `LlmAgent`.** `SequentialAgent(before_model_callback=...)` fails validation (`extra_forbidden`, executed), so screen input for orchestrator pipelines in the route before `run_async`.
+- **Model callbacks exist only on `LlmAgent`.** Deprecated orchestrators reject them (`SequentialAgent(before_model_callback=...)` → `extra_forbidden`, executed). Screen input for a `Workflow` in the FastAPI route or a FunctionNode before the first model node.
 - **Session id:** `callback_context.session.id` / `tool_context.session.id` (there is no `session_id` attribute).
 - **Assert wiring in a test** (`agent.before_model_callback is guard_input`), not in a docstring (`adk-testing.md` §4).
 

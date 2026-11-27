@@ -1,6 +1,6 @@
 # ADK FastAPI Integration
 
-Verified against `google-adk==1.29.0` + FastAPI with a scripted fake model (no live Gemini call); session ownership, SSE partial + aggregated events and cancellation re-checked on `google-adk==2.15.0` (fixture model, not live): the module below and the tests in `adk-testing.md` §5 pass (`pytest`: 6 passed), `ruff` and `mypy --strict` (pydantic plugin) are clean. Generic FastAPI rules (auth dependency, error envelope, request id) live in `python-dev/reference/fastapi-auth-security.md`, `fastapi-authorization-boundaries.md` and `fastapi-error-handling.md` — this file covers only what ADK adds.
+Verified against `google-adk==1.29.0` + FastAPI with a scripted fake model (no live Gemini call); session ownership, SSE partial + aggregated events, cancellation, and sqlite `DatabaseSessionService` re-checked on `google-adk==2.15.0` (fixture model). **2.15.1:** the four §9 assertions re-ran with `InMemorySessionService` + `httpx2` ASGI (`ASGITransport`) — not the sqlite lifespan fixture printed below. Cancellation and live Gemini: not re-run on 2.15.1. Generic FastAPI rules live in `python-dev/reference/fastapi-auth-security.md`, `fastapi-authorization-boundaries.md` and `fastapi-error-handling.md` — this file covers only what ADK adds.
 
 ## 1. Project structure
 
@@ -222,7 +222,7 @@ async def stream(body: ChatRequest, request: Request, principal: PrincipalDep) -
     return StreamingResponse(events(), media_type="text/event-stream")
 ```
 
-`CancelledError` (client disconnect) is not an `Exception`, so it propagates and cancels the agent run. Executed on google-adk 1.29.0 and 2.15.0 with a slow fake `BaseLlm`: both `asyncio.Task.cancel()` and an anyio cancel scope (what Starlette uses on disconnect) cancelled the in-flight model call (completed=0, cancelled=1). LangGraph differs: see `agentic-ai-dev/reference/agentic-streaming-hitl.md`. Re-check after an ADK upgrade. Never retry a stream after the first byte; the client re-requests. Partial-event behaviour against a live Gemini endpoint was not executed here (fake model reproduces the documented partial + aggregated shape).
+This SSE route is for an in-process `LlmAgent` root (`event.partial` from `StreamingMode.SSE`). It does not stream a `RemoteA2aAgent` root — `adk-agent-handoff.md` §1. `CancelledError` (client disconnect) is not an `Exception`, so it propagates and cancels the agent run. Executed on google-adk 1.29.0 and 2.15.0 with a slow fake `BaseLlm`: both `asyncio.Task.cancel()` and an anyio cancel scope (what Starlette uses on disconnect) cancelled the in-flight model call (completed=0, cancelled=1). LangGraph differs: see `agentic-ai-dev/reference/agentic-streaming-hitl.md`. Re-check after an ADK upgrade. Never retry a stream after the first byte; the client re-requests. Partial-event behaviour against a live Gemini endpoint was not executed here (fake model reproduces the documented partial + aggregated shape).
 
 2.x additions (executed on 2.15.0, fixture model): `runner.run_async(..., abort_signal=event)` takes an `asyncio.Event`; setting it stops the run between steps, so a route can stop a run without cancelling the task. A model error now first yields an `Event(error_code=...)` (e.g. `"ServerError"`) and then raises: decide retries from the raised exception and from whether a tool already ran, not from "no events were produced". A tool exception with no `on_tool_error_callback` propagates out of `run_async`; map it to a typed status at the route.
 
@@ -236,3 +236,54 @@ Pass `memory_service=` to `Runner` and prefer the `load_memory` tool. Read `adk-
 - [ ] Every `run_async` inside `asyncio.timeout` with `RunConfig(max_llm_calls=...)`
 - [ ] Each failure class has a typed status and a metric; the client always gets a terminal answer
 - [ ] `user_id` from the principal; session ids minted server-side or ownership-checked
+
+## 9. Contract tests (scripted model)
+
+2.15.1 re-run used `InMemorySessionService` (not this sqlite `SESSION_DB_URL` fixture). Sqlite `DatabaseSessionService`: last executed 2.15.0.
+
+```python
+import json
+import pytest
+from google.genai import errors
+from httpx2 import ASGITransport, AsyncClient
+from src import main
+from src.api import routes
+from tests.fakellm import ScriptedLlm
+
+@pytest.fixture
+async def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "fake-model")
+    monkeypatch.setenv("SESSION_DB_URL", f"sqlite+aiosqlite:///{tmp_path}/sessions.db")
+    current = {"p": routes.Principal(user_id="alice", org_id="org-a")}
+    main.app.dependency_overrides[routes.get_principal] = lambda: current["p"]
+    async with main.lifespan(main.app):
+        async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as c:
+            c.as_user = lambda p: current.update(p=p)
+            yield c
+    main.app.dependency_overrides.clear()
+
+async def test_foreign_session_is_404(client):
+    ScriptedLlm.script = ["x"]
+    sid = (await client.post("/api/chat", json={"message": "hi"})).json()["session_id"]
+    client.as_user(routes.Principal(user_id="mallory", org_id="org-m"))
+    assert (await client.post("/api/chat", json={"message": "hi", "session_id": sid})).status_code == 404
+
+async def test_model_error_maps_to_typed_status_without_text(client):
+    ScriptedLlm.script = [errors.ServerError(503, {"error": {"message": "secret-detail-123"}})]
+    r = await client.post("/api/chat", json={"message": "hi"})
+    assert r.json()["status"] == "MODEL_UNAVAILABLE" and "secret-detail-123" not in r.text
+
+async def test_stream_partials_only_one_terminal_event(client):
+    ScriptedLlm.script = ["alpha beta"]
+    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
+        lines = [ln async for ln in r.aiter_lines() if ln]
+    events = [ln.split(": ", 1)[1] for ln in lines if ln.startswith("event: ")]
+    texts = [json.loads(ln.split(": ", 1)[1]).get("text", "") for ln in lines if ln.startswith("data: ")]
+    assert events == ["content", "content", "done"] and "".join(texts) == "alpha beta "
+
+async def test_stream_error_is_opaque_and_terminal(client):
+    ScriptedLlm.script = [RuntimeError("db password=hunter2")]
+    async with client.stream("POST", "/api/stream", json={"message": "hi"}) as r:
+        text = "".join([ln async for ln in r.aiter_lines()])
+    assert "event: error" in text and "event: done" not in text and "hunter2" not in text
+```

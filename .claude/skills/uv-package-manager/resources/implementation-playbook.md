@@ -60,7 +60,7 @@ uv run pytest
 
 Resolver facts worth knowing:
 - uv ignores the **upper** bound of a dependency's `Requires-Python`: presidio-analyzer 2.2.366 declares `<3.15` yet locked on 3.15 (executed). The upper bound will not protect you; your own `requires-python` and CI interpreter must.
-- Conflicting pins surface as a readable derivation (executed: google-adk 2.15.0 requires `google-genai>=2.34,<3`, so pinning google-genai 3.6.1 next to it is unsatisfiable). Do not "fix" with overrides; choose versions that resolve.
+- Conflicting pins surface as a readable derivation (executed: google-adk 2.15.1 requires `google-genai>=2.34,<3`, so pinning google-genai 3.6.1 next to it is unsatisfiable). Do not "fix" with overrides; choose versions that resolve.
 
 ## 5. Python versions
 
@@ -148,7 +148,7 @@ Executed: own `uv.lock` created next to its `pyproject.toml`, `lock --check` 0, 
 The same split applies on ONE interpreter when two services need incompatible versions of a dependency: a workspace has one lock, so one version of each package. Executed with uv 0.13.9 on 3.14.10, two members of one workspace:
 
 ```
-adk-svc: google-adk==2.15.0          lc-svc: langchain-google-genai==4.5.2
+adk-svc: google-adk==2.15.1          lc-svc: langchain-google-genai==4.5.2
 uv lock → exit 1: "Because langchain-google-genai>=4.5.2 depends on google-genai>=3.3.0 and
   google-adk>=2.15.0 depends on google-genai>=2.34,<3, ... adk-svc and lc-svc are incompatible."
 ```

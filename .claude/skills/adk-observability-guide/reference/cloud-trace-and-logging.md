@@ -25,7 +25,7 @@ invoke_workflow <root>
         └── generate_content <model>
 ```
 
-Captured on `google-adk==2.15.0` with an in-memory exporter (fixture model, not live). Since 2.13 the default is the OTel GenAI semantic conventions 1.44 schema: the old `call_llm` span is gone, so dashboards and alerts keyed on it go silent after the upgrade. `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores the legacy schema temporarily; migrate queries instead.
+Captured on `google-adk==2.15.0` with an in-memory exporter (fixture model, not live). **2.15.1 re-run: NOT TESTED.** Since 2.13 the default is the OTel GenAI semantic conventions 1.44 schema: the old `call_llm` span is gone, so dashboards and alerts keyed on it go silent after the upgrade. `ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36` restores the legacy schema temporarily; migrate queries instead.
 
 No additional configuration required. Works in local dev (`make playground`) and all deployed environments.
 

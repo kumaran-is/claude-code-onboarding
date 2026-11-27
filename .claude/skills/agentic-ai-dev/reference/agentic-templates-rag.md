@@ -4,59 +4,94 @@ Six production-ready RAG patterns from simple to advanced, plus document ingesti
 
 ## Pattern 1: Standard RAG
 
-Baseline retrieval-augmented generation with embeddings, vector store, and optional reranking.
+Baseline retrieve → **code evidence gate** → generate. Empty retrieval is `INSUFFICIENT_EVIDENCE` and **must not call the model**. A prompt that says "I don't have enough information" is not the gate (`tool-execution-safety.md`).
+
+Executed (langchain 1.5.2 / langgraph 1.2.24, scripted model that always answers `"42"`): empty retriever → `INSUFFICIENT_EVIDENCE`, `answer=""`, model call count 0; one in-scope doc → `OK` and the model ran once. Tenant isolation is **not** a LangChain primitive: `org_id` is required on state (from the verified principal, never the model), the retriever must filter by that id, and `retrieve` drops any doc whose `metadata.acl` is missing or does not match (executed: untagged doc → `INSUFFICIENT_EVIDENCE`, model not called).
 
 ```python
 from __future__ import annotations
 
-from langchain_core.messages import AIMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from typing import Any, Literal, Protocol, TypedDict
+
+from langgraph.graph import END, START, StateGraph
 
 from ...core.logging import get_logger
 
 logger = get_logger(__name__)
 
-RAG_PROMPT = """Answer the question based ONLY on the following context.
-If the context doesn't contain enough information, say "I don't have enough information."
-
-Context:
-{context}
-
-Question: {question}
-"""
+RAGStatus = Literal["OK", "INSUFFICIENT_EVIDENCE"]
 
 
-def build_standard_rag(llm, retriever, reranker=None):
-    """Build a standard RAG chain.
+class StandardRAGState(TypedDict):
+    query: str
+    org_id: str
+    docs: list[str]
+    doc_ids: list[str]
+    status: RAGStatus
+    answer: str
 
-    Args:
-        llm: Chat model for generation.
-        retriever: Vector store retriever.
-        reranker: Optional reranker for result quality.
-    """
 
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+class Retriever(Protocol):
+    def invoke(self, query: str, *, org_id: str) -> list[Any]: ...
 
-    def retrieve_and_rerank(query: str):
-        docs = retriever.invoke(query)
+
+def evidence_status(docs: list[str]) -> RAGStatus:
+    """Deterministic gate: model text cannot override this."""
+    return "OK" if any(d.strip() for d in docs) else "INSUFFICIENT_EVIDENCE"
+
+
+def build_standard_rag(llm, retriever: Retriever, reranker=None):
+    """Retrieve → gate → generate. The LLM never sees an empty context."""
+
+    def retrieve(state: StandardRAGState) -> dict[str, Any]:
+        org_id = state.get("org_id") or ""
+        if not org_id:
+            raise PermissionError("org_id required")
+        docs = retriever.invoke(state["query"], org_id=org_id)
         if reranker:
-            docs = reranker.compress_documents(docs, query)
-        logger.info("rag_retrieved", doc_count=len(docs), query=query[:100])
-        return docs
+            docs = reranker.compress_documents(docs, state["query"])
+        contents: list[str] = []
+        doc_ids: list[str] = []
+        for d in docs:
+            meta = getattr(d, "metadata", None) or {}
+            if meta.get("acl") != org_id:
+                continue
+            contents.append(d.page_content if hasattr(d, "page_content") else str(d))
+            if meta.get("id"):
+                doc_ids.append(str(meta["id"]))
+        status = evidence_status(contents)
+        logger.info("rag_retrieved", doc_count=len(contents), status=status)
+        update: dict[str, Any] = {"docs": contents, "doc_ids": doc_ids, "status": status}
+        if status != "OK":
+            update["answer"] = ""
+        return update
 
-    prompt = ChatPromptTemplate.from_template(RAG_PROMPT)
+    def generate(state: StandardRAGState) -> dict[str, Any]:
+        if evidence_status(state["docs"]) != "OK":
+            return {"status": "INSUFFICIENT_EVIDENCE", "answer": ""}
+        context = "\n\n".join(state["docs"])
+        msg = llm.invoke(
+            [
+                {
+                    "role": "system",
+                    "content": "Answer using ONLY the context. Do not invent facts.",
+                },
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {state['query']}"},
+            ]
+        )
+        text = msg.content if hasattr(msg, "content") else str(msg)
+        return {"answer": text, "status": "OK"}
 
-    chain = (
-        {"context": retrieve_and_rerank | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    def after_retrieve(state: StandardRAGState):
+        return "generate" if state["status"] == "OK" else END
 
-    return chain
+    g = StateGraph(StandardRAGState)
+    g.add_node("retrieve", retrieve)
+    g.add_node("generate", generate)
+    g.add_edge(START, "retrieve")
+    g.add_conditional_edges("retrieve", after_retrieve, ["generate", END])
+    g.add_edge("generate", END)
+    return g.compile()
 ```
 
 ## Pattern 2: Agentic RAG
@@ -103,7 +138,7 @@ def build_agentic_rag(llm, retriever, web_search_tool, checkpointer=None):
             {"role": "system", "content": "Route this query to 'vectorstore' for domain knowledge or 'web_search' for current events."},
             {"role": "user", "content": query},
         ])
-        logger.info("rag_route", source=decision.source, query=query[:100])
+        logger.info("rag_route", source=decision.source, query_len=len(query))
         return {"query": query}
 
     async def retrieve_node(state: RAGState) -> dict:
@@ -132,19 +167,25 @@ def build_agentic_rag(llm, retriever, web_search_tool, checkpointer=None):
         return {"documents": [*state["documents"], *web_docs]}
 
     async def generate_node(state: RAGState) -> dict:
-        """Generate answer from graded documents."""
-        context = "\n\n".join(doc["content"] for doc in state["documents"])
+        """Generate only when documents exist. Untrusted context is user content, not system."""
+        docs = state.get("documents") or []
+        if not docs:
+            return {"status": "INSUFFICIENT_EVIDENCE", "generation": ""}
+        context = "\n\n".join(doc["content"] for doc in docs)
         response = await llm.ainvoke([
-            {"role": "system", "content": f"Answer based on this context:\n{context}"},
-            {"role": "user", "content": state["query"]},
+            {"role": "system", "content": "Answer using ONLY the user-supplied context. Do not invent facts."},
+            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {state['query']}"},
         ])
-        return {"messages": [response], "generation": response.content}
+        return {"messages": [response], "generation": response.content, "status": "OK"}
 
     def decide_after_grading(state: RAGState) -> Literal["generate", "web_search"]:
         """If no relevant docs found, fall back to web search."""
         if not state["documents"]:
             return "web_search"
         return "generate"
+
+    def after_web(state: RAGState) -> Literal["generate", "__end__"]:
+        return "generate" if state.get("documents") else "__end__"
 
     # --- Graph ---
     graph = StateGraph(RAGState)
@@ -158,7 +199,7 @@ def build_agentic_rag(llm, retriever, web_search_tool, checkpointer=None):
     graph.add_edge("route", "retrieve")
     graph.add_edge("retrieve", "grade")
     graph.add_conditional_edges("grade", decide_after_grading)
-    graph.add_edge("web_search", "generate")
+    graph.add_conditional_edges("web_search", after_web, ["generate", END])
     graph.add_edge("generate", END)
 
     return graph.compile(checkpointer=checkpointer)
@@ -204,7 +245,7 @@ def build_self_rag(llm, retriever, checkpointer=None):
 
     def hallucination_router(state: RAGState) -> str:
         if not state["is_grounded"]:
-            logger.warning("hallucination_detected", query=state["query"][:100])
+            logger.warning("hallucination_detected", query_len=len(state["query"]))
             return "retrieve"  # Re-retrieve and regenerate
         return "check_answer"
 
@@ -256,7 +297,7 @@ Query decomposition + parallel retrieval for complex questions.
 ```python
 class QueryDecomposition(BaseModel):
     """Decompose a complex query into sub-queries."""
-    sub_queries: list[str] = Field(description="List of simpler sub-queries")
+    sub_queries: list[str] = Field(min_length=1, max_length=4, description="2–4 simpler sub-queries")
 
 
 async def multi_step_retrieve(query: str, llm, retriever) -> list:
@@ -287,6 +328,10 @@ async def multi_step_retrieve(query: str, llm, retriever) -> list:
     logger.info("multi_step_retrieved", sub_queries=len(decomposition.sub_queries), total_docs=len(merged))
     return merged
 ```
+
+`asyncio.gather` here is cheap read-only retrieval inside one node (schema already caps width). Use `Send` when each sub-query is an expensive/resumable model call (`agentic-templates-advanced.md` Pattern 7). Empty `merged` must not reach the generator as success: typed `INSUFFICIENT_EVIDENCE` regardless of model text (`tool-execution-safety.md` evidence gate; Pattern 1 implements this in `retrieve` before `generate`).
+
+Production controls this file does not duplicate: hybrid/keyword+vector search, metadata/ACL filters, tenant isolation, citations and grounding, corrective RAG — `rag-architect` and `vector-database`.
 
 ## Document Ingestion Pipeline
 

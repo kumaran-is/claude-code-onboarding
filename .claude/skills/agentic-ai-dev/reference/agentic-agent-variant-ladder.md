@@ -31,8 +31,11 @@ Each variant:
 ### Implementation Pattern
 
 ```python
+from google.adk import Workflow
+from google.adk.agents import LlmAgent
+
 # planner/agent.py — base tier
-def get_agent() -> Agent:
+def get_agent():
     return LlmAgent(
         name="planner",
         model=MODEL,
@@ -43,15 +46,12 @@ def get_agent() -> Agent:
 # planner_with_eval/agent.py — adds eval gating
 from agents.planner.agent import get_agent as get_base_agent
 
-def get_agent() -> Agent:
+def get_agent():
     base = get_base_agent()
-    return SequentialAgent(
+    return Workflow(
         name="planner_with_eval",
-        sub_agents=[
-            base,
-            LlmAgent(name="eval_judge", instruction=EVAL_JUDGE_INSTRUCTIONS, ...),
-        ]
-    )
+        edges=[("START", base, LlmAgent(name="eval_judge", instruction=EVAL_JUDGE_INSTRUCTIONS, ...))],
+    )  # SequentialAgent is deprecated in google-adk 2.x (adk-agent-types.md)
 
 # planner_with_memory/agent.py — adds AlloyDB persistence
 from agents.planner_with_eval.agent import get_agent as get_base_agent

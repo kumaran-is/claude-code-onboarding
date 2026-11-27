@@ -10,7 +10,7 @@ name = "my-adk-service"
 version = "0.1.0"
 requires-python = ">=3.14"          # interpreter patch pinned in .python-version (3.14.10) and the Docker base
 dependencies = [
-    "google-adk[db,mcp,otel]==2.15.0", # mcp extra: McpToolset; db: DatabaseSessionService; otel: tracing
+    "google-adk[db,mcp,otel]==2.15.1", # mcp extra: McpToolset; db: DatabaseSessionService; otel: tracing
     "google-genai==2.34.0",           # google-adk 2.15 requires google-genai>=2.34,<3
     "fastapi[standard-no-fastapi-cloud-cli]==0.165.0",  # what google-adk 2.15 resolves; no fastapi-cloud-cli deps
     "uvicorn[standard]==<pin>",
@@ -44,7 +44,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 ```
 
-Pin `google-genai` to the 2.x line ADK accepts: `google-adk==2.15.0` declares `google-genai>=2.34,<3` and `websockets>=15.0.1,<16` in its PyPI `requires_dist` (uv resolves websockets 15.0.1; a project-wide websockets 17 pin conflicts), so a service that also wants genai 3.x for direct Gemini calls must run that code in a separate environment (`uv lock` is unsatisfiable otherwise, executed). Fill `<pin>` with the versions `uv lock` resolves and you have tested (2.15.0 resolved fastapi 0.165.0, starlette 1.10.0, pydantic 2.14.4, opentelemetry 1.45.2 on Python 3.14.10). Verify `uv sync --locked` on your target Python before adopting a new interpreter. Supply-chain gates (lock check, audit): `deployment-ci-cd/reference/python-ci-supply-chain.md`.
+Pin `google-genai` to the 2.x line ADK accepts: `google-adk==2.15.1` declares `google-genai>=2.34,<3` and `websockets>=15.0.1,<16` in its PyPI `requires_dist` (uv resolves websockets 15.0.1; a project-wide websockets 17 pin conflicts), so a service that also wants genai 3.x for direct Gemini calls must run that code in a separate environment (`uv lock` is unsatisfiable otherwise, executed). Fill `<pin>` with the versions `uv lock` resolves and you have tested (2.15.0 resolved fastapi 0.165.0, starlette 1.10.0, pydantic 2.14.4, opentelemetry 1.45.2 on Python 3.14.10). Verify `uv sync --locked` on your target Python before adopting a new interpreter. Supply-chain gates (lock check, audit): `deployment-ci-cd/reference/python-ci-supply-chain.md`.
 
 ## 2. Environment and auth per environment
 
@@ -112,6 +112,7 @@ my-adk-service/
 |   +-- config.py
 |   +-- main.py               # FastAPI lifespan: session service + Runner once
 |   +-- agents/               # Agent definitions (model from settings)
+|   +-- workflows/            # Workflow graphs (edges, JoinNode, nested) — adk-agent-types.md
 |   +-- tools/                # Tool functions (typed result envelope)
 |   +-- api/routes.py
 +-- tests/

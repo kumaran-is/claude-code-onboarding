@@ -78,7 +78,7 @@ Before making architecture decisions, consult these sources:
 
 **Load order for new system design:**
 1. `context-discovery.md` — classify the project (MVP / SaaS / Enterprise)
-2. `polyglot-monorepo` skill — if more than one package or an existing workspace host; run `discover_monorepo.py --root`
+2. `polyglot-monorepo` skill — if more than one package or an existing workspace host; run `discover_monorepo.py --root`; recommend one MONO-ARCH-001 mode; do not add Nx before human approval
 3. `pattern-selection.md` — choose the right pattern for the complexity
 4. `architecture-templates.md` — generate diagrams and deployment topology
 5. `implementation-patterns.md` — if Clean Arch or Hexagonal is chosen

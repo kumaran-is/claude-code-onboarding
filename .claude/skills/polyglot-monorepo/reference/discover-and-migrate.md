@@ -37,6 +37,19 @@ Details: `flutter-mobile/reference/flutter-build-and-workspace.md`.
 3. Scaffold with `--skip-install` (Angular) or skip nested `npm install` (MCP). `npm install` at the **host**, then `npm ci -w <name>` if you need a workspace-scoped install. One `package-lock.json`. Do not commit a nested lockfile.
 4. Root scripts that test only one app are not “affected”; add a path-filtered script or run the workspace that changed. Nx is not required for five npm members.
 
+## Four-mode adoption
+
+`Discover → Recommend mode → Map edges → Human approval → Scaffold or migrate → Graph/affected/cache tests`.
+
+| Mode | Greenfield | Migration |
+|------|------------|-----------|
+| native-only | Language scaffolds + optional Makefile | Do not add Nx |
+| melos-only | Dart workspace + Melos 8.x on root pubspec | Add Melos scripts; no `melos.yaml` |
+| nx-only | After approval: `CC_NX_INIT=1 npx nx init` around existing npm/Gradle/uv | Additive; keep lockfiles; explicit Python/Java edges |
+| nx-plus-melos | After approval: Nx for non-Flutter + one `flutter-workspace` bridge | Same; Melos remains the Dart owner; `audit_monorepo_graph.py` must PASS |
+
+Rollback: native commands stay valid; delete `nx.json` / the bridge project independently. Git `base` from `detected.git_baseline`.
+
 ## Greenfield mixed repo (no Nx)
 
 ```

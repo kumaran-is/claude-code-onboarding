@@ -6,15 +6,17 @@ Official: [Nx AI setup](https://nx.dev/docs/getting-started/ai-setup) · [Nx MCP
 
 ## When Nx is justified
 
-All of:
+Mode must be **nx-only** or **nx-plus-melos** after human approval (MONO-ARCH-001). All of:
 
 1. Human approved (hook requires `CC_NX_INIT=1` for `nx init` / `create-nx-workspace`).
-2. JS/TS is the bottleneck: many npm workspace members **and** measured CI cost for unaffected projects.
-3. Flutter stays on Dart workspaces + Melos (Nx Flutter plugins are community; `@nxrocks/nx-flutter` is not Nx-23-safe).
-4. Python stays on uv. Nx may wrap `uv run pytest` via `project.json`; it does not replace `uv.lock`.
-5. Cross-language edges (OpenAPI → generated TS, Alembic → services) get **explicit** `implicitDependencies` or stay as snapshot gates.
+2. Enough projects that affected+cache is a measured CI cost (JS-heavy, Java multi-module, or Flutter plus substantial other stacks).
+3. Flutter stays on Dart workspaces + Melos. In NX + MELOS, represent Flutter as **one** Nx bridge project that delegates to Melos — not one Nx project per Dart package. Nx Flutter plugins are community.
+4. Python stays on uv. Nx may wrap `uv run pytest` via `project.json`; it does not replace `uv.lock`. Do not assume JS import inference. Explicit `implicitDependencies` or a plugin whose graph you inspected (`@nxlv/python` is community).
+5. Java: prefer `@nx/gradle` (Java ≥ 17, Gradle ≥ 8). Keep Maven if already used; confirm `@nx/maven` before adoption. Cross-language contracts still need hand-written edges.
+6. Cross-language edges (OpenAPI / Protobuf / generated clients) get **explicit** `implicitDependencies` **and** task `inputs` (Nx 24 is task-based). Snapshot CI still runs.
+7. `defaultBase` matches `discover_monorepo.py` `git_baseline` — never copy `main` from a tutorial.
 
-Otherwise: npm workspaces + Makefile.
+Otherwise: native-only or melos-only. After Nx exists, `audit_monorepo_graph.py --expect` must PASS before affected-only CI.
 
 ## Cache: never hit on these outputs
 
@@ -28,7 +30,9 @@ Nx restores outputs on a cache hit. That is wrong for:
 | Docker images / Cloud Run digests | Digest promotion; env-specific |
 | Gate results that depend on running containers | Content hash of source ≠ runtime |
 
-Set `cache: false` on those targets, or do not model them in Nx. Prefer the repo’s content-addressed gate cache if it already exists.
+**Never cache** `deploy`, `migrate`, `release`, `docker-push` (set `cache: false`; omission is a fail). Generated/codegen/OpenAPI/`build_runner` start at `cache: false`. Set `cache: false` on those targets, or do not model them in Nx. Prefer the repo’s content-addressed gate cache if it already exists.
+
+`npx nx configure-ai-agents` must not run on this kit and must not overwrite `CLAUDE.md`, `AGENTS.md`, or `.mcp.json` here.
 
 ## MCP — kit vs product
 

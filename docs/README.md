@@ -15,7 +15,8 @@ Guides moved out of the public README. Start with the [README](../README.md), th
 | [iOS App Store release](mobile/ios-app-store-release.md) | ASC skills and XcodeBuildMCP |
 | [Android Google Play release](mobile/android-google-play-release.md) | GPD skills and AAB upload |
 | [Notes](articles.md) | Author write-ups |
+| [Nx + Melos polyglot architecture (MONO-ARCH-001)](Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md) | Four modes, Flutter bridge, graph/affected/cache rules |
 
-Skill, agent, and command catalog: [`.claude/SKILLS_GUIDE.md`](../.claude/SKILLS_GUIDE.md). Polyglot workspace choice (Melos, uv, npm, optional Nx): [README — Polyglot monorepo](../README.md#polyglot-monorepo-melos-uv-npm-optional-nx) and [`.claude/skills/polyglot-monorepo/SKILL.md`](../.claude/skills/polyglot-monorepo/SKILL.md).
+Skill, agent, and command catalog: [`.claude/SKILLS_GUIDE.md`](../.claude/SKILLS_GUIDE.md). Polyglot modes (native-only / Melos-only / Nx-only / Nx + Melos): [MONO-ARCH-001](Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md), [README — Polyglot monorepo](../README.md#polyglot-monorepo-native-only-melos-only-nx-only-nx--melos) and [`.claude/skills/polyglot-monorepo/SKILL.md`](../.claude/skills/polyglot-monorepo/SKILL.md).
 
 Existing design-system verification notes stay in [`plans/`](plans/).

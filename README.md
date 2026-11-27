@@ -179,27 +179,27 @@ Default `/next` is human-in-the-loop. **`/next --auto` is experimental** — opt
 
 Catalog and stack routing: [`.claude/SKILLS_GUIDE.md`](.claude/SKILLS_GUIDE.md). Practice prompts: [hands-on exercises](docs/examples/hands-on-exercises.md).
 
-## Polyglot monorepo (Melos, uv, npm, optional Nx)
+## Polyglot monorepo (native-only, Melos-only, Nx-only, Nx + Melos)
 
-Package managers stay **language-native**. A task orchestrator (Makefile, Taskfile, or Nx) is a separate choice. This kit does **not** add Nx by default and does **not** ship Melos or Nx MCP.
+Package managers stay **language-native**. Orchestration is a separate, **approved** choice. Spec: [MONO-ARCH-001](docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md). This kit does **not** add Nx by default and does **not** ship Melos or Nx MCP.
 
-In Claude Code, ask to design the workspace or run `/design-architecture`. Claude should load [`polyglot-monorepo`](.claude/skills/polyglot-monorepo/SKILL.md) and run:
+Ask to design the workspace, run `/new-project` with `monorepo`, or `/design-architecture`. Claude loads [`polyglot-monorepo`](.claude/skills/polyglot-monorepo/SKILL.md), recommends one mode, and **stops for your approval** before `nx init`.
 
 ```bash
 python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --root .
+python3 .claude/skills/polyglot-monorepo/scripts/audit_monorepo_graph.py --root . --expect expect.json
 ```
 
-| You have | Use | Scaffold join |
+| Mode | When | Tools |
 |---|---|---|
-| Flutter / Dart packages | Dart `workspace:` in the root `pubspec.yaml`. Add **Melos 7+** on that same file for scoped test/analyze/`build_runner` and `--include-dependents`. No `melos.yaml`. | `/scaffold-flutter-app` / `/scaffold-flutter-package` |
-| Python services | **uv workspaces** (`[tool.uv.workspace]`, one `uv.lock`). A member with a different Python stays outside with its own lock. | `/scaffold-python-api` / `/scaffold-python-worker` |
-| Angular, Nest, MCP | **npm workspaces**. One root `package-lock.json`. | `/scaffold-angular-app` (case D), `/scaffold-mcp-server` |
-| Compose, gates, release | **Makefile or Taskfile** | — |
-| Many JS/TS projects **and** measured CI cost | **Nx around npm only**, after you say yes. Flutter stays on Melos; Python stays on uv. | `CC_NX_INIT=1 npx nx init` (hooks block unsolicited `nx init`) |
+| **NATIVE ONLY** | Small/simple repo | pub / uv / npm / Gradle or Maven + Makefile |
+| **MELOS ONLY** | Flutter/Dart multi-package | Dart `workspace:` + Melos 8.x (kit pin 8.10.1). No `melos.yaml`. |
+| **NX ONLY** | Angular/React/Node/Java, optional Python, **if justified** | pnpm/npm + Nx; Gradle via `@nx/gradle` when compatible; Python via explicit edges + `uv run` |
+| **NX + MELOS** | Flutter **plus** substantial JS/Java/Python, **if justified** | One Flutter Nx bridge; Melos owns Dart tests; Nx owns the rest |
 
-Default mixed repo: Melos + uv + npm + Makefile. Do not `melos version` independently shipped apps. Do not remote-cache generated Dart, Alembic, OpenAPI snapshots, or images. Do not register Melos MCP. Enable Nx MCP only in a product repo that already has `nx.json` — see [nx-and-mcp.md](.claude/skills/polyglot-monorepo/reference/nx-and-mcp.md).
+Scaffolds (`/scaffold-flutter-app`, `/scaffold-python-api`, `/scaffold-angular-app`, `/scaffold-spring-api`, `/scaffold-mcp-server`) join an existing language workspace. There is no `/scaffold-monorepo`. Do not `melos version` independently shipped apps. Never cache `deploy` / `migrate` / `release` / `docker-push` or unverified generated code. Git `base` comes from the repo, not an assumed `main`. If `git_baseline` is unresolved, do not enable affected-only CI. Enable Nx MCP only in a product repo that already has `nx.json` — [nx-and-mcp.md](.claude/skills/polyglot-monorepo/reference/nx-and-mcp.md).
 
-Docs: [Melos](https://melos.invertase.dev/) · [uv workspaces](https://docs.astral.sh/uv/concepts/projects/workspaces/) · [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces) · [Nx](https://nx.dev/docs/getting-started/ai-setup)
+Docs: [Melos](https://melos.invertase.dev/) · [uv workspaces](https://docs.astral.sh/uv/concepts/projects/workspaces/) · [npm workspaces](https://docs.npmjs.com/cli/using-npm/workspaces) · [Nx multi-language](https://nx.dev/docs/features/multi-language-support) · [Nx affected](https://nx.dev/docs/features/ci-features/affected)
 
 ## What's included
 

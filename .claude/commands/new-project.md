@@ -15,6 +15,7 @@ Analyze `$ARGUMENTS` using this keyword matrix. Rows run from most to least spec
 
 | Keywords in request | Project Type | Route to command |
 |---------------------|--------------|-----------------|
+| `monorepo`, `polyglot`, `nx + melos`, `melos-only`, `native-only` workspace | Polyglot workspace (MONO-ARCH-001) | Load `polyglot-monorepo`, run `discover_monorepo.py --root`, **stop for mode approval**, then `/design-architecture`. Do not `/scaffold-monorepo` (does not exist). Do not `nx init` until `CC_NX_INIT=1`. |
 | `genui`, `a2ui`, `agent ui`, `agent-driven ui` + more than one platform | GenUI feature (existing apps) | `/scaffold-genui-feature` |
 | `flutter` + `genui`/`a2ui` | Flutter A2UI feature (existing app) | `/scaffold-genui` |
 | `a2ui`, `agent ui`, `agent-driven ui` (Angular or unspecified) | A2UI Angular feature (existing app) | `/scaffold-a2ui` |
@@ -72,6 +73,7 @@ If routed to Flutter (`/scaffold-flutter-app`):
 
 | User input | Detected type | Action |
 |------------|--------------|--------|
+| `new-project monorepo flutter and angular` | Polyglot workspace | `polyglot-monorepo` discover → approve mode → `/design-architecture` |
 | `new-project flutter fitness tracker` | Flutter Mobile | `/scaffold-flutter-app fitness-tracker` |
 | `new-project python invoice api` | Python API | `/scaffold-python-api invoice-api` |
 | `new-project nestjs user management` | NestJS API | `/scaffold-nestjs-api user-management` |

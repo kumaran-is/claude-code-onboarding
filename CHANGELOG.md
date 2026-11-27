@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MONO-ARCH-001 polyglot architecture** — four explicit modes (native-only, Melos-only, Nx-only, Nx + Melos) with a copied spec at `docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md`. Discover recommends a mode and stops for human approval before `nx init`.
+- **Graph audit** — `audit_monorepo_graph.py` fail-closes on missing projects/edges, empty graphs, empty expect files, cached `deploy`/`migrate`/`release`/`docker-push`, cached generated OpenAPI, missing Flutter-bridge inputs, and Python projects listed without explicit edges (plugin name is not proof).
+- **Isolated fixture matrix** — `run_fixture_matrix.py` runs real Melos 8.10.1 and Nx 24.1.0 in `$TMPDIR` (never this kit or product repos): Melos `--diff` + dependents, one Flutter Nx bridge, lockfile/toolchain cache invalidation (`package-lock.json`, `pnpm-lock.yaml`, `uv.lock`), Python/uv and `@nx/gradle` inferred-vs-explicit edges, and native uv/Gradle builds after Nx rollback.
+
+### Changed
+
+- **Polyglot skill** — Melos kit pin **8.10.1** (`dart run melos`, no `melos.yaml`); Nx **24.1.0** task-based affected (`inputs` / `^default`, not project edges alone). Python and Java are not inferred from JS; they need explicit `implicitDependencies` (and a Gradle companion plugin for `@nx/gradle` inference). Git `base` comes from the repo (`origin/HEAD`, then the existing local default), never an assumed `main`.
+- **Scaffolds and `/new-project`** — Flutter, Angular, Python, Spring, and MCP still join an existing language workspace; there is still no `/scaffold-monorepo`. `/design-architecture` and `/new-project` route monorepo questions through `polyglot-monorepo`.
+
+### Security
+
+- Raw `nx init` / `create-nx-workspace` still require `CC_NX_INIT=1`. `nx configure-ai-agents` is blocked on this kit even with that marker (it would rewrite `CLAUDE.md` / MCP). Fixture Nx installs are local `nx@24.1.0` with `npx --no-install`, not `npx --yes`.
+
 ## [1.0.0] - 2026-11-26
 
 Changes on `feat/flutter-mobile-engineering-best-practices` relative to `develop`.

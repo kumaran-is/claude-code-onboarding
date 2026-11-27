@@ -13,7 +13,7 @@ Design the architecture for the following system or feature:
 
 ## Steps
 1. Clarify and summarize the requirements and NFRs
-1b. **Monorepo tooling** — if the system is more than one package, or the repo already has `workspace:` / `workspaces` / `[tool.uv.workspace]` / `nx.json` / `turbo.json` / `Makefile`: load `polyglot-monorepo`, run `python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --root <repo>`, and record package managers vs orchestrator (Dart+Melos, uv, npm, optional Nx, Turbo, Makefile/Taskfile) in the ADR. `candidate-needs-approval` is not permission to add Nx. Do not add Nx unless the human approved it. Do not create `/scaffold-monorepo`.
+1b. **Monorepo tooling (MONO-ARCH-001)** — if the system is more than one package, or the repo already has `workspace:` / `workspaces` / `[tool.uv.workspace]` / `nx.json` / `turbo.json` / `Makefile` / `settings.gradle*`: load `polyglot-monorepo`, run `python3 .claude/skills/polyglot-monorepo/scripts/discover_monorepo.py --root <repo>`, and record `recommendation.mode` (`native-only` / `melos-only` / `nx-only` / `nx-plus-melos`), `mode_status`, package managers, and `detected.git_baseline` in the ADR. **Stop for human approval** before `nx init`, a Flutter Nx bridge, or lockfile changes. `candidate-needs-approval` is not permission to add Nx. After an approved Nx/bridge setup, run `audit_monorepo_graph.py --root --expect`. Do not create `/scaffold-monorepo`. Spec: `docs/Nx_Melos_Polyglot_Monorepo_Architecture_Spec.md`.
 2. Create a C4 System Context diagram (Mermaid)
 3. Create a component-level architecture diagram (Mermaid)
 4. Define key API contracts (OpenAPI YAML snippets)

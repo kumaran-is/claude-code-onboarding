@@ -40,7 +40,7 @@
 | Weaviate Operations | `.claude/skills/weaviate/` | — | `/weaviate:search`, `/weaviate:ask`, `/weaviate:collections`, `/weaviate:quickstart` |
 | Weaviate App Patterns | `.claude/skills/weaviate-cookbooks/` | — | — |
 | Architecture | `.claude/skills/architecture-design/` | `architect` | `/design-architecture` |
-| Polyglot monorepo (Dart/Melos, uv, npm, optional Nx, Makefile — decision only) | `.claude/skills/polyglot-monorepo/` | `architect` (no new agent) | `/design-architecture` (no `/scaffold-monorepo`) |
+| Polyglot monorepo (MONO-ARCH-001: native-only / Melos-only / Nx-only / Nx + Melos; Flutter bridge; graph audit) | `.claude/skills/polyglot-monorepo/` | `architect` (no new agent); reviewers: `skill-reviewer`, `security-reviewer` | `/design-architecture`, `/new-project` (no `/scaffold-monorepo`) |
 | Plan Review | `.claude/skills/plan-mode-review/` | — | `/plan-review` |
 | Browser Testing | `.claude/skills/browser-testing/` | `browser-testing` | — |
 | Next work item (`/next`, GitHub issues/project, local plans, blockers, verification, implementation notes; opt-in `/next --auto`) | `.claude/skills/next-issue/` (`references/implementation-notes.md`, `references/auto-loop.md`) | — | `/next` |

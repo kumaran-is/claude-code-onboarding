@@ -112,11 +112,12 @@ START: What is your MAIN architectural concern?
 Not an application pattern — package managers vs task orchestration. Load `polyglot-monorepo` (do not copy Melos/uv/Nx setup here).
 
 ```
-Multiple packages in one git repo?
-  Dart/Flutter     -> pub workspace + Melos 7+ for scripts (never Nx as the Dart PM)
-  Python           -> uv workspaces (incompatible requires-python stays outside)
-  Angular/Node/MCP -> npm workspaces first; Nx only if JS-heavy + measured CI + human yes
-  Cross-language   -> Makefile/Taskfile unless Nx already owns JS CI
-  nx.json present  -> keep; do not add a second Flutter affected-test owner
-  no nx.json       -> do not add Nx
+Multiple packages in one git repo? Load polyglot-monorepo (MONO-ARCH-001).
+  native-only   -> small/simple; pub / uv / npm / Gradle + Makefile
+  melos-only    -> Flutter/Dart multi-package, no substantial JS/Java
+  nx-only       -> Angular/React/Node/Java (+ optional Python) IF justified + human yes
+  nx-plus-melos -> Flutter PLUS substantial JS/Java/Python IF justified + human yes
+                  one Flutter Nx bridge; Melos owns Dart tests
+  turbo.json    -> keep Turbo; do not add Nx
+  nx.json       -> keep; unique Flutter bridge; graph audit fail-closed
 ```

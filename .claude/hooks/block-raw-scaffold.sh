@@ -86,7 +86,7 @@ EOF
 block_nx() { # $1 matched label
   cat >&2 <<EOF
 BLOCKED: Nx workspace initialization detected ($1).
-Ask the human first (polyglot-monorepo). If they agreed, re-run THAT command only with:
+Ask the human first (polyglot-monorepo / MONO-ARCH-001). Approve a mode (native-only / melos-only / nx-only / nx-plus-melos). If they agreed, re-run THAT command only with:
     CC_NX_INIT=1 $1 ...
 CC_NX_INIT is a visible transcript marker (same class as CC_SCAFFOLD), not a cryptographic human gate.
 Never run nx configure-ai-agents on the onboarding kit. Product repos need nx.json first.
@@ -155,6 +155,11 @@ evaluate() { # $1 = command text. Exits 2 via block() on a violation; returns 0 
       block_nx "$nx_label"
     fi
   done
+  if printf '%s' "$cmd" | grep -qE 'nx(@[^[:space:]]+)?[[:space:]]+configure-ai-agents' \
+    && [ -d "${CLAUDE_PROJECT_DIR:-.}/.claude/skills/polyglot-monorepo" ]; then
+    echo "BLOCKED: nx configure-ai-agents is never allowed on the onboarding kit (would rewrite CLAUDE.md / MCP)." >&2
+    exit 2
+  fi
   # Bash redirects that create nx.json (Write tool is a separate path).
   nx_redir=$(printf '%s' "$cmd" | sed -E 's#(^|[;&|(`][[:space:]]*)CC_NX_INIT=1[[:space:]]+#\1AUTHORIZED_NX #g' 2>/dev/null) || nx_redir="$cmd"
   if printf '%s' "$nx_redir" | grep -qE '(>|>>|tee[[:space:]]+(-a[[:space:]]+)?)[[:space:]]*(\./)?nx\.json([[:space:]]|$)'; then
@@ -275,6 +280,7 @@ selftest() {
   chk "positive: nx init is blocked"                                   2 'nx init'
   chk "positive: npx nx init is blocked"                               2 'npx nx init'
   chk "positive: nx configure-ai-agents is blocked"                    2 'npx nx configure-ai-agents'
+  chk "positive: CC_NX_INIT=1 configure-ai-agents on kit is blocked"  2 'CC_NX_INIT=1 nx configure-ai-agents'
   chk "negative: CC_NX_INIT=1 nx init is allowed"                      0 'CC_NX_INIT=1 nx init'
   chk "negative: CC_NX_INIT=1 npx nx init is allowed"                  0 'CC_NX_INIT=1 npx nx init'
   chk "negative: npx nx mcp (not init) is untouched"                   0 'npx nx mcp'

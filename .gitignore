@@ -74,6 +74,7 @@ venv/
 node_modules/
 dist/
 .angular/
+.nx/
 
 # Flutter / Dart / Pub
 app/.dart_tool/

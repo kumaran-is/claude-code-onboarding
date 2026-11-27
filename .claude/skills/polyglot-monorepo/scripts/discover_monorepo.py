@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -30,7 +31,7 @@ def die(msg: str, code: int = 2) -> None:
 def read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
 
 
@@ -95,6 +96,94 @@ def npm_members(root: Path) -> list[str]:
     return expand_workspace_members(root, _workspace_patterns(root))
 
 
+def dart_members(root: Path) -> list[str]:
+    text = read(root / "pubspec.yaml")
+    members: list[str] = []
+    in_ws = False
+    for line in text.splitlines():
+        raw = line.split("#", 1)[0].rstrip()
+        if re.match(r"^workspace:\s*$", raw):
+            in_ws = True
+            continue
+        if in_ws:
+            if raw and re.match(r"^\S", raw):
+                break
+            m = re.match(r"^[ \t]*-[ \t]+(.+)$", raw)
+            if m:
+                members.append(m.group(1).strip().strip("\"'"))
+    return members
+
+
+def uv_members(root: Path) -> list[str]:
+    text = read(root / "pyproject.toml")
+    if "[tool.uv.workspace]" not in text:
+        return []
+    rest = text[text.find("[tool.uv.workspace]") :]
+    m = re.search(r"members\s*=\s*\[(.*?)\]", rest, re.S)
+    if not m:
+        return []
+    return [x.strip().strip("\"'") for x in m.group(1).split(",") if x.strip().strip("\"'")]
+
+
+def java_info(root: Path) -> tuple[bool, bool, int]:
+    settings = ""
+    for name in ("settings.gradle", "settings.gradle.kts"):
+        if (root / name).is_file():
+            settings = read(root / name)
+            break
+    gradle = bool(settings) or any((root / n).is_file() for n in ("build.gradle", "build.gradle.kts"))
+    maven = (root / "pom.xml").is_file()
+    count = 0
+    if settings:
+        includes = re.findall(r"include\s*\(?\s*['\"]([^'\"]+)['\"]", settings)
+        count = len(includes) or 1
+    elif maven:
+        mods = re.findall(r"<module>([^<]+)</module>", read(root / "pom.xml"))
+        count = len(mods) or 1
+    elif gradle:
+        count = 1
+    return gradle, maven, count
+
+
+def git_baseline(root: Path) -> str | None:
+    """Resolve comparison base from this repo. Never assume 'main' exists."""
+
+    def run(args: list[str]) -> str:
+        try:
+            proc = subprocess.run(
+                args, cwd=root, capture_output=True, text=True, timeout=10, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return proc.stdout.strip() if proc.returncode == 0 else ""
+
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if top.returncode != 0:
+        return None
+    ref = run(["git", "symbolic-ref", "refs/remotes/origin/HEAD"])
+    if ref.startswith("refs/remotes/origin/"):
+        return ref[len("refs/remotes/origin/") :]
+    ref = run(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"])
+    if ref.startswith("origin/") and ref not in {"origin/HEAD", "HEAD"}:
+        return ref[len("origin/") :]
+    for name in ("main", "master", "develop"):
+        if run(["git", "rev-parse", "--verify", f"refs/remotes/origin/{name}"]):
+            return f"origin/{name}"
+        if run(["git", "rev-parse", "--verify", f"refs/heads/{name}"]):
+            return name
+    return None
+
+
 UNSAFE_CACHE_NAMES = (
     "codegen",
     "build_runner",
@@ -144,9 +233,23 @@ def find_host(start: Path) -> Path | None:
     cur = start.resolve()
     if cur.is_file():
         cur = cur.parent
+    home = Path.home().resolve()
+    git_ceiling: Path | None = None
+    probe = cur
+    while True:
+        if (probe / ".git").exists():
+            git_ceiling = probe
+            break
+        if probe.parent == probe:
+            break
+        probe = probe.parent
     while True:
         if is_workspace_host(cur):
             return cur
+        if git_ceiling is not None and cur == git_ceiling:
+            return None
+        if git_ceiling is None and (cur == home or cur.parent == cur):
+            return None
         if cur.parent == cur:
             return None
         cur = cur.parent
@@ -162,6 +265,10 @@ def recommend(detected: dict[str, object]) -> dict[str, object]:
     make = bool(detected["makefile"])
     task = bool(detected["taskfile"])
     n_npm = int(detected["npm_member_count"])
+    n_dart = int(detected.get("dart_member_count") or 0)
+    n_uv = int(detected.get("uv_member_count") or 0)
+    n_java = int(detected.get("java_module_count") or 0)
+    java = bool(detected.get("java_gradle") or detected.get("java_maven"))
     turbo = bool(detected["turbo"])
     pnpm = bool(detected["pnpm_workspace"])
     pms: list[str] = []
@@ -173,62 +280,106 @@ def recommend(detected: dict[str, object]) -> dict[str, object]:
         if melos:
             pms.append("melos")
             reasons.append("Melos already owns Flutter scoped scripts / dependents")
-        else:
-            reasons.append("Two or more Dart packages: add Melos 7+ on the root pubspec (default)")
+        elif n_dart >= 2:
+            reasons.append("Two or more Dart packages: add Melos 8.x on the root pubspec (default; kit pin 8.10.1)")
     if legacy:
-        reasons.append("melos.yaml is legacy Melos 6; migrate config into root pubspec.yaml (Melos 7+)")
+        reasons.append("melos.yaml is legacy Melos 6; migrate config into root pubspec.yaml (Melos 7+/8)")
     if uv:
         pms.append("uv")
         reasons.append("uv workspace is the package manager for Python")
     if npm:
         pms.append("pnpm" if pnpm and "package-lock.json" not in detected["lockfiles"] else "npm")
         reasons.append("npm/pnpm workspaces are the package manager for Angular/TypeScript/MCP")
+    if java:
+        pms.append("gradle" if detected.get("java_gradle") else "maven")
+        reasons.append("Gradle/Maven remains the Java compiler; Nx does not replace it")
 
-    js_heavy = n_npm >= JS_HEAVY and not dart
-    if nx:
-        nx_verdict = "justified" if js_heavy else "keep"
+    substantial_js = n_npm >= JS_HEAVY
+    substantial_java = n_java >= 2
+    substantial_py = n_uv >= 3
+    substantial_mixed = n_npm >= 3 and n_uv >= 2 and dart
+    substantial_non_flutter = substantial_js or substantial_java or substantial_mixed or (dart and substantial_py)
+    flutter_multi = dart and (melos or n_dart >= 2)
+
+    if nx and (dart or melos):
+        mode = "nx-plus-melos"
+        mode_status = "keep"
+        nx_verdict = "keep"
         reasons.append(
-            "nx.json exists — keep Nx; do not rip it out. Flutter stays on Melos if present."
-            if nx_verdict == "keep"
-            else "nx.json exists and JS/TS workspace is large — Nx is justified around npm only"
+            "nx.json + Dart/Melos — keep NX + MELOS; one Flutter Nx bridge; Melos owns Dart tests"
         )
-    elif js_heavy and not uv:
+    elif nx:
+        mode = "nx-only"
+        mode_status = "justified" if (substantial_js or substantial_java) else "keep"
+        nx_verdict = "justified" if mode_status == "justified" else "keep"
+        reasons.append("nx.json exists — keep NX ONLY; do not rip it out")
+    elif turbo:
+        mode = "native-only"
+        mode_status = "do-not-adopt"
+        nx_verdict = "do-not-add"
+        reasons.append("turbo.json is present — keep Turbo; do not add Nx")
+    elif flutter_multi and substantial_non_flutter:
+        mode = "nx-plus-melos"
+        mode_status = "candidate-needs-approval"
         nx_verdict = "candidate-needs-approval"
         reasons.append(
-            "JS/TS workspace is large and has no nx.json — Nx is a candidate only; ask the human "
-            "(measured CI cost) before CC_NX_INIT=1. Do not add it unsolicited."
+            "Flutter plus substantial JS/Java/Python — NX + MELOS is a candidate; human approval "
+            "then CC_NX_INIT=1. Do not add Nx unsolicited."
         )
-    else:
+    elif (substantial_js or substantial_java) and not dart:
+        mode = "nx-only"
+        mode_status = "candidate-needs-approval"
+        nx_verdict = "candidate-needs-approval"
+        reasons.append(
+            "JS/TS-heavy or Java multi-module with no nx.json — NX ONLY is a candidate; ask the human "
+            "before CC_NX_INIT=1."
+        )
+    elif flutter_multi and not uv and not npm and not java:
+        mode = "melos-only"
+        mode_status = "recommend"
         nx_verdict = "do-not-add"
-        reasons.append("No nx.json — do not introduce Nx; language-native workspaces + Makefile/Taskfile")
+        reasons.append("Flutter/Dart multi-package — MELOS ONLY; do not add Nx")
+    else:
+        mode = "native-only"
+        mode_status = "recommend"
+        nx_verdict = "do-not-add"
+        reasons.append("NATIVE ONLY — language-native workspaces + Makefile/Taskfile; do not add Nx")
 
     orchestrator = "none"
     if nx:
         orchestrator = "nx"
         if dart or uv:
-            reasons.append("Nx must not become the Dart or uv package manager; Makefile may still own compose/release")
+            reasons.append("Nx must not become the Dart or uv package manager")
     elif turbo:
         orchestrator = "turbo"
-        reasons.append("turbo.json is present — keep Turbo for JS tasks; do not add Nx or a second JS orchestrator")
     elif make:
         orchestrator = "makefile"
         reasons.append("Makefile is the polyglot task orchestrator")
     elif task:
         orchestrator = "taskfile"
         reasons.append("Taskfile is the polyglot task orchestrator")
-    elif dart or uv or npm:
+    elif dart or uv or npm or java:
         orchestrator = "makefile-or-taskfile"
         reasons.append("Add a lightweight Makefile/Taskfile only if cross-language tasks appear")
 
     dart_owner = "melos" if melos else ("dart-workspaces" if dart else "none")
     js_owner = "nx" if nx else ("npm-workspaces" if npm else "none")
     py_owner = "uv-or-make" if uv else "none"
+    java_owner = "gradle-or-maven" if java else "none"
 
     return {
         "package_managers": pms,
         "orchestrator": orchestrator,
+        "mode": mode,
+        "mode_status": mode_status,
+        "approval_required": mode_status == "candidate-needs-approval" or (mode == "melos-only" and not melos),
         "nx": nx_verdict,
-        "affected_owners": {"dart": dart_owner, "javascript": js_owner, "python": py_owner},
+        "affected_owners": {
+            "dart": dart_owner,
+            "javascript": js_owner,
+            "python": py_owner,
+            "java": java_owner,
+        },
         "mcp": {"nx_mcp": "product-repo-only" if nx else "skip", "melos_mcp": "skip"},
         "reasons": reasons,
         "join": {
@@ -245,13 +396,20 @@ def discover(root: Path) -> dict[str, object]:
     if not root.is_dir():
         die(f"not a directory: {root}")
     npm = npm_members(root)
+    gradle, maven, n_java = java_info(root)
+    baseline = git_baseline(root)
     detected: dict[str, object] = {
         "dart_workspace": has_dart_workspace(root),
+        "dart_member_count": len(dart_members(root)),
         "melos": has_melos_pubspec(root),
         "melos_legacy_yaml": (root / "melos.yaml").is_file(),
         "uv_workspace": has_uv_workspace(root),
+        "uv_member_count": len(uv_members(root)),
         "npm_workspaces": bool(npm),
         "npm_member_count": len(npm),
+        "java_gradle": gradle,
+        "java_maven": maven,
+        "java_module_count": n_java,
         "nx": (root / "nx.json").is_file(),
         "turbo": (root / "turbo.json").is_file(),
         "pnpm_workspace": (root / "pnpm-workspace.yaml").is_file(),
@@ -259,6 +417,8 @@ def discover(root: Path) -> dict[str, object]:
         "taskfile": any(
             (root / name).is_file() for name in ("Taskfile.yml", "Taskfile.yaml", "Taskfile.dist.yml")
         ),
+        "git_baseline": baseline,
+        "git_baseline_status": "resolved" if baseline else "unresolved",
         "lockfiles": [
             p.name
             for p in (
@@ -343,6 +503,28 @@ def fixture_js_glob(root: Path) -> None:
     write(root / "package-lock.json", '{"lockfileVersion": 3}\n')
 
 
+def fixture_java(root: Path) -> None:
+    write(root / "settings.gradle", 'rootProject.name = "java-ws"\ninclude("api")\ninclude("lib")\n')
+    write(root / "api/build.gradle", "plugins { id 'java' }\n")
+    write(root / "lib/build.gradle", "plugins { id 'java' }\n")
+
+
+def fixture_nx_plus_melos(root: Path) -> None:
+    fixture_flutter(root)
+    write(root / "nx.json", json.dumps({"$schema": "./node_modules/nx/schemas/nx-schema.json", "defaultBase": "develop"}))
+    write(
+        root / "flutter-workspace/project.json",
+        json.dumps(
+            {
+                "name": "flutter-workspace",
+                "root": ".",
+                "implicitDependencies": ["api-contracts"],
+                "targets": {"verify": {"command": "dart run melos run analyze", "cache": False}},
+            }
+        ),
+    )
+
+
 def expect(cond: bool, label: str, fails: list[str]) -> None:
     if not cond:
         fails.append(label)
@@ -361,6 +543,8 @@ def selftest() -> int:
         expect(r["detected"]["melos"] is True, "flutter: melos", fails)
         expect("melos" in rec["package_managers"], "flutter: recommend melos", fails)
         expect(rec["nx"] == "do-not-add", "flutter: no nx", fails)
+        expect(rec["mode"] == "melos-only", "flutter: mode melos-only", fails)
+        expect(rec["approval_required"] is False, "flutter: no nx approval", fails)
         expect(rec["affected_owners"]["dart"] == "melos", "flutter: dart owner melos", fails)
         expect(rec["mcp"]["nx_mcp"] == "skip", "flutter: skip nx mcp", fails)
         expect(rec["mcp"]["melos_mcp"] == "skip", "flutter: skip melos mcp", fails)
@@ -371,6 +555,7 @@ def selftest() -> int:
         rec = r["recommendation"]
         expect(r["detected"]["npm_workspaces"] is True, "npm: workspaces", fails)
         expect(rec["nx"] == "do-not-add", "npm: two members is not Nx", fails)
+        expect(rec["mode"] == "native-only", "npm: mode native-only", fails)
         expect(rec["affected_owners"]["javascript"] == "npm-workspaces", "npm: js owner", fails)
         expect("pubspec.lock" not in r["detected"]["lockfiles"], "npm: no dart lock", fails)
 
@@ -381,6 +566,7 @@ def selftest() -> int:
         expect(r["detected"]["uv_workspace"] is True, "uv: workspace", fails)
         expect("uv" in rec["package_managers"], "uv: recommend uv", fails)
         expect(rec["nx"] == "do-not-add", "uv: no nx", fails)
+        expect(rec["mode"] == "native-only", "uv: mode native-only", fails)
         expect(rec["join"]["uv"] is True, "uv: join hint", fails)
 
         mixed = base / "mixed"
@@ -390,6 +576,7 @@ def selftest() -> int:
         expect(r["detected"]["dart_workspace"] and r["detected"]["uv_workspace"] and r["detected"]["npm_workspaces"], "mixed: all three PMs", fails)
         expect(rec["orchestrator"] == "makefile", "mixed: makefile orchestrator", fails)
         expect(rec["nx"] == "do-not-add", "mixed: do not add Nx", fails)
+        expect(rec["mode"] == "native-only", "mixed small: native-only not nx-plus-melos", fails)
         expect(sorted(rec["package_managers"]) == sorted(["dart-workspaces", "melos", "uv", "npm"]), "mixed: PMs", fails)
         expect(r["detected"]["npm_member_count"] == 3, "mixed: mcp joined npm workspaces", fails)
 
@@ -406,6 +593,7 @@ def selftest() -> int:
         expect(r["detected"]["nx"] is True, "js-nx: nx present", fails)
         expect(int(r["detected"]["npm_member_count"]) >= JS_HEAVY, "js-nx: heavy", fails)
         expect(rec["nx"] == "justified", "js-nx: Nx justified", fails)
+        expect(rec["mode"] == "nx-only", "js-nx: mode nx-only", fails)
         expect(rec["orchestrator"] == "nx", "js-nx: nx orchestrator", fails)
         expect(rec["mcp"]["nx_mcp"] == "product-repo-only", "js-nx: nx mcp only in product repo", fails)
         expect(r["detected"]["dart_workspace"] is False, "js-nx: isolation no dart", fails)
@@ -438,6 +626,8 @@ def selftest() -> int:
         rec = r["recommendation"]
         expect(int(r["detected"]["npm_member_count"]) == JS_HEAVY, "glob: packages/* expands to 8", fails)
         expect(rec["nx"] == "candidate-needs-approval", "glob: no nx.json → candidate, not do-not-add", fails)
+        expect(rec["mode"] == "nx-only", "glob: mode nx-only", fails)
+        expect(rec["approval_required"] is True, "glob: approval required", fails)
         expect(rec["orchestrator"] != "nx", "glob: candidate is not already on Nx", fails)
 
         comment = base / "melos-comment"
@@ -467,6 +657,26 @@ def selftest() -> int:
         write(dist / "Taskfile.dist.yml", "version: '3'\n")
         expect(discover(dist)["detected"]["taskfile"] is True, "taskfile: Taskfile.dist.yml counts", fails)
 
+        java = base / "java"
+        fixture_java(java)
+        rec = discover(java)["recommendation"]
+        expect(rec["mode"] == "nx-only", "java multi-module: nx-only candidate", fails)
+        expect(rec["nx"] == "candidate-needs-approval", "java: approval required", fails)
+
+        nx_melos = base / "nx-melos"
+        fixture_nx_plus_melos(nx_melos)
+        rec = discover(nx_melos)["recommendation"]
+        expect(rec["mode"] == "nx-plus-melos", "nx+dart: nx-plus-melos keep", fails)
+        expect(rec["nx"] == "keep", "nx+dart: keep", fails)
+        expect(rec["approval_required"] is False, "nx+dart already present: no new approval", fails)
+
+        heavy_flutter = base / "heavy-flutter"
+        fixture_flutter(heavy_flutter)
+        fixture_js_glob(heavy_flutter)
+        rec = discover(heavy_flutter)["recommendation"]
+        expect(rec["mode"] == "nx-plus-melos", "flutter+8 npm: nx-plus-melos candidate", fails)
+        expect(rec["approval_required"] is True, "flutter+8 npm: approval required", fails)
+
     if fails:
         print("selftest FAIL")
         for item in fails:
@@ -486,6 +696,9 @@ def selftest() -> int:
     print("  ok   turbo.json → keep turbo, do not add Nx")
     print("  ok   --find-host walks to the workspace host")
     print("  ok   Taskfile.dist.yml is a taskfile")
+    print("  ok   Java multi-module → nx-only candidate-needs-approval")
+    print("  ok   nx.json + Dart → nx-plus-melos keep")
+    print("  ok   Flutter + 8 npm → nx-plus-melos candidate-needs-approval")
     return 0
 
 
